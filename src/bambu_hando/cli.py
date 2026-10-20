@@ -70,15 +70,21 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         csv_payload = build_custom_filaments_csv(profiles)
+        csv_error = ""
 
         if not args.dry_run:
             status_csv, msg_csv = client.set_custom_filaments_csv(csv_payload)
             if status_csv >= 400:
                 print(f"Failed to set custom filaments CSV: {status_csv} {msg_csv}", file=sys.stderr)
+                csv_error = f"custom filaments CSV: HTTP {status_csv}: {msg_csv[:120]}"
 
         for p in profiles:
             if args.dry_run:
                 results.append(SyncResult(profile_name=p.name, bambu_status=bambu_status, spoolease_status="planned", detail="dry-run"))
+                continue
+            # Spools reference filament codes from the CSV, so creating them after a CSV failure would leave SpoolEase half-configured.
+            if csv_error:
+                results.append(SyncResult(profile_name=p.name, bambu_status=bambu_status, spoolease_status="failed", detail=csv_error))
                 continue
             status, msg = client.add_or_edit_spool(p)
             spoolease_status = "written" if status < 400 else "failed"

@@ -113,6 +113,20 @@ def test_apply_writes_both_sides(
     assert spoolease.requests[2][1]["rgba"] == "FF2200FF"
 
 
+def test_custom_filaments_csv_failure_fails_profiles_and_skips_spools(
+    source: str, filament_dir: Path, spoolease: _SpoolEaseServer, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spoolease.statuses["/api/filaments-config"] = 500
+
+    code, report = _run(["--source", source, *_spoolease_args(spoolease)], capsys)
+
+    assert code == 1
+    assert report["results"][0]["bambu_status"] == "written"
+    assert report["results"][0]["spoolease_status"] == "failed"
+    assert report["results"][0]["detail"].startswith("custom filaments CSV: HTTP 500")
+    assert [path for path, _ in spoolease.requests] == ["/api/test-key", "/api/filaments-config"]
+
+
 def test_spool_failure_exits_nonzero(
     source: str, filament_dir: Path, spoolease: _SpoolEaseServer, capsys: pytest.CaptureFixture[str]
 ) -> None:
