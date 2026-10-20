@@ -1,11 +1,16 @@
 # Testing Plan
 
-## Automated tests included
+## Automated tests
 
-- Color normalization and RGB conversion
-- Linux/macOS path resolution logic
-- SpoolEase encryption/decryption roundtrip
-- JSON source parsing and normalization
+Run everything with `npm test` (builds `dist/` first, then runs Vitest).
+
+- Unit: colors, paths, source parsing, encryption, preset JSON, SpoolEase payloads
+- Parity: preset JSON, custom-filaments CSV, spool payloads, and AES-GCM vectors must match
+  reference outputs captured from the original Python implementation
+  (`test/fixtures/python-parity.json`)
+- Integration: sync orchestration, headless CLI, and the Ink TUI against a local HTTP server
+  that speaks the real encrypted SpoolEase protocol, with BambuStudio output in a temporary HOME
+- E2E: spawns the built `dist/bin.js` as a real process
 
 ## Recommended live validation
 

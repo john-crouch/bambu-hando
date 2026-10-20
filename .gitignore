@@ -1,25 +1,5 @@
-# ABOUTME: Git ignore rules for the bambu-hando Python project.
-# ABOUTME: Excludes virtualenvs, bytecode, test caches, and setuptools build metadata.
+# ABOUTME: Git ignore rules for the bambu-hando Node/TypeScript project.
+# ABOUTME: Excludes installed dependencies and compiled output.
 
-# Byte-compiled
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual environments
-.venv/
-venv/
-
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-
-# Packaging
-*.egg-info/
-build/
-dist/
-
-# Node
 node_modules/
 dist/

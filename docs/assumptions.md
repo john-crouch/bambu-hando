@@ -22,7 +22,7 @@ This project intentionally separates documented facts from inferred implementati
 
 1. Create one custom filament manually in your BambuStudio fork.
 2. Compare its generated JSON with the tool output.
-3. Update field mapping in src/bambu_hando/bambu_studio.py to match your fork exactly.
+3. Update field mapping in src/bambuStudio.ts to match your fork exactly.
 
 ## Data safety notes
 

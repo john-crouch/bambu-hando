@@ -19,9 +19,21 @@ If you have many filaments and are relying on defaults, this tool reduces repeti
 
 ## Install
 
+Requires Node.js 22 or newer.
+
 ```bash
-python -m pip install -e .
+npm install
+npm run build
+npm link   # puts bambu-hando on your PATH
 ```
+
+## Interactive TUI
+
+```bash
+bambu-hando tui
+```
+
+Fill in the setup form (arrow keys move, space toggles, enter loads the plan), review the plan table with color swatches and target paths, then press `a` to apply and watch per-profile progress. Any headless flag except `--dry-run` and `--report` prefills the form, for example `bambu-hando tui --source ./profiles.json`.
 
 ## Input source format
 
@@ -44,7 +56,9 @@ Provide a JSON file or URL. Example:
 ]
 ```
 
-## Run
+## Headless run
+
+The SpoolEase host and security key can also come from `SPOOLEASE_HOST` and `SPOOLEASE_SECURITY_KEY`, which keeps the key out of your shell history.
 
 Dry run first:
 
@@ -87,7 +101,17 @@ macOS:
 
 - Uses dry-run mode for planning
 - Writes Bambu preset files atomically via temp file replacement
-- Produces JSON report output for auditability
+- Produces JSON report output for auditability; each profile gets a `bambu_status` and `spoolease_status` of `written`, `planned`, `skipped` or `failed`
+- Exit codes: `0` success, `1` a profile failed, `2` invalid arguments or SpoolEase key check failed
+
+## Development
+
+```bash
+npm test                              # build, then run all tests
+npx vitest run test/colors.test.ts    # one file
+npx vitest run -t "masks the security key"   # one test by name
+npm run typecheck
+```
 
 ## Limitations
 
