@@ -120,21 +120,20 @@ export function App({ initial, onExit }: Props) {
     }
   }
 
-  useInput(
-    (input) => {
-      if (screen.name === "plan") {
-        if (input === "a") void apply(screen.profiles);
-        else if (input === "b") setScreen({ name: "form", error: "" });
-        else if (input === "q") onExit(0);
-      } else if (screen.name === "done") {
-        if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
-      } else if (screen.name === "error") {
-        if (input === "b") setScreen({ name: "form", error: "" });
-        else if (input === "q") onExit(screen.exitCode);
-      }
-    },
-    { isActive: screen.name === "plan" || screen.name === "done" || screen.name === "error" },
-  );
+  // Always subscribed: toggling isActive re-attaches Ink's listener in an effect after the
+  // new screen renders, so a key pressed right after "Done" appears could be dropped.
+  useInput((input) => {
+    if (screen.name === "plan") {
+      if (input === "a") void apply(screen.profiles);
+      else if (input === "b") setScreen({ name: "form", error: "" });
+      else if (input === "q") onExit(0);
+    } else if (screen.name === "done") {
+      if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
+    } else if (screen.name === "error") {
+      if (input === "b") setScreen({ name: "form", error: "" });
+      else if (input === "q") onExit(screen.exitCode);
+    }
+  });
 
   if (screen.name === "form") {
     return <SetupForm values={values} error={screen.error} onChange={setValues} onSubmit={() => void loadPlan()} />;

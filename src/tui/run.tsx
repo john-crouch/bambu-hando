@@ -5,8 +5,12 @@ import { render } from "ink";
 
 import { App, type FormValues } from "./App.js";
 
+// Conventional exit status for a process interrupted by SIGINT (128 + 2).
+const INTERRUPTED = 130;
+
 export async function runTui(initial: FormValues): Promise<number> {
-  let code = 0;
+  // Stays undefined when Ink exits on ctrl+c instead of through onExit.
+  let code: number | undefined;
   const instance = render(
     <App
       initial={initial}
@@ -17,5 +21,5 @@ export async function runTui(initial: FormValues): Promise<number> {
     />,
   );
   await instance.waitUntilExit();
-  return code;
+  return code ?? INTERRUPTED;
 }

@@ -10,7 +10,9 @@ Run everything with `npm test` (builds `dist/` first, then runs Vitest).
   (`test/fixtures/python-parity.json`)
 - Integration: sync orchestration, headless CLI, and the Ink TUI against a local HTTP server
   that speaks the real encrypted SpoolEase protocol, with BambuStudio output in a temporary HOME
-- E2E: spawns the built `dist/bin.js` as a real process
+- E2E: spawns the built `dist/bin.js` as a real process, and runs the TUI inside a real
+  pseudo-terminal via node-pty (keystrokes, rendered frames, cursor restore, exit codes
+  including 130 on ctrl+c)
 
 ## Recommended live validation
 
