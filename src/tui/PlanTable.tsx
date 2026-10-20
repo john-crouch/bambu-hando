@@ -5,7 +5,6 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 
 import type { FilamentProfile, Status } from "../models.js";
-import { customFilamentCode } from "../spoolease.js";
 
 const COLUMNS = { swatch: 3, name: 22, brand: 12, material: 10, temps: 9, rgba: 10, code: 10, preset: 11, spool: 11 } as const;
 
@@ -90,7 +89,7 @@ export function PlanTable({ profiles, progress, activePresets, activeSpools }: P
             <Cell width={COLUMNS.material}>{profile.material}</Cell>
             <Cell width={COLUMNS.temps}>{`${profile.nozzleTempMin}-${profile.nozzleTempMax}`}</Cell>
             <Cell width={COLUMNS.rgba}>{profile.colorRgba}</Cell>
-            <Cell width={COLUMNS.code}>{customFilamentCode(profile, index + 1)}</Cell>
+            <Cell width={COLUMNS.code}>{profile.filamentId}</Cell>
             <Box width={COLUMNS.preset}>
               <StatusCell status={row.preset} active={activePresets} />
             </Box>

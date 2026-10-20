@@ -59,6 +59,7 @@ export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) 
     const spool = spools[index] ?? { status: "skipped" as Status, detail: "" };
     return {
       profileName: profile.name,
+      filamentId: profile.filamentId,
       bambuStatus: bambuError ? "failed" : presetStatus,
       spooleaseStatus: spool.status,
       detail: bambuError ? `BambuStudio preset: ${bambuError}; ${spool.detail}` : spool.detail,

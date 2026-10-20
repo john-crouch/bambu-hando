@@ -31,6 +31,17 @@ describe("loadProfiles", () => {
     expect(await loadProfiles(SOURCE_FIXTURE)).toEqual(parityProfiles);
   });
 
+  it("derives a BambuStudio-style filament ID from the name unless the source provides one", async () => {
+    const path = await writeSource([
+      { name: "Mystery Spool" },
+      { name: "Mystery Spool", slicer_filament_code: " GFL99 " },
+    ]);
+
+    const profiles = await loadProfiles(path);
+
+    expect(profiles.map((p) => p.filamentId)).toEqual(["Pd73077d", "GFL99"]);
+  });
+
   it("accepts a bare JSON list", async () => {
     const path = await writeSource([{ name: "PLA Blue", color_name: "blue" }]);
     const [profile] = await loadProfiles(path);

@@ -3,22 +3,27 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { buildCustomFilamentsCsv, customFilamentCode, SpoolEaseClient, spoolPayload } from "../src/spoolease.js";
-import { parity, parityProfiles, profileAt } from "./parity.js";
+import { buildCustomFilamentsCsv, SpoolEaseClient, spoolPayload } from "../src/spoolease.js";
+import { expectedCsv, expectedSpoolPayload, parityProfiles, profileAt } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 
 describe("payload builders", () => {
-  it("builds the same custom filaments CSV as Python", () => {
-    expect(buildCustomFilamentsCsv(parityProfiles)).toBe(parity.custom_filaments_csv);
+  it("builds the Python CSV keyed by stable filament IDs", () => {
+    expect(buildCustomFilamentsCsv(parityProfiles)).toBe(expectedCsv);
   });
 
-  it("derives fallback codes from the 1-based index in hex", () => {
-    expect(customFilamentCode(profileAt(1), 255)).toBe("P0000FF");
-    expect(customFilamentCode(profileAt(0), 255)).toBe("PABC1234");
+  it("keeps a filament's CSV code when its position in the source changes", () => {
+    const reordered = buildCustomFilamentsCsv([profileAt(2), profileAt(1)]);
+    expect(reordered.split("\r\n").map((line) => line.split(",")[0])).toEqual(["Pd73077d", "Pb1a2a16"]);
   });
 
-  it.each(parityProfiles.map((p, i) => [p.name, i] as const))("builds the same spool payload as Python for %s", (_name, index) => {
-    expect(spoolPayload(profileAt(index))).toEqual(parity.spool_payloads[index]);
+  it("strips commas from names because SpoolEase splits CSV lines on every comma", () => {
+    const csv = buildCustomFilamentsCsv([{ ...profileAt(2), brand: "Acme, Inc.", name: "Silk, Gold" }]);
+    expect(csv.split(",")).toEqual(["Pd73077d", "Acme Inc. Silk Gold", "200", "220", "PLA"]);
+  });
+
+  it.each(parityProfiles.map((p, i) => [p.name, i] as const))("builds the Python spool payload linked by filament ID for %s", (_name, index) => {
+    expect(spoolPayload(profileAt(index))).toEqual(expectedSpoolPayload(index));
   });
 });
 
@@ -51,7 +56,7 @@ describe("SpoolEaseClient", () => {
     const response = await client.addOrEditSpool(profileAt(0));
 
     expect(response).toEqual({ status: 200, body: '{"id":"42"}' });
-    expect(server.requests[0]?.body).toEqual(parity.spool_payloads[0]);
+    expect(server.requests[0]?.body).toEqual(expectedSpoolPayload(0));
   });
 
   it("returns raw text for error responses", async () => {

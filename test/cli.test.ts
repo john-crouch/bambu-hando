@@ -58,6 +58,7 @@ describe("cli", () => {
     expect(report.bambu_preset_paths).toHaveLength(3);
     expect(report.results[0]).toEqual({
       profile_name: "PETG Red",
+      filament_id: "PABC1234",
       bambu_status: "written",
       spoolease_status: "written",
       detail: "HTTP 200: {}",

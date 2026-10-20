@@ -8,13 +8,13 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { presetJson, presetPath, writeFilamentPreset, writeMany } from "../src/bambuStudio.js";
-import { parity, parityProfiles, profileAt } from "./parity.js";
+import { expectedPreset, parity, parityProfiles, profileAt } from "./parity.js";
 
 const PRINTER = parity.printer_preset;
 
 describe("presetJson", () => {
   it.each(parityProfiles.map((p, i) => [p.name, i] as const))("matches Python output for %s", (_name, index) => {
-    expect(presetJson(profileAt(index), PRINTER)).toBe(parity.presets[index]);
+    expect(presetJson(profileAt(index), PRINTER)).toBe(expectedPreset(index));
   });
 });
 
@@ -41,7 +41,7 @@ describe("preset files", () => {
   it("apply creates the directory and writes the preset atomically", async () => {
     const path = await writeFilamentPreset(profileAt(0), "default", PRINTER, false);
 
-    expect(await readFile(path, "utf-8")).toBe(parity.presets[0]);
+    expect(await readFile(path, "utf-8")).toBe(expectedPreset(0));
     expect(await readdir(filamentDir)).toEqual([`PETG Red @ ${PRINTER}.json`]);
   });
 

@@ -84,7 +84,7 @@ describe("runSync", () => {
   it("marks SpoolEase skipped when no connection is given", async () => {
     const { results } = await runSync(options({ spoolease: null }), record);
 
-    expect(results[0]).toEqual({ profileName: "PETG Red", bambuStatus: "written", spooleaseStatus: "skipped", detail: "SpoolEase skipped" });
+    expect(results[0]).toEqual({ profileName: "PETG Red", filamentId: "PABC1234", bambuStatus: "written", spooleaseStatus: "skipped", detail: "SpoolEase skipped" });
   });
 
   it("throws KeyCheckError when the key is rejected", async () => {

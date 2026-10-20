@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { parity, SOURCE_FIXTURE } from "./parity.js";
+import { expectedPreset, expectedSpoolPayload, parity, SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
@@ -55,9 +55,9 @@ describe("bambu-hando binary", () => {
     expect(stderr).toBe("");
     expect(code).toBe(0);
     const report = JSON.parse(stdout);
-    expect(await readFile(report.bambu_preset_paths[0], "utf-8")).toBe(parity.presets[0]);
+    expect(await readFile(report.bambu_preset_paths[0], "utf-8")).toBe(expectedPreset(0));
     expect(report.bambu_preset_paths[0].startsWith(join(home, ".config", "BambuStudio"))).toBe(true);
-    expect(server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body)).toEqual(parity.spool_payloads);
+    expect(server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body)).toEqual([0, 1, 2].map(expectedSpoolPayload));
   });
 
   it("exits 2 for invalid arguments", async () => {

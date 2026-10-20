@@ -1,6 +1,7 @@
 // ABOUTME: Profile source ingestion from URL/local JSON into normalized records.
 // ABOUTME: Supports a lightweight schema so users can bulk-import filament catalogs.
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { normalizeRgba } from "./colors.js";
@@ -19,6 +20,13 @@ async function readText(source: string): Promise<string> {
 
 function text(value: unknown, fallback: string): string {
   return value === undefined || value === null ? fallback : String(value).trim();
+}
+
+// Same scheme BambuStudio uses for user filaments ("P" + 7 hex of md5 of the name, CreatePresetsDialog.cpp),
+// so IDs are stable across runs and source reordering. BambuStudio also mixes in the cloud user id when
+// logged in; we can't know it, and don't need to, because our presets carry filament_id explicitly.
+function derivedFilamentId(name: string): string {
+  return `P${createHash("md5").update(name, "utf-8").digest("hex").slice(0, 7)}`;
 }
 
 function integer(value: unknown, fallback: number, field: string, idx: number): number {
@@ -67,6 +75,7 @@ export async function loadProfiles(source: string): Promise<FilamentProfile[]> {
 
     const colorName = text(entry.color_name, "Unknown") || "Unknown";
     const colorValue = entry.color_rgba || entry.color_hex;
+    const slicerFilamentCode = text(entry.slicer_filament_code, "");
 
     return {
       name,
@@ -78,7 +87,8 @@ export async function loadProfiles(source: string): Promise<FilamentProfile[]> {
       nozzleTempMax: integer(entry.nozzle_temp_max, 240, "nozzle_temp_max", idx),
       density: decimal(entry.density, 1.24, "density", idx),
       diameter: decimal(entry.diameter, 1.75, "diameter", idx),
-      slicerFilamentCode: text(entry.slicer_filament_code, ""),
+      slicerFilamentCode,
+      filamentId: slicerFilamentCode || derivedFilamentId(name),
     };
   });
 }

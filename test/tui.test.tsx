@@ -82,7 +82,7 @@ describe("TUI", () => {
     expect(frame).toContain("PETG Red");
     expect(frame).toContain("FF2200FF");
     expect(frame).toContain("PABC1234");
-    expect(frame).toContain("P000002");
+    expect(frame).toContain("Pb1a2a16");
     expect(frame).toContain("230-255");
     expect(frame).toContain(join(home, ".config", "BambuStudio", "user", "default", "filament"));
     expect(frame).toContain(`127.0.0.1:${server.port}`);

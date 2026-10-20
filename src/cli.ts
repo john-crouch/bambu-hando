@@ -121,6 +121,7 @@ export function buildReport(source: string, dryRun: boolean, presets: PresetOutc
     bambu_preset_paths: presets.map((p) => p.path),
     results: results.map((r) => ({
       profile_name: r.profileName,
+      filament_id: r.filamentId,
       bambu_status: r.bambuStatus,
       spoolease_status: r.spooleaseStatus,
       detail: r.detail,

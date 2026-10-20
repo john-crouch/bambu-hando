@@ -32,6 +32,9 @@ function buildPreset(profile: FilamentProfile, printerPreset: string): Record<st
     name: `${profile.name} @ ${printerPreset}`,
     from: "User",
     inherits: "",
+    // BambuStudio reads this top-level key for non-inheriting user presets (Preset.cpp); it is what
+    // the slicer matches against SpoolEase spools and AMS trays.
+    filament_id: profile.filamentId,
     filament_type: [profile.material],
     filament_vendor: [profile.brand],
     default_filament_colour: rgbaToHashRgb(profile.colorRgba),
