@@ -42,16 +42,18 @@ def _build_preset(profile: FilamentProfile, printer_preset: str) -> dict:
     }
 
 
+def _preset_path(profile: FilamentProfile, preset_folder: str, printer_preset: str) -> Path:
+    return bambu_filament_dir(preset_folder=preset_folder) / f"{_safe_name(profile.name)} @ {printer_preset}.json"
+
+
 def write_filament_preset(
     profile: FilamentProfile,
     preset_folder: str = "default",
     printer_preset: str = "Bambu Lab X1C 0.4 nozzle",
     dry_run: bool = False,
 ) -> Path:
-    target_dir = bambu_filament_dir(preset_folder=preset_folder)
-
-    filename = f"{_safe_name(profile.name)} @ {printer_preset}.json"
-    target = target_dir / filename
+    target = _preset_path(profile, preset_folder=preset_folder, printer_preset=printer_preset)
+    target_dir = target.parent
 
     payload = _build_preset(profile, printer_preset=printer_preset)
 
@@ -70,13 +72,21 @@ def write_many(
     preset_folder: str,
     printer_preset: str,
     dry_run: bool = False,
-) -> list[Path]:
-    return [
-        write_filament_preset(
-            profile=p,
-            preset_folder=preset_folder,
-            printer_preset=printer_preset,
-            dry_run=dry_run,
-        )
-        for p in profiles
-    ]
+) -> list[tuple[Path, str]]:
+    """Write each preset, returning (target path, error message or "") per profile."""
+
+    outcomes: list[tuple[Path, str]] = []
+    for p in profiles:
+        target = _preset_path(p, preset_folder=preset_folder, printer_preset=printer_preset)
+        try:
+            write_filament_preset(
+                profile=p,
+                preset_folder=preset_folder,
+                printer_preset=printer_preset,
+                dry_run=dry_run,
+            )
+        except OSError as exc:
+            outcomes.append((target, str(exc)))
+            continue
+        outcomes.append((target, ""))
+    return outcomes

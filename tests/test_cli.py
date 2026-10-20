@@ -89,6 +89,20 @@ def test_skip_spoolease_succeeds(source: str, filament_dir: Path, capsys: pytest
     assert report["results"][0]["spoolease_status"] == "skipped"
 
 
+def test_bambu_write_failure_reports_and_exits_nonzero(
+    source: str, filament_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    filament_dir.parent.mkdir(parents=True)
+    filament_dir.write_text("not a directory", encoding="utf-8")
+
+    code, report = _run(["--source", source, "--skip-spoolease"], capsys)
+
+    assert code == 1
+    assert report["results"][0]["bambu_status"] == "failed"
+    assert report["results"][0]["spoolease_status"] == "skipped"
+    assert "BambuStudio preset:" in report["results"][0]["detail"]
+
+
 def test_dry_run_reports_planned_without_network(
     source: str, filament_dir: Path, spoolease: _SpoolEaseServer, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -4,6 +4,7 @@ ABOUTME: Implements dry-run, idempotent writes, and source-driven batch sync."""
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -40,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
 
     profiles = load_profiles(args.source)
 
-    preset_paths = write_many(
+    preset_outcomes = write_many(
         profiles=profiles,
         preset_folder=args.preset_folder,
         printer_preset=args.printer_preset,
@@ -90,11 +91,17 @@ def main(argv: list[str] | None = None) -> int:
             spoolease_status = "written" if status < 400 else "failed"
             results.append(SyncResult(profile_name=p.name, bambu_status=bambu_status, spoolease_status=spoolease_status, detail=f"HTTP {status}: {msg[:120]}"))
 
+    # Results hold one entry per profile in order, so preset write errors line up by index.
+    for i, (_, bambu_error) in enumerate(preset_outcomes):
+        if bambu_error:
+            r = results[i]
+            results[i] = replace(r, bambu_status="failed", detail=f"BambuStudio preset: {bambu_error}; {r.detail}")
+
     report = {
         "source": args.source,
         "dry_run": args.dry_run,
         "profiles_count": len(profiles),
-        "bambu_preset_paths": [str(p) for p in preset_paths],
+        "bambu_preset_paths": [str(path) for path, _ in preset_outcomes],
         "results": [r.__dict__ for r in results],
     }
 
