@@ -101,7 +101,7 @@ describe("cli", () => {
   });
 
   it("warns on stderr when the custom filaments CSV fails", async () => {
-    server.replies["/api/filaments-config"] = { status: 500, body: "boom" };
+    server.replies["POST /api/filaments-config"] = { status: 500, body: "boom" };
 
     const { code, stderr } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
 

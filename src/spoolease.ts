@@ -30,13 +30,16 @@ export class SpoolEaseClient {
     this.key = deriveKey(conn.securityKey, conn.salt ?? DEFAULT_SALT, conn.iterations ?? DEFAULT_ITERATIONS);
   }
 
-  private async postEncrypted(path: string, payload: unknown): Promise<SpoolEaseResponse> {
-    const resp = await fetch(`${this.baseUrl}${path}`, {
+  private postEncrypted(path: string, payload: unknown): Promise<SpoolEaseResponse> {
+    return this.request(path, {
       method: "POST",
       headers: { "Content-Type": "application/text" },
       body: encryptText(this.key, JSON.stringify(payload)),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+  }
+
+  private async request(path: string, init: RequestInit = {}): Promise<SpoolEaseResponse> {
+    const resp = await fetch(`${this.baseUrl}${path}`, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     const body = await resp.text();
     if (resp.status >= 400) return { status: resp.status, body };
     try {
@@ -58,6 +61,19 @@ export class SpoolEaseClient {
 
   setCustomFilamentsCsv(csvText: string): Promise<SpoolEaseResponse> {
     return this.postEncrypted("/api/filaments-config", { custom_filaments: csvText });
+  }
+
+  /** The stored custom-filaments CSV ("" when unset); throws when it can't be read. */
+  async getCustomFilamentsCsv(): Promise<string> {
+    const { status, body } = await this.request("/api/filaments-config");
+    if (status >= 400) throw new Error(`HTTP ${status}: ${body}`);
+    let parsed: { custom_filaments?: unknown };
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      throw new Error("response could not be decrypted");
+    }
+    return typeof parsed.custom_filaments === "string" ? parsed.custom_filaments : "";
   }
 }
 
@@ -90,4 +106,28 @@ export function buildCustomFilamentsCsv(profiles: FilamentProfile[]): string {
   return profiles
     .map((p) => `${p.filamentId},${csvSafe(`${p.brand} ${p.name}`)},${p.nozzleTempMin},${p.nozzleTempMax},${csvSafe(p.material)}`)
     .join("\r\n");
+}
+
+function csvCode(line: string): string {
+  return line.split(",", 1)[0] ?? "";
+}
+
+/**
+ * SpoolEase stores one CSV and replaces it wholesale on every write, so merge ours into what's there:
+ * rows with a matching code are replaced in place, other rows are kept, new rows are appended.
+ */
+export function mergeCustomFilamentsCsv(existing: string, ours: string): string {
+  const ourLines = ours.split(/\r?\n/).filter((line) => line.trim());
+  const byCode = new Map(ourLines.map((line) => [csvCode(line), line]));
+
+  const merged = existing
+    .split(/\r?\n/)
+    .filter((line) => line.trim())
+    .map((line) => {
+      const replacement = byCode.get(csvCode(line));
+      if (replacement === undefined) return line;
+      byCode.delete(csvCode(line));
+      return replacement;
+    });
+  return [...merged, ...byCode.values()].join("\r\n");
 }

@@ -62,11 +62,12 @@ describe("runSync", () => {
       "spool:0",
       "spool:1",
     ]);
-    expect(server.requests.map((r) => r.path)).toEqual([
-      "/api/test-key",
-      "/api/filaments-config",
-      "/api/spools/add-edit",
-      "/api/spools/add-edit",
+    expect(server.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      "POST /api/test-key",
+      "GET /api/filaments-config",
+      "POST /api/filaments-config",
+      "POST /api/spools/add-edit",
+      "POST /api/spools/add-edit",
     ]);
   });
 
@@ -102,13 +103,41 @@ describe("runSync", () => {
   });
 
   it("fails every profile and skips spools when the CSV upload fails", async () => {
-    server.replies["/api/filaments-config"] = { status: 500, body: "boom" };
+    server.replies["POST /api/filaments-config"] = { status: 500, body: "boom" };
 
     const { results } = await runSync(options(), record);
 
     expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: HTTP 500: boom")).toBe(true);
-    expect(server.requests.map((r) => r.path)).toEqual(["/api/test-key", "/api/filaments-config"]);
+    expect(server.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      "POST /api/test-key",
+      "GET /api/filaments-config",
+      "POST /api/filaments-config",
+    ]);
     expect(events).toContainEqual({ type: "warning", message: "Failed to set custom filaments CSV: 500 boom" });
+  });
+
+  it("merges into custom filaments from earlier runs instead of replacing them", async () => {
+    server.customFilaments = "GFX01,Hand Made,190,230,PLA\r\nPABC1234,Stale Name,1,2,PETG";
+
+    await runSync(options({ profiles: [profileAt(0)] }), record);
+    await runSync(options({ profiles: [profileAt(2)] }), record);
+
+    expect(server.customFilaments?.split("\r\n")).toEqual([
+      "GFX01,Hand Made,190,230,PLA",
+      "PABC1234,Polymaker PETG Red,230,255,PETG",
+      "Pd73077d,Generic Mystery Spool,200,220,PLA",
+    ]);
+  });
+
+  it("leaves the custom filaments untouched when the current list can't be read", async () => {
+    server.customFilaments = "GFX01,Hand Made,190,230,PLA";
+    server.replies["GET /api/filaments-config"] = { status: 500, body: "flash busy" };
+
+    const { results } = await runSync(options(), record);
+
+    expect(server.customFilaments).toBe("GFX01,Hand Made,190,230,PLA");
+    expect(server.requests.some((r) => r.method === "POST" && r.path === "/api/filaments-config")).toBe(false);
+    expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: reading current list failed: HTTP 500: flash busy")).toBe(true);
   });
 
   it("fails only the profile whose spool request is rejected", async () => {

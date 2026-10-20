@@ -3,7 +3,7 @@
 
 import { type PresetOutcome, writeMany } from "./bambuStudio.js";
 import type { FilamentProfile, Status, SyncResult } from "./models.js";
-import { buildCustomFilamentsCsv, SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
+import { buildCustomFilamentsCsv, mergeCustomFilamentsCsv, SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 
 const DETAIL_LIMIT = 120;
 
@@ -93,15 +93,27 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
     if (!keyOk) throw new KeyCheckError("SpoolEase key validation failed");
 
     onEvent({ type: "stage", stage: "custom-filaments" });
+    let existing: string | null = null;
     try {
-      const { status, body } = await client.setCustomFilamentsCsv(buildCustomFilamentsCsv(profiles));
-      if (status >= 400) {
-        onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${status} ${body}` });
-        csvError = `custom filaments CSV: HTTP ${status}: ${body.slice(0, DETAIL_LIMIT)}`;
-      }
+      existing = await client.getCustomFilamentsCsv();
     } catch (err) {
-      onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${message(err)}` });
-      csvError = `custom filaments CSV: ${message(err)}`;
+      // Writing without the current list would replace it with only ours, so don't write at all.
+      onEvent({ type: "warning", message: `Failed to read current custom filaments CSV: ${message(err)}` });
+      csvError = `custom filaments CSV: reading current list failed: ${message(err)}`;
+    }
+
+    if (existing !== null) {
+      try {
+        const merged = mergeCustomFilamentsCsv(existing, buildCustomFilamentsCsv(profiles));
+        const { status, body } = await client.setCustomFilamentsCsv(merged);
+        if (status >= 400) {
+          onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${status} ${body}` });
+          csvError = `custom filaments CSV: HTTP ${status}: ${body.slice(0, DETAIL_LIMIT)}`;
+        }
+      } catch (err) {
+        onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${message(err)}` });
+        csvError = `custom filaments CSV: ${message(err)}`;
+      }
     }
   }
 
