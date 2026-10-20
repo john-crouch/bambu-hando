@@ -9,13 +9,17 @@ import type { PresetOutcome } from "./bambuStudio.js";
 import { loadProfiles } from "./sources.js";
 import type { SpoolEaseConnection } from "./spoolease.js";
 import { KeyCheckError, runSync } from "./sync.js";
+import type { FormValues } from "./tui/App.js";
 
 export const DEFAULT_PRINTER_PRESET = "Bambu Lab X1C 0.4 nozzle";
 
 const USAGE = `Usage:
   bambu-hando --source <file|url> [options]
+  bambu-hando tui [options]
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
+The tui command opens an interactive terminal UI; its options prefill the
+setup form (--dry-run and --report are headless only).
 
 Options:
   --source <file|url>             JSON file or URL with filament profiles (required)
@@ -46,6 +50,8 @@ const OPTIONS = {
   report: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } as const;
+
+const { "dry-run": _dryRun, report: _report, ...TUI_OPTIONS } = OPTIONS;
 
 export interface Io {
   stdout: (text: string) => void;
@@ -123,7 +129,52 @@ export function buildReport(source: string, dryRun: boolean, presets: PresetOutc
   return `${JSON.stringify(report, null, 2)}\n`;
 }
 
+function parseTuiValues(argv: string[]): { values: FormValues | null; help: boolean } {
+  let parsed;
+  try {
+    parsed = parseArgs({ args: argv, options: TUI_OPTIONS, strict: true });
+  } catch (err) {
+    throw new UsageError(err instanceof Error ? err.message : String(err));
+  }
+  const { values } = parsed;
+  if (values.help) return { values: null, help: true };
+  if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
+
+  return {
+    help: false,
+    values: {
+      source: values.source ?? "",
+      presetFolder: values["preset-folder"],
+      printerPreset: values["printer-preset"],
+      host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || "",
+      port: values["spoolease-port"],
+      securityKey: values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || "",
+      https: values["spoolease-https"],
+      skipSpoolease: values["skip-spoolease"],
+    },
+  };
+}
+
+async function tuiCommand(argv: string[], io: Io): Promise<number> {
+  let parsed;
+  try {
+    parsed = parseTuiValues(argv);
+  } catch (err) {
+    if (!(err instanceof UsageError)) throw err;
+    io.stderr(`bambu-hando: error: ${err.message}\n\n${USAGE}`);
+    return 2;
+  }
+  if (parsed.help || !parsed.values) {
+    io.stdout(USAGE);
+    return 0;
+  }
+  const { runTui } = await import("./tui/run.js");
+  return runTui(parsed.values);
+}
+
 export async function main(argv: string[], io: Io = processIo): Promise<number> {
+  if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
+
   let parsed;
   try {
     parsed = parseSettings(argv);

@@ -160,5 +160,13 @@ describe("cli", () => {
 
     expect(code).toBe(0);
     expect(stdout).toContain("Usage:");
+    expect(stdout).toContain("bambu-hando tui");
+  });
+
+  it("refuses to start the TUI without an interactive terminal", async () => {
+    const { code, stderr } = await run(["tui"]);
+
+    expect(code).toBe(2);
+    expect(stderr).toContain("bambu-hando tui needs an interactive terminal");
   });
 });
