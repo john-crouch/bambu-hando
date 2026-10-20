@@ -83,16 +83,20 @@ export async function writeMany(
   presetFolder: string,
   printerPreset: string,
   dryRun = false,
+  onOutcome: (index: number, outcome: PresetOutcome) => void = () => {},
 ): Promise<PresetOutcome[]> {
   const outcomes: PresetOutcome[] = [];
-  for (const profile of profiles) {
+  for (const [index, profile] of profiles.entries()) {
     const path = presetPath(profile, presetFolder, printerPreset);
+    let outcome: PresetOutcome;
     try {
       await writeFilamentPreset(profile, presetFolder, printerPreset, dryRun);
-      outcomes.push({ path, error: "" });
+      outcome = { path, error: "" };
     } catch (err) {
-      outcomes.push({ path, error: err instanceof Error ? err.message : String(err) });
+      outcome = { path, error: err instanceof Error ? err.message : String(err) };
     }
+    outcomes.push(outcome);
+    onOutcome(index, outcome);
   }
   return outcomes;
 }

@@ -6,7 +6,7 @@
   "license": "UNLICENSED",
   "private": true,
   "bin": {
-    "bambu-hando": "dist/cli.js"
+    "bambu-hando": "dist/bin.js"
   },
   "files": [
     "dist"
@@ -18,7 +18,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "npm run build && vitest run",
-    "start": "node dist/cli.js"
+    "start": "node dist/bin.js"
   },
   "dependencies": {
     "ink": "7.1.1",
