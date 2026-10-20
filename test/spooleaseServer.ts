@@ -21,7 +21,42 @@ export interface SpoolEaseServer {
   replies: Record<string, { status: number; body: string }>;
   /** Stored custom-filaments CSV, as SpoolEase keeps it (CRLF lines, null when unset). */
   customFilaments: string | null;
+  /** Stored spools, keyed by SpoolRecord field name; seed directly or via POST /api/spools/add-edit. */
+  spools: Record<string, string>[];
   close: () => Promise<void>;
+}
+
+// SpoolRecord field order (spool_record.rs); GET /api/spools serializes records headerless in this order.
+const SPOOL_COLUMNS = [
+  "id",
+  "tag_id",
+  "material_type",
+  "material_subtype",
+  "color_name",
+  "color_code",
+  "note",
+  "brand",
+  "weight_advertised",
+  "weight_core",
+  "weight_new",
+  "weight_current",
+  "slicer_filament",
+  "added_time",
+  "encode_time",
+  "added_full",
+  "consumed_since_add",
+  "consumed_since_weight",
+  "ext_has_k",
+  "data_origin",
+  "tag_type",
+];
+
+function csvField(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function spoolsCsv(spools: Record<string, string>[]): string {
+  return spools.map((spool) => `${SPOOL_COLUMNS.map((col) => csvField(spool[col] ?? "")).join(",")}\n`).join("");
 }
 
 export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
@@ -32,6 +67,7 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
     requests: [],
     replies: {},
     customFilaments: null,
+    spools: [],
     close: async () => {},
   };
 
@@ -47,6 +83,25 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
     }
     if (method === "POST" && path === "/api/filaments-config") {
       storeCustomFilaments((body as { custom_filaments?: unknown }).custom_filaments);
+    }
+    if (method === "GET" && path === "/api/spools") {
+      return spoolsCsv(state.spools);
+    }
+    if (method === "POST" && path === "/api/spools/add-edit") {
+      const add = body as Record<string, unknown>;
+      // An empty id always creates a new record (web_app.rs), which is why duplicates are possible.
+      const id = String(state.spools.length + 1);
+      state.spools.push({
+        id,
+        tag_id: String(add.tag_id ?? ""),
+        material_type: String(add.material ?? ""),
+        color_name: String(add.color_name ?? ""),
+        color_code: String(add.rgba ?? ""),
+        note: String(add.note ?? ""),
+        brand: String(add.brand ?? ""),
+        slicer_filament: String(add.slicer_filament ?? ""),
+      });
+      return JSON.stringify({ id });
     }
     return "{}";
   }

@@ -14,6 +14,11 @@ export interface SyncOptions {
   dryRun: boolean;
   /** null skips SpoolEase entirely. */
   spoolease: SpoolEaseConnection | null;
+  /**
+   * Also create one SpoolEase spool per filament that doesn't have one yet. Off by default:
+   * a spool stands for a physical (usually tagged) spool, not a catalog entry.
+   */
+  createSpools: boolean;
 }
 
 export type SyncStage = "presets" | "key-check" | "custom-filaments" | "spools";
@@ -117,21 +122,46 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
     }
   }
 
-  onEvent({ type: "stage", stage: "spools" });
+  // SpoolEase creates a new record for every add with an empty id, so look up which filaments
+  // already have a spool once, and keep the set current as we add.
+  let spooledIds = new Set<string>();
+  let listError = "";
+  if (!dryRun && !csvError && options.createSpools) {
+    onEvent({ type: "stage", stage: "spools" });
+    try {
+      spooledIds = await client.listSpoolFilamentIds();
+    } catch (err) {
+      listError = `listing spools failed: ${message(err)}`;
+    }
+  }
+
   const outcomes: { status: Status; detail: string }[] = [];
   for (const [index, profile] of profiles.entries()) {
+    const registered = `registered ${profile.filamentId}`;
     let outcome: { status: Status; detail: string };
     if (dryRun) {
       outcome = { status: "planned", detail: "dry-run" };
     } else if (csvError) {
       // Spools reference filament codes from the CSV, so creating them after a CSV failure would leave SpoolEase half-configured.
       outcome = { status: "failed", detail: csvError };
+    } else if (!options.createSpools) {
+      outcome = { status: "written", detail: registered };
+    } else if (listError) {
+      outcome = { status: "failed", detail: `${registered}; ${listError}` };
+    } else if (spooledIds.has(profile.filamentId)) {
+      outcome = { status: "written", detail: `${registered}; spool already exists` };
     } else {
       try {
         const { status, body } = await client.addOrEditSpool(profile);
-        outcome = { status: status < 400 ? "written" : "failed", detail: `HTTP ${status}: ${body.slice(0, DETAIL_LIMIT)}` };
+        const reply = `HTTP ${status}: ${body.slice(0, DETAIL_LIMIT)}`;
+        if (status < 400) {
+          spooledIds.add(profile.filamentId);
+          outcome = { status: "written", detail: `${registered}; spool created: ${reply}` };
+        } else {
+          outcome = { status: "failed", detail: `${registered}; spool rejected: ${reply}` };
+        }
       } catch (err) {
-        outcome = { status: "failed", detail: `request error: ${message(err)}` };
+        outcome = { status: "failed", detail: `${registered}; spool request error: ${message(err)}` };
       }
     }
     outcomes.push(outcome);

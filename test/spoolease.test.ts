@@ -91,6 +91,22 @@ describe("SpoolEaseClient", () => {
     await expect(client.getCustomFilamentsCsv()).rejects.toThrow("HTTP 503: busy");
   });
 
+  it("lists the filament IDs that already have spools, parsing quoted CSV fields", async () => {
+    server.spools.push(
+      { id: "1", note: 'Bought "cheap", twice', brand: "Polymaker", slicer_filament: "PABC1234" },
+      { id: "2", note: "multi\nline", slicer_filament: "GFL99" },
+      { id: "3", slicer_filament: "" },
+    );
+
+    expect(await client.listSpoolFilamentIds()).toEqual(new Set(["PABC1234", "GFL99"]));
+  });
+
+  it("throws when spools can't be listed", async () => {
+    server.replies["GET /api/spools"] = { status: 500, body: "db locked" };
+
+    await expect(client.listSpoolFilamentIds()).rejects.toThrow("HTTP 500: db locked");
+  });
+
   it("returns raw text for error responses", async () => {
     server.replies["POST /api/filaments-config"] = { status: 500, body: "boom" };
 

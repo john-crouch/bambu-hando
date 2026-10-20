@@ -61,8 +61,16 @@ describe("cli", () => {
       filament_id: "PABC1234",
       bambu_status: "written",
       spoolease_status: "written",
-      detail: "HTTP 200: {}",
+      detail: "registered PABC1234",
     });
+    expect(server.spools).toEqual([]);
+  });
+
+  it("creates spools with --create-spools", async () => {
+    const { code } = await run(["--source", SOURCE_FIXTURE, "--create-spools", ...spooleaseArgs()]);
+
+    expect(code).toBe(0);
+    expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
   });
 
   it("exits 0 with --skip-spoolease", async () => {
@@ -94,10 +102,10 @@ describe("cli", () => {
   it("exits 1 when a spool write fails", async () => {
     server.replies["/api/spools/add-edit"] = { status: 500, body: "boom" };
 
-    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
+    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, "--create-spools", ...spooleaseArgs()]);
 
     expect(code).toBe(1);
-    expect(JSON.parse(stdout).results[0]).toMatchObject({ spoolease_status: "failed", detail: "HTTP 500: boom" });
+    expect(JSON.parse(stdout).results[0]).toMatchObject({ spoolease_status: "failed", detail: "registered PABC1234; spool rejected: HTTP 500: boom" });
   });
 
   it("warns on stderr when the custom filaments CSV fails", async () => {

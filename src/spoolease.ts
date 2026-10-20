@@ -6,6 +6,48 @@ import type { FilamentProfile } from "./models.js";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
+// GET /api/spools returns headerless CSV in SpoolRecord field order (spool_record.rs); slicer_filament is 13th.
+const SPOOL_SLICER_FILAMENT_COLUMN = 12;
+
+/** Minimal RFC 4180 parser: quoted fields may contain commas, doubled quotes, and newlines. */
+function parseCsvRecords(text: string): string[][] {
+  const records: string[][] = [];
+  let record: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') {
+        quoted = false;
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      quoted = true;
+    } else if (c === ",") {
+      record.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      record.push(field);
+      records.push(record);
+      record = [];
+      field = "";
+    } else {
+      field += c;
+    }
+  }
+  if (field || record.length) {
+    record.push(field);
+    records.push(record);
+  }
+  return records;
+}
+
 export interface SpoolEaseConnection {
   host: string;
   securityKey: string;
@@ -30,23 +72,32 @@ export class SpoolEaseClient {
     this.key = deriveKey(conn.securityKey, conn.salt ?? DEFAULT_SALT, conn.iterations ?? DEFAULT_ITERATIONS);
   }
 
-  private postEncrypted(path: string, payload: unknown): Promise<SpoolEaseResponse> {
-    return this.request(path, {
+  private async postEncrypted(path: string, payload: unknown): Promise<SpoolEaseResponse> {
+    const { status, body } = await this.request(path, {
       method: "POST",
       headers: { "Content-Type": "application/text" },
       body: encryptText(this.key, JSON.stringify(payload)),
     });
+    return { status, body };
   }
 
-  private async request(path: string, init: RequestInit = {}): Promise<SpoolEaseResponse> {
+  private async request(path: string, init: RequestInit = {}): Promise<SpoolEaseResponse & { decrypted: boolean }> {
     const resp = await fetch(`${this.baseUrl}${path}`, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     const body = await resp.text();
-    if (resp.status >= 400) return { status: resp.status, body };
+    if (resp.status >= 400) return { status: resp.status, body, decrypted: false };
     try {
-      return { status: resp.status, body: decryptText(this.key, body) };
+      return { status: resp.status, body: decryptText(this.key, body), decrypted: true };
     } catch {
-      return { status: resp.status, body };
+      return { status: resp.status, body, decrypted: false };
     }
+  }
+
+  /** Decrypted body of a GET; throws on HTTP errors and on replies that can't be decrypted. */
+  private async getDecrypted(path: string): Promise<string> {
+    const { status, body, decrypted } = await this.request(path);
+    if (status >= 400) throw new Error(`HTTP ${status}: ${body}`);
+    if (!decrypted) throw new Error("response could not be decrypted");
+    return body;
   }
 
   async testKey(): Promise<boolean> {
@@ -65,15 +116,14 @@ export class SpoolEaseClient {
 
   /** The stored custom-filaments CSV ("" when unset); throws when it can't be read. */
   async getCustomFilamentsCsv(): Promise<string> {
-    const { status, body } = await this.request("/api/filaments-config");
-    if (status >= 400) throw new Error(`HTTP ${status}: ${body}`);
-    let parsed: { custom_filaments?: unknown };
-    try {
-      parsed = JSON.parse(body);
-    } catch {
-      throw new Error("response could not be decrypted");
-    }
+    const parsed: { custom_filaments?: unknown } = JSON.parse(await this.getDecrypted("/api/filaments-config"));
     return typeof parsed.custom_filaments === "string" ? parsed.custom_filaments : "";
+  }
+
+  /** slicer_filament values of every stored spool; throws when spools can't be listed. */
+  async listSpoolFilamentIds(): Promise<Set<string>> {
+    const records = parseCsvRecords(await this.getDecrypted("/api/spools"));
+    return new Set(records.map((fields) => fields[SPOOL_SLICER_FILAMENT_COLUMN] ?? "").filter(Boolean));
   }
 }
 

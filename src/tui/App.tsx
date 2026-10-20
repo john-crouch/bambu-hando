@@ -21,6 +21,7 @@ export interface FormValues {
   securityKey: string;
   https: boolean;
   skipSpoolease: boolean;
+  createSpools: boolean;
 }
 
 type Screen =
@@ -101,6 +102,7 @@ export function App({ initial, onExit }: Props) {
           printerPreset: values.printerPreset,
           dryRun: false,
           spoolease: connection(values),
+          createSpools: values.createSpools,
         },
         (event) => {
           if (event.type === "stage") setStage(event.stage);
@@ -159,7 +161,12 @@ export function App({ initial, onExit }: Props) {
         {screen.profiles.length} profiles from {values.source}
       </Text>
       <Text>Presets → {bambuFilamentDir(values.presetFolder)}</Text>
-      <Text>SpoolEase: {target ? `${target.https ? "https" : "http"}://${target.host}:${target.port}` : "skipped"}</Text>
+      <Text>
+        SpoolEase:{" "}
+        {target
+          ? `${target.https ? "https" : "http"}://${target.host}:${target.port} (${values.createSpools ? "register filaments + create spools" : "register filaments only"})`
+          : "skipped"}
+      </Text>
       <Box marginY={1}>
         <PlanTable
           profiles={screen.profiles}

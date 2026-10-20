@@ -40,6 +40,7 @@ describe("bambu-hando binary", () => {
       [
         "--source",
         SOURCE_FIXTURE,
+        "--create-spools",
         "--printer-preset",
         parity.printer_preset,
         "--spoolease-host",

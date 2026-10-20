@@ -43,6 +43,7 @@ describe("TUI", () => {
       securityKey: TEST_SECURITY_KEY,
       https: false,
       skipSpoolease: false,
+      createSpools: false,
       ...overrides,
     };
   }
@@ -112,25 +113,40 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("SpoolEase: skipped"));
   });
 
-  it("applies with live statuses and exits 0 on success", async () => {
+  it("applies with live statuses, registers filaments without spools, and exits 0", async () => {
     const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
     await settle();
 
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    expect(lastFrame()).toContain("register filaments only");
     await press(stdin, "a");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
     expect(await readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).toHaveLength(3);
-    expect(server.requests.filter((r) => r.path === "/api/spools/add-edit")).toHaveLength(3);
+    expect(server.customFilaments?.split("\r\n")).toHaveLength(3);
+    expect(server.spools).toEqual([]);
 
     await press(stdin, "q");
     expect(onExit).toHaveBeenCalledWith(0);
   });
 
+  it("creates spools when the Create spools toggle is on", async () => {
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+
+    // source, preset folder, printer preset, host, port, key, https, skip, create spools
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
+    await press(stdin, "a");
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
+    expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
+  });
+
   it("lists failure details and exits 1 when a profile fails", async () => {
     server.replies["/api/spools/add-edit"] = { status: 500, body: "spool store full" };
-    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    const { lastFrame, stdin } = render(<App initial={values({ createSpools: true })} onExit={onExit} />);
     await settle();
 
     await press(stdin, ENTER);

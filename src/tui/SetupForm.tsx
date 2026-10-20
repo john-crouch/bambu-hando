@@ -8,7 +8,7 @@ import { useState } from "react";
 import type { FormValues } from "./App.js";
 
 type TextKey = "source" | "presetFolder" | "printerPreset" | "host" | "port" | "securityKey";
-type ToggleKey = "https" | "skipSpoolease";
+type ToggleKey = "https" | "skipSpoolease" | "createSpools";
 
 type Field =
   | { key: TextKey; label: string; kind: "text" | "secret"; spoolease: boolean }
@@ -23,6 +23,7 @@ const FIELDS: Field[] = [
   { key: "securityKey", label: "Security key", kind: "secret", spoolease: true },
   { key: "https", label: "Use HTTPS", kind: "toggle", spoolease: true },
   { key: "skipSpoolease", label: "Skip SpoolEase", kind: "toggle", spoolease: false },
+  { key: "createSpools", label: "Create spools", kind: "toggle", spoolease: true },
 ];
 
 const LABEL_WIDTH = 22;

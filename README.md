@@ -5,7 +5,19 @@ Cross-platform filament profile handoff tool for BambuStudio and SpoolEase.
 It automates three things:
 - Load/download filament profile data from JSON source
 - Create custom filament preset files for BambuStudio (Linux + macOS)
-- Create matching custom filament records in SpoolEase, including RGBA color
+- Register matching custom filaments in SpoolEase, and optionally (`--create-spools`) one spool per filament carrying its RGBA color
+
+## How the three systems are linked
+
+Each filament gets one ID: `slicer_filament_code` from the source if present, otherwise `"P"` + the first 7 hex characters of the MD5 of its name (BambuStudio's own scheme for user filaments). The same ID is written to:
+
+- the BambuStudio preset's `filament_id`
+- the SpoolEase custom-filaments CSV code
+- the SpoolEase spool's `slicer_filament` (with `--create-spools`)
+
+The ID only depends on the name, so re-runs and reordered sources keep the same links. The JSON report lists each profile's `filament_id`.
+
+SpoolEase keeps a single custom-filaments list. Runs merge into it (rows with the same ID are updated, everything else is kept), and if the current list can't be read, nothing is written. With `--create-spools`, filaments that already have a spool with that ID are skipped, so re-runs don't duplicate inventory. Spool creation is off by default because a SpoolEase spool stands for a physical spool.
 
 ## Why this exists
 
