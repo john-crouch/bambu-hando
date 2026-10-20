@@ -19,3 +19,7 @@ htmlcov/
 *.egg-info/
 build/
 dist/
+
+# Node
+node_modules/
+dist/

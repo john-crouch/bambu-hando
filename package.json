@@ -1,0 +1,36 @@
+{
+  "name": "bambu-hando",
+  "version": "0.2.0",
+  "description": "Cross-platform filament profile handoff between BambuStudio and SpoolEase",
+  "type": "module",
+  "license": "UNLICENSED",
+  "private": true,
+  "bin": {
+    "bambu-hando": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "npm run build && vitest run",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "ink": "7.1.1",
+    "ink-spinner": "5.0.0",
+    "ink-text-input": "6.0.0",
+    "react": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "@types/react": "19.3.0",
+    "ink-testing-library": "4.0.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}

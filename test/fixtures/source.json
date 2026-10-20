@@ -1,0 +1,29 @@
+{
+  "profiles": [
+    {
+      "name": "PETG Red",
+      "brand": "Polymaker",
+      "material": "petg",
+      "color_name": "Red",
+      "color_hex": "#FF2200",
+      "nozzle_temp_min": 230,
+      "nozzle_temp_max": 255,
+      "density": 1.27,
+      "diameter": 1.75,
+      "slicer_filament_code": "PABC1234"
+    },
+    {
+      "name": "Café Crème PLA",
+      "color_name": "Brown",
+      "color_rgba": "8B451380",
+      "density": 1
+    },
+    {
+      "name": "Mystery Spool",
+      "brand": "",
+      "color_name": "teal",
+      "nozzle_temp_min": "200",
+      "nozzle_temp_max": 220.0
+    }
+  ]
+}
