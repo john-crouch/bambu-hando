@@ -99,6 +99,9 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
         color_code: String(add.rgba ?? ""),
         note: String(add.note ?? ""),
         brand: String(add.brand ?? ""),
+        // 0 means unknown and is stored as no value.
+        weight_advertised: add.label_weight ? String(add.label_weight) : "",
+        weight_core: add.core_weight ? String(add.core_weight) : "",
         slicer_filament: String(add.slicer_filament ?? ""),
       });
       return JSON.stringify({ id });

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { bambuFilamentDir, bambuUserRoot } from "../src/paths.js";
+import { bambuFilamentDir, bambuUserRoot, cacheDir } from "../src/paths.js";
 
 describe("bambuUserRoot", () => {
   it("uses ~/.config on Linux", () => {
@@ -22,5 +22,19 @@ describe("bambuUserRoot", () => {
 describe("bambuFilamentDir", () => {
   it("appends the preset folder and filament directory", () => {
     expect(bambuFilamentDir("default", "linux", "/home/max")).toBe("/home/max/.config/BambuStudio/user/default/filament");
+  });
+});
+
+describe("cacheDir", () => {
+  it("uses ~/.cache on Linux", () => {
+    expect(cacheDir("linux", "/home/max", {})).toBe("/home/max/.cache/bambu-hando");
+  });
+
+  it("honors XDG_CACHE_HOME on Linux", () => {
+    expect(cacheDir("linux", "/home/max", { XDG_CACHE_HOME: "/var/cache/max" })).toBe("/var/cache/max/bambu-hando");
+  });
+
+  it("uses Library/Caches on macOS", () => {
+    expect(cacheDir("darwin", "/Users/max", { XDG_CACHE_HOME: "/ignored" })).toBe("/Users/max/Library/Caches/bambu-hando");
   });
 });

@@ -151,10 +151,15 @@ function csvSafe(value: string): string {
   return value.replace(/\s*[,\r\n]+\s*/g, " ").trim();
 }
 
+// SpoolEase shows only this name, so it carries the brand; names from SpoolmanDB already start with it.
+function displayName(profile: FilamentProfile): string {
+  return profile.name.toLowerCase().startsWith(profile.brand.toLowerCase()) ? profile.name : `${profile.brand} ${profile.name}`;
+}
+
 /** Generate SpoolEase custom-filaments CSV lines: code,name,nozzle_temp_low,nozzle_temp_high,material */
 export function buildCustomFilamentsCsv(profiles: FilamentProfile[]): string {
   return profiles
-    .map((p) => `${p.filamentId},${csvSafe(`${p.brand} ${p.name}`)},${p.nozzleTempMin},${p.nozzleTempMax},${csvSafe(p.material)}`)
+    .map((p) => `${p.filamentId},${csvSafe(displayName(p))},${p.nozzleTempMin},${p.nozzleTempMax},${csvSafe(p.material)}`)
     .join("\r\n");
 }
 

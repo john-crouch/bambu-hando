@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { main } from "../src/cli.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
 
 interface Captured {
   code: number;
@@ -26,18 +27,23 @@ async function run(argv: string[]): Promise<Captured> {
 
 describe("cli", () => {
   let server: SpoolEaseServer;
+  let spoolmanDb: SpoolmanDbServer;
   let home: string;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-home-"));
     vi.stubEnv("HOME", home);
+    vi.stubEnv("XDG_CACHE_HOME", undefined);
     vi.stubEnv("SPOOLEASE_HOST", undefined);
     vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
     server = await startSpoolEaseServer();
+    spoolmanDb = await startSpoolmanDbServer();
+    vi.stubEnv("SPOOLMANDB_URL", spoolmanDb.url);
   });
 
   afterEach(async () => {
     await server.close();
+    await spoolmanDb.close();
   });
 
   const spooleaseArgs = (): string[] => [
@@ -142,7 +148,54 @@ describe("cli", () => {
     expect(await readFile(reportPath, "utf-8")).toBe(stdout);
   });
 
+  it("syncs SpoolmanDB filaments that match the filters and caches the catalog", async () => {
+    const { code, stdout, stderr } = await run(["--source", "spoolmandb", "--brand", "3dhojor", "--skip-spoolease"]);
+
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    const report = JSON.parse(stdout);
+    expect(report.source).toBe("spoolmandb");
+    expect(report.results.map((r: { profile_name: string }) => r.profile_name)).toEqual([
+      "3DHoJor ABS+ Brown",
+      "3DHoJor PLA-CF Brown",
+      "3DHoJor PLA Crystal Rainbow Flame",
+    ]);
+    expect(await readdir(join(home, ".cache", "bambu-hando"))).toContain("filaments.json");
+  });
+
+  it("registers SpoolmanDB filaments with their temperatures and spool weights", async () => {
+    const { code } = await run(["--source", "spoolmandb", "--match", "polylite", "--create-spools", ...spooleaseArgs()]);
+
+    expect(code).toBe(0);
+    expect(server.customFilaments).toBe("Peddfd02,Polymaker PolyLite™ PETG Black,230,240,PETG");
+    expect(server.spools[0]).toMatchObject({ slicer_filament: "Peddfd02", weight_advertised: "1000", weight_core: "140" });
+  });
+
+  it("warns on stderr and uses the cached catalog when SpoolmanDB is down", async () => {
+    await run(["--source", "spoolmandb", "--brand", "RatRig", "--skip-spoolease"]);
+    spoolmanDb.failWith = 503;
+
+    const { code, stdout, stderr } = await run(["--source", "spoolmandb", "--brand", "RatRig", "--skip-spoolease"]);
+
+    expect(code).toBe(0);
+    expect(stderr).toContain("SpoolmanDB filaments.json could not be refreshed (HTTP 503)");
+    expect(JSON.parse(stdout).profiles_count).toBe(1);
+  });
+
+  it("exits 2 when no SpoolmanDB filament matches", async () => {
+    const { code, stdout, stderr } = await run(["--source", "spoolmandb", "--brand", "Bambu Lab", "--skip-spoolease"]);
+
+    expect(code).toBe(2);
+    expect(stdout).toBe("");
+    expect(stderr).toBe(
+      "bambu-hando: error: no SpoolmanDB filaments match the filters (Bambu Lab filaments are never included: BambuStudio ships its own presets for them)\n",
+    );
+  });
+
   it.each([
+    [["--source", "spoolmandb", "--skip-spoolease"], "--source spoolmandb needs at least one of --brand, --material, --match"],
+    [["--source", SOURCE_FIXTURE, "--brand", "Polymaker", "--skip-spoolease"], "--brand, --material, --match and --diameter only apply to --source spoolmandb"],
+    [["--source", "spoolmandb", "--brand", "Polymaker", "--diameter", "thick", "--skip-spoolease"], "--diameter must be a positive number"],
     [[], "--source is required"],
     [["--source", SOURCE_FIXTURE], "SpoolEase host and security key are required unless --skip-spoolease is set"],
     [["--source", SOURCE_FIXTURE, "--skip-spoolease", "--spoolease-port", "eighty"], "--spoolease-port must be a port number"],

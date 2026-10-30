@@ -25,7 +25,7 @@ function text(value: unknown, fallback: string): string {
 // Same scheme BambuStudio uses for user filaments ("P" + 7 hex of md5 of the name, CreatePresetsDialog.cpp),
 // so IDs are stable across runs and source reordering. BambuStudio also mixes in the cloud user id when
 // logged in; we can't know it, and don't need to, because our presets carry filament_id explicitly.
-function derivedFilamentId(name: string): string {
+export function derivedFilamentId(name: string): string {
   return `P${createHash("md5").update(name, "utf-8").digest("hex").slice(0, 7)}`;
 }
 

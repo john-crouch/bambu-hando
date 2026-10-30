@@ -11,12 +11,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { expectedPreset, expectedSpoolPayload, parity, SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 
-function spawnCli(args: string[], home: string): Promise<{ code: number; stdout: string; stderr: string }> {
+function spawnCli(args: string[], home: string, env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(process.execPath, [BIN, ...args], { env: { PATH: process.env.PATH ?? "", HOME: home } }, (err, stdout, stderr) => {
+    execFile(process.execPath, [BIN, ...args], { env: { PATH: process.env.PATH ?? "", HOME: home, ...env } }, (err, stdout, stderr) => {
       resolve({ code: err ? Number(err.code) : 0, stdout, stderr });
     });
   });
@@ -59,6 +60,24 @@ describe("bambu-hando binary", () => {
     expect(await readFile(report.bambu_preset_paths[0], "utf-8")).toBe(expectedPreset(0));
     expect(report.bambu_preset_paths[0].startsWith(join(home, ".config", "BambuStudio"))).toBe(true);
     expect(server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body)).toEqual([0, 1, 2].map(expectedSpoolPayload));
+  });
+
+  it("downloads SpoolmanDB filaments and writes linked presets", async () => {
+    const spoolmanDb = await startSpoolmanDbServer();
+    try {
+      const { code, stdout, stderr } = await spawnCli(["--source", "spoolmandb", "--match", "polylite", "--skip-spoolease"], home, {
+        SPOOLMANDB_URL: spoolmanDb.url,
+      });
+
+      expect(stderr).toBe("");
+      expect(code).toBe(0);
+      const report = JSON.parse(stdout);
+      const preset = JSON.parse(await readFile(report.bambu_preset_paths[0], "utf-8"));
+      expect(preset).toMatchObject({ name: "Polymaker PolyLite™ PETG Black @ Bambu Lab X1C 0.4 nozzle", filament_id: "Peddfd02" });
+      expect(await readFile(join(home, ".cache", "bambu-hando", "filaments.json"), "utf-8")).toBe(spoolmanDb.files.get("/filaments.json"));
+    } finally {
+      await spoolmanDb.close();
+    }
   });
 
   it("exits 2 for invalid arguments", async () => {

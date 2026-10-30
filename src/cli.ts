@@ -6,8 +6,10 @@ import { parseArgs } from "node:util";
 
 import { resultFailed, type SyncResult } from "./models.js";
 import type { PresetOutcome } from "./bambuStudio.js";
+import { cacheDir } from "./paths.js";
 import { loadProfiles } from "./sources.js";
 import type { SpoolEaseConnection } from "./spoolease.js";
+import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE, SPOOLMANDB_URL } from "./spoolmanDb.js";
 import { KeyCheckError, runSync } from "./sync.js";
 import type { FormValues } from "./tui/App.js";
 
@@ -22,7 +24,8 @@ The tui command opens an interactive terminal UI; its options prefill the
 setup form (--dry-run and --report are headless only).
 
 Options:
-  --source <file|url>             JSON file or URL with filament profiles (required)
+  --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
+                                  for the SpoolmanDB community database (required)
   --preset-folder <name>          BambuStudio user preset folder (default: default)
   --printer-preset <name>         Printer preset suffix (default: ${DEFAULT_PRINTER_PRESET})
   --dry-run                       Plan operations without writing
@@ -34,6 +37,12 @@ Options:
   --create-spools                 Also create one SpoolEase spool per filament that has none yet
   --report <path>                 Also write the JSON report to this path
   -h, --help                      Show this help
+
+SpoolmanDB filters (--source spoolmandb needs at least one of the first three):
+  --brand <name>                  Manufacturer, e.g. Polymaker (ignores case)
+  --material <type>               Material, e.g. PETG (ignores case)
+  --match <words>                 Words that must all appear in the filament name
+  --diameter <mm>                 Filament diameter (default: 1.75)
 
 Exit codes: 0 success, 1 a profile failed, 2 invalid arguments or SpoolEase key check failed.
 `;
@@ -50,10 +59,14 @@ const OPTIONS = {
   "skip-spoolease": { type: "boolean", default: false },
   "create-spools": { type: "boolean", default: false },
   report: { type: "string" },
+  brand: { type: "string" },
+  material: { type: "string" },
+  match: { type: "string" },
+  diameter: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } as const;
 
-const { "dry-run": _dryRun, report: _report, ...TUI_OPTIONS } = OPTIONS;
+const { "dry-run": _dryRun, report: _report, brand: _brand, material: _material, match: _match, diameter: _diameter, ...TUI_OPTIONS } = OPTIONS;
 
 export interface Io {
   stdout: (text: string) => void;
@@ -67,8 +80,14 @@ const processIo: Io = {
 
 class UsageError extends Error {}
 
+export interface SpoolmanDbSelection extends ProfileFilters {
+  diameter: number;
+}
+
 export interface Settings {
   source: string;
+  /** Set when --source is spoolmandb. */
+  spoolmanDb: SpoolmanDbSelection | null;
   presetFolder: string;
   printerPreset: string;
   dryRun: boolean;
@@ -90,6 +109,19 @@ function parseSettings(argv: string[]): { settings: Settings | null; help: boole
   if (positionals.length > 0) throw new UsageError(`unknown command '${positionals[0]}'`);
   if (!values.source) throw new UsageError("--source is required");
 
+  let spoolmanDb: SpoolmanDbSelection | null = null;
+  const filters = { brand: values.brand ?? "", material: values.material ?? "", match: values.match ?? "" };
+  if (values.source === SPOOLMANDB_SOURCE) {
+    if (!filters.brand && !filters.material && !filters.match) {
+      throw new UsageError("--source spoolmandb needs at least one of --brand, --material, --match");
+    }
+    const diameter = Number(values.diameter ?? "1.75");
+    if (!Number.isFinite(diameter) || diameter <= 0) throw new UsageError("--diameter must be a positive number");
+    spoolmanDb = { ...filters, diameter };
+  } else if (filters.brand || filters.material || filters.match || values.diameter !== undefined) {
+    throw new UsageError("--brand, --material, --match and --diameter only apply to --source spoolmandb");
+  }
+
   const port = Number(values["spoolease-port"]);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new UsageError("--spoolease-port must be a port number");
 
@@ -107,6 +139,7 @@ function parseSettings(argv: string[]): { settings: Settings | null; help: boole
     help: false,
     settings: {
       source: values.source,
+      spoolmanDb,
       presetFolder: values["preset-folder"],
       printerPreset: values["printer-preset"],
       dryRun: values["dry-run"],
@@ -196,7 +229,24 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   const settings = parsed.settings;
 
   try {
-    const profiles = await loadProfiles(settings.source);
+    let profiles;
+    if (settings.spoolmanDb) {
+      const catalog = await loadSpoolmanDb({
+        baseUrl: process.env.SPOOLMANDB_URL || SPOOLMANDB_URL,
+        cacheDir: cacheDir(),
+        diameter: settings.spoolmanDb.diameter,
+      });
+      for (const warning of catalog.warnings) io.stderr(`${warning}\n`);
+      profiles = filterProfiles(catalog.profiles, settings.spoolmanDb);
+      if (profiles.length === 0) {
+        io.stderr(
+          "bambu-hando: error: no SpoolmanDB filaments match the filters (Bambu Lab filaments are never included: BambuStudio ships its own presets for them)\n",
+        );
+        return 2;
+      }
+    } else {
+      profiles = await loadProfiles(settings.source);
+    }
     const { presets, results } = await runSync({ ...settings, profiles }, (event) => {
       if (event.type === "warning") io.stderr(`${event.message}\n`);
     });

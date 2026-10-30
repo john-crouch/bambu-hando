@@ -2,6 +2,7 @@
 // ABOUTME: Writes presets, then pushes to SpoolEase, emitting per-profile progress events.
 
 import { type PresetOutcome, writeMany } from "./bambuStudio.js";
+import { errorMessage } from "./errors.js";
 import type { FilamentProfile, Status, SyncResult } from "./models.js";
 import { buildCustomFilamentsCsv, mergeCustomFilamentsCsv, SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 
@@ -37,15 +38,6 @@ export interface SyncOutcome {
 /** SpoolEase rejected the key or could not be reached; nothing was sent to it. */
 export class KeyCheckError extends Error {
   override name = "KeyCheckError";
-}
-
-function message(err: unknown): string {
-  if (err instanceof Error) {
-    // fetch hides the useful part (ECONNREFUSED, timeout) in the cause.
-    const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
-    return `${err.message}${cause}`;
-  }
-  return String(err);
 }
 
 export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) => void = () => {}): Promise<SyncOutcome> {
@@ -93,7 +85,7 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
     try {
       keyOk = await client.testKey();
     } catch (err) {
-      throw new KeyCheckError(`SpoolEase unreachable at ${client.baseUrl}: ${message(err)}`);
+      throw new KeyCheckError(`SpoolEase unreachable at ${client.baseUrl}: ${errorMessage(err)}`);
     }
     if (!keyOk) throw new KeyCheckError("SpoolEase key validation failed");
 
@@ -103,8 +95,8 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
       existing = await client.getCustomFilamentsCsv();
     } catch (err) {
       // Writing without the current list would replace it with only ours, so don't write at all.
-      onEvent({ type: "warning", message: `Failed to read current custom filaments CSV: ${message(err)}` });
-      csvError = `custom filaments CSV: reading current list failed: ${message(err)}`;
+      onEvent({ type: "warning", message: `Failed to read current custom filaments CSV: ${errorMessage(err)}` });
+      csvError = `custom filaments CSV: reading current list failed: ${errorMessage(err)}`;
     }
 
     if (existing !== null) {
@@ -116,8 +108,8 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
           csvError = `custom filaments CSV: HTTP ${status}: ${body.slice(0, DETAIL_LIMIT)}`;
         }
       } catch (err) {
-        onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${message(err)}` });
-        csvError = `custom filaments CSV: ${message(err)}`;
+        onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${errorMessage(err)}` });
+        csvError = `custom filaments CSV: ${errorMessage(err)}`;
       }
     }
   }
@@ -131,7 +123,7 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
     try {
       spooledIds = await client.listSpoolFilamentIds();
     } catch (err) {
-      listError = `listing spools failed: ${message(err)}`;
+      listError = `listing spools failed: ${errorMessage(err)}`;
     }
   }
 
@@ -161,7 +153,7 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
           outcome = { status: "failed", detail: `${registered}; spool rejected: ${reply}` };
         }
       } catch (err) {
-        outcome = { status: "failed", detail: `${registered}; spool request error: ${message(err)}` };
+        outcome = { status: "failed", detail: `${registered}; spool request error: ${errorMessage(err)}` };
       }
     }
     outcomes.push(outcome);

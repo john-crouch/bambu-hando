@@ -22,6 +22,11 @@ describe("payload builders", () => {
     expect(csv.split(",")).toEqual(["Pd73077d", "Acme Inc. Silk Gold", "200", "220", "PLA"]);
   });
 
+  it("doesn't repeat the brand when the name already starts with it", () => {
+    const csv = buildCustomFilamentsCsv([{ ...profileAt(0), brand: "Polymaker", name: "Polymaker PolyLite PETG Black" }]);
+    expect(csv.split(",")[1]).toBe("Polymaker PolyLite PETG Black");
+  });
+
   it("merges by code: replaces matching rows in place, keeps others, appends new ones", () => {
     const existing = "GFX01,Hand Made,190,230,PLA\n\nPABC1234,Stale,1,2,PETG\r\nGFX02,Other,200,240,ABS";
     const ours = "PNEW0001,New,210,230,PLA\r\nPABC1234,Fresh,230,255,PETG";

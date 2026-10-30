@@ -3,7 +3,7 @@
 Cross-platform filament profile handoff tool for BambuStudio and SpoolEase.
 
 It automates three things:
-- Load/download filament profile data from JSON source
+- Load filament profile data from the SpoolmanDB community database, or from your own JSON file or URL
 - Create custom filament preset files for BambuStudio (Linux + macOS)
 - Register matching custom filaments in SpoolEase, and optionally (`--create-spools`) one spool per filament carrying its RGBA color
 
@@ -47,9 +47,26 @@ bambu-hando tui
 
 Fill in the setup form (arrow keys move, space toggles, enter loads the plan), review the plan table with color swatches and target paths, then press `a` to apply and watch per-profile progress. Any headless flag except `--dry-run` and `--report` prefills the form, for example `bambu-hando tui --source ./profiles.json`.
 
+## SpoolmanDB source
+
+`--source spoolmandb` downloads the [SpoolmanDB](https://github.com/Donkie/SpoolmanDB) community filament database (MIT licensed, about 9,000 entries from about 70 manufacturers) and syncs the filaments matching your filters. At least one of `--brand`, `--material` or `--match` is required:
+
+```bash
+bambu-hando --source spoolmandb --brand Polymaker --material PETG --match "polylite black" --skip-spoolease --dry-run
+```
+
+- `--brand` and `--material` match exactly, ignoring case. Every word in `--match` must appear somewhere in the filament name.
+- `--diameter` picks 1.75 (default) or 2.85 mm filaments.
+- Profiles are named `<manufacturer> <material> <product>`; the material is left out when the product name already contains it (`Polymaker PolyLite™ PETG Black`).
+- Nozzle temperatures come from the filament, then from SpoolmanDB's per-material defaults, then fall back to 190-240 °C. Spools get the filament's net and empty-spool weights (0, meaning unknown, when SpoolmanDB doesn't list a spool weight).
+- Multi-color filaments use their first color.
+- Bambu Lab filaments are never included: BambuStudio already ships system presets for them, and a custom copy would not link to those.
+
+The database is cached in `~/.cache/bambu-hando/` (`$XDG_CACHE_HOME` is honored; `~/Library/Caches/bambu-hando/` on macOS). Each run revalidates it with its ETag, and when SpoolmanDB can't be reached the cached copy is used with a warning. `SPOOLMANDB_URL` overrides the download location (default `https://donkie.github.io/SpoolmanDB`).
+
 ## Input source format
 
-Provide a JSON file or URL. Example:
+Instead of SpoolmanDB you can provide your own JSON file or URL. Example:
 
 ```json
 [
