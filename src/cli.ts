@@ -15,7 +15,7 @@ import type { FormValues } from "./tui/App.js";
 export const DEFAULT_PRINTER_PRESET = "Bambu Lab X1C 0.4 nozzle";
 
 const USAGE = `Usage:
-  bambu-hando --source <file|url> [options]
+  bambu-hando --source <file|url|spoolmandb> [options]
   bambu-hando tui [options]
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
