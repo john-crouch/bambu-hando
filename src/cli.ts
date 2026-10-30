@@ -9,6 +9,7 @@ import type { PresetOutcome } from "./bambuStudio.js";
 import { resultFailed, type SyncResult } from "./models.js";
 import { loadProfiles } from "./sources.js";
 import type { SpoolEaseConnection } from "./spoolease.js";
+import { readSpoolEaseConfig } from "./spooleaseConfig.js";
 import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE } from "./spoolmanDb.js";
 import { KeyCheckError, runSync, SetupError } from "./sync.js";
 import type { FormValues } from "./tui/App.js";
@@ -32,6 +33,7 @@ Options:
   --dry-run                       Plan operations without writing
   --spoolease-host <host>         SpoolEase console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  SpoolEase security key (env: SPOOLEASE_SECURITY_KEY)
+                                  Both default to the SpoolEase settings saved in BambuStudio
   --spoolease-port <port>         SpoolEase port (default: 80)
   --spoolease-https               Use HTTPS for SpoolEase
   --skip-spoolease                Skip SpoolEase API updates
@@ -107,7 +109,7 @@ export interface Settings {
   report: string;
 }
 
-function parseSettings(argv: string[]): { settings: Settings | null; help: boolean } {
+async function parseSettings(argv: string[]): Promise<{ settings: Settings | null; help: boolean }> {
   let parsed;
   try {
     parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
@@ -136,10 +138,13 @@ function parseSettings(argv: string[]): { settings: Settings | null; help: boole
 
   let spoolease: SpoolEaseConnection | null = null;
   if (!values["skip-spoolease"]) {
-    const host = values["spoolease-host"] || process.env.SPOOLEASE_HOST || "";
-    const securityKey = values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || "";
+    const saved = await readSpoolEaseConfig();
+    const host = values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "";
+    const securityKey = values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "";
     if (!host || !securityKey) {
-      throw new UsageError("SpoolEase host and security key are required unless --skip-spoolease is set");
+      throw new UsageError(
+        "SpoolEase host and security key are required unless --skip-spoolease is set: pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, or configure SpoolEase in BambuStudio",
+      );
     }
     spoolease = { host, securityKey, port, https: values["spoolease-https"] };
   }
@@ -187,6 +192,7 @@ async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | nu
   if (values.help) return { values: null, help: true };
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
   const defaults = await bambuDefaults();
+  const saved = await readSpoolEaseConfig();
 
   return {
     help: false,
@@ -194,9 +200,9 @@ async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | nu
       source: values.source ?? "",
       presetFolder: values["preset-folder"] ?? defaults.presetFolder,
       printerPreset: (values["printer-preset"] ?? [defaults.printer]).join(", "),
-      host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || "",
+      host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "",
       port: values["spoolease-port"],
-      securityKey: values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || "",
+      securityKey: values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "",
       https: values["spoolease-https"],
       skipSpoolease: values["skip-spoolease"],
       createSpools: !values["skip-spools"],
@@ -228,7 +234,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
 
   let parsed;
   try {
-    parsed = parseSettings(argv);
+    parsed = await parseSettings(argv);
   } catch (err) {
     if (!(err instanceof UsageError)) throw err;
     io.stderr(`bambu-hando: error: ${err.message}\n\n${USAGE}`);

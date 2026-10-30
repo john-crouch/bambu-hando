@@ -93,7 +93,7 @@ Instead of SpoolmanDB you can provide your own JSON file or URL. Example:
 
 ## Headless run
 
-The SpoolEase host and security key can also come from `SPOOLEASE_HOST` and `SPOOLEASE_SECURITY_KEY`, which keeps the key out of your shell history.
+The SpoolEase host and security key can also come from `SPOOLEASE_HOST` and `SPOOLEASE_SECURITY_KEY`, which keeps the key out of your shell history. If you use the SpoolEase build of BambuStudio, you don't need either: without flags or environment variables, bambu-hando reads the console address and security key from the settings saved by BambuStudio's SpoolEase dialog (`spoolease/config.json` in BambuStudio's config folder). The address's own port is ignored; `--spoolease-port` still applies.
 
 Dry run first:
 

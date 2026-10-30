@@ -36,3 +36,10 @@ export async function installBambuStudio(
   };
   await writeFile(join(dir, "BambuStudio.conf"), `${JSON.stringify(config, null, 4)}\n`, "utf-8");
 }
+
+/** Write the SpoolEase console settings the SpoolEase build of BambuStudio keeps in spoolease/config.json. */
+export async function installSpoolEaseConfig(home: string, console: Record<string, unknown>): Promise<void> {
+  const dir = join(bambuConfigDir(home), "spoolease");
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "config.json"), `${JSON.stringify({ console, version: 1 }, null, 4)}\n`, "utf-8");
+}

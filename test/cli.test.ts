@@ -11,7 +11,7 @@ import { main } from "../src/cli.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
-import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
+import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
 interface Captured {
   code: number;
@@ -104,6 +104,25 @@ describe("cli", () => {
     expect(code).toBe(0);
     expect(JSON.parse(stdout).results[0]).toMatchObject({ bambu_status: "planned", spoolease_status: "planned" });
     await expect(readdir(join(home, ".config", "BambuStudio", "user"))).rejects.toThrow("ENOENT");
+  });
+
+  it("reads SpoolEase host and key from BambuStudio's SpoolEase settings", async () => {
+    await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
+
+    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, "--spoolease-port", String(server.port)]);
+
+    expect(code).toBe(0);
+    expect(server.requests[0]?.path).toBe("/api/test-key");
+    expect(stdout).not.toContain(TEST_SECURITY_KEY);
+  });
+
+  it("prefers flags and environment over BambuStudio's SpoolEase settings", async () => {
+    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: "WRONG" });
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", TEST_SECURITY_KEY);
+
+    const { code } = await run(["--source", SOURCE_FIXTURE, "--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)]);
+
+    expect(code).toBe(0);
   });
 
   it("reads SpoolEase host and key from the environment", async () => {
@@ -241,7 +260,10 @@ describe("cli", () => {
     [["--source", SOURCE_FIXTURE, "--brand", "Polymaker", "--skip-spoolease"], "--brand, --material, --match and --diameter only apply to --source spoolmandb"],
     [["--source", "spoolmandb", "--brand", "Polymaker", "--diameter", "thick", "--skip-spoolease"], "--diameter must be a positive number"],
     [[], "--source is required"],
-    [["--source", SOURCE_FIXTURE], "SpoolEase host and security key are required unless --skip-spoolease is set"],
+    [
+      ["--source", SOURCE_FIXTURE],
+      "SpoolEase host and security key are required unless --skip-spoolease is set: pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, or configure SpoolEase in BambuStudio",
+    ],
     [["--source", SOURCE_FIXTURE, "--skip-spoolease", "--spoolease-port", "eighty"], "--spoolease-port must be a port number"],
     [["--source", SOURCE_FIXTURE, "--bogus"], "Unknown option '--bogus'"],
     [["frobnicate"], "unknown command 'frobnicate'"],

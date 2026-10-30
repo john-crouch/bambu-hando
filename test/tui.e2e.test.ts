@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
-import { baseFilamentDir, installBambuStudio, X1C_04 } from "./bambuStudioSetup.js";
+import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04 } from "./bambuStudioSetup.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
@@ -158,6 +158,22 @@ describe("TUI in a real terminal", () => {
     expect(await terminal.exited).toBe(0);
     expect(terminal.raw).not.toContain(TEST_SECURITY_KEY);
     expect(terminal.text).toContain("*******");
+  });
+
+  it("prefills SpoolEase from BambuStudio's SpoolEase settings without echoing the key", async () => {
+    await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
+    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--spoolease-port", String(server.port)], { HOME: home });
+
+    await terminal.waitFor("Source (file or URL)");
+    terminal.press(ENTER);
+    await terminal.waitFor("[a] apply");
+    terminal.press("a");
+    await terminal.waitFor("Done: 3 written, 0 failed");
+    terminal.press("q");
+
+    expect(await terminal.exited).toBe(0);
+    expect(server.requests[0]?.path).toBe("/api/test-key");
+    expect(terminal.raw).not.toContain(TEST_SECURITY_KEY);
   });
 
   it("shows a rejected key and exits 2", async () => {
