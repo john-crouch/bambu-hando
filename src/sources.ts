@@ -49,7 +49,7 @@ function decimal(value: unknown, fallback: number, field: string, idx: number): 
  * Load profiles from a JSON list or an object with a `profiles` key.
  *
  * Supported item keys: name, brand, material, color_name, color_rgba|color_hex,
- * nozzle_temp_min, nozzle_temp_max, density, diameter, slicer_filament_code.
+ * nozzle_temp_min, nozzle_temp_max, density, diameter, slicer_filament_code, weight, spool_weight.
  */
 export async function loadProfiles(source: string): Promise<FilamentProfile[]> {
   const payload: unknown = JSON.parse(await readText(source));
@@ -89,6 +89,9 @@ export async function loadProfiles(source: string): Promise<FilamentProfile[]> {
       diameter: decimal(entry.diameter, 1.75, "diameter", idx),
       slicerFilamentCode,
       filamentId: slicerFilamentCode || derivedFilamentId(name),
+      // SpoolEase takes whole grams (i32).
+      labelWeight: Math.round(decimal(entry.weight, 1000, "weight", idx)),
+      coreWeight: Math.round(decimal(entry.spool_weight, 200, "spool_weight", idx)),
     };
   });
 }

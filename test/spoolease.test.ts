@@ -38,6 +38,10 @@ describe("payload builders", () => {
     expect(mergeCustomFilamentsCsv("", "PNEW0001,New,210,230,PLA")).toBe("PNEW0001,New,210,230,PLA");
   });
 
+  it("sends the profile's label and core weights with the spool", () => {
+    expect(spoolPayload({ ...profileAt(0), labelWeight: 750, coreWeight: 0 })).toMatchObject({ label_weight: 750, core_weight: 0 });
+  });
+
   it.each(parityProfiles.map((p, i) => [p.name, i] as const))("builds the Python spool payload linked by filament ID for %s", (_name, index) => {
     expect(spoolPayload(profileAt(index))).toEqual(expectedSpoolPayload(index));
   });

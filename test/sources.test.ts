@@ -42,6 +42,20 @@ describe("loadProfiles", () => {
     expect(profiles.map((p) => p.filamentId)).toEqual(["Pd73077d", "GFL99"]);
   });
 
+  it("reads spool weights in whole grams, defaulting to a 1000 g label and 200 g core", async () => {
+    const path = await writeSource([
+      { name: "Small Spool", weight: 750, spool_weight: 140.6 },
+      { name: "Plain Spool" },
+    ]);
+
+    const profiles = await loadProfiles(path);
+
+    expect(profiles.map((p) => [p.labelWeight, p.coreWeight])).toEqual([
+      [750, 141],
+      [1000, 200],
+    ]);
+  });
+
   it("accepts a bare JSON list", async () => {
     const path = await writeSource([{ name: "PLA Blue", color_name: "blue" }]);
     const [profile] = await loadProfiles(path);

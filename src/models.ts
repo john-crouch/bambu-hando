@@ -19,6 +19,10 @@ export interface FilamentProfile {
    * custom-filament CSV code, and SpoolEase spool `slicer_filament`.
    */
   filamentId: string;
+  /** Advertised net filament weight in whole grams; 0 = unknown (SpoolEase stores no value). */
+  labelWeight: number;
+  /** Empty spool (core) weight in whole grams; 0 = unknown. */
+  coreWeight: number;
 }
 
 // written: change applied; planned: dry-run only; skipped: integration disabled; failed: attempted and rejected.

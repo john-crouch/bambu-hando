@@ -57,6 +57,9 @@ export const parityProfiles: FilamentProfile[] = parity.profiles.map((p, i) => (
   diameter: p.diameter,
   slicerFilamentCode: p.slicer_filament_code,
   filamentId: FILAMENT_IDS[i] ?? "",
+  // Python always sent these to SpoolEase; they are the defaults when a source has no weights.
+  labelWeight: 1000,
+  coreWeight: 200,
 }));
 
 /** Python's preset output plus the filament_id key this port adds after "inherits". */

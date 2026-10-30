@@ -63,10 +63,14 @@ Provide a JSON file or URL. Example:
     "nozzle_temp_max": 255,
     "density": 1.27,
     "diameter": 1.75,
+    "weight": 1000,
+    "spool_weight": 200,
     "slicer_filament_code": "PABC1234"
   }
 ]
 ```
+
+`weight` (net filament) and `spool_weight` (empty spool) are in grams and go to SpoolEase spools; they default to 1000 and 200.
 
 ## Headless run
 
