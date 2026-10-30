@@ -67,7 +67,8 @@ export const expectedCsv = parity.custom_filaments_csv.replace("P000002,", `${FI
 
 /** Python's spool payload with slicer_filament pointing at the filament ID instead of the raw source code. */
 export function expectedSpoolPayload(index: number): Record<string, unknown> {
-  return { ...parity.spool_payloads[index], slicer_filament: FILAMENT_IDS[index] };
+  // SpoolEase 0.7 requires the location and stock-count fields; a new spool has no location and is one spool.
+  return { ...parity.spool_payloads[index], slicer_filament: FILAMENT_IDS[index], assigned_location: "", actual_location: "", spools_count: 1 };
 }
 
 export function profileAt(index: number): FilamentProfile {

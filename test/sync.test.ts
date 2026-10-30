@@ -67,8 +67,8 @@ describe("runSync", () => {
     const { results } = await runSync(options({ createSpools: true }), record);
 
     expect(results.map((r) => [r.spooleaseStatus, r.detail])).toEqual([
-      ["written", 'registered PABC1234; spool created: HTTP 200: {"id":"1"}'],
-      ["written", 'registered Pb1a2a16; spool created: HTTP 200: {"id":"2"}'],
+      ["written", "registered PABC1234; spool 1 created"],
+      ["written", "registered Pb1a2a16; spool 2 created"],
     ]);
     expect(describeEvents()).toEqual(["presets", "preset:0", "preset:1", "key-check", "custom-filaments", "spools", "spool:0", "spool:1"]);
     expect(requestLines()).toEqual([
@@ -88,7 +88,7 @@ describe("runSync", () => {
 
     expect(results.map((r) => r.detail)).toEqual([
       "registered PABC1234; spool already exists",
-      'registered Pd73077d; spool created: HTTP 200: {"id":"3"}',
+      "registered Pd73077d; spool 3 created",
       "registered Pd73077d; spool already exists",
     ]);
     expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
@@ -145,7 +145,7 @@ describe("runSync", () => {
       "GET /api/filaments-config",
       "POST /api/filaments-config",
     ]);
-    expect(events).toContainEqual({ type: "warning", message: "Failed to set custom filaments CSV: 500 boom" });
+    expect(events).toContainEqual({ type: "warning", message: "Failed to set custom filaments CSV: HTTP 500: boom" });
   });
 
   it("merges into custom filaments from earlier runs instead of replacing them", async () => {
@@ -170,6 +170,23 @@ describe("runSync", () => {
     expect(server.customFilaments).toBe("GFX01,Hand Made,190,230,PLA");
     expect(server.requests.some((r) => r.method === "POST" && r.path === "/api/filaments-config")).toBe(false);
     expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: reading current list failed: HTTP 500: flash busy")).toBe(true);
+  });
+
+  it("fails every profile and skips spools when SpoolEase refuses the custom filaments", async () => {
+    server.replies["POST /api/filaments-config"] = { status: 200, body: '{"error_text":"Invalid line 2"}' };
+
+    const { results } = await runSync(options({ createSpools: true }), record);
+
+    expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: Invalid line 2")).toBe(true);
+    expect(server.requests.some((r) => r.path === "/api/spools/add-edit")).toBe(false);
+  });
+
+  it("fails a spool SpoolEase couldn't store even though it answered HTTP 200", async () => {
+    server.replies["/api/spools/add-edit"] = { status: 200, body: "Failed to add spool : storage full", plain: true };
+
+    const { results } = await runSync(options({ createSpools: true }), record);
+
+    expect(results[0]).toMatchObject({ spooleaseStatus: "failed", detail: "registered PABC1234; spool rejected: Failed to add spool : storage full" });
   });
 
   it("fails only the profile whose spool request is rejected", async () => {

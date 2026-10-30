@@ -78,7 +78,7 @@ describe("cli", () => {
     const { code, stdout } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
 
     expect(code).toBe(0);
-    expect(JSON.parse(stdout).results[0].detail).toContain("registered PABC1234; spool created");
+    expect(JSON.parse(stdout).results[0].detail).toBe("registered PABC1234; spool 1 created");
     expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
   });
 
@@ -150,7 +150,7 @@ describe("cli", () => {
     const { code, stderr } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
 
     expect(code).toBe(1);
-    expect(stderr).toBe("Failed to set custom filaments CSV: 500 boom\n");
+    expect(stderr).toBe("Failed to set custom filaments CSV: HTTP 500: boom\n");
   });
 
   it("exits 2 when the SpoolEase key is rejected", async () => {

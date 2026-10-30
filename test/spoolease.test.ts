@@ -75,13 +75,22 @@ describe("SpoolEaseClient", () => {
     expect(await wrong.testKey()).toBe(false);
   });
 
-  it("sends encrypted spool payloads and decrypts replies", async () => {
-    server.replies["/api/spools/add-edit"] = { status: 200, body: '{"id":"42"}' };
-
-    const response = await client.addOrEditSpool(profileAt(0));
-
-    expect(response).toEqual({ status: 200, body: '{"id":"42"}' });
+  it("creates a spool from an encrypted payload and returns its id", async () => {
+    expect(await client.addSpool(profileAt(0))).toEqual({ ok: true, id: "1" });
     expect(server.requests[0]?.body).toEqual(expectedSpoolPayload(0));
+    expect(server.spools[0]).toMatchObject({ slicer_filament: "PABC1234", spools_count: "1" });
+  });
+
+  it("reports a spool SpoolEase failed to store, which it answers with HTTP 200 and plain text", async () => {
+    server.replies["/api/spools/add-edit"] = { status: 200, body: "Failed to add spool : storage full", plain: true };
+
+    expect(await client.addSpool(profileAt(0))).toEqual({ ok: false, error: "Failed to add spool : storage full" });
+  });
+
+  it("reports a rejected spool payload", async () => {
+    server.replies["/api/spools/add-edit"] = { status: 400, body: "Failed to parse JSON body: missing field `x`" };
+
+    expect(await client.addSpool(profileAt(0))).toEqual({ ok: false, error: "HTTP 400: Failed to parse JSON body: missing field `x`" });
   });
 
   it("reads the stored custom filaments CSV", async () => {
@@ -116,10 +125,20 @@ describe("SpoolEaseClient", () => {
     await expect(client.listSpoolFilamentIds()).rejects.toThrow("HTTP 500: db locked");
   });
 
-  it("returns raw text for error responses", async () => {
+  it("stores the custom filaments CSV", async () => {
+    expect(await client.setCustomFilamentsCsv("a,b")).toEqual({ ok: true, id: "" });
+    expect(server.requests[0]?.body).toEqual({ custom_filaments: "a,b" });
+  });
+
+  it("reports HTTP errors when storing the custom filaments CSV", async () => {
     server.replies["POST /api/filaments-config"] = { status: 500, body: "boom" };
 
-    expect(await client.setCustomFilamentsCsv("a,b")).toEqual({ status: 500, body: "boom" });
-    expect(server.requests[0]?.body).toEqual({ custom_filaments: "a,b" });
+    expect(await client.setCustomFilamentsCsv("a,b")).toEqual({ ok: false, error: "HTTP 500: boom" });
+  });
+
+  it("reports custom filaments SpoolEase refused, which it answers with HTTP 200 and an error_text", async () => {
+    server.replies["POST /api/filaments-config"] = { status: 200, body: '{"error_text":"Invalid line 2"}' };
+
+    expect(await client.setCustomFilamentsCsv("a,b")).toEqual({ ok: false, error: "Invalid line 2" });
   });
 });

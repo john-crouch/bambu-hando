@@ -1,5 +1,5 @@
-// ABOUTME: Local stand-in for a SpoolEase console speaking the real encrypted protocol.
-// ABOUTME: Keeps custom-filament and spool state like the device, and records every request.
+// ABOUTME: Local stand-in for a SpoolEase 0.7 console speaking the real encrypted protocol.
+// ABOUTME: Keeps custom-filament and spool state like the device, validates payloads, and records every request.
 
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -17,8 +17,11 @@ export interface RecordedRequest {
 export interface SpoolEaseServer {
   port: number;
   requests: RecordedRequest[];
-  /** Overrides keyed by "METHOD /path" or just "/path" (any method). */
-  replies: Record<string, { status: number; body: string }>;
+  /**
+   * Overrides keyed by "METHOD /path" or just "/path" (any method). Bodies of replies under 400 are
+   * encrypted unless plain is set: SpoolEase sends handler failures as plain text with HTTP 200.
+   */
+  replies: Record<string, { status: number; body: string; plain?: boolean }>;
   /** Stored custom-filaments CSV, as SpoolEase keeps it (CRLF lines, null when unset). */
   customFilaments: string | null;
   /** Stored spools, keyed by SpoolRecord field name; seed directly or via POST /api/spools/add-edit. */
@@ -49,6 +52,29 @@ const SPOOL_COLUMNS = [
   "ext_has_k",
   "data_origin",
   "tag_type",
+  "assigned_location",
+  "actual_location",
+  "spools_count",
+  "td",
+];
+
+// AddSpoolDTO fields without a serde default (web_app.rs, 0.7): leaving one out is a 400.
+const ADD_SPOOL_REQUIRED = [
+  "tag_id",
+  "id",
+  "rgba",
+  "color_name",
+  "material",
+  "subtype",
+  "brand",
+  "core_weight",
+  "label_weight",
+  "note",
+  "slicer_filament",
+  "full_unused",
+  "assigned_location",
+  "actual_location",
+  "spools_count",
 ];
 
 function csvField(value: string): string {
@@ -83,6 +109,7 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
     }
     if (method === "POST" && path === "/api/filaments-config") {
       storeCustomFilaments((body as { custom_filaments?: unknown }).custom_filaments);
+      return JSON.stringify({ error_text: null });
     }
     if (method === "GET" && path === "/api/spools") {
       return spoolsCsv(state.spools);
@@ -103,8 +130,11 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
         weight_advertised: add.label_weight ? String(add.label_weight) : "",
         weight_core: add.core_weight ? String(add.core_weight) : "",
         slicer_filament: String(add.slicer_filament ?? ""),
+        assigned_location: String(add.assigned_location ?? ""),
+        actual_location: String(add.actual_location ?? ""),
+        spools_count: String(add.spools_count ?? ""),
       });
-      return JSON.stringify({ id });
+      return JSON.stringify({ id, changed_records: spoolsCsv(state.spools.slice(-1)).split("\n").filter(Boolean), ids_hash: "test" });
     }
     return "{}";
   }
@@ -129,10 +159,18 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
       state.requests.push({ method, path, body });
 
       const override = state.replies[`${method} ${path}`] ?? state.replies[path];
-      if (override && override.status >= 400) {
+      if (override && (override.status >= 400 || override.plain)) {
         res.writeHead(override.status);
         res.end(override.body);
         return;
+      }
+      if (method === "POST" && path === "/api/spools/add-edit") {
+        const missing = ADD_SPOOL_REQUIRED.find((field) => !(field in (body as Record<string, unknown>)));
+        if (missing) {
+          res.writeHead(400);
+          res.end(`Failed to parse JSON body: missing field \`${missing}\``);
+          return;
+        }
       }
       const reply = override?.body ?? handle(method, path, body);
       res.writeHead(override?.status ?? 200);

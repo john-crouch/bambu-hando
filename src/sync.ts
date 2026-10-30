@@ -127,10 +127,10 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
     if (existing !== null) {
       try {
         const merged = mergeCustomFilamentsCsv(existing, buildCustomFilamentsCsv(profiles));
-        const { status, body } = await client.setCustomFilamentsCsv(merged);
-        if (status >= 400) {
-          onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${status} ${body}` });
-          csvError = `custom filaments CSV: HTTP ${status}: ${body.slice(0, DETAIL_LIMIT)}`;
+        const stored = await client.setCustomFilamentsCsv(merged);
+        if (!stored.ok) {
+          onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${stored.error}` });
+          csvError = `custom filaments CSV: ${stored.error.slice(0, DETAIL_LIMIT)}`;
         }
       } catch (err) {
         onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${errorMessage(err)}` });
@@ -169,13 +169,12 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
       outcome = { status: "written", detail: `${registered}; spool already exists` };
     } else {
       try {
-        const { status, body } = await client.addOrEditSpool(profile);
-        const reply = `HTTP ${status}: ${body.slice(0, DETAIL_LIMIT)}`;
-        if (status < 400) {
+        const created = await client.addSpool(profile);
+        if (created.ok) {
           spooledIds.add(profile.filamentId);
-          outcome = { status: "written", detail: `${registered}; spool created: ${reply}` };
+          outcome = { status: "written", detail: `${registered}; spool ${created.id} created` };
         } else {
-          outcome = { status: "failed", detail: `${registered}; spool rejected: ${reply}` };
+          outcome = { status: "failed", detail: `${registered}; spool rejected: ${created.error.slice(0, DETAIL_LIMIT)}` };
         }
       } catch (err) {
         outcome = { status: "failed", detail: `${registered}; spool request error: ${errorMessage(err)}` };

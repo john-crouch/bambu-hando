@@ -18,6 +18,8 @@ This project intentionally separates documented facts from inferred implementati
 
 - SpoolmanDB publishes its compiled database as `filaments.json` and `materials.json` on GitHub Pages (MIT license); each entry is one weight × diameter × color variant.
 - SpoolEase's spool add/edit DTO takes `core_weight` and `label_weight` as `i32`, and treats 0 as "unknown" (`web_app.rs`).
+- Since SpoolEase 0.7 (`0.7` branch, `web_app.rs` `AddSpoolDTO`), add/edit also requires `assigned_location`, `actual_location` (strings, empty for a new spool) and `spools_count` (`i32`, 1 for one spool); a missing field is a 400. Older consoles ignore these fields: the DTO doesn't deny unknown fields.
+- SpoolEase signals most write failures in the body, not the status: `handle_web_app_post` always answers 200, so a failed spool add is a plain-text (unencrypted) message, and a refused custom-filaments CSV is an encrypted `{"error_text": ...}`. Only unparseable requests get 4xx. A successful add returns the new spool's `id`.
 
 ## Inferred details (best effort)
 

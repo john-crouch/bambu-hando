@@ -63,6 +63,9 @@ export interface SpoolEaseResponse {
   body: string;
 }
 
+/** A write SpoolEase stored (with the new record's id, when it has one), or why it didn't. */
+export type SpoolEaseWrite = { ok: true; id: string } | { ok: false; error: string };
+
 export class SpoolEaseClient {
   readonly baseUrl: string;
   private readonly key: Buffer;
@@ -72,13 +75,12 @@ export class SpoolEaseClient {
     this.key = deriveKey(conn.securityKey, conn.salt ?? DEFAULT_SALT, conn.iterations ?? DEFAULT_ITERATIONS);
   }
 
-  private async postEncrypted(path: string, payload: unknown): Promise<SpoolEaseResponse> {
-    const { status, body } = await this.request(path, {
+  private postEncrypted(path: string, payload: unknown): Promise<SpoolEaseResponse & { decrypted: boolean }> {
+    return this.request(path, {
       method: "POST",
       headers: { "Content-Type": "application/text" },
       body: encryptText(this.key, JSON.stringify(payload)),
     });
-    return { status, body };
   }
 
   private async request(path: string, init: RequestInit = {}): Promise<SpoolEaseResponse & { decrypted: boolean }> {
@@ -100,18 +102,37 @@ export class SpoolEaseClient {
     return body;
   }
 
+  /**
+   * POST a change and read SpoolEase's verdict. HTTP errors only cover requests it couldn't parse:
+   * a handler that fails answers 200 with plain text (web_app.rs handle_web_app_post), and a
+   * config it refuses answers 200 with an encrypted error_text.
+   */
+  private async write(path: string, payload: unknown): Promise<SpoolEaseWrite> {
+    const { status, body, decrypted } = await this.postEncrypted(path, payload);
+    if (status >= 400) return { ok: false, error: `HTTP ${status}: ${body}` };
+    if (!decrypted) return { ok: false, error: body || `empty HTTP ${status} reply` };
+    let reply: { id?: unknown; error_text?: unknown };
+    try {
+      reply = JSON.parse(body);
+    } catch {
+      return { ok: false, error: `unexpected reply: ${body}` };
+    }
+    if (typeof reply.error_text === "string" && reply.error_text) return { ok: false, error: reply.error_text };
+    return { ok: true, id: typeof reply.id === "string" ? reply.id : "" };
+  }
+
   async testKey(): Promise<boolean> {
     const { status } = await this.postEncrypted("/api/test-key", { test: "Hello" });
     return status === 200;
   }
 
-  /** Create a SpoolEase spool record; an empty id asks SpoolEase to create a new one. */
-  addOrEditSpool(profile: FilamentProfile): Promise<SpoolEaseResponse> {
-    return this.postEncrypted("/api/spools/add-edit", spoolPayload(profile));
+  /** Create a SpoolEase spool record (an empty id asks SpoolEase for a new one). */
+  addSpool(profile: FilamentProfile): Promise<SpoolEaseWrite> {
+    return this.write("/api/spools/add-edit", spoolPayload(profile));
   }
 
-  setCustomFilamentsCsv(csvText: string): Promise<SpoolEaseResponse> {
-    return this.postEncrypted("/api/filaments-config", { custom_filaments: csvText });
+  setCustomFilamentsCsv(csvText: string): Promise<SpoolEaseWrite> {
+    return this.write("/api/filaments-config", { custom_filaments: csvText });
   }
 
   /** The stored custom-filaments CSV ("" when unset); throws when it can't be read. */
@@ -142,6 +163,10 @@ export function spoolPayload(profile: FilamentProfile): Record<string, unknown> 
     slicer_filament: profile.filamentId,
     full_unused: "y",
     k_info: null,
+    // Required since SpoolEase 0.7: a new spool has no location yet and stands for one physical spool.
+    assigned_location: "",
+    actual_location: "",
+    spools_count: 1,
   };
 }
 
