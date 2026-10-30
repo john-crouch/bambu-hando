@@ -125,10 +125,11 @@ describe("TUI in a real terminal", () => {
   ];
 
   it("applies a full sync, restores the cursor, and exits 0", async () => {
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--create-spools", ...spooleaseFlags()], { HOME: home });
+    terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags()], { HOME: home });
 
     await terminal.waitFor("Source (file or URL)");
     terminal.press(ENTER);
+    await terminal.waitFor("register filaments + create spools");
     await terminal.waitFor("[a] apply");
     terminal.press("a");
     await terminal.waitFor("Done: 3 written, 0 failed");

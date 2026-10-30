@@ -58,7 +58,7 @@ describe("cli", () => {
   ];
 
   it("prints a snake_case JSON report and exits 0 when everything is written", async () => {
-    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
+    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, "--skip-spools", ...spooleaseArgs()]);
 
     expect(code).toBe(0);
     const report = JSON.parse(stdout);
@@ -74,11 +74,20 @@ describe("cli", () => {
     expect(server.spools).toEqual([]);
   });
 
-  it("creates spools with --create-spools", async () => {
-    const { code } = await run(["--source", SOURCE_FIXTURE, "--create-spools", ...spooleaseArgs()]);
+  it("creates one spool per filament by default", async () => {
+    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
 
     expect(code).toBe(0);
+    expect(JSON.parse(stdout).results[0].detail).toContain("registered PABC1234; spool created");
     expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
+  });
+
+  it("registers filaments without spools with --skip-spools", async () => {
+    const { code } = await run(["--source", SOURCE_FIXTURE, "--skip-spools", ...spooleaseArgs()]);
+
+    expect(code).toBe(0);
+    expect(server.customFilaments?.split("\r\n")).toHaveLength(3);
+    expect(server.spools).toEqual([]);
   });
 
   it("exits 0 with --skip-spoolease", async () => {
@@ -110,7 +119,7 @@ describe("cli", () => {
   it("exits 1 when a spool write fails", async () => {
     server.replies["/api/spools/add-edit"] = { status: 500, body: "boom" };
 
-    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, "--create-spools", ...spooleaseArgs()]);
+    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
 
     expect(code).toBe(1);
     expect(JSON.parse(stdout).results[0]).toMatchObject({ spoolease_status: "failed", detail: "registered PABC1234; spool rejected: HTTP 500: boom" });
@@ -166,7 +175,7 @@ describe("cli", () => {
   });
 
   it("registers SpoolmanDB filaments with their temperatures and spool weights", async () => {
-    const { code } = await run(["--source", "spoolmandb", "--match", "polylite", "--create-spools", ...spooleaseArgs()]);
+    const { code } = await run(["--source", "spoolmandb", "--match", "polylite", ...spooleaseArgs()]);
 
     expect(code).toBe(0);
     expect(server.customFilaments).toBe("Peddfd02,Polymaker PolyLite™ PETG Black,230,240,PETG");

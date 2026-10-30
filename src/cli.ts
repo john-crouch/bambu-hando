@@ -35,7 +35,8 @@ Options:
   --spoolease-port <port>         SpoolEase port (default: 80)
   --spoolease-https               Use HTTPS for SpoolEase
   --skip-spoolease                Skip SpoolEase API updates
-  --create-spools                 Also create one SpoolEase spool per filament that has none yet
+  --skip-spools                   Register filaments in SpoolEase without creating spools
+                                  (by default each filament without a spool gets one)
   --report <path>                 Also write the JSON report to this path
   -h, --help                      Show this help
 
@@ -59,7 +60,7 @@ const OPTIONS = {
   "spoolease-port": { type: "string", default: "80" },
   "spoolease-https": { type: "boolean", default: false },
   "skip-spoolease": { type: "boolean", default: false },
-  "create-spools": { type: "boolean", default: false },
+  "skip-spools": { type: "boolean", default: false },
   report: { type: "string" },
   brand: { type: "string" },
   material: { type: "string" },
@@ -152,7 +153,7 @@ function parseSettings(argv: string[]): { settings: Settings | null; help: boole
       printers: values["printer-preset"] ?? [],
       dryRun: values["dry-run"],
       spoolease,
-      createSpools: values["create-spools"],
+      createSpools: !values["skip-spools"],
       report: values.report ?? "",
     },
   };
@@ -198,7 +199,7 @@ async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | nu
       securityKey: values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || "",
       https: values["spoolease-https"],
       skipSpoolease: values["skip-spoolease"],
-      createSpools: values["create-spools"],
+      createSpools: !values["skip-spools"],
       query: [values.brand, values.material, values.match].filter(Boolean).join(" "),
       diameter: parseDiameter(values.diameter),
     },

@@ -55,7 +55,7 @@ describe("TUI", () => {
       securityKey: TEST_SECURITY_KEY,
       https: false,
       skipSpoolease: false,
-      createSpools: false,
+      createSpools: true,
       query: "",
       diameter: 1.75,
       ...overrides,
@@ -128,7 +128,7 @@ describe("TUI", () => {
   });
 
   it("applies with live statuses, registers filaments without spools, and exits 0", async () => {
-    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
     await settle();
 
     await press(stdin, ENTER);
@@ -145,22 +145,26 @@ describe("TUI", () => {
     expect(onExit).toHaveBeenCalledWith(0);
   });
 
-  it("creates spools when the Create spools toggle is on", async () => {
+  it("creates spools unless the Create spools toggle is switched off", async () => {
     const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
     await settle();
 
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
+    await press(stdin, "b");
     // source, preset folder, printer preset, host, port, key, https, skip, create spools
     await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("register filaments only"));
     await press(stdin, "a");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
-    expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
+    expect(server.customFilaments?.split("\r\n")).toHaveLength(3);
+    expect(server.spools).toEqual([]);
   });
 
   it("lists failure details and exits 1 when a profile fails", async () => {
     server.replies["/api/spools/add-edit"] = { status: 500, body: "spool store full" };
-    const { lastFrame, stdin } = render(<App initial={values({ createSpools: true })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
     await settle();
 
     await press(stdin, ENTER);

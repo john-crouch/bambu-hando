@@ -5,7 +5,7 @@ Cross-platform filament profile handoff tool for BambuStudio and SpoolEase.
 It automates three things:
 - Load filament profile data from the SpoolmanDB community database, or from your own JSON file or URL
 - Create custom filament preset files for BambuStudio (Linux + macOS)
-- Register matching custom filaments in SpoolEase, and optionally (`--create-spools`) one spool per filament carrying its RGBA color
+- Register matching custom filaments in SpoolEase, plus one spool per filament carrying its RGBA color (`--skip-spools` registers the filaments only)
 
 ## How the three systems are linked
 
@@ -13,11 +13,11 @@ Each filament gets one ID: `slicer_filament_code` from the source if present, ot
 
 - the BambuStudio preset's `filament_id`
 - the SpoolEase custom-filaments CSV code
-- the SpoolEase spool's `slicer_filament` (with `--create-spools`)
+- the SpoolEase spool's `slicer_filament`
 
 The ID only depends on the name, so re-runs and reordered sources keep the same links. The JSON report lists each profile's `filament_id`.
 
-SpoolEase keeps a single custom-filaments list. Runs merge into it (rows with the same ID are updated, everything else is kept), and if the current list can't be read, nothing is written. With `--create-spools`, filaments that already have a spool with that ID are skipped, so re-runs don't duplicate inventory. Spool creation is off by default because a SpoolEase spool stands for a physical spool.
+SpoolEase keeps a single custom-filaments list. Runs merge into it (rows with the same ID are updated, everything else is kept), and if the current list can't be read, nothing is written. Filaments that already have a spool with that ID get no new one, so re-runs don't duplicate inventory. A SpoolEase spool stands for a physical spool: pass `--skip-spools` (or switch off "Create spools" in the TUI) when syncing filaments you don't own yet.
 
 ## Why this exists
 
@@ -116,6 +116,12 @@ bambu-hando \
   --printer-preset "Bambu Lab X1 Carbon 0.6 nozzle" \
   --spoolease-host 192.168.1.50 \
   --spoolease-security-key YOURKEY
+```
+
+Register the filaments in SpoolEase without creating spools:
+
+```bash
+bambu-hando --source ./profiles.json --skip-spools
 ```
 
 Skip SpoolEase writes:

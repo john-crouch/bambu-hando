@@ -43,7 +43,6 @@ describe("bambu-hando binary", () => {
       [
         "--source",
         SOURCE_FIXTURE,
-        "--create-spools",
         "--printer-preset",
         X1C_06,
         "--spoolease-host",
