@@ -62,11 +62,6 @@ export const parityProfiles: FilamentProfile[] = parity.profiles.map((p, i) => (
   coreWeight: 200,
 }));
 
-/** Python's preset output plus the filament_id key this port adds after "inherits". */
-export function expectedPreset(index: number): string {
-  return (parity.presets[index] ?? "").replace('"inherits": "",\n', `"inherits": "",\n  "filament_id": "${FILAMENT_IDS[index]}",\n`);
-}
-
 /** Python's CSV with its position-based fallback codes replaced by stable filament IDs. */
 export const expectedCsv = parity.custom_filaments_csv.replace("P000002,", `${FILAMENT_IDS[1]},`).replace("P000003,", `${FILAMENT_IDS[2]},`);
 

@@ -1,9 +1,11 @@
 // ABOUTME: Sync orchestration shared by the headless CLI and the TUI.
 // ABOUTME: Writes presets, then pushes to SpoolEase, emitting per-profile progress events.
 
+import { SystemProfiles } from "./bambuProfiles.js";
 import { type PresetOutcome, writeMany } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
 import type { FilamentProfile, Status, SyncResult } from "./models.js";
+import { bambuConfigDir } from "./paths.js";
 import { buildCustomFilamentsCsv, mergeCustomFilamentsCsv, SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 
 const DETAIL_LIMIT = 120;
@@ -11,7 +13,8 @@ const DETAIL_LIMIT = 120;
 export interface SyncOptions {
   profiles: FilamentProfile[];
   presetFolder: string;
-  printerPreset: string;
+  /** BambuStudio printer preset names, e.g. "Bambu Lab X1 Carbon 0.4 nozzle"; one preset is written per printer. */
+  printers: string[];
   dryRun: boolean;
   /** null skips SpoolEase entirely. */
   spoolease: SpoolEaseConnection | null;
@@ -26,7 +29,7 @@ export type SyncStage = "presets" | "key-check" | "custom-filaments" | "spools";
 
 export type SyncEvent =
   | { type: "stage"; stage: SyncStage }
-  | { type: "preset"; index: number; status: Status; path: string; error: string }
+  | { type: "preset"; index: number; status: Status; paths: string[]; error: string }
   | { type: "spool"; index: number; status: Status; detail: string }
   | { type: "warning"; message: string };
 
@@ -40,12 +43,34 @@ export class KeyCheckError extends Error {
   override name = "KeyCheckError";
 }
 
+/** BambuStudio isn't set up for this run (no system profiles, unknown printer); nothing was written or sent. */
+export class SetupError extends Error {
+  override name = "SetupError";
+}
+
+async function loadSystemProfiles(printers: string[]): Promise<SystemProfiles> {
+  let system: SystemProfiles;
+  try {
+    system = await SystemProfiles.load(bambuConfigDir());
+  } catch (err) {
+    throw new SetupError(errorMessage(err));
+  }
+  const known = system.printers();
+  if (printers.length === 0) throw new SetupError("no BambuStudio printer given");
+  for (const printer of printers) {
+    if (!known.includes(printer)) throw new SetupError(`unknown BambuStudio printer "${printer}"; known printers: ${known.join(", ")}`);
+  }
+  return system;
+}
+
 export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) => void = () => {}): Promise<SyncOutcome> {
   const { profiles, dryRun } = options;
   const presetStatus: Status = dryRun ? "planned" : "written";
+  const system = await loadSystemProfiles(options.printers);
 
   onEvent({ type: "stage", stage: "presets" });
-  const presets = await writeMany(profiles, options.presetFolder, options.printerPreset, dryRun, (index, outcome) =>
+  const target = { presetFolder: options.presetFolder, printers: options.printers, system };
+  const presets = await writeMany(profiles, target, dryRun, (index, outcome) =>
     onEvent({ type: "preset", index, status: outcome.error ? "failed" : presetStatus, ...outcome }),
   );
 

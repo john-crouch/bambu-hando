@@ -4,15 +4,14 @@
 import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
-import { resultFailed, type SyncResult } from "./models.js";
+import { bambuDefaults } from "./bambuProfiles.js";
 import type { PresetOutcome } from "./bambuStudio.js";
+import { resultFailed, type SyncResult } from "./models.js";
 import { loadProfiles } from "./sources.js";
 import type { SpoolEaseConnection } from "./spoolease.js";
 import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE } from "./spoolmanDb.js";
-import { KeyCheckError, runSync } from "./sync.js";
+import { KeyCheckError, runSync, SetupError } from "./sync.js";
 import type { FormValues } from "./tui/App.js";
-
-export const DEFAULT_PRINTER_PRESET = "Bambu Lab X1C 0.4 nozzle";
 
 const USAGE = `Usage:
   bambu-hando --source <file|url|spoolmandb> [options]
@@ -26,8 +25,10 @@ filters prefill the filament search.
 Options:
   --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
                                   for the SpoolmanDB community database (required)
-  --preset-folder <name>          BambuStudio user preset folder (default: default)
-  --printer-preset <name>         Printer preset suffix (default: ${DEFAULT_PRINTER_PRESET})
+  --preset-folder <name>          BambuStudio user preset folder (default: the logged-in
+                                  user's folder from BambuStudio.conf, else default)
+  --printer-preset <name>         BambuStudio printer, e.g. "Bambu Lab X1 Carbon 0.4 nozzle";
+                                  repeat for several (default: the printer selected in BambuStudio)
   --dry-run                       Plan operations without writing
   --spoolease-host <host>         SpoolEase console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  SpoolEase security key (env: SPOOLEASE_SECURITY_KEY)
@@ -44,13 +45,14 @@ SpoolmanDB filters (--source spoolmandb needs at least one of the first three):
   --match <words>                 Words that must all appear in the filament name
   --diameter <mm>                 Filament diameter (default: 1.75)
 
-Exit codes: 0 success, 1 a profile failed, 2 invalid arguments or SpoolEase key check failed.
+Exit codes: 0 success, 1 a profile failed, 2 invalid arguments, BambuStudio not set up,
+or SpoolEase key check failed.
 `;
 
 const OPTIONS = {
   source: { type: "string" },
-  "preset-folder": { type: "string", default: "default" },
-  "printer-preset": { type: "string", default: DEFAULT_PRINTER_PRESET },
+  "preset-folder": { type: "string" },
+  "printer-preset": { type: "string", multiple: true },
   "dry-run": { type: "boolean", default: false },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
@@ -94,8 +96,10 @@ export interface Settings {
   source: string;
   /** Set when --source is spoolmandb. */
   spoolmanDb: SpoolmanDbSelection | null;
-  presetFolder: string;
-  printerPreset: string;
+  /** null: BambuStudio's current preset folder. */
+  presetFolder: string | null;
+  /** Empty: the printer selected in BambuStudio. */
+  printers: string[];
   dryRun: boolean;
   spoolease: SpoolEaseConnection | null;
   createSpools: boolean;
@@ -144,8 +148,8 @@ function parseSettings(argv: string[]): { settings: Settings | null; help: boole
     settings: {
       source: values.source,
       spoolmanDb,
-      presetFolder: values["preset-folder"],
-      printerPreset: values["printer-preset"],
+      presetFolder: values["preset-folder"] ?? null,
+      printers: values["printer-preset"] ?? [],
       dryRun: values["dry-run"],
       spoolease,
       createSpools: values["create-spools"],
@@ -159,7 +163,7 @@ export function buildReport(source: string, dryRun: boolean, presets: PresetOutc
     source,
     dry_run: dryRun,
     profiles_count: results.length,
-    bambu_preset_paths: presets.map((p) => p.path),
+    bambu_preset_paths: presets.flatMap((p) => p.paths),
     results: results.map((r) => ({
       profile_name: r.profileName,
       filament_id: r.filamentId,
@@ -171,7 +175,7 @@ export function buildReport(source: string, dryRun: boolean, presets: PresetOutc
   return `${JSON.stringify(report, null, 2)}\n`;
 }
 
-function parseTuiValues(argv: string[]): { values: FormValues | null; help: boolean } {
+async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | null; help: boolean }> {
   let parsed;
   try {
     parsed = parseArgs({ args: argv, options: TUI_OPTIONS, strict: true });
@@ -181,13 +185,14 @@ function parseTuiValues(argv: string[]): { values: FormValues | null; help: bool
   const { values } = parsed;
   if (values.help) return { values: null, help: true };
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
+  const defaults = await bambuDefaults();
 
   return {
     help: false,
     values: {
       source: values.source ?? "",
-      presetFolder: values["preset-folder"],
-      printerPreset: values["printer-preset"],
+      presetFolder: values["preset-folder"] ?? defaults.presetFolder,
+      printerPreset: (values["printer-preset"] ?? [defaults.printer]).join(", "),
       host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || "",
       port: values["spoolease-port"],
       securityKey: values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || "",
@@ -203,7 +208,7 @@ function parseTuiValues(argv: string[]): { values: FormValues | null; help: bool
 async function tuiCommand(argv: string[], io: Io): Promise<number> {
   let parsed;
   try {
-    parsed = parseTuiValues(argv);
+    parsed = await parseTuiValues(argv);
   } catch (err) {
     if (!(err instanceof UsageError)) throw err;
     io.stderr(`bambu-hando: error: ${err.message}\n\n${USAGE}`);
@@ -249,7 +254,12 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
     } else {
       profiles = await loadProfiles(settings.source);
     }
-    const { presets, results } = await runSync({ ...settings, profiles }, (event) => {
+    const defaults = await bambuDefaults();
+    const target = {
+      presetFolder: settings.presetFolder ?? defaults.presetFolder,
+      printers: settings.printers.length ? settings.printers : [defaults.printer],
+    };
+    const { presets, results } = await runSync({ ...settings, ...target, profiles }, (event) => {
       if (event.type === "warning") io.stderr(`${event.message}\n`);
     });
 
@@ -261,6 +271,10 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   } catch (err) {
     if (err instanceof KeyCheckError) {
       io.stderr(`${err.message}\n`);
+      return 2;
+    }
+    if (err instanceof SetupError) {
+      io.stderr(`bambu-hando: error: ${err.message}\n`);
       return 2;
     }
     io.stderr(`bambu-hando: error: ${err instanceof Error ? err.message : String(err)}\n`);

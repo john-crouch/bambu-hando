@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
+import { baseFilamentDir, installBambuStudio, X1C_04 } from "./bambuStudioSetup.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
@@ -104,6 +105,7 @@ describe("TUI in a real terminal", () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-pty-"));
+    await installBambuStudio(home);
     server = await startSpoolEaseServer();
   });
 
@@ -134,7 +136,7 @@ describe("TUI in a real terminal", () => {
 
     expect(await terminal.exited).toBe(0);
     expect(terminal.raw.endsWith(SHOW_CURSOR) || terminal.raw.includes(SHOW_CURSOR)).toBe(true);
-    expect(await readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).toHaveLength(3);
+    expect(await readdir(baseFilamentDir(home))).toHaveLength(3);
     expect(server.requests.filter((r) => r.path === "/api/spools/add-edit")).toHaveLength(3);
   });
 
@@ -191,9 +193,7 @@ describe("TUI in a real terminal", () => {
       terminal.press("q");
 
       expect(await terminal.exited).toBe(0);
-      expect(await readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).toEqual([
-        "RatRig ABS Punkfil Brute Black @ Bambu Lab X1C 0.4 nozzle.json",
-      ]);
+      expect(await readdir(baseFilamentDir(home))).toEqual([`RatRig ABS Punkfil Brute Black @${X1C_04}.json`]);
     } finally {
       await spoolmanDb.close();
     }

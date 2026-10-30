@@ -11,6 +11,7 @@ import { main } from "../src/cli.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
+import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
 interface Captured {
   code: number;
@@ -33,6 +34,7 @@ describe("cli", () => {
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-home-"));
     vi.stubEnv("HOME", home);
+    await installBambuStudio(home, { presetFolder: "1234567890" });
     vi.stubEnv("XDG_CACHE_HOME", undefined);
     vi.stubEnv("SPOOLEASE_HOST", undefined);
     vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
@@ -92,7 +94,7 @@ describe("cli", () => {
 
     expect(code).toBe(0);
     expect(JSON.parse(stdout).results[0]).toMatchObject({ bambu_status: "planned", spoolease_status: "planned" });
-    expect(await readdir(home)).toEqual([]);
+    await expect(readdir(join(home, ".config", "BambuStudio", "user"))).rejects.toThrow("ENOENT");
   });
 
   it("reads SpoolEase host and key from the environment", async () => {
@@ -190,6 +192,39 @@ describe("cli", () => {
     expect(stderr).toBe(
       "bambu-hando: error: no SpoolmanDB filaments match the filters (Bambu Lab filaments are never included: BambuStudio ships its own presets for them)\n",
     );
+  });
+
+  it("writes to BambuStudio's logged-in preset folder for its selected printer by default", async () => {
+    const { code, stdout } = await run(["--source", SOURCE_FIXTURE, "--skip-spoolease"]);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).bambu_preset_paths[0]).toBe(join(baseFilamentDir(home, "1234567890"), `PETG Red @${X1C_04}.json`));
+  });
+
+  it("writes one preset per --printer-preset", async () => {
+    const { code, stdout } = await run([
+      "--source",
+      SOURCE_FIXTURE,
+      "--skip-spoolease",
+      "--preset-folder",
+      "default",
+      "--printer-preset",
+      X1C_04,
+      "--printer-preset",
+      X1C_06,
+    ]);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).bambu_preset_paths).toHaveLength(6);
+    expect(await readdir(baseFilamentDir(home, "default"))).toHaveLength(6);
+  });
+
+  it("exits 2 for a printer BambuStudio doesn't know", async () => {
+    const { code, stdout, stderr } = await run(["--source", SOURCE_FIXTURE, "--skip-spoolease", "--printer-preset", "Bambu Lab X1C 0.4 nozzle"]);
+
+    expect(code).toBe(2);
+    expect(stdout).toBe("");
+    expect(stderr).toBe(`bambu-hando: error: unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"; known printers: ${X1C_04}, ${X1C_06}\n`);
   });
 
   it.each([

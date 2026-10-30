@@ -5,11 +5,11 @@ import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
-import { bambuFilamentDir } from "../paths.js";
+import { bambuBaseFilamentDir } from "../paths.js";
 import { loadProfiles } from "../sources.js";
 import type { SpoolEaseConnection } from "../spoolease.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
-import { KeyCheckError, runSync, type SyncEvent, type SyncStage } from "../sync.js";
+import { KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { SetupForm } from "./SetupForm.js";
@@ -17,6 +17,7 @@ import { SetupForm } from "./SetupForm.js";
 export interface FormValues {
   source: string;
   presetFolder: string;
+  /** Comma-separated BambuStudio printer names; one preset is written per printer. */
   printerPreset: string;
   host: string;
   port: string;
@@ -46,8 +47,16 @@ const STAGE_LABELS: Record<SyncStage, string> = {
   spools: "Creating SpoolEase spools",
 };
 
+function printers(values: FormValues): string[] {
+  return values.printerPreset
+    .split(",")
+    .map((printer) => printer.trim())
+    .filter(Boolean);
+}
+
 function validate(values: FormValues): string {
   if (!values.source.trim()) return "Source is required";
+  if (printers(values).length === 0) return "Printer preset is required";
   if (values.skipSpoolease) return "";
   if (!values.host.trim() || !values.securityKey) {
     return "SpoolEase host and security key are required unless Skip SpoolEase is on";
@@ -117,8 +126,8 @@ export function App({ initial, onExit }: Props) {
       const { results } = await runSync(
         {
           profiles,
-          presetFolder: values.presetFolder,
-          printerPreset: values.printerPreset,
+          presetFolder: values.presetFolder.trim(),
+          printers: printers(values),
           dryRun: false,
           spoolease: connection(values),
           createSpools: values.createSpools,
@@ -134,7 +143,7 @@ export function App({ initial, onExit }: Props) {
       setScreen({
         name: "error",
         message: err instanceof Error ? err.message : String(err),
-        exitCode: err instanceof KeyCheckError ? 2 : 1,
+        exitCode: err instanceof KeyCheckError || err instanceof SetupError ? 2 : 1,
       });
     } finally {
       setStage(null);
@@ -193,7 +202,9 @@ export function App({ initial, onExit }: Props) {
       <Text bold>
         {screen.profiles.length} profiles from {values.source}
       </Text>
-      <Text>Presets → {bambuFilamentDir(values.presetFolder)}</Text>
+      <Text>
+        Presets → {bambuBaseFilamentDir(values.presetFolder.trim())} for {printers(values).join(", ")}
+      </Text>
       <Text>
         SpoolEase:{" "}
         {target

@@ -12,6 +12,7 @@ import { App, type FormValues } from "../src/tui/App.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
+import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
 const ENTER = "\r";
 const DOWN = "\u001B[B";
@@ -31,6 +32,7 @@ describe("TUI", () => {
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-tui-"));
     vi.stubEnv("HOME", home);
+    await installBambuStudio(home);
     vi.stubEnv("XDG_CACHE_HOME", undefined);
     server = await startSpoolEaseServer();
     spoolmanDb = await startSpoolmanDbServer();
@@ -47,7 +49,7 @@ describe("TUI", () => {
     return {
       source: SOURCE_FIXTURE,
       presetFolder: "default",
-      printerPreset: "X1C",
+      printerPreset: X1C_04,
       host: "127.0.0.1",
       port: String(server.port),
       securityKey: TEST_SECURITY_KEY,
@@ -97,7 +99,7 @@ describe("TUI", () => {
     expect(frame).toContain("PABC1234");
     expect(frame).toContain("Pb1a2a16");
     expect(frame).toContain("230-255");
-    expect(frame).toContain(join(home, ".config", "BambuStudio", "user", "default", "filament"));
+    expect(frame).toContain(baseFilamentDir(home));
     expect(frame).toContain(`127.0.0.1:${server.port}`);
     expect(server.requests).toEqual([]);
   });
@@ -135,7 +137,7 @@ describe("TUI", () => {
     await press(stdin, "a");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
-    expect(await readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).toHaveLength(3);
+    expect(await readdir(baseFilamentDir(home))).toHaveLength(3);
     expect(server.customFilaments?.split("\r\n")).toHaveLength(3);
     expect(server.spools).toEqual([]);
 
@@ -220,7 +222,7 @@ describe("TUI", () => {
 
     await press(stdin, "a");
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 written, 0 failed"));
-    expect(await readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).toHaveLength(2);
+    expect(await readdir(baseFilamentDir(home))).toHaveLength(2);
     expect(server.customFilaments).toBe("Pccd78d1,3DHoJor ABS+ Brown,230,270,ABS+\r\nPd6ef068,3DHoJor PLA-CF Brown,210,230,PLA-CF");
   });
 
@@ -273,5 +275,30 @@ describe("TUI", () => {
 
     await vi.waitFor(() => expect(lastFrame()).toContain("HTTP 503"));
     expect(lastFrame()).toContain("Printer preset");
+  });
+
+  it("writes one preset per comma-separated printer", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ skipSpoolease: true, printerPreset: `${X1C_04}, ${X1C_06}` })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await press(stdin, "a");
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
+    expect(await readdir(baseFilamentDir(home))).toHaveLength(6);
+  });
+
+  it("shows setup errors such as an unknown printer and exits 2", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ skipSpoolease: true, printerPreset: "Bambu Lab X1C 0.4 nozzle" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await press(stdin, "a");
+
+    await vi.waitFor(() => expect(lastFrame()).toContain('unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"'));
+    await press(stdin, "q");
+    expect(onExit).toHaveBeenCalledWith(2);
   });
 });

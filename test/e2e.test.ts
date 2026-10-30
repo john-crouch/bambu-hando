@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { expectedPreset, expectedSpoolPayload, parity, SOURCE_FIXTURE } from "./parity.js";
+import { baseFilamentDir, installBambuStudio, X1C_06 } from "./bambuStudioSetup.js";
+import { expectedSpoolPayload, SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
@@ -29,6 +30,7 @@ describe("bambu-hando binary", () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-e2e-"));
+    await installBambuStudio(home, { presetFolder: "1234567890" });
     server = await startSpoolEaseServer();
   });
 
@@ -43,7 +45,7 @@ describe("bambu-hando binary", () => {
         SOURCE_FIXTURE,
         "--create-spools",
         "--printer-preset",
-        parity.printer_preset,
+        X1C_06,
         "--spoolease-host",
         "127.0.0.1",
         "--spoolease-port",
@@ -57,8 +59,9 @@ describe("bambu-hando binary", () => {
     expect(stderr).toBe("");
     expect(code).toBe(0);
     const report = JSON.parse(stdout);
-    expect(await readFile(report.bambu_preset_paths[0], "utf-8")).toBe(expectedPreset(0));
-    expect(report.bambu_preset_paths[0].startsWith(join(home, ".config", "BambuStudio"))).toBe(true);
+    expect(report.bambu_preset_paths[0]).toBe(join(baseFilamentDir(home, "1234567890"), `PETG Red @${X1C_06}.json`));
+    const preset = JSON.parse(await readFile(report.bambu_preset_paths[0], "utf-8"));
+    expect(preset).toMatchObject({ filament_id: "PABC1234", inherits: "", compatible_printers: [X1C_06], filament_type: ["PETG"] });
     expect(server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body)).toEqual([0, 1, 2].map(expectedSpoolPayload));
   });
 
@@ -73,7 +76,7 @@ describe("bambu-hando binary", () => {
       expect(code).toBe(0);
       const report = JSON.parse(stdout);
       const preset = JSON.parse(await readFile(report.bambu_preset_paths[0], "utf-8"));
-      expect(preset).toMatchObject({ name: "Polymaker PolyLite™ PETG Black @ Bambu Lab X1C 0.4 nozzle", filament_id: "Peddfd02" });
+      expect(preset).toMatchObject({ name: "Polymaker PolyLite™ PETG Black @Bambu Lab X1 Carbon 0.4 nozzle", filament_id: "Peddfd02" });
       expect(await readFile(join(home, ".cache", "bambu-hando", "filaments.json"), "utf-8")).toBe(spoolmanDb.files.get("/filaments.json"));
     } finally {
       await spoolmanDb.close();

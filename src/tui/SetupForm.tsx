@@ -17,7 +17,7 @@ type Field =
 const FIELDS: Field[] = [
   { key: "source", label: "Source (file or URL)", kind: "text", spoolease: false },
   { key: "presetFolder", label: "Preset folder", kind: "text", spoolease: false },
-  { key: "printerPreset", label: "Printer preset", kind: "text", spoolease: false },
+  { key: "printerPreset", label: "Printer preset(s)", kind: "text", spoolease: false },
   { key: "host", label: "SpoolEase host", kind: "text", spoolease: true },
   { key: "port", label: "SpoolEase port", kind: "text", spoolease: true },
   { key: "securityKey", label: "Security key", kind: "secret", spoolease: true },

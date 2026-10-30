@@ -1,0 +1,101 @@
+{
+    "name": "Bambulab",
+    "url": "http://www.bambulab.com/Parameters/vendor/BBL.json",
+    "version": "02.08.00.09",
+    "force_update": "0",
+    "description": "the initial version of BBL configurations",
+    "machine_model_list": [],
+    "process_list": [],
+    "filament_list": [
+        {
+            "name": "fdm_filament_common",
+            "sub_path": "filament/fdm_filament_common.json"
+        },
+        {
+            "name": "fdm_filament_abs",
+            "sub_path": "filament/fdm_filament_abs.json"
+        },
+        {
+            "name": "Generic ABS @base",
+            "sub_path": "filament/Generic ABS @base.json"
+        },
+        {
+            "name": "Generic ABS",
+            "sub_path": "filament/Generic ABS.json"
+        },
+        {
+            "name": "fdm_filament_hips",
+            "sub_path": "filament/fdm_filament_hips.json"
+        },
+        {
+            "name": "Generic HIPS @base",
+            "sub_path": "filament/Generic HIPS @base.json"
+        },
+        {
+            "name": "Generic HIPS @BBL X1C",
+            "sub_path": "filament/Generic HIPS @BBL X1C.json"
+        },
+        {
+            "name": "fdm_filament_pet",
+            "sub_path": "filament/fdm_filament_pet.json"
+        },
+        {
+            "name": "Generic PETG @base",
+            "sub_path": "filament/Generic PETG @base.json"
+        },
+        {
+            "name": "Generic PETG",
+            "sub_path": "filament/Generic PETG.json"
+        },
+        {
+            "name": "Generic PETG HF @base",
+            "sub_path": "filament/Generic PETG HF @base.json"
+        },
+        {
+            "name": "Generic PETG HF @BBL X1C",
+            "sub_path": "filament/Generic PETG HF @BBL X1C.json"
+        },
+        {
+            "name": "fdm_filament_pla",
+            "sub_path": "filament/fdm_filament_pla.json"
+        },
+        {
+            "name": "Generic PLA @base",
+            "sub_path": "filament/Generic PLA @base.json"
+        },
+        {
+            "name": "Generic PLA",
+            "sub_path": "filament/Generic PLA.json"
+        },
+        {
+            "name": "Generic PLA-CF @base",
+            "sub_path": "filament/Generic PLA-CF @base.json"
+        },
+        {
+            "name": "Generic PLA-CF",
+            "sub_path": "filament/Generic PLA-CF.json"
+        },
+        {
+            "name": "fdm_filament_tpu",
+            "sub_path": "filament/fdm_filament_tpu.json"
+        },
+        {
+            "name": "Generic TPU @base",
+            "sub_path": "filament/Generic TPU @base.json"
+        },
+        {
+            "name": "Generic TPU",
+            "sub_path": "filament/Generic TPU.json"
+        }
+    ],
+    "machine_list": [
+        {
+            "name": "Bambu Lab X1 Carbon 0.4 nozzle",
+            "sub_path": "machine/Bambu Lab X1 Carbon 0.4 nozzle.json"
+        },
+        {
+            "name": "Bambu Lab X1 Carbon 0.6 nozzle",
+            "sub_path": "machine/Bambu Lab X1 Carbon 0.6 nozzle.json"
+        }
+    ]
+}

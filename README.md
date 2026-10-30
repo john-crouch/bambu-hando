@@ -100,8 +100,8 @@ Dry run first:
 ```bash
 bambu-hando \
   --source ./profiles.json \
-  --preset-folder default \
-  --printer-preset "Bambu Lab X1C 0.4 nozzle" \
+  --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+  --printer-preset "Bambu Lab X1 Carbon 0.6 nozzle" \
   --spoolease-host 192.168.1.50 \
   --spoolease-security-key YOURKEY \
   --dry-run
@@ -112,8 +112,8 @@ Apply:
 ```bash
 bambu-hando \
   --source ./profiles.json \
-  --preset-folder default \
-  --printer-preset "Bambu Lab X1C 0.4 nozzle" \
+  --printer-preset "Bambu Lab X1 Carbon 0.4 nozzle" \
+  --printer-preset "Bambu Lab X1 Carbon 0.6 nozzle" \
   --spoolease-host 192.168.1.50 \
   --spoolease-security-key YOURKEY
 ```
@@ -124,20 +124,30 @@ Skip SpoolEase writes:
 bambu-hando --source ./profiles.json --skip-spoolease
 ```
 
-## BambuStudio paths used
+## BambuStudio presets
+
+Each filament becomes one BambuStudio custom filament per printer, built the way BambuStudio's own "Create filament" dialog builds them:
+
+- The tool clones the matching Generic system preset (`Generic PETG` for PETG; `PLA+` falls back to `Generic PLA`), so fan, flow, volumetric-speed, plate-temperature and gcode settings are Bambu's own. It then sets the name, vendor, `filament_id`, color, density, diameter and nozzle range. Bambu's tuned print temperature is kept unless the filament's range excludes it.
+- The preset inherits nothing and carries its own `filament_id`, which is what links it to SpoolEase. Filaments without a Generic template for the printer (PVB, GREENTEC, …) fail with a message instead of getting a guessed preset.
+- Printers are BambuStudio printer presets such as `Bambu Lab X1 Carbon 0.4 nozzle`; repeat `--printer-preset` for several (the TUI takes a comma-separated list). Without it, the printer selected in BambuStudio is used. Unknown names exit 2 with the list of known printers.
+- Presets go to the preset folder BambuStudio is using: your numeric user ID when logged in, `default` otherwise (read from `BambuStudio.conf`; `--preset-folder` overrides it). Restart BambuStudio to load new presets; when logged in it then syncs them to your Bambu account like presets you create yourself.
+
+The system profiles are read from BambuStudio's own install, so BambuStudio must have run at least once. Paths:
 
 Linux:
-- ~/.config/BambuStudio/user/<preset-folder>/filament
+- ~/.config/BambuStudio/system (templates), ~/.config/BambuStudio/BambuStudio.conf
+- ~/.config/BambuStudio/user/<preset-folder>/filament/base (written presets)
 
 macOS:
-- ~/Library/Application Support/BambuStudio/user/<preset-folder>/filament
+- the same under ~/Library/Application Support/BambuStudio
 
 ## Safety behavior
 
 - Uses dry-run mode for planning
 - Writes Bambu preset files atomically via temp file replacement
 - Produces JSON report output for auditability; each profile gets a `bambu_status` and `spoolease_status` of `written`, `planned`, `skipped` or `failed`
-- Exit codes: `0` success, `1` a profile failed, `2` invalid arguments or SpoolEase key check failed
+- Exit codes: `0` success, `1` a profile failed, `2` invalid arguments, BambuStudio not set up (no system profiles, unknown printer) or SpoolEase key check failed
 
 ## Development
 

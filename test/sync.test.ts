@@ -7,7 +7,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { KeyCheckError, runSync, type SyncEvent, type SyncOptions } from "../src/sync.js";
+import { KeyCheckError, runSync, SetupError, type SyncEvent, type SyncOptions } from "../src/sync.js";
+import { baseFilamentDir, installBambuStudio, X1C_04 } from "./bambuStudioSetup.js";
 import { profileAt } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 
@@ -19,7 +20,8 @@ describe("runSync", () => {
   beforeEach(async () => {
     const home = await mkdtemp(join(tmpdir(), "bambu-hando-home-"));
     vi.stubEnv("HOME", home);
-    filamentDir = join(home, ".config", "BambuStudio", "user", "default", "filament");
+    await installBambuStudio(home);
+    filamentDir = baseFilamentDir(home);
     server = await startSpoolEaseServer();
     events = [];
   });
@@ -32,7 +34,7 @@ describe("runSync", () => {
     return {
       profiles: [profileAt(0), profileAt(1)],
       presetFolder: "default",
-      printerPreset: "X1C",
+      printers: [X1C_04],
       dryRun: false,
       spoolease: { host: "127.0.0.1", port: server.port, securityKey: TEST_SECURITY_KEY, https: false },
       createSpools: false,
@@ -186,5 +188,21 @@ describe("runSync", () => {
 
     expect(results[0]?.bambuStatus).toBe("failed");
     expect(results[0]?.detail).toMatch(/^BambuStudio preset: EEXIST.*; SpoolEase skipped$/);
+  });
+
+  it("refuses unknown printers before writing or sending anything", async () => {
+    await expect(runSync(options({ printers: ["Bambu Lab X1C 0.4 nozzle"] }), record)).rejects.toThrow(
+      new SetupError(`unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"; known printers: ${X1C_04}, Bambu Lab X1 Carbon 0.6 nozzle`),
+    );
+    expect(events).toEqual([]);
+    expect(server.requests).toEqual([]);
+  });
+
+  it("refuses to run without BambuStudio's system profiles", async () => {
+    const bare = await mkdtemp(join(tmpdir(), "bambu-hando-bare-"));
+    vi.stubEnv("HOME", bare);
+
+    await expect(runSync(options(), record)).rejects.toThrow(SetupError);
+    expect(server.requests).toEqual([]);
   });
 });
