@@ -84,7 +84,10 @@ describe("runSync", () => {
 
   it("does not duplicate spools on re-runs or for repeated filaments in one source", async () => {
     await runSync(options({ createSpools: true }), record);
-    const { results } = await runSync(options({ createSpools: true, profiles: [profileAt(0), profileAt(2), profileAt(2)] }), record);
+    const { results } = await runSync(
+      options({ createSpools: true, overwritePresets: true, profiles: [profileAt(0), profileAt(2), profileAt(2)] }),
+      record,
+    );
 
     expect(results.map((r) => r.detail)).toEqual([
       "registered PABC1234; spool already exists",
@@ -170,6 +173,20 @@ describe("runSync", () => {
     expect(server.customFilaments).toBe("GFX01,Hand Made,190,230,PLA");
     expect(server.requests.some((r) => r.method === "POST" && r.path === "/api/filaments-config")).toBe(false);
     expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: reading current list failed: HTTP 500: flash busy")).toBe(true);
+  });
+
+  it("skips presets that already exist unless asked to overwrite them", async () => {
+    await runSync(options({ spoolease: null }), record);
+
+    const kept = await runSync(options({ spoolease: null }), record);
+    expect(kept.results.map((r) => [r.bambuStatus, r.detail])).toEqual([
+      ["skipped", "BambuStudio preset exists (overwrite to replace it); SpoolEase skipped"],
+      ["skipped", "BambuStudio preset exists (overwrite to replace it); SpoolEase skipped"],
+    ]);
+    expect(events).toContainEqual(expect.objectContaining({ type: "preset", index: 0, status: "skipped" }));
+
+    const replaced = await runSync(options({ spoolease: null, overwritePresets: true }), record);
+    expect(replaced.results.map((r) => r.bambuStatus)).toEqual(["written", "written"]);
   });
 
   it("fails every profile and skips spools when SpoolEase refuses the custom filaments", async () => {

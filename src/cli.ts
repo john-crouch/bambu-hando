@@ -30,6 +30,8 @@ Options:
                                   user's folder from BambuStudio.conf, else default)
   --printer-preset <name>         BambuStudio printer, e.g. "Bambu Lab X1 Carbon 0.4 nozzle";
                                   repeat for several (default: the printer selected in BambuStudio)
+  --overwrite-presets             Replace BambuStudio presets that already exist (by default
+                                  they are kept, so tuning done in BambuStudio survives)
   --dry-run                       Plan operations without writing
   --spoolease-host <host>         SpoolEase console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  SpoolEase security key (env: SPOOLEASE_SECURITY_KEY)
@@ -56,6 +58,7 @@ const OPTIONS = {
   source: { type: "string" },
   "preset-folder": { type: "string" },
   "printer-preset": { type: "string", multiple: true },
+  "overwrite-presets": { type: "boolean", default: false },
   "dry-run": { type: "boolean", default: false },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
@@ -103,6 +106,7 @@ export interface Settings {
   presetFolder: string | null;
   /** Empty: the printer selected in BambuStudio. */
   printers: string[];
+  overwritePresets: boolean;
   dryRun: boolean;
   spoolease: SpoolEaseConnection | null;
   createSpools: boolean;
@@ -156,6 +160,7 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
       spoolmanDb,
       presetFolder: values["preset-folder"] ?? null,
       printers: values["printer-preset"] ?? [],
+      overwritePresets: values["overwrite-presets"],
       dryRun: values["dry-run"],
       spoolease,
       createSpools: !values["skip-spools"],
@@ -200,6 +205,7 @@ async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | nu
       source: values.source ?? "",
       presetFolder: values["preset-folder"] ?? defaults.presetFolder,
       printerPreset: (values["printer-preset"] ?? [defaults.printer]).join(", "),
+      overwritePresets: values["overwrite-presets"],
       host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "",
       port: values["spoolease-port"],
       securityKey: values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "",

@@ -1,7 +1,7 @@
 // ABOUTME: Integration tests for the headless CLI: flags, report format, and exit codes.
 // ABOUTME: Runs main() in-process against a local SpoolEase server and a temporary HOME.
 
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -168,6 +168,21 @@ describe("cli", () => {
     expect(code).toBe(2);
     expect(stdout).toBe("");
     expect(stderr).toBe("SpoolEase key validation failed\n");
+  });
+
+  it("keeps existing presets unless --overwrite-presets is set", async () => {
+    const path = join(baseFilamentDir(home, "1234567890"), `PETG Red @${X1C_04}.json`);
+    await run(["--source", SOURCE_FIXTURE, "--skip-spoolease"]);
+    await writeFile(path, "{}\n", "utf-8");
+
+    const kept = await run(["--source", SOURCE_FIXTURE, "--skip-spoolease"]);
+    expect(JSON.parse(kept.stdout).results[0]).toMatchObject({ bambu_status: "skipped" });
+    expect(await readFile(path, "utf-8")).toBe("{}\n");
+
+    const replaced = await run(["--source", SOURCE_FIXTURE, "--skip-spoolease", "--overwrite-presets"]);
+    expect(replaced.code).toBe(0);
+    expect(JSON.parse(replaced.stdout).results[0]).toMatchObject({ bambu_status: "written" });
+    expect(JSON.parse(await readFile(path, "utf-8")).filament_id).toBe("PABC1234");
   });
 
   it("writes the report to --report as well as stdout", async () => {

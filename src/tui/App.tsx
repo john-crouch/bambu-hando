@@ -19,6 +19,8 @@ export interface FormValues {
   presetFolder: string;
   /** Comma-separated BambuStudio printer names; one preset is written per printer. */
   printerPreset: string;
+  /** Replace BambuStudio presets that already exist. */
+  overwritePresets: boolean;
   host: string;
   port: string;
   securityKey: string;
@@ -128,6 +130,7 @@ export function App({ initial, onExit }: Props) {
           profiles,
           presetFolder: values.presetFolder.trim(),
           printers: printers(values),
+          overwritePresets: values.overwritePresets,
           dryRun: false,
           spoolease: connection(values),
           createSpools: values.createSpools,
@@ -203,7 +206,8 @@ export function App({ initial, onExit }: Props) {
         {screen.profiles.length} profiles from {values.source}
       </Text>
       <Text>
-        Presets → {bambuBaseFilamentDir(values.presetFolder.trim())} for {printers(values).join(", ")}
+        Presets → {bambuBaseFilamentDir(values.presetFolder.trim())} for {printers(values).join(", ")} (
+        {values.overwritePresets ? "existing presets replaced" : "existing presets kept"})
       </Text>
       <Text>
         SpoolEase:{" "}

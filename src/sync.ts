@@ -18,18 +18,17 @@ export interface SyncOptions {
   dryRun: boolean;
   /** null skips SpoolEase entirely. */
   spoolease: SpoolEaseConnection | null;
-  /**
-   * Also create one SpoolEase spool per filament that doesn't have one yet. Off by default:
-   * a spool stands for a physical (usually tagged) spool, not a catalog entry.
-   */
+  /** Also create one SpoolEase spool per filament that doesn't have one yet. */
   createSpools: boolean;
+  /** Replace BambuStudio presets that already exist instead of keeping them. */
+  overwritePresets?: boolean;
 }
 
 export type SyncStage = "presets" | "key-check" | "custom-filaments" | "spools";
 
 export type SyncEvent =
   | { type: "stage"; stage: SyncStage }
-  | { type: "preset"; index: number; status: Status; paths: string[]; error: string }
+  | { type: "preset"; index: number; status: Status; paths: string[]; kept: string[]; error: string }
   | { type: "spool"; index: number; status: Status; detail: string }
   | { type: "warning"; message: string };
 
@@ -63,28 +62,38 @@ async function loadSystemProfiles(printers: string[]): Promise<SystemProfiles> {
   return system;
 }
 
+// A profile whose presets all exist already was skipped; one with any new preset was written.
+function presetStatus(outcome: PresetOutcome | undefined, dryRun: boolean): Status {
+  if (outcome?.error) return "failed";
+  if (outcome && outcome.paths.length > 0 && outcome.kept.length === outcome.paths.length) return "skipped";
+  return dryRun ? "planned" : "written";
+}
+
 export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) => void = () => {}): Promise<SyncOutcome> {
   const { profiles, dryRun } = options;
-  const presetStatus: Status = dryRun ? "planned" : "written";
   const system = await loadSystemProfiles(options.printers);
 
   onEvent({ type: "stage", stage: "presets" });
   const target = { presetFolder: options.presetFolder, printers: options.printers, system };
-  const presets = await writeMany(profiles, target, dryRun, (index, outcome) =>
-    onEvent({ type: "preset", index, status: outcome.error ? "failed" : presetStatus, ...outcome }),
+  const presets = await writeMany(profiles, target, { dryRun, overwrite: options.overwritePresets ?? false }, (index, outcome) =>
+    onEvent({ type: "preset", index, status: presetStatus(outcome, dryRun), ...outcome }),
   );
 
   const spools = await syncSpoolEase(options, onEvent);
 
   const results = profiles.map((profile, index): SyncResult => {
     const bambuError = presets[index]?.error ?? "";
+    const bambuStatus = presetStatus(presets[index], dryRun);
     const spool = spools[index] ?? { status: "skipped" as Status, detail: "" };
+    let detail = spool.detail;
+    if (bambuError) detail = `BambuStudio preset: ${bambuError}; ${spool.detail}`;
+    else if (bambuStatus === "skipped") detail = `BambuStudio preset exists (overwrite to replace it); ${spool.detail}`;
     return {
       profileName: profile.name,
       filamentId: profile.filamentId,
-      bambuStatus: bambuError ? "failed" : presetStatus,
+      bambuStatus,
       spooleaseStatus: spool.status,
-      detail: bambuError ? `BambuStudio preset: ${bambuError}; ${spool.detail}` : spool.detail,
+      detail,
     };
   });
 

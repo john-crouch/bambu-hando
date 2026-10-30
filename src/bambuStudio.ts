@@ -1,7 +1,7 @@
 // ABOUTME: BambuStudio custom filament preset writer for Linux and macOS.
-// ABOUTME: Clones a Generic system preset like BambuStudio's "Create filament"; writes atomically, dry-run never touches disk.
+// ABOUTME: Clones a Generic system preset like BambuStudio's "Create filament"; keeps existing presets unless told to overwrite.
 
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { PresetConfig, SystemProfiles, Template } from "./bambuProfiles.js";
@@ -95,8 +95,24 @@ export interface PresetTarget {
 export interface PresetOutcome {
   /** One preset per printer. */
   paths: string[];
+  /** Presets that already existed and were left as they are (or would be, in dry-run). */
+  kept: string[];
   /** Empty when every preset was written (or planned, in dry-run). */
   error: string;
+}
+
+export interface WriteOptions {
+  /** Plan only: nothing is written. */
+  dryRun?: boolean;
+  /** Replace presets that already exist. Off by default, so tuning done in BambuStudio survives re-runs. */
+  overwrite?: boolean;
+}
+
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
 }
 
 async function writeAtomic(path: string, content: string): Promise<void> {
@@ -106,16 +122,17 @@ async function writeAtomic(path: string, content: string): Promise<void> {
   await rename(temp, path);
 }
 
-/** Write each profile's presets, one per printer, returning the paths and error message (or "") per profile. */
+/** Write each profile's presets, one per printer, returning the paths, kept paths and error message (or "") per profile. */
 export async function writeMany(
   profiles: FilamentProfile[],
   target: PresetTarget,
-  dryRun = false,
+  { dryRun = false, overwrite = false }: WriteOptions = {},
   onOutcome: (index: number, outcome: PresetOutcome) => void = () => {},
 ): Promise<PresetOutcome[]> {
   const outcomes: PresetOutcome[] = [];
   for (const [index, profile] of profiles.entries()) {
     const paths = target.printers.map((printer) => presetPath(profile, target.presetFolder, printer));
+    const kept: string[] = [];
     let error = "";
     try {
       const presets = target.printers.map((printer) => {
@@ -123,13 +140,15 @@ export async function writeMany(
         if (!template) throw new Error(`no Generic ${profile.material} preset in BambuStudio for ${printer}`);
         return buildPreset(profile, printer, template, target.system.version);
       });
-      if (!dryRun) {
-        for (const [i, preset] of presets.entries()) await writeAtomic(paths[i] ?? "", presetJson(preset));
+      for (const [i, preset] of presets.entries()) {
+        const path = paths[i] ?? "";
+        if (!overwrite && (await exists(path))) kept.push(path);
+        else if (!dryRun) await writeAtomic(path, presetJson(preset));
       }
     } catch (err) {
       error = errorMessage(err);
     }
-    const outcome = { paths, error };
+    const outcome = { paths, kept, error };
     outcomes.push(outcome);
     onOutcome(index, outcome);
   }

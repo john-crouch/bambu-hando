@@ -8,7 +8,7 @@ import { useState } from "react";
 import type { FormValues } from "./App.js";
 
 type TextKey = "source" | "presetFolder" | "printerPreset" | "host" | "port" | "securityKey";
-type ToggleKey = "https" | "skipSpoolease" | "createSpools";
+type ToggleKey = "overwritePresets" | "https" | "skipSpoolease" | "createSpools";
 
 type Field =
   | { key: TextKey; label: string; kind: "text" | "secret"; spoolease: boolean }
@@ -18,6 +18,7 @@ const FIELDS: Field[] = [
   { key: "source", label: "Source (file or URL)", kind: "text", spoolease: false },
   { key: "presetFolder", label: "Preset folder", kind: "text", spoolease: false },
   { key: "printerPreset", label: "Printer preset(s)", kind: "text", spoolease: false },
+  { key: "overwritePresets", label: "Overwrite presets", kind: "toggle", spoolease: false },
   { key: "host", label: "SpoolEase host", kind: "text", spoolease: true },
   { key: "port", label: "SpoolEase port", kind: "text", spoolease: true },
   { key: "securityKey", label: "Security key", kind: "secret", spoolease: true },

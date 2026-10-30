@@ -56,6 +56,7 @@ describe("TUI", () => {
       https: false,
       skipSpoolease: false,
       createSpools: true,
+      overwritePresets: false,
       query: "",
       diameter: 1.75,
       ...overrides,
@@ -121,8 +122,8 @@ describe("TUI", () => {
     await press(stdin, ENTER);
     expect(lastFrame()).toContain("SpoolEase host and security key are required");
 
-    // source, preset folder, printer preset, host, port, key, https, skip
-    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
+    // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("SpoolEase: skipped"));
   });
@@ -145,6 +146,18 @@ describe("TUI", () => {
     expect(onExit).toHaveBeenCalledWith(0);
   });
 
+  it("keeps existing presets unless the Overwrite presets toggle is on", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ skipSpoolease: true })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("existing presets kept"));
+    await press(stdin, "b");
+    // source, preset folder, printer preset, overwrite presets
+    await press(stdin, DOWN, DOWN, DOWN, " ", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("existing presets replaced"));
+  });
+
   it("creates spools unless the Create spools toggle is switched off", async () => {
     const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
     await settle();
@@ -152,8 +165,8 @@ describe("TUI", () => {
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
     await press(stdin, "b");
-    // source, preset folder, printer preset, host, port, key, https, skip, create spools
-    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
+    // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip, create spools
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments only"));
     await press(stdin, "a");
 

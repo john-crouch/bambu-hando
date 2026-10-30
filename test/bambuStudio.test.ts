@@ -1,5 +1,5 @@
 // ABOUTME: Tests BambuStudio custom filament presets: content cloned from a Generic system preset,
-// ABOUTME: file naming and location under filament/base, and dry-run/error handling in writeMany.
+// ABOUTME: file naming and location under filament/base, and keep/overwrite, dry-run and errors in writeMany.
 
 import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -108,24 +108,24 @@ describe("writeMany", () => {
   });
 
   it("writes one preset per printer, all sharing the filament ID", async () => {
-    const outcomes = await writeMany([profileAt(0)], target([X1C_04, X1C_06]), false);
+    const outcomes = await writeMany([profileAt(0)], target([X1C_04, X1C_06]));
 
     const dir = baseFilamentDir(home, "1234567890");
-    expect(outcomes).toEqual([{ paths: [join(dir, `PETG Red @${X1C_04}.json`), join(dir, `PETG Red @${X1C_06}.json`)], error: "" }]);
+    expect(outcomes).toEqual([{ paths: [join(dir, `PETG Red @${X1C_04}.json`), join(dir, `PETG Red @${X1C_06}.json`)], kept: [], error: "" }]);
     expect((await readdir(dir)).sort()).toEqual([`PETG Red @${X1C_04}.json`, `PETG Red @${X1C_06}.json`]);
     const written = JSON.parse(await readFile(join(dir, `PETG Red @${X1C_06}.json`), "utf-8"));
     expect(written).toMatchObject({ filament_id: "PABC1234", compatible_printers: [X1C_06] });
   });
 
   it("dry-run plans the paths without touching disk", async () => {
-    const outcomes = await writeMany([profileAt(0)], target(), true);
+    const outcomes = await writeMany([profileAt(0)], target(), { dryRun: true });
 
-    expect(outcomes[0]).toEqual({ paths: [join(baseFilamentDir(home, "1234567890"), `PETG Red @${X1C_04}.json`)], error: "" });
+    expect(outcomes[0]).toEqual({ paths: [join(baseFilamentDir(home, "1234567890"), `PETG Red @${X1C_04}.json`)], kept: [], error: "" });
     await expect(readdir(baseFilamentDir(home, "1234567890"))).rejects.toThrow("ENOENT");
   });
 
   it("fails a profile without a Generic template and still writes the others", async () => {
-    const outcomes = await writeMany([{ ...profileAt(0), material: "PVB" }, profileAt(2)], target(), false);
+    const outcomes = await writeMany([{ ...profileAt(0), material: "PVB" }, profileAt(2)], target());
 
     expect(outcomes[0]?.error).toBe(`no Generic PVB preset in BambuStudio for ${X1C_04}`);
     expect(outcomes[1]?.error).toBe("");
@@ -137,8 +137,44 @@ describe("writeMany", () => {
     await mkdir(join(dir, ".."), { recursive: true });
     await writeFile(dir, "not a directory", "utf-8");
 
-    const outcomes = await writeMany([profileAt(0)], target(), false);
+    const outcomes = await writeMany([profileAt(0)], target());
 
     expect(outcomes[0]?.error).toContain("EEXIST");
+  });
+
+  describe("with presets that already exist", () => {
+    const tuned = '{"name": "tuned in BambuStudio"}\n';
+    let existing: string;
+    let missing: string;
+
+    beforeEach(async () => {
+      const dir = baseFilamentDir(home, "1234567890");
+      existing = join(dir, `PETG Red @${X1C_04}.json`);
+      missing = join(dir, `PETG Red @${X1C_06}.json`);
+      await mkdir(dir, { recursive: true });
+      await writeFile(existing, tuned, "utf-8");
+    });
+
+    it("keeps them and writes only the missing ones", async () => {
+      const outcomes = await writeMany([profileAt(0)], target([X1C_04, X1C_06]));
+
+      expect(outcomes[0]).toEqual({ paths: [existing, missing], kept: [existing], error: "" });
+      expect(await readFile(existing, "utf-8")).toBe(tuned);
+      expect(JSON.parse(await readFile(missing, "utf-8")).filament_id).toBe("PABC1234");
+    });
+
+    it("replaces them when asked to overwrite", async () => {
+      const outcomes = await writeMany([profileAt(0)], target([X1C_04, X1C_06]), { overwrite: true });
+
+      expect(outcomes[0]?.kept).toEqual([]);
+      expect(JSON.parse(await readFile(existing, "utf-8")).filament_id).toBe("PABC1234");
+    });
+
+    it("reports them as kept in dry-run without writing", async () => {
+      const outcomes = await writeMany([profileAt(0)], target([X1C_04, X1C_06]), { dryRun: true });
+
+      expect(outcomes[0]?.kept).toEqual([existing]);
+      await expect(readFile(missing, "utf-8")).rejects.toThrow("ENOENT");
+    });
   });
 });

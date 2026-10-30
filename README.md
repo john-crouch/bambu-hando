@@ -138,6 +138,7 @@ Each filament becomes one BambuStudio custom filament per printer, built the way
 - The preset inherits nothing and carries its own `filament_id`, which is what links it to SpoolEase. Filaments without a Generic template for the printer (PVB, GREENTEC, …) fail with a message instead of getting a guessed preset.
 - Printers are BambuStudio printer presets such as `Bambu Lab X1 Carbon 0.4 nozzle`; repeat `--printer-preset` for several (the TUI takes a comma-separated list). Without it, the printer selected in BambuStudio is used. Unknown names exit 2 with the list of known printers.
 - Presets go to the preset folder BambuStudio is using: your numeric user ID when logged in, `default` otherwise (read from `BambuStudio.conf`; `--preset-folder` overrides it). Restart BambuStudio to load new presets; when logged in it then syncs them to your Bambu account like presets you create yourself.
+- Presets that already exist are kept as they are and reported as `skipped`, so tuning you do in BambuStudio (flow, temperatures, fans) survives re-runs; only missing ones are written, such as a newly added printer. `--overwrite-presets` (the TUI's "Overwrite presets" toggle) replaces them with freshly generated ones.
 
 The system profiles are read from BambuStudio's own install, so BambuStudio must have run at least once. Paths:
 
