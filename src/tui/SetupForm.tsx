@@ -82,6 +82,7 @@ export function SetupForm({ values, error, onChange, onSubmit }: Props) {
           );
         })}
       </Box>
+      <Text dimColor>Source can be a JSON file or URL, or spoolmandb to search the SpoolmanDB filament database.</Text>
       {error ? <Text color="red">{error}</Text> : null}
       <Text dimColor>↑/↓ move · space toggle · enter load plan · ctrl+c quit</Text>
     </Box>

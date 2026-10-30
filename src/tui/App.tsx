@@ -1,14 +1,16 @@
-// ABOUTME: Root TUI component: setup form → plan → live apply → summary, plus error screen.
+// ABOUTME: Root TUI component: setup form → (SpoolmanDB picker) → plan → live apply → summary, plus error screen.
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
 import { bambuFilamentDir } from "../paths.js";
 import { loadProfiles } from "../sources.js";
 import type { SpoolEaseConnection } from "../spoolease.js";
+import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
 import { KeyCheckError, runSync, type SyncEvent, type SyncStage } from "../sync.js";
+import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { SetupForm } from "./SetupForm.js";
 
@@ -22,11 +24,16 @@ export interface FormValues {
   https: boolean;
   skipSpoolease: boolean;
   createSpools: boolean;
+  /** Initial SpoolmanDB search. */
+  query: string;
+  /** SpoolmanDB filament diameter in mm. */
+  diameter: number;
 }
 
 type Screen =
   | { name: "form"; error: string }
   | { name: "loading" }
+  | { name: "pick" }
   | { name: "plan"; profiles: FilamentProfile[] }
   | { name: "running"; profiles: FilamentProfile[] }
   | { name: "done"; profiles: FilamentProfile[]; results: SyncResult[] }
@@ -73,6 +80,13 @@ export function App({ initial, onExit }: Props) {
   const [progress, setProgress] = useState<RowProgress[]>([]);
   const [stage, setStage] = useState<SyncStage | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [picker, setPicker] = useState(() => initialPickerState(initial.query));
+  const matches = useMemo(
+    () => (catalog ? filterProfiles(catalog.profiles, { brand: "", material: "", match: picker.query }) : []),
+    [catalog, picker.query],
+  );
+  const fromSpoolmanDb = values.source.trim() === SPOOLMANDB_SOURCE;
 
   async function loadPlan(): Promise<void> {
     const error = validate(values);
@@ -82,6 +96,11 @@ export function App({ initial, onExit }: Props) {
     }
     setScreen({ name: "loading" });
     try {
+      if (fromSpoolmanDb) {
+        setCatalog(await loadSpoolmanDb({ diameter: values.diameter }));
+        setScreen({ name: "pick" });
+        return;
+      }
       const profiles = await loadProfiles(values.source.trim());
       setProgress([]);
       setScreen({ name: "plan", profiles });
@@ -124,10 +143,18 @@ export function App({ initial, onExit }: Props) {
 
   // Always subscribed: toggling isActive re-attaches Ink's listener in an effect after the
   // new screen renders, so a key pressed right after "Done" appears could be dropped.
-  useInput((input) => {
-    if (screen.name === "plan") {
+  useInput((input, key) => {
+    if (screen.name === "pick") {
+      const action = pickerInput(picker, input, key, matches);
+      if (action.type === "update") setPicker(action.state);
+      else if (action.type === "back") setScreen({ name: "form", error: "" });
+      else if (catalog) {
+        setProgress([]);
+        setScreen({ name: "plan", profiles: catalog.profiles.filter((p) => picker.selected.has(p.filamentId)) });
+      }
+    } else if (screen.name === "plan") {
       if (input === "a") void apply(screen.profiles);
-      else if (input === "b") setScreen({ name: "form", error: "" });
+      else if (input === "b") setScreen(fromSpoolmanDb && catalog ? { name: "pick" } : { name: "form", error: "" });
       else if (input === "q") onExit(0);
     } else if (screen.name === "done") {
       if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
@@ -141,7 +168,13 @@ export function App({ initial, onExit }: Props) {
     return <SetupForm values={values} error={screen.error} onChange={setValues} onSubmit={() => void loadPlan()} />;
   }
 
-  if (screen.name === "loading") return <Text>Loading profiles from {values.source}…</Text>;
+  if (screen.name === "loading") {
+    return <Text>{fromSpoolmanDb ? "Loading SpoolmanDB…" : `Loading profiles from ${values.source}…`}</Text>;
+  }
+
+  if (screen.name === "pick") {
+    return <Picker catalogSize={catalog?.profiles.length ?? 0} matches={matches} state={picker} warnings={catalog?.warnings ?? []} />;
+  }
 
   if (screen.name === "error") {
     return (

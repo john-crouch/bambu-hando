@@ -6,10 +6,9 @@ import { parseArgs } from "node:util";
 
 import { resultFailed, type SyncResult } from "./models.js";
 import type { PresetOutcome } from "./bambuStudio.js";
-import { cacheDir } from "./paths.js";
 import { loadProfiles } from "./sources.js";
 import type { SpoolEaseConnection } from "./spoolease.js";
-import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE, SPOOLMANDB_URL } from "./spoolmanDb.js";
+import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE } from "./spoolmanDb.js";
 import { KeyCheckError, runSync } from "./sync.js";
 import type { FormValues } from "./tui/App.js";
 
@@ -21,7 +20,8 @@ const USAGE = `Usage:
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
 The tui command opens an interactive terminal UI; its options prefill the
-setup form (--dry-run and --report are headless only).
+setup form (--dry-run and --report are headless only), and the SpoolmanDB
+filters prefill the filament search.
 
 Options:
   --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
@@ -66,7 +66,7 @@ const OPTIONS = {
   help: { type: "boolean", short: "h", default: false },
 } as const;
 
-const { "dry-run": _dryRun, report: _report, brand: _brand, material: _material, match: _match, diameter: _diameter, ...TUI_OPTIONS } = OPTIONS;
+const { "dry-run": _dryRun, report: _report, ...TUI_OPTIONS } = OPTIONS;
 
 export interface Io {
   stdout: (text: string) => void;
@@ -79,6 +79,12 @@ const processIo: Io = {
 };
 
 class UsageError extends Error {}
+
+function parseDiameter(value: string | undefined): number {
+  const diameter = Number(value ?? "1.75");
+  if (!Number.isFinite(diameter) || diameter <= 0) throw new UsageError("--diameter must be a positive number");
+  return diameter;
+}
 
 export interface SpoolmanDbSelection extends ProfileFilters {
   diameter: number;
@@ -115,9 +121,7 @@ function parseSettings(argv: string[]): { settings: Settings | null; help: boole
     if (!filters.brand && !filters.material && !filters.match) {
       throw new UsageError("--source spoolmandb needs at least one of --brand, --material, --match");
     }
-    const diameter = Number(values.diameter ?? "1.75");
-    if (!Number.isFinite(diameter) || diameter <= 0) throw new UsageError("--diameter must be a positive number");
-    spoolmanDb = { ...filters, diameter };
+    spoolmanDb = { ...filters, diameter: parseDiameter(values.diameter) };
   } else if (filters.brand || filters.material || filters.match || values.diameter !== undefined) {
     throw new UsageError("--brand, --material, --match and --diameter only apply to --source spoolmandb");
   }
@@ -190,6 +194,8 @@ function parseTuiValues(argv: string[]): { values: FormValues | null; help: bool
       https: values["spoolease-https"],
       skipSpoolease: values["skip-spoolease"],
       createSpools: values["create-spools"],
+      query: [values.brand, values.material, values.match].filter(Boolean).join(" "),
+      diameter: parseDiameter(values.diameter),
     },
   };
 }
@@ -231,11 +237,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   try {
     let profiles;
     if (settings.spoolmanDb) {
-      const catalog = await loadSpoolmanDb({
-        baseUrl: process.env.SPOOLMANDB_URL || SPOOLMANDB_URL,
-        cacheDir: cacheDir(),
-        diameter: settings.spoolmanDb.diameter,
-      });
+      const catalog = await loadSpoolmanDb({ diameter: settings.spoolmanDb.diameter });
       for (const warning of catalog.warnings) io.stderr(`${warning}\n`);
       profiles = filterProfiles(catalog.profiles, settings.spoolmanDb);
       if (profiles.length === 0) {

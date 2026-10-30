@@ -1,6 +1,7 @@
 // ABOUTME: End-to-end TUI tests that run the built binary inside a real pseudo-terminal.
 // ABOUTME: Sends real keystrokes via node-pty and asserts on rendered frames, files, and exit codes.
 
+import { execFile } from "node:child_process";
 import { mkdtemp, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,19 +12,29 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
 const CTRL_C = "\u0003";
+const TAB = "\t";
 const SHOW_CURSOR = "\u001B[?25h";
 const WAIT_MS = 8_000;
 
 // Strip CSI/OSC escape sequences so assertions see only the rendered text.
 const ANSI = /\u001B\[[0-9;?]*[ -/]*[@-~]|\u001B\][^\u0007]*\u0007/g;
 
+// Ink draws its first frame before its input effect puts stdin in raw mode. A key sent in that
+// window goes through the cooked line discipline (Enter arrives as "\n", not "\r") and is lost.
+function rawModeOn(ptsName: string): Promise<boolean> {
+  const flag = process.platform === "darwin" ? "-f" : "-F";
+  return new Promise((resolve) => execFile("stty", [flag, ptsName, "-a"], (err, stdout) => resolve(!err && /(^|\s)-icanon(\s|$)/.test(stdout))));
+}
+
 class Terminal {
   raw = "";
   private cursor = 0;
+  private rawMode = false;
   readonly exited: Promise<number>;
   private readonly pty: IPty;
 
@@ -45,18 +56,32 @@ class Terminal {
     return this.raw.replace(ANSI, "");
   }
 
-  /** Wait until `needle` appears in output rendered after the previous match. */
+  /**
+   * Wait until `needle` appears in output rendered after the previous match, and until the app reads
+   * keys in raw mode (App's useInput stays active, so raw mode stays on once it is on).
+   */
   async waitFor(needle: string): Promise<void> {
     const deadline = Date.now() + WAIT_MS;
+    let found = false;
     while (Date.now() < deadline) {
-      const index = this.text.indexOf(needle, this.cursor);
-      if (index !== -1) {
-        this.cursor = index + needle.length;
-        return;
+      if (!found) {
+        const index = this.text.indexOf(needle, this.cursor);
+        if (index !== -1) {
+          this.cursor = index + needle.length;
+          found = true;
+        }
       }
+      if (found && !this.rawMode) this.rawMode = await rawModeOn(this.ptsName);
+      if (found && this.rawMode) return;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    throw new Error(`Timed out waiting for ${JSON.stringify(needle)}. Output:\n${this.text.slice(-2_000)}`);
+    const what = found ? "raw mode after" : "";
+    throw new Error(`Timed out waiting for ${what} ${JSON.stringify(needle)}. Output:\n${this.text.slice(-2_000)}`);
+  }
+
+  // node-pty's UnixTerminal has ptsName at runtime, but its typings leave it out.
+  private get ptsName(): string {
+    return (this.pty as unknown as { ptsName: string }).ptsName;
   }
 
   press(keys: string): void {
@@ -144,6 +169,34 @@ describe("TUI in a real terminal", () => {
 
     expect(await terminal.exited).toBe(2);
     expect(server.requests).toEqual([]);
+  });
+
+  it("picks a SpoolmanDB filament prefilled from --brand and applies it", async () => {
+    const spoolmanDb = await startSpoolmanDbServer();
+    try {
+      terminal = new Terminal(["--source", "spoolmandb", "--brand", "RatRig", "--skip-spoolease"], {
+        HOME: home,
+        SPOOLMANDB_URL: spoolmanDb.url,
+      });
+
+      await terminal.waitFor("Source (file or URL)");
+      terminal.press(ENTER);
+      await terminal.waitFor("1 match");
+      terminal.press(TAB);
+      await terminal.waitFor("1 selected");
+      terminal.press(ENTER);
+      await terminal.waitFor("[a] apply");
+      terminal.press("a");
+      await terminal.waitFor("Done: 1 written, 0 failed");
+      terminal.press("q");
+
+      expect(await terminal.exited).toBe(0);
+      expect(await readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).toEqual([
+        "RatRig ABS Punkfil Brute Black @ Bambu Lab X1C 0.4 nozzle.json",
+      ]);
+    } finally {
+      await spoolmanDb.close();
+    }
   });
 
   it("exits 130 on ctrl+c", async () => {

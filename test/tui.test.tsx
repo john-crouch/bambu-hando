@@ -11,26 +11,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, type FormValues } from "../src/tui/App.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const ENTER = "\r";
 const DOWN = "\u001B[B";
+const TAB = "\t";
+const ESC = "\u001B";
+const CTRL_A = "\u0001";
+const BACKSPACE = "\u007F";
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30));
 
 describe("TUI", () => {
   let server: SpoolEaseServer;
+  let spoolmanDb: SpoolmanDbServer;
   let home: string;
   let onExit: ReturnType<typeof vi.fn<(code: number) => void>>;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-tui-"));
     vi.stubEnv("HOME", home);
+    vi.stubEnv("XDG_CACHE_HOME", undefined);
     server = await startSpoolEaseServer();
+    spoolmanDb = await startSpoolmanDbServer();
+    vi.stubEnv("SPOOLMANDB_URL", spoolmanDb.url);
     onExit = vi.fn<(code: number) => void>();
   });
 
   afterEach(async () => {
     await server.close();
+    await spoolmanDb.close();
   });
 
   function values(overrides: Partial<FormValues> = {}): FormValues {
@@ -44,6 +54,8 @@ describe("TUI", () => {
       https: false,
       skipSpoolease: false,
       createSpools: false,
+      query: "",
+      diameter: 1.75,
       ...overrides,
     };
   }
@@ -184,5 +196,82 @@ describe("TUI", () => {
     await press(stdin, "b");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("Printer preset"));
+  });
+
+  it("searches SpoolmanDB, picks filaments with tab, and applies them", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("SpoolmanDB: 9 filaments"));
+    await press(stdin, "3dhojor", "x");
+    await vi.waitFor(() => expect(lastFrame()).toContain("0 match"));
+    await press(stdin, BACKSPACE);
+    await vi.waitFor(() => expect(lastFrame()).toContain("3 match"));
+    expect(lastFrame()).toContain("3DHoJor PLA-CF Brown");
+    expect(lastFrame()).not.toContain("Polymaker");
+
+    await press(stdin, TAB, TAB);
+    await vi.waitFor(() => expect(lastFrame()).toContain("2 selected"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("2 profiles from spoolmandb"));
+    expect(lastFrame()).toContain("Pccd78d1");
+    expect(lastFrame()).toContain("Pd6ef068");
+
+    await press(stdin, "a");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 written, 0 failed"));
+    expect(await readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).toHaveLength(2);
+    expect(server.customFilaments).toBe("Pccd78d1,3DHoJor ABS+ Brown,230,270,ABS+\r\nPd6ef068,3DHoJor PLA-CF Brown,210,230,PLA-CF");
+  });
+
+  it("prefills the search and selects every match with ctrl+a", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
+    await press(stdin, CTRL_A);
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+    await press(stdin, ENTER);
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 profiles from spoolmandb"));
+    expect(lastFrame()).toContain("Peddfd02");
+  });
+
+  it("asks for a selection, and escape returns to the form", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("9 match"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Select filaments with tab"));
+
+    await press(stdin, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Printer preset"));
+  });
+
+  it("goes back from the plan to the picker and keeps the selection", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("9 match"));
+    await press(stdin, TAB, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await press(stdin, "b");
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+  });
+
+  it("shows SpoolmanDB download errors on the form", async () => {
+    spoolmanDb.failWith = 503;
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("HTTP 503"));
+    expect(lastFrame()).toContain("Printer preset");
   });
 });

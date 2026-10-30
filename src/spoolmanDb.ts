@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { normalizeRgba } from "./colors.js";
 import { errorMessage } from "./errors.js";
 import type { FilamentProfile } from "./models.js";
+import { cacheDir } from "./paths.js";
 import { derivedFilamentId } from "./sources.js";
 
 /** --source value that selects SpoolmanDB instead of a file or URL. */
@@ -23,9 +24,11 @@ const DEFAULT_TEMPS = [190, 240] as const;
 const EXCLUDED_MANUFACTURERS = new Set(["bambu lab"]);
 
 export interface SpoolmanDbOptions {
-  baseUrl: string;
-  cacheDir: string;
   diameter: number;
+  /** Defaults to $SPOOLMANDB_URL, then SpoolmanDB's GitHub Pages site. */
+  baseUrl?: string;
+  /** Defaults to the per-user cache directory. */
+  cacheDir?: string;
 }
 
 export interface Catalog {
@@ -182,9 +185,14 @@ async function fetchCachedJson(url: string, cachePath: string): Promise<{ value:
 
 /** Download (or reuse the cached) SpoolmanDB catalog and map it onto profiles of one diameter. */
 export async function loadSpoolmanDb(options: SpoolmanDbOptions): Promise<Catalog> {
-  const base = options.baseUrl.replace(/\/+$/, "");
-  const fetchFile = (file: string) => fetchCachedJson(`${base}/${file}`, join(options.cacheDir, file));
-  const [filaments, materials] = await Promise.all([fetchFile("filaments.json"), fetchFile("materials.json")]);
+  const base = (options.baseUrl ?? (process.env.SPOOLMANDB_URL || SPOOLMANDB_URL)).replace(/\/+$/, "");
+  const dir = options.cacheDir ?? cacheDir();
+  const fetchFile = (file: string) => fetchCachedJson(`${base}/${file}`, join(dir, file));
+  // allSettled, so the error doesn't depend on which download happens to fail first.
+  const [filamentsResult, materialsResult] = await Promise.allSettled([fetchFile("filaments.json"), fetchFile("materials.json")]);
+  if (filamentsResult.status === "rejected") throw filamentsResult.reason;
+  if (materialsResult.status === "rejected") throw materialsResult.reason;
+  const [filaments, materials] = [filamentsResult.value, materialsResult.value];
   return {
     profiles: catalogProfiles(filaments.value, materials.value, options.diameter),
     warnings: [filaments.warning, materials.warning].filter(Boolean),
