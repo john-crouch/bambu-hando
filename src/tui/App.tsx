@@ -1,9 +1,13 @@
-// ABOUTME: Root TUI component: setup form → (SpoolmanDB picker) → plan → live apply → summary, plus error screen.
+// ABOUTME: Root TUI component: setup form → (SpoolmanDB picker) → plan → live apply → summary (→ labels), plus error screen.
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 
+import { errorMessage } from "../errors.js";
+import { type LabelTarget, makeLabels } from "../labelJob.js";
+import { listPrinters } from "../labelPdf.js";
+import { loadLabelSettings, saveLabelSettings } from "../labelSettings.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
 import { bambuBaseFilamentDir } from "../paths.js";
 import { loadProfiles } from "../sources.js";
@@ -14,6 +18,7 @@ import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type Sync
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { SetupForm } from "./SetupForm.js";
+import { initialLabelForm, LabelForm, type LabelFormState, labelFormInput, labelFormSettings, labelFormTarget } from "./LabelForm.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
 export interface FormValues {
@@ -44,6 +49,7 @@ type Screen =
   | { name: "plan"; profiles: FilamentProfile[] }
   | { name: "running"; profiles: FilamentProfile[] }
   | { name: "done"; profiles: FilamentProfile[]; results: SyncResult[] }
+  | { name: "labels"; profiles: FilamentProfile[]; results: SyncResult[]; form: LabelFormState }
   | { name: "error"; message: string; exitCode: number };
 
 const STAGE_LABELS: Record<SyncStage, string> = {
@@ -77,6 +83,15 @@ function connection(values: FormValues): SpoolEaseConnection | null {
   return { host: values.host.trim(), port: Number(values.port), securityKey: values.securityKey, https: values.https };
 }
 
+/** IDs of the spools a run created, in profile order. */
+function newSpoolIds(results: SyncResult[]): string[] {
+  return results.map((r) => r.spoolId).filter((id): id is string => Boolean(id));
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 function applyEvent(progress: RowProgress[], event: SyncEvent): RowProgress[] {
   if (event.type !== "preset" && event.type !== "spool") return progress;
   const next = [...progress];
@@ -100,6 +115,8 @@ export function App({ initial, onExit }: Props) {
   // Empty spool weight per brand key; kept while going back and forth so earlier picks stay selected.
   const [weightChoices, setWeightChoices] = useState<ReadonlyMap<string, WeightChoice>>(new Map());
   const [weightWarnings, setWeightWarnings] = useState<string[]>([]);
+  // Outcome of the last labels made from the summary.
+  const [labelsDone, setLabelsDone] = useState<{ ok: boolean; lines: string[] } | null>(null);
   const matches = useMemo(
     () => (catalog ? filterProfiles(catalog.profiles, { brand: "", material: "", match: picker.query }) : []),
     [catalog, picker.query],
@@ -198,6 +215,42 @@ export function App({ initial, onExit }: Props) {
     }
   }
 
+  async function openLabels(profiles: FilamentProfile[], results: SyncResult[]): Promise<void> {
+    setScreen({ name: "loading", message: "Looking for printers…" });
+    const [saved, printerList] = await Promise.all([loadLabelSettings(), listPrinters()]);
+    setScreen({ name: "labels", profiles, results, form: initialLabelForm(saved, printerList) });
+  }
+
+  async function printLabels(profiles: FilamentProfile[], results: SyncResult[], form: LabelFormState, target: LabelTarget): Promise<void> {
+    const spoolease = connection(values);
+    setScreen({ name: "loading", message: "Making labels…" });
+    const lines: string[] = [];
+    let ok = true;
+    try {
+      if (!spoolease) throw new Error("SpoolEase is skipped");
+      const ids = newSpoolIds(results);
+      const made = await makeLabels(new SpoolEaseClient(spoolease), { ids, brand: "", material: "", match: "" }, target, (w) => lines.push(w));
+      const count = plural(made.spools.length, "label");
+      if (target.output) lines.push(`Wrote ${count} to ${target.output}`);
+      if (made.printError) {
+        ok = false;
+        lines.push(made.printError);
+      } else if (target.printer) {
+        lines.push(`Sent ${count} to ${target.printer}${made.printReply ? `: ${made.printReply}` : ""}`);
+      }
+    } catch (err) {
+      ok = false;
+      lines.push(`Labels failed: ${errorMessage(err)}`);
+    }
+    try {
+      await saveLabelSettings(labelFormSettings(form));
+    } catch (err) {
+      lines.push(`Couldn't remember these label choices: ${errorMessage(err)}`);
+    }
+    setLabelsDone({ ok, lines });
+    setScreen({ name: "done", profiles, results });
+  }
+
   // Always subscribed: toggling isActive re-attaches Ink's listener in an effect after the
   // new screen renders, so a key pressed right after "Done" appears could be dropped.
   useInput((input, key) => {
@@ -229,6 +282,16 @@ export function App({ initial, onExit }: Props) {
       else if (input === "q") onExit(0);
     } else if (screen.name === "done") {
       if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
+      else if (input === "l" && newSpoolIds(screen.results).length > 0) void openLabels(screen.profiles, screen.results);
+    } else if (screen.name === "labels") {
+      const action = labelFormInput(screen.form, input, key);
+      if (action.type === "update") setScreen({ ...screen, form: action.state });
+      else if (action.type === "back") setScreen({ name: "done", profiles: screen.profiles, results: screen.results });
+      else {
+        const checked = labelFormTarget(screen.form);
+        if ("error" in checked) setScreen({ ...screen, form: { ...screen.form, error: checked.error } });
+        else void printLabels(screen.profiles, screen.results, screen.form, checked.target);
+      }
     } else if (screen.name === "error") {
       if (input === "b") setScreen({ name: "form", error: "" });
       else if (input === "q") onExit(screen.exitCode);
@@ -263,6 +326,10 @@ export function App({ initial, onExit }: Props) {
     return <Picker catalogSize={catalog?.profiles.length ?? 0} matches={matches} state={picker} warnings={catalog?.warnings ?? []} />;
   }
 
+  if (screen.name === "labels") {
+    return <LabelForm state={screen.form} spoolIds={newSpoolIds(screen.results)} />;
+  }
+
   if (screen.name === "error") {
     return (
       <Box flexDirection="column">
@@ -274,6 +341,7 @@ export function App({ initial, onExit }: Props) {
 
   const target = connection(values);
   const failed = screen.name === "done" ? screen.results.filter(resultFailed) : [];
+  const created = screen.name === "done" ? newSpoolIds(screen.results).length : 0;
 
   return (
     <Box flexDirection="column">
@@ -315,7 +383,12 @@ export function App({ initial, onExit }: Props) {
               ✗ {r.profileName}: {r.detail}
             </Text>
           ))}
-          <Text dimColor>[q] quit</Text>
+          {labelsDone?.lines.map((line) => (
+            <Text key={line} color={labelsDone.ok ? "green" : "red"}>
+              {labelsDone.ok ? "✓" : "✗"} {line}
+            </Text>
+          ))}
+          <Text dimColor>{created > 0 ? `[l] labels for ${plural(created, "new spool")} · [q] quit` : "[q] quit"}</Text>
         </Box>
       ) : null}
     </Box>

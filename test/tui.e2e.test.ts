@@ -2,7 +2,7 @@
 // ABOUTME: Sends real keystrokes via node-pty and asserts on rendered frames, files, and exit codes.
 
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 import { spawn, type IPty } from "node-pty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { PRINTER_ROW } from "../src/tui/LabelForm.js";
+import { installFakeLp } from "./fakeLp.js";
 import { SOURCE_FIXTURE } from "./parity.js";
+import { readPdf } from "./pdf.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04 } from "./bambuStudioSetup.js";
@@ -18,6 +21,8 @@ import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04 } f
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
 const CTRL_C = "\u0003";
+const DOWN = "\u001B[B";
+const RIGHT = "\u001B[C";
 const TAB = "\t";
 const SHOW_CURSOR = "\u001B[?25h";
 const WAIT_MS = 8_000;
@@ -149,6 +154,32 @@ describe("TUI in a real terminal", () => {
     expect(terminal.raw.endsWith(SHOW_CURSOR) || terminal.raw.includes(SHOW_CURSOR)).toBe(true);
     expect(await readdir(baseFilamentDir(home))).toHaveLength(3);
     expect(server.requests.filter((r) => r.path === "/api/spools/add-edit")).toHaveLength(3);
+  });
+
+  it("prints labels for the new spools from the summary", async () => {
+    const lpLog = await installFakeLp(home);
+    terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags()], { HOME: home });
+
+    await terminal.waitFor("Source (file or URL)");
+    terminal.press(ENTER);
+    await keepSourceWeights(terminal);
+    await terminal.waitFor("[a] apply");
+    terminal.press("a");
+    await terminal.waitFor("[l] labels for 3 new spools");
+    terminal.press("l");
+    await terminal.waitFor("Labels for 3 new spools");
+    // One key per write: Ink reads a burst of escape sequences as a single (escape) keypress.
+    for (const k of [...Array<string>(PRINTER_ROW).fill(DOWN), RIGHT]) {
+      terminal.press(k);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await terminal.waitFor("‹ Label-Printer ›");
+    terminal.press(ENTER);
+    await terminal.waitFor("Sent 3 labels to Label-Printer");
+    terminal.press("q");
+
+    expect(await terminal.exited).toBe(0);
+    expect(readPdf(await readFile(join(lpLog, "printed.pdf")))).toHaveLength(3);
   });
 
   it("accepts typed input and never echoes the security key from the environment", async () => {

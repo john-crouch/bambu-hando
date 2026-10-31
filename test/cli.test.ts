@@ -1,7 +1,7 @@
 // ABOUTME: Integration tests for the headless CLI: flags, report format, and exit codes.
 // ABOUTME: Runs main() in-process against a local SpoolEase server and a temporary HOME.
 
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "../src/cli.js";
 import { SOURCE_FIXTURE } from "./parity.js";
+import { installFakeLp } from "./fakeLp.js";
 import { decodeQr, readPdf } from "./pdf.js";
 import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
@@ -65,6 +66,7 @@ describe("cli", () => {
     const report = JSON.parse(stdout);
     expect(report).toMatchObject({ source: SOURCE_FIXTURE, dry_run: false, profiles_count: 3 });
     expect(report.bambu_preset_paths).toHaveLength(3);
+    expect(report.labels).toBeNull();
     expect(report.results[0]).toEqual({
       profile_name: "PETG Red",
       filament_id: "PABC1234",
@@ -72,6 +74,7 @@ describe("cli", () => {
       spoolease_status: "written",
       detail: "registered PABC1234",
       core_weight_g: null,
+      spool_id: null,
     });
     expect(server.spools).toEqual([]);
   });
@@ -81,6 +84,7 @@ describe("cli", () => {
 
     expect(code).toBe(0);
     expect(JSON.parse(stdout).results[0].detail).toBe("registered PABC1234; spool 1 created");
+    expect(JSON.parse(stdout).results.map((r: { spool_id: string }) => r.spool_id)).toEqual(["1", "2", "3"]);
     expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
   });
 
@@ -421,18 +425,7 @@ describe("cli labels", () => {
       { id: "2", material_type: "PLA", color_name: "Black", color_code: "000000FF", brand: "Polymaker", weight_advertised: "1000" },
     );
 
-    // A stand-in for CUPS' lp: records its arguments and keeps a copy of the file it was handed.
-    const bin = join(home, "bin");
-    lpLog = join(home, "lp");
-    await mkdir(bin);
-    await mkdir(lpLog);
-    await writeFile(
-      join(bin, "lp"),
-      `#!/bin/sh\nprintf '%s\\n' "$@" > "${lpLog}/args"\nfor last; do :; done\ncp "$last" "${lpLog}/printed.pdf"\n[ -n "$LP_FAIL" ] && { echo "lp: $LP_FAIL" >&2; exit 1; }\necho "request id is Label-7 (1 file(s))"\n`,
-      { mode: 0o755 },
-    );
-    vi.stubEnv("PATH", `${bin}:${process.env.PATH}`);
-    vi.stubEnv("LP_FAIL", undefined);
+    lpLog = await installFakeLp(home);
   });
 
   afterEach(async () => {
@@ -542,5 +535,109 @@ describe("cli labels", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("bambu-hando labels");
     expect(stdout).toContain("temps     Nozzle temperature range");
+  });
+});
+
+describe("cli sync labels", () => {
+  let server: SpoolEaseServer;
+  let home: string;
+  let lpLog: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "bambu-hando-home-"));
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("SPOOLEASE_HOST", undefined);
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
+    await installBambuStudio(home, { presetFolder: "1234567890" });
+    server = await startSpoolEaseServer();
+    // PETG Red has a spool from an earlier run; the other two get new ones.
+    server.spools.push({ id: "1", slicer_filament: "PABC1234", brand: "Polymaker" });
+    lpLog = await installFakeLp(home);
+  });
+
+  afterEach(async () => {
+    await server.close();
+  });
+
+  const syncArgs = (): string[] => [
+    "--source",
+    SOURCE_FIXTURE,
+    "--spoolease-host",
+    "127.0.0.1",
+    "--spoolease-port",
+    String(server.port),
+    "--spoolease-security-key",
+    TEST_SECURITY_KEY,
+  ];
+
+  it("writes labels for the spools this run created, and reports them", async () => {
+    const output = join(home, "new.pdf");
+    const { code, stdout, stderr } = await run([...syncArgs(), "--label-output", output]);
+
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    const report = JSON.parse(stdout);
+    expect(report.labels).toEqual({ status: "written", spool_ids: ["2", "3"], output, printer: null, detail: "" });
+    const pages = readPdf(await readFile(output));
+    expect(pages.map((p) => new URL(decodeQr(p)!).searchParams.get("ID"))).toEqual(["2", "3"]);
+    expect(pages[0]!.texts.at(-1)!.text).toBe("Spool #2");
+  });
+
+  it("prints them with the chosen fields and size", async () => {
+    const { code, stdout } = await run([...syncArgs(), "--label-printer", "Label-Printer/spools", "--label-fields", "brand,id", "--label-size", "40x30mm"]);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).labels).toEqual({
+      status: "written",
+      spool_ids: ["2", "3"],
+      output: null,
+      printer: "Label-Printer/spools",
+      detail: "request id is Label-7 (1 file(s))",
+    });
+    const args = (await readFile(join(lpLog, "args"), "utf-8")).trim().split("\n");
+    expect(args).toContain("media=Custom.40x30mm");
+    const pages = readPdf(await readFile(join(lpLog, "printed.pdf")));
+    expect(pages[1]!.texts.map((t) => t.text)).toEqual(["Generic", "Spool #3"]);
+  });
+
+  it("exits 1 when the labels can't be printed, after syncing everything", async () => {
+    vi.stubEnv("LP_FAIL", "The printer or class does not exist.");
+    const { code, stdout, stderr } = await run([...syncArgs(), "--label-printer", "Nope"]);
+
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout).labels).toMatchObject({ status: "failed", detail: "printing to Nope failed: lp: The printer or class does not exist." });
+    expect(stderr).toContain("bambu-hando: error: printing to Nope failed");
+    expect(server.spools).toHaveLength(3);
+  });
+
+  it("makes no labels when the run created no spools", async () => {
+    server.spools.push({ id: "2", slicer_filament: "Pb1a2a16" }, { id: "3", slicer_filament: "Pd73077d" });
+    const output = join(home, "none.pdf");
+    const { code, stdout } = await run([...syncArgs(), "--label-output", output]);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).labels).toEqual({ status: "skipped", spool_ids: [], output, printer: null, detail: "no new spools" });
+    await expect(readFile(output)).rejects.toThrow("ENOENT");
+  });
+
+  it("only plans labels in a dry run", async () => {
+    const output = join(home, "dry.pdf");
+    const { code, stdout } = await run([...syncArgs(), "--dry-run", "--label-output", output]);
+
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).labels).toEqual({ status: "planned", spool_ids: [], output, printer: null, detail: "dry-run" });
+    await expect(readFile(output)).rejects.toThrow("ENOENT");
+  });
+
+  it.each([
+    [["--skip-spools", "--label-output", "x.pdf"], "--label-output and --label-printer only apply when SpoolEase spools are created"],
+    [["--label-fields", "brand"], "--label-fields and --label-size need --label-output or --label-printer"],
+    [["--label-output", "x.pdf", "--label-size", "big"], 'label size must look like 2.5x1.5in or 40x30mm, got "big"'],
+    [["--label-output", "x.pdf", "--label-fields", "price"], 'unknown label field "price"'],
+  ])("rejects sync labels %j", async (argv, message) => {
+    const { code, stderr } = await run([...syncArgs(), ...argv]);
+
+    expect(code).toBe(2);
+    expect(stderr).toContain(`bambu-hando: error: ${message}`);
   });
 });

@@ -110,3 +110,16 @@ export async function printPdf(path: string, printer: string, size: LabelSize, o
     throw new Error(`printing to ${printer} failed: ${stderr?.trim() || String(err)}`);
   }
 }
+
+/** CUPS destinations, printer instances included (lpstat -e); none when CUPS isn't there. */
+export async function listPrinters(): Promise<string[]> {
+  try {
+    const { stdout } = await promisify(execFile)("lpstat", ["-e"]);
+    return stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}

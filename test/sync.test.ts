@@ -127,7 +127,16 @@ describe("runSync", () => {
       spooleaseStatus: "skipped",
       detail: "SpoolEase skipped",
       coreWeight: null,
+      spoolId: null,
     });
+  });
+
+  it("reports the ID of each spool it created, and none for spools that already existed", async () => {
+    server.spools.push({ id: "1", slicer_filament: "PABC1234" });
+
+    const { results } = await runSync(options({ createSpools: true }), record);
+
+    expect(results.map((r) => r.spoolId)).toEqual([null, "2"]);
   });
 
   it("reports the empty spool weight only when spools are created, 0 meaning unspecified", async () => {

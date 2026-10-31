@@ -24,6 +24,9 @@ export type LabelField = (typeof LABEL_FIELDS)[number]["key"];
 
 export const DEFAULT_LABEL_FIELDS: LabelField[] = ["qr", "brand", "material", "color", "temps", "weight", "id"];
 
+/** The common 2.25x1.25 in thermal label, in whole millimeters as thermal label drivers take sizes. */
+export const DEFAULT_LABEL_SIZE = "57x32mm";
+
 /** Visual weight of a line; labelPdf.ts maps each to a font and size. */
 export type LineStyle = "title" | "strong" | "normal" | "small";
 

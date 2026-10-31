@@ -1,10 +1,15 @@
 // ABOUTME: Tests the spool label PDF: one page per label at the label size, a scannable QR, and fitted text.
 // ABOUTME: Reads the generated PDF back and decodes the QR code that was drawn, rather than trusting the encoder.
 
-import { describe, expect, it } from "vitest";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { renderLabelsPdf } from "../src/labelPdf.js";
+import { describe, expect, it, vi } from "vitest";
+
+import { listPrinters, renderLabelsPdf } from "../src/labelPdf.js";
 import { type LabelContent, parseLabelSize } from "../src/labels.js";
+import { installFakeLp } from "./fakeLp.js";
 import { decodeQr, readPdf } from "./pdf.js";
 
 const URL = "https://tag.spoolease.io/S1/?ID=1&M=PETG&CC=F1C400FF&CN=2%2E0%20Vivid%20Yellow&B=Sunlu&WL=1000&WE=189&SC=P4840583";
@@ -96,5 +101,19 @@ describe("renderLabelsPdf", () => {
 
     expect(page!.texts).toHaveLength(14);
     expect(page!.texts.at(-1)!.y).toBeLessThan(108);
+  });
+});
+
+describe("listPrinters", () => {
+  it("lists CUPS destinations, printer instances included", async () => {
+    await installFakeLp(await mkdtemp(join(tmpdir(), "bambu-hando-lp-")));
+
+    expect(await listPrinters()).toEqual(["Label-Printer", "Label-Printer/spools", "Office-Laser"]);
+  });
+
+  it("lists none without CUPS", async () => {
+    vi.stubEnv("PATH", await mkdtemp(join(tmpdir(), "bambu-hando-empty-")));
+
+    expect(await listPrinters()).toEqual([]);
   });
 });

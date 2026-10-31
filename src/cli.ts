@@ -1,30 +1,27 @@
 // ABOUTME: Headless CLI for the BambuStudio + SpoolEase filament handoff flow.
 // ABOUTME: Parses flags, runs the sync, prints a JSON report, and maps outcomes to exit codes.
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 
 import { bambuDefaults } from "./bambuProfiles.js";
 import type { PresetOutcome } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
-import { printPdf, renderLabelsPdf } from "./labelPdf.js";
+import { type LabelTarget, LabelSelectionError, makeLabels } from "./labelJob.js";
 import {
   DEFAULT_LABEL_FIELDS,
+  DEFAULT_LABEL_SIZE,
   describeSpool,
-  filterSpools,
   LABEL_FIELDS,
   type LabelField,
   type LabelSize,
-  labelContent,
   parseLabelFields,
   parseLabelSize,
   type SpoolFilters,
 } from "./labels.js";
-import { type FilamentProfile, resultFailed, type SyncResult } from "./models.js";
+import { type FilamentProfile, resultFailed, type Status, type SyncResult } from "./models.js";
 import { loadProfiles } from "./sources.js";
-import { type CustomFilament, SpoolEaseClient, type SpoolEaseConnection, type SpoolRecord } from "./spoolease.js";
+import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 import { readSpoolEaseConfig } from "./spooleaseConfig.js";
 import {
   applyWeights,
@@ -74,6 +71,10 @@ Options:
                                   A brand with one row in SpoolEase's spool catalog gets
                                   that weight; one with several needs this flag; others
                                   keep SpoolmanDB's
+  --label-output <file.pdf>       Write QR labels for the spools this run creates to a PDF
+  --label-printer <name>          Print those labels with CUPS (lp); see bambu-hando labels --help
+  --label-fields <list>           Label fields (default: ${DEFAULT_LABEL_FIELDS.join(",")})
+  --label-size <W>x<H>[in|mm]     Label size (default: ${DEFAULT_LABEL_SIZE})
   --report <path>                 Also write the JSON report to this path
   -h, --help                      Show this help
 
@@ -100,6 +101,10 @@ const OPTIONS = {
   "skip-spoolease": { type: "boolean", default: false },
   "skip-spools": { type: "boolean", default: false },
   "spool-weight": { type: "string", multiple: true },
+  "label-output": { type: "string" },
+  "label-printer": { type: "string" },
+  "label-fields": { type: "string" },
+  "label-size": { type: "string" },
   report: { type: "string" },
   brand: { type: "string" },
   material: { type: "string" },
@@ -108,7 +113,16 @@ const OPTIONS = {
   help: { type: "boolean", short: "h", default: false },
 } as const;
 
-const { "dry-run": _dryRun, report: _report, "spool-weight": _spoolWeight, ...TUI_OPTIONS } = OPTIONS;
+const {
+  "dry-run": _dryRun,
+  report: _report,
+  "spool-weight": _spoolWeight,
+  "label-output": _labelOutput,
+  "label-printer": _labelPrinter,
+  "label-fields": _labelFields,
+  "label-size": _labelSize,
+  ...TUI_OPTIONS
+} = OPTIONS;
 
 const LABELS_USAGE = `Usage:
   bambu-hando labels (--spool-id <id>... | --brand/--material/--match | --all)
@@ -128,7 +142,7 @@ Spools:
 
 Label:
   --fields <list>                 Comma-separated fields to show (default: ${DEFAULT_LABEL_FIELDS.join(",")})
-  --size <W>x<H>[in|mm]           Label size (default: 57x32mm, the common 2.25x1.25in roll)
+  --size <W>x<H>[in|mm]           Label size (default: ${DEFAULT_LABEL_SIZE}, the common 2.25x1.25in roll)
 
 Output:
   --output <file.pdf>             Write the labels to this PDF
@@ -156,7 +170,7 @@ const LABEL_OPTIONS = {
   match: { type: "string" },
   all: { type: "boolean", default: false },
   fields: { type: "string" },
-  size: { type: "string", default: "57x32mm" },
+  size: { type: "string", default: DEFAULT_LABEL_SIZE },
   output: { type: "string" },
   printer: { type: "string" },
   "print-option": { type: "string", multiple: true },
@@ -228,6 +242,8 @@ export interface Settings {
   createSpools: boolean;
   /** --spool-weight choices by brand key. */
   spoolWeights: Map<string, { brand: string; arg: string; choice: WeightChoice }>;
+  /** Labels for the spools the run creates; null when none were asked for. */
+  labels: LabelTarget | null;
   report: string;
 }
 
@@ -273,6 +289,21 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
     throw new UsageError("--spool-weight only applies when SpoolEase spools are created");
   }
 
+  let labels: LabelTarget | null = null;
+  const labelOutput = values["label-output"] ?? "";
+  const labelPrinter = values["label-printer"] ?? "";
+  if (labelOutput || labelPrinter) {
+    if (!spoolease || !createSpools) throw new UsageError("--label-output and --label-printer only apply when SpoolEase spools are created");
+    try {
+      const fields = values["label-fields"] === undefined ? DEFAULT_LABEL_FIELDS : parseLabelFields(values["label-fields"]);
+      labels = { fields, size: parseLabelSize(values["label-size"] ?? DEFAULT_LABEL_SIZE), output: labelOutput, printer: labelPrinter, printOptions: [] };
+    } catch (err) {
+      throw new UsageError(err instanceof Error ? err.message : String(err));
+    }
+  } else if (values["label-fields"] !== undefined || values["label-size"] !== undefined) {
+    throw new UsageError("--label-fields and --label-size need --label-output or --label-printer");
+  }
+
   return {
     help: false,
     settings: {
@@ -285,12 +316,28 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
       spoolease,
       createSpools,
       spoolWeights,
+      labels,
       report: values.report ?? "",
     },
   };
 }
 
-export function buildReport(source: string, dryRun: boolean, presets: PresetOutcome[], results: SyncResult[]): string {
+/** What happened to the labels asked for alongside a sync. */
+export interface LabelsReport {
+  status: Status;
+  spool_ids: string[];
+  output: string | null;
+  printer: string | null;
+  detail: string;
+}
+
+export function buildReport(
+  source: string,
+  dryRun: boolean,
+  presets: PresetOutcome[],
+  results: SyncResult[],
+  labels: LabelsReport | null = null,
+): string {
   const report = {
     source,
     dry_run: dryRun,
@@ -303,7 +350,9 @@ export function buildReport(source: string, dryRun: boolean, presets: PresetOutc
       spoolease_status: r.spooleaseStatus,
       detail: r.detail,
       core_weight_g: r.coreWeight,
+      spool_id: r.spoolId,
     })),
+    labels,
   };
   return `${JSON.stringify(report, null, 2)}\n`;
 }
@@ -357,6 +406,37 @@ async function chooseSpoolWeights(
   return applyWeights(profiles, groups, new Map([...chosen].map(([key, { choice }]) => [key, choice])));
 }
 
+/** Labels for the spools a sync created; failures are reported, never thrown, since the sync itself is done. */
+async function labelsAfterSync(
+  target: LabelTarget,
+  spoolease: SpoolEaseConnection,
+  results: SyncResult[],
+  dryRun: boolean,
+  io: Io,
+): Promise<LabelsReport> {
+  const ids = results.map((r) => r.spoolId).filter((id): id is string => Boolean(id));
+  const report = (status: Status, detail: string): LabelsReport => ({
+    status,
+    spool_ids: dryRun ? [] : ids,
+    output: target.output || null,
+    printer: target.printer || null,
+    detail,
+  });
+  if (dryRun) return report("planned", "dry-run");
+  if (ids.length === 0) return report("skipped", "no new spools");
+  try {
+    const made = await makeLabels(new SpoolEaseClient(spoolease), { ids, brand: "", material: "", match: "" }, target, (w) => io.stderr(`${w}\n`));
+    if (made.printError) {
+      io.stderr(`bambu-hando: error: ${made.printError}\n`);
+      return report("failed", made.printError);
+    }
+    return report("written", made.printReply);
+  } catch (err) {
+    io.stderr(`bambu-hando: error: labels: ${errorMessage(err)}\n`);
+    return report("failed", errorMessage(err));
+  }
+}
+
 async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | null; help: boolean }> {
   let parsed;
   try {
@@ -408,11 +488,7 @@ async function tuiCommand(argv: string[], io: Io): Promise<number> {
 
 interface LabelsSettings {
   filters: SpoolFilters;
-  fields: LabelField[];
-  size: LabelSize;
-  output: string;
-  printer: string;
-  printOptions: string[];
+  target: LabelTarget;
   spoolease: SpoolEaseConnection;
 }
 
@@ -446,11 +522,7 @@ async function parseLabelsSettings(argv: string[]): Promise<{ settings: LabelsSe
     help: false,
     settings: {
       filters,
-      fields,
-      size,
-      output: values.output ?? "",
-      printer: values.printer ?? "",
-      printOptions: values["print-option"] ?? [],
+      target: { fields, size, output: values.output ?? "", printer: values.printer ?? "", printOptions: values["print-option"] ?? [] },
       spoolease,
     },
   };
@@ -473,52 +545,20 @@ async function labelsCommand(argv: string[], io: Io): Promise<number> {
     io.stdout(LABELS_USAGE);
     return 0;
   }
-  const settings = parsed.settings;
+  const { filters, target, spoolease } = parsed.settings;
 
   try {
-    const client = new SpoolEaseClient(settings.spoolease);
+    const client = new SpoolEaseClient(spoolease);
     await checkKey(client);
-    const spools = await client.listSpools();
-    let filaments = new Map<string, CustomFilament>();
-    try {
-      filaments = await client.getCustomFilaments();
-    } catch (err) {
-      io.stderr(`Couldn't read custom filaments from SpoolEase, so labels show no filament names or temperatures: ${errorMessage(err)}\n`);
+    const made = await makeLabels(client, filters, target, (warning) => io.stderr(`${warning}\n`));
+    for (const spool of made.spools) io.stdout(`Spool #${spool.id}: ${describeSpool(spool)}\n`);
+    const count = plural(made.spools.length, "label");
+    if (target.output) io.stdout(`Wrote ${count} to ${target.output}\n`);
+    if (made.printError) {
+      io.stderr(`bambu-hando: error: ${made.printError}\n`);
+      return 1;
     }
-
-    let chosen: SpoolRecord[];
-    try {
-      chosen = filterSpools(spools, filaments, settings.filters);
-    } catch (err) {
-      io.stderr(`bambu-hando: error: ${errorMessage(err)}\n`);
-      return 2;
-    }
-    if (chosen.length === 0) {
-      io.stderr("bambu-hando: error: no SpoolEase spools match the filters\n");
-      return 2;
-    }
-    for (const spool of chosen) io.stdout(`Spool #${spool.id}: ${describeSpool(spool)}\n`);
-
-    const pdf = await renderLabelsPdf(
-      chosen.map((spool) => labelContent(spool, filaments, settings.fields)),
-      settings.size,
-    );
-    const count = plural(chosen.length, "label");
-    if (settings.output) {
-      await writeFile(settings.output, pdf);
-      io.stdout(`Wrote ${count} to ${settings.output}\n`);
-    }
-    if (settings.printer) {
-      const tmp = settings.output ? "" : await mkdtemp(join(tmpdir(), "bambu-hando-labels-"));
-      try {
-        const path = settings.output || join(tmp, "labels.pdf");
-        if (tmp) await writeFile(path, pdf);
-        const reply = await printPdf(path, settings.printer, settings.size, settings.printOptions);
-        io.stdout(`Sent ${count} to ${settings.printer}${reply ? `: ${reply}` : ""}\n`);
-      } finally {
-        if (tmp) await rm(tmp, { recursive: true, force: true });
-      }
-    }
+    if (target.printer) io.stdout(`Sent ${count} to ${target.printer}${made.printReply ? `: ${made.printReply}` : ""}\n`);
     return 0;
   } catch (err) {
     if (err instanceof KeyCheckError) {
@@ -526,7 +566,7 @@ async function labelsCommand(argv: string[], io: Io): Promise<number> {
       return 2;
     }
     io.stderr(`bambu-hando: error: ${errorMessage(err)}\n`);
-    return 1;
+    return err instanceof LabelSelectionError ? 2 : 1;
   }
 }
 
@@ -577,11 +617,13 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
       if (event.type === "warning") io.stderr(`${event.message}\n`);
     });
 
-    const report = buildReport(settings.source, settings.dryRun, presets, results);
+    const labels = settings.labels && settings.spoolease ? await labelsAfterSync(settings.labels, settings.spoolease, results, settings.dryRun, io) : null;
+
+    const report = buildReport(settings.source, settings.dryRun, presets, results, labels);
     io.stdout(report);
     if (settings.report) await writeFile(settings.report, report, "utf-8");
 
-    return results.some(resultFailed) ? 1 : 0;
+    return results.some(resultFailed) || labels?.status === "failed" ? 1 : 0;
   } catch (err) {
     if (err instanceof KeyCheckError) {
       io.stderr(`${err.message}\n`);

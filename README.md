@@ -57,6 +57,8 @@ When spools will be created, the TUI then asks for each brand's empty spool weig
 
 The plan's Empty column shows the weight each new spool gets.
 
+After the run, `l` on the summary opens labels for the spools it just created: space ticks the fields to show, ←/→ picks a printer (every CUPS destination, printer instances included), and you can type a label size and a path to save the PDF. Enter makes the labels; the summary then says what was printed or saved. Your choices are remembered for next time in `~/.config/bambu-hando/labels.json` (`~/Library/Application Support/bambu-hando` on macOS).
+
 With `spoolmandb` as the source, a picker opens before the plan: type to search (every word must appear in the name), tab marks the highlighted filament, ctrl+a marks every match, enter continues with what you marked, and esc returns to the form. Marks survive changing the search, and `b` on the plan returns to the picker. `--brand`, `--material` and `--match` prefill the search, for example `bambu-hando tui --source spoolmandb --brand Polymaker --skip-spoolease`.
 
 ## SpoolmanDB source
@@ -173,7 +175,7 @@ macOS:
 
 ## Spool labels
 
-`bambu-hando labels` makes QR labels for spools already in SpoolEase, including the ones a sync just created:
+`bambu-hando labels` makes QR labels for spools already in SpoolEase:
 
 ```bash
 bambu-hando labels --spool-id 7 --output labels.pdf          # one spool
@@ -184,13 +186,14 @@ bambu-hando labels --all --fields qr,brand,material,color,id --size 40x30mm --ou
 - The output is a PDF with one page per label, each page exactly the label's size (57×32 mm by default, the common 2.25×1.25 in roll; `--size` takes inches or millimeters), so any printer can print it. Measure your labels: a page larger than the label bleeds off its edges and onto the next one. The QR code is drawn as vector shapes and the text uses Helvetica, so labels stay sharp at a thermal printer's 203 dpi.
 - `--printer <name>` prints through CUPS (`lp`), asking for the label size as the media (`media=Custom.57x32mm`); `--print-option key=value` passes printer options such as `Darkness=15` along. `lpstat -p` lists printer names. To keep settings like darkness for spool labels only, save them as a CUPS printer instance and print to that: `lpoptions -p <printer>/spools -o Darkness=15`, then `--printer <printer>/spools`. Thermal label drivers often take sizes in whole millimeters, so give `--size` in millimeters when the label is metric.
 - `--fields` picks what the label shows; `bambu-hando labels --help` lists them all (brand, material, filament name, color name, color code, nozzle temperatures, label and empty weight, filament code, location, date added, note, spool ID). Fields always print in the same order, and ones a spool has no value for are left out. Text shrinks to fit and long lines end in "…".
+- A sync can make the labels for the spools it creates: `--label-output <file.pdf>` and/or `--label-printer <name>`, with `--label-fields` and `--label-size` like `--fields` and `--size` here. Only spools that run created get labels; the report's `labels` entry says what happened (`written`, `planned` in a dry run, `skipped` when no spool was created, `failed` exits 1 after the sync itself is done).
 - The QR code holds SpoolEase's own spool link, the one its NFC tags carry: `https://tag.spoolease.io/S1/?ID=<spool id>&M=…&B=…`. Scanning it with a phone shows SpoolEase's spool card. The SpoolEase console has no QR scanner, and its inventory page can't open one spool from a link, so the ID on the card is how you find the spool there.
 
 ## Safety behavior
 
 - Uses dry-run mode for planning (no files written, nothing sent to SpoolEase beyond the key check and reading its spool weight lists)
 - Writes Bambu preset files atomically via temp file replacement
-- Produces JSON report output for auditability; each profile gets a `bambu_status` and `spoolease_status` of `written`, `planned`, `skipped` or `failed`, and a `core_weight_g`: the empty spool weight its new spool gets (0 for unspecified, `null` when the run creates no spools)
+- Produces JSON report output for auditability; each profile gets a `bambu_status` and `spoolease_status` of `written`, `planned`, `skipped` or `failed`, a `core_weight_g`: the empty spool weight its new spool gets (0 for unspecified, `null` when the run creates no spools), and a `spool_id`: the ID SpoolEase gave the spool this run created (`null` when it created none). `labels` is `null` unless labels were asked for
 - Exit codes: `0` success, `1` a profile failed, `2` invalid arguments, BambuStudio not set up (no system profiles, unknown printer) or SpoolEase key check failed
 
 ## Development

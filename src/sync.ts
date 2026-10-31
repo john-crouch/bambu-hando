@@ -95,7 +95,7 @@ export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) 
   const results = profiles.map((profile, index): SyncResult => {
     const bambuError = presets[index]?.error ?? "";
     const bambuStatus = presetStatus(presets[index], dryRun);
-    const spool = spools[index] ?? { status: "skipped" as Status, detail: "" };
+    const spool = spools[index] ?? { status: "skipped" as Status, detail: "", spoolId: null };
     let detail = spool.detail;
     if (bambuError) detail = `BambuStudio preset: ${bambuError}; ${spool.detail}`;
     else if (bambuStatus === "skipped") detail = `BambuStudio preset exists (overwrite to replace it); ${spool.detail}`;
@@ -106,19 +106,27 @@ export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) 
       spooleaseStatus: spool.status,
       detail,
       coreWeight: options.spoolease && options.createSpools ? profile.coreWeight : null,
+      spoolId: spool.spoolId,
     };
   });
 
   return { presets, results };
 }
 
-async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) => void): Promise<{ status: Status; detail: string }[]> {
+interface SpoolOutcome {
+  status: Status;
+  detail: string;
+  /** Set when this run created the spool. */
+  spoolId: string | null;
+}
+
+async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) => void): Promise<SpoolOutcome[]> {
   const { profiles, dryRun, spoolease } = options;
 
   if (!spoolease) {
     return profiles.map((_, index) => {
       onEvent({ type: "spool", index, status: "skipped", detail: "SpoolEase skipped" });
-      return { status: "skipped", detail: "SpoolEase skipped" };
+      return { status: "skipped", detail: "SpoolEase skipped", spoolId: null };
     });
   }
 
@@ -167,10 +175,11 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
     }
   }
 
-  const outcomes: { status: Status; detail: string }[] = [];
+  const outcomes: SpoolOutcome[] = [];
   for (const [index, profile] of profiles.entries()) {
     const registered = `registered ${profile.filamentId}`;
-    let outcome: { status: Status; detail: string };
+    let outcome: Omit<SpoolOutcome, "spoolId">;
+    let spoolId: string | null = null;
     if (dryRun) {
       outcome = { status: "planned", detail: "dry-run" };
     } else if (csvError) {
@@ -187,6 +196,7 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
         const created = await client.addSpool(profile);
         if (created.ok) {
           spooledIds.add(profile.filamentId);
+          spoolId = created.id;
           outcome = { status: "written", detail: `${registered}; spool ${created.id} created` };
         } else {
           outcome = { status: "failed", detail: `${registered}; spool rejected: ${created.error.slice(0, DETAIL_LIMIT)}` };
@@ -195,7 +205,7 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
         outcome = { status: "failed", detail: `${registered}; spool request error: ${errorMessage(err)}` };
       }
     }
-    outcomes.push(outcome);
+    outcomes.push({ ...outcome, spoolId });
     onEvent({ type: "spool", index, ...outcome });
   }
   return outcomes;

@@ -1,15 +1,19 @@
 // ABOUTME: Integration tests for the Ink TUI: setup form, plan view, live apply, and exit codes.
 // ABOUTME: Drives the real sync against a local SpoolEase server and a temporary HOME.
 
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { labelSettingsPath } from "../src/labelSettings.js";
 import { App, type FormValues } from "../src/tui/App.js";
+import { PRINTER_ROW } from "../src/tui/LabelForm.js";
+import { installFakeLp } from "./fakeLp.js";
 import { SOURCE_FIXTURE } from "./parity.js";
+import { decodeQr, readPdf } from "./pdf.js";
 import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
 import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
@@ -20,6 +24,7 @@ const TAB = "\t";
 const ESC = "\u001B";
 const CTRL_A = "\u0001";
 const BACKSPACE = "\u007F";
+const RIGHT = "\u001B[C";
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -439,5 +444,72 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain('unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"'));
     await press(stdin, "q");
     expect(onExit).toHaveBeenCalledWith(2);
+  });
+
+  describe("labels", () => {
+    let lpLog: string;
+
+    beforeEach(async () => {
+      vi.stubEnv("XDG_CONFIG_HOME", undefined);
+      lpLog = await installFakeLp(home);
+    });
+
+    async function applyAndFinish(lastFrame: () => string | undefined, stdin: { write: (data: string) => void }): Promise<void> {
+      await press(stdin, ENTER);
+      await keepSourceWeights(stdin, lastFrame);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      await press(stdin, "a");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
+    }
+
+    it("prints labels for the spools the run created and remembers the choices", async () => {
+      const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+      await settle();
+      await applyAndFinish(lastFrame, stdin);
+      expect(lastFrame()).toContain("[l] labels for 3 new spools");
+
+      await press(stdin, "l");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 3 new spools: #1, #2, #3"));
+      await press(stdin, ...Array<string>(PRINTER_ROW).fill(DOWN), RIGHT, RIGHT);
+      await vi.waitFor(() => expect(lastFrame()).toContain("‹ Label-Printer/spools ›"));
+      await press(stdin, ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("Sent 3 labels to Label-Printer/spools: request id is Label-7 (1 file(s))"));
+      expect(lastFrame()).toContain("Done: 3 written, 0 failed");
+      expect((await readFile(join(lpLog, "args"), "utf-8")).split("\n")).toContain("media=Custom.57x32mm");
+      const pages = readPdf(await readFile(join(lpLog, "printed.pdf")));
+      expect(pages.map((p) => new URL(decodeQr(p)!).searchParams.get("ID"))).toEqual(["1", "2", "3"]);
+      expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toMatchObject({ printer: "Label-Printer/spools", size: "57x32mm" });
+    });
+
+    it("explains what's missing, and goes back to the summary with escape", async () => {
+      const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+      await settle();
+      await applyAndFinish(lastFrame, stdin);
+
+      await press(stdin, "l");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 3 new spools"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Choose a printer, a PDF path, or both"));
+      await press(stdin, ESC);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("[l] labels for 3 new spools"));
+      await expect(readFile(join(lpLog, "args"))).rejects.toThrow("ENOENT");
+    });
+
+    it("offers no labels when the run created no spools", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      await press(stdin, "a");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
+      await press(stdin, "l");
+      await settle();
+
+      expect(lastFrame()).not.toContain("labels for");
+      expect(lastFrame()).toContain("Done: 3 written, 0 failed");
+    });
   });
 });

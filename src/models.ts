@@ -37,6 +37,8 @@ export interface SyncResult {
   detail: string;
   /** Empty spool weight a new spool gets (0 = unspecified); null when the run creates no spools. */
   coreWeight: number | null;
+  /** ID SpoolEase gave the spool this run created; null when it created none for this profile. */
+  spoolId: string | null;
 }
 
 export function resultFailed(result: SyncResult): boolean {
