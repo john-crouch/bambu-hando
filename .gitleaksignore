@@ -1,0 +1,4 @@
+# ABOUTME: gitleaks findings reviewed and accepted as not secret.
+# ABOUTME: derived_key_hex is the AES test vector PBKDF2-derived from the test key "TESTKEY".
+9f4c2a5a2bd410d2e854335e2ca944c7ec613891:test/fixtures/python-parity.json:generic-api-key:96
+test/fixtures/python-parity.json:generic-api-key:96

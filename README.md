@@ -2,6 +2,8 @@
 
 Cross-platform filament profile handoff tool for BambuStudio and SpoolEase.
 
+bambu-hando is an independent project, not affiliated with or endorsed by Bambu Lab or SpoolEase.
+
 It automates three things:
 - Load filament profile data from the SpoolmanDB community database, or from your own JSON file or URL
 - Create custom filament preset files for BambuStudio (Linux + macOS)
@@ -188,3 +190,7 @@ npm run typecheck
 ## Limitations
 
 See docs/assumptions.md for known inferred fields and constraints.
+
+## License
+
+MIT, see `LICENSE`. The test fixtures include data from BambuStudio, SpoolmanDB and SpoolEase under their own licenses, listed in `THIRD_PARTY.md`.

@@ -3,3 +3,6 @@
 
 node_modules/
 dist/
+
+# Project instructions for Claude Code are shared here, even where a global gitignore excludes them.
+!CLAUDE.md

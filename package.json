@@ -3,8 +3,12 @@
   "version": "0.2.0",
   "description": "Cross-platform filament profile handoff between BambuStudio and SpoolEase",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/john-crouch/bambu-hando.git"
+  },
   "bin": {
     "bambu-hando": "dist/bin.js"
   },
