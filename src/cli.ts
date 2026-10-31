@@ -6,12 +6,21 @@ import { parseArgs } from "node:util";
 
 import { bambuDefaults } from "./bambuProfiles.js";
 import type { PresetOutcome } from "./bambuStudio.js";
-import { resultFailed, type SyncResult } from "./models.js";
+import { type FilamentProfile, resultFailed, type SyncResult } from "./models.js";
 import { loadProfiles } from "./sources.js";
-import type { SpoolEaseConnection } from "./spoolease.js";
+import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 import { readSpoolEaseConfig } from "./spooleaseConfig.js";
+import {
+  applyWeights,
+  defaultChoice,
+  describeSourceWeights,
+  parseSpoolWeightArg,
+  readSpoolWeights,
+  type WeightChoice,
+  weightGroups,
+} from "./spoolWeights.js";
 import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE } from "./spoolmanDb.js";
-import { KeyCheckError, runSync, SetupError } from "./sync.js";
+import { checkKey, KeyCheckError, runSync, SetupError } from "./sync.js";
 import type { FormValues } from "./tui/App.js";
 
 const USAGE = `Usage:
@@ -41,6 +50,12 @@ Options:
   --skip-spoolease                Skip SpoolEase API updates
   --skip-spools                   Register filaments in SpoolEase without creating spools
                                   (by default each filament without a spool gets one)
+  --spool-weight <brand>=<value>  Empty spool weight for a brand's new spools: grams,
+                                  spoolmandb or unspecified (SpoolEase then works it out
+                                  when the full spool is first weighed); repeat per brand.
+                                  A brand with one row in SpoolEase's spool catalog gets
+                                  that weight; one with several needs this flag; others
+                                  keep SpoolmanDB's
   --report <path>                 Also write the JSON report to this path
   -h, --help                      Show this help
 
@@ -66,6 +81,7 @@ const OPTIONS = {
   "spoolease-https": { type: "boolean", default: false },
   "skip-spoolease": { type: "boolean", default: false },
   "skip-spools": { type: "boolean", default: false },
+  "spool-weight": { type: "string", multiple: true },
   report: { type: "string" },
   brand: { type: "string" },
   material: { type: "string" },
@@ -74,7 +90,7 @@ const OPTIONS = {
   help: { type: "boolean", short: "h", default: false },
 } as const;
 
-const { "dry-run": _dryRun, report: _report, ...TUI_OPTIONS } = OPTIONS;
+const { "dry-run": _dryRun, report: _report, "spool-weight": _spoolWeight, ...TUI_OPTIONS } = OPTIONS;
 
 export interface Io {
   stdout: (text: string) => void;
@@ -110,6 +126,8 @@ export interface Settings {
   dryRun: boolean;
   spoolease: SpoolEaseConnection | null;
   createSpools: boolean;
+  /** --spool-weight choices by brand key. */
+  spoolWeights: Map<string, { brand: string; arg: string; choice: WeightChoice }>;
   report: string;
 }
 
@@ -153,6 +171,21 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
     spoolease = { host, securityKey, port, https: values["spoolease-https"] };
   }
 
+  const createSpools = !values["skip-spools"];
+  const spoolWeights: Settings["spoolWeights"] = new Map();
+  for (const arg of values["spool-weight"] ?? []) {
+    let parsed;
+    try {
+      parsed = parseSpoolWeightArg(arg);
+    } catch (err) {
+      throw new UsageError(err instanceof Error ? err.message : String(err));
+    }
+    spoolWeights.set(parsed.key, { brand: parsed.brand, arg, choice: parsed.choice });
+  }
+  if (spoolWeights.size > 0 && (!spoolease || !createSpools)) {
+    throw new UsageError("--spool-weight only applies when SpoolEase spools are created");
+  }
+
   return {
     help: false,
     settings: {
@@ -163,7 +196,8 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
       overwritePresets: values["overwrite-presets"],
       dryRun: values["dry-run"],
       spoolease,
-      createSpools: !values["skip-spools"],
+      createSpools,
+      spoolWeights,
       report: values.report ?? "",
     },
   };
@@ -184,6 +218,55 @@ export function buildReport(source: string, dryRun: boolean, presets: PresetOutc
     })),
   };
   return `${JSON.stringify(report, null, 2)}\n`;
+}
+
+/**
+ * Profiles with the empty spool weights from SpoolEase's catalog and --spool-weight, or null after
+ * telling the user which brands need a --spool-weight.
+ */
+async function chooseSpoolWeights(
+  profiles: FilamentProfile[],
+  spoolease: SpoolEaseConnection,
+  chosen: Settings["spoolWeights"],
+  io: Io,
+): Promise<FilamentProfile[] | null> {
+  // A wrong key would otherwise surface as an unreadable My Spools List.
+  const client = new SpoolEaseClient(spoolease);
+  await checkKey(client);
+  const { entries, warnings } = await readSpoolWeights(client);
+  for (const warning of warnings) io.stderr(`${warning}\n`);
+  const groups = weightGroups(profiles, entries);
+
+  for (const [key, { brand, arg }] of chosen) {
+    if (!groups.some((g) => g.key === key)) {
+      io.stderr(`bambu-hando: error: --spool-weight "${arg}": none of the filaments is from ${brand}\n`);
+      return null;
+    }
+  }
+
+  const open = groups.filter((g) => !chosen.has(g.key) && defaultChoice(g) === null);
+  if (open.length > 0) {
+    const lines = ["bambu-hando: error: SpoolEase lists several empty spool weights for these brands; run again with the --spool-weight you want:"];
+    for (const group of open) {
+      const count = group.profiles.length;
+      lines.push(`  ${group.brand} (${count} filament${count === 1 ? "" : "s"}; SpoolmanDB: ${describeSourceWeights(profiles, group)})`);
+      const flags = group.options.map((o) => `--spool-weight "${group.brand}=${o.grams}"`);
+      const width = Math.max(...flags.map((f) => f.length));
+      group.options.forEach((option, i) => {
+        lines.push(`    ${flags[i]!.padEnd(width)}  ${option.label}${option.mine ? " (My Spools List)" : ""}`);
+      });
+    }
+    io.stderr(`${lines.join("\n")}\n`);
+    return null;
+  }
+
+  for (const group of groups) {
+    const [only] = group.options;
+    if (!chosen.has(group.key) && only && group.options.length === 1) {
+      io.stderr(`${group.brand}: empty spool weight ${only.grams} g from SpoolEase (${only.label})\n`);
+    }
+  }
+  return applyWeights(profiles, groups, new Map([...chosen].map(([key, { choice }]) => [key, choice])));
 }
 
 async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | null; help: boolean }> {
@@ -253,7 +336,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   const settings = parsed.settings;
 
   try {
-    let profiles;
+    let profiles: FilamentProfile[];
     if (settings.spoolmanDb) {
       const catalog = await loadSpoolmanDb({ diameter: settings.spoolmanDb.diameter });
       for (const warning of catalog.warnings) io.stderr(`${warning}\n`);
@@ -266,6 +349,11 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
       }
     } else {
       profiles = await loadProfiles(settings.source);
+    }
+    if (settings.spoolease && settings.createSpools) {
+      const weighed = await chooseSpoolWeights(profiles, settings.spoolease, settings.spoolWeights, io);
+      if (!weighed) return 2;
+      profiles = weighed;
     }
     const defaults = await bambuDefaults();
     const target = {

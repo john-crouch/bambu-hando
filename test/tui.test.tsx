@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App, type FormValues } from "../src/tui/App.js";
 import { SOURCE_FIXTURE } from "./parity.js";
-import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
 import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
@@ -70,6 +70,15 @@ describe("TUI", () => {
     }
   }
 
+  // SOURCE_FIXTURE's brands, Polymaker and Generic (the brandless profiles), aren't in the test console's
+  // empty catalog, so each asks once; enter keeps the source's weight.
+  async function keepSourceWeights(stdin: { write: (data: string) => void }, lastFrame: () => string | undefined): Promise<void> {
+    for (const step of ["brand 1 of 2", "brand 2 of 2"]) {
+      await vi.waitFor(() => expect(lastFrame()).toContain(step));
+      await press(stdin, ENTER);
+    }
+  }
+
   it("masks the security key on the setup form", async () => {
     const { lastFrame } = render(<App initial={values()} onExit={onExit} />);
     await settle();
@@ -92,6 +101,7 @@ describe("TUI", () => {
     await settle();
 
     await press(stdin, SOURCE_FIXTURE, ENTER);
+    await keepSourceWeights(stdin, lastFrame);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("3 profiles"));
     const frame = lastFrame() ?? "";
@@ -102,7 +112,8 @@ describe("TUI", () => {
     expect(frame).toContain("230-255");
     expect(frame).toContain(baseFilamentDir(home));
     expect(frame).toContain(`127.0.0.1:${server.port}`);
-    expect(server.requests).toEqual([]);
+    expect(frame).toContain("200 g");
+    expect(server.requests.map((r) => r.path)).toEqual(["/api/test-key", "/api/spools-config", "/spools-catalog"]);
   });
 
   it("shows source loading errors on the form", async () => {
@@ -163,6 +174,7 @@ describe("TUI", () => {
     await settle();
 
     await press(stdin, ENTER);
+    await keepSourceWeights(stdin, lastFrame);
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
     await press(stdin, "b");
     // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip, create spools
@@ -181,6 +193,7 @@ describe("TUI", () => {
     await settle();
 
     await press(stdin, ENTER);
+    await keepSourceWeights(stdin, lastFrame);
     await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
     await press(stdin, "a");
 
@@ -192,7 +205,7 @@ describe("TUI", () => {
   });
 
   it("shows key check errors and exits 2", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ securityKey: "WRONG" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(<App initial={values({ securityKey: "WRONG", createSpools: false })} onExit={onExit} />);
     await settle();
 
     await press(stdin, ENTER);
@@ -211,6 +224,7 @@ describe("TUI", () => {
     await settle();
 
     await press(stdin, ENTER);
+    await keepSourceWeights(stdin, lastFrame);
     await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
     await press(stdin, "b");
 
@@ -233,6 +247,8 @@ describe("TUI", () => {
     await press(stdin, TAB, TAB);
     await vi.waitFor(() => expect(lastFrame()).toContain("2 selected"));
     await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: 3DHoJor"));
+    await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("2 profiles from spoolmandb"));
     expect(lastFrame()).toContain("Pccd78d1");
     expect(lastFrame()).toContain("Pd6ef068");
@@ -251,6 +267,8 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
     await press(stdin, CTRL_A);
     await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: Polymaker"));
     await press(stdin, ENTER);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("1 profiles from spoolmandb"));
@@ -277,10 +295,114 @@ describe("TUI", () => {
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("9 match"));
     await press(stdin, TAB, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight"));
+    await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
     await press(stdin, "b");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+  });
+
+  describe("empty spool weights", () => {
+    beforeEach(() => {
+      server.spoolsCatalog = SPOOLS_CATALOG;
+    });
+
+    it("asks for a brand's weight among its SpoolEase catalog rows and applies it", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
+      await press(stdin, CTRL_A, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: Polymaker · brand 1 of 1"));
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("SpoolmanDB says 140 g");
+      expect(frame).toContain("› PolyMaker - Cardboard - 137g");
+      expect(frame).toContain("Polymaker PolyTerra PLA (Cardboard Spool) - 147g");
+      expect(frame).not.toContain("Unspecified");
+
+      await press(stdin, DOWN, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      expect(lastFrame()).toContain("149 g");
+      await press(stdin, "a");
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
+      expect(server.spools[0]).toMatchObject({ brand: "Polymaker", weight_core: "149" });
+    });
+
+    it("takes a brand's only catalog row without asking", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "ratrig" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
+      await press(stdin, CTRL_A, ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      expect(lastFrame()).toContain("220 g");
+    });
+
+    it("offers SpoolmanDB's weight or unspecified for a brand the catalog doesn't list", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "3dhojor abs+" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
+      await press(stdin, CTRL_A, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Not in SpoolEase's spool catalog"));
+      expect(lastFrame()).toContain("› SpoolmanDB");
+      expect(lastFrame()).toContain("169 g");
+
+      await press(stdin, DOWN, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      await press(stdin, "a");
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
+      expect(server.spools[0]).toMatchObject({ brand: "3DHoJor", weight_core: "" });
+    });
+
+    it("goes back from the weight menu to the picker with escape, and remembers the choice", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
+      await press(stdin, CTRL_A, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight"));
+      await press(stdin, DOWN, DOWN, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      await press(stdin, "b");
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+      await press(stdin, ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("› PolyMaker - Plastic - 220g"));
+      await press(stdin, ESC);
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+    });
+
+    it("shows a rejected SpoolEase key on the form before the plan", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ securityKey: "WRONG" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("SpoolEase key validation failed"));
+      expect(lastFrame()).toContain("Printer preset");
+    });
+
+    it("warns and keeps the source's weights when the catalog can't be read", async () => {
+      server.replies["GET /spools-catalog"] = { status: 404, body: "not found" };
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "ratrig" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
+      await press(stdin, CTRL_A, ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("Couldn't read the spool catalog from SpoolEase: HTTP 404: not found"));
+      expect(lastFrame()).toContain("Empty spool weight: RatRig");
+    });
   });
 
   it("shows SpoolmanDB download errors on the form", async () => {

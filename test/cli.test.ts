@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "../src/cli.js";
 import { SOURCE_FIXTURE } from "./parity.js";
-import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
 import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
@@ -216,6 +216,91 @@ describe("cli", () => {
     expect(server.spools[0]).toMatchObject({ slicer_filament: "Peddfd02", weight_advertised: "1000", weight_core: "140" });
   });
 
+  describe("empty spool weights", () => {
+    beforeEach(() => {
+      server.spoolsCatalog = SPOOLS_CATALOG;
+    });
+
+    it("takes a brand's only SpoolEase catalog row and says so on stderr", async () => {
+      const { code, stderr } = await run(["--source", "spoolmandb", "--brand", "RatRig", ...spooleaseArgs()]);
+
+      expect(code).toBe(0);
+      expect(stderr).toBe("RatRig: empty spool weight 220 g from SpoolEase (RatRig - Plastic - 220g)\n");
+      expect(server.spools[0]).toMatchObject({ brand: "RatRig", weight_core: "220" });
+    });
+
+    it("lists the catalog rows and exits 2 before writing when a brand has several", async () => {
+      const { code, stdout, stderr } = await run(["--source", "spoolmandb", "--brand", "Polymaker", "--dry-run", ...spooleaseArgs()]);
+
+      expect(code).toBe(2);
+      expect(stdout).toBe("");
+      expect(stderr).toBe(
+        [
+          "bambu-hando: error: SpoolEase lists several empty spool weights for these brands; run again with the --spool-weight you want:",
+          "  Polymaker (1 filament; SpoolmanDB: 140 g)",
+          '    --spool-weight "Polymaker=137"  PolyMaker - Cardboard - 137g',
+          '    --spool-weight "Polymaker=149"  PolyMaker - Cardboard - 149g',
+          '    --spool-weight "Polymaker=220"  PolyMaker - Plastic - 220g',
+          '    --spool-weight "Polymaker=245"  PolyMaker - Plastic - 245g',
+          '    --spool-weight "Polymaker=139"  Polymaker PolyTerra PLA - 139g',
+          '    --spool-weight "Polymaker=147"  Polymaker PolyTerra PLA (Cardboard Spool) - 147g',
+          "",
+        ].join("\n"),
+      );
+      expect(server.requests.map((r) => r.path)).toEqual(["/api/test-key", "/api/spools-config", "/spools-catalog"]);
+      await expect(readdir(join(home, ".config", "BambuStudio", "user"))).rejects.toThrow("ENOENT");
+    });
+
+    it("lists the user's own spools first and marks them", async () => {
+      server.userSpools = "Polymaker weighed on my scale,151";
+
+      const { stderr } = await run(["--source", "spoolmandb", "--brand", "Polymaker", "--dry-run", ...spooleaseArgs()]);
+
+      expect(stderr).toContain(
+        '  Polymaker (1 filament; SpoolmanDB: 140 g)\n    --spool-weight "Polymaker=151"  Polymaker weighed on my scale (My Spools List)\n',
+      );
+    });
+
+    it("uses the weight chosen with --spool-weight", async () => {
+      const { code } = await run(["--source", "spoolmandb", "--brand", "Polymaker", "--spool-weight", "polymaker=149", ...spooleaseArgs()]);
+
+      expect(code).toBe(0);
+      expect(server.spools[0]).toMatchObject({ brand: "Polymaker", weight_core: "149" });
+    });
+
+    it("keeps SpoolmanDB's weight for brands the catalog doesn't list, unless told unspecified", async () => {
+      await run(["--source", "spoolmandb", "--match", "3DHoJor Brown ABS+", ...spooleaseArgs()]);
+      expect(server.spools[0]).toMatchObject({ brand: "3DHoJor", weight_core: "169" });
+
+      await run(["--source", "spoolmandb", "--match", "3DHoJor Brown PLA-CF", "--spool-weight", "3DHoJor=unspecified", ...spooleaseArgs()]);
+      expect(server.spools[1]).toMatchObject({ brand: "3DHoJor", weight_core: "" });
+    });
+
+    it("warns and keeps SpoolmanDB's weights when the catalog can't be read", async () => {
+      server.replies["GET /spools-catalog"] = { status: 404, body: "not found" };
+
+      const { code, stderr } = await run(["--source", "spoolmandb", "--brand", "Polymaker", ...spooleaseArgs()]);
+
+      expect(code).toBe(0);
+      expect(stderr).toBe("Couldn't read the spool catalog from SpoolEase: HTTP 404: not found\n");
+      expect(server.spools[0]).toMatchObject({ weight_core: "140" });
+    });
+
+    it("doesn't read spool weights when no spools are created", async () => {
+      await run(["--source", "spoolmandb", "--brand", "Polymaker", "--skip-spools", ...spooleaseArgs()]);
+
+      expect(server.requests.map((r) => r.path)).not.toContain("/spools-catalog");
+    });
+
+    it("exits 2 for a --spool-weight brand none of the filaments has", async () => {
+      const { code, stderr } = await run(["--source", "spoolmandb", "--brand", "RatRig", "--spool-weight", "Sunlu=165", ...spooleaseArgs()]);
+
+      expect(code).toBe(2);
+      expect(stderr).toBe('bambu-hando: error: --spool-weight "Sunlu=165": none of the filaments is from Sunlu\n');
+      expect(server.spools).toEqual([]);
+    });
+  });
+
   it("warns on stderr and uses the cached catalog when SpoolmanDB is down", async () => {
     await run(["--source", "spoolmandb", "--brand", "RatRig", "--skip-spoolease"]);
     spoolmanDb.failWith = 503;
@@ -281,6 +366,8 @@ describe("cli", () => {
     ],
     [["--source", SOURCE_FIXTURE, "--skip-spoolease", "--spoolease-port", "eighty"], "--spoolease-port must be a port number"],
     [["--source", SOURCE_FIXTURE, "--bogus"], "Unknown option '--bogus'"],
+    [["--source", SOURCE_FIXTURE, "--skip-spoolease", "--spool-weight", "Sunlu"], '--spool-weight takes <brand>=<grams|spoolmandb|unspecified>, got "Sunlu"'],
+    [["--source", SOURCE_FIXTURE, "--skip-spoolease", "--spool-weight", "Sunlu=165"], "--spool-weight only applies when SpoolEase spools are created"],
     [["frobnicate"], "unknown command 'frobnicate'"],
   ])("exits 2 with usage for invalid arguments %j", async (argv, message) => {
     const { code, stdout, stderr } = await run(argv);

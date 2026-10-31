@@ -141,4 +141,25 @@ describe("SpoolEaseClient", () => {
 
     expect(await client.setCustomFilamentsCsv("a,b")).toEqual({ ok: false, error: "Invalid line 2" });
   });
+
+  it("reads SpoolEase's spool catalog, which it serves unencrypted", async () => {
+    server.spoolsCatalog = "Sunlu - V3 - 179g,179,,\r\n";
+
+    expect(await client.getSpoolsCatalog()).toBe("Sunlu - V3 - 179g,179,,\r\n");
+    expect(server.requests).toEqual([{ method: "GET", path: "/spools-catalog", body: null }]);
+  });
+
+  it("throws when the spool catalog can't be read", async () => {
+    server.replies["GET /spools-catalog"] = { status: 404, body: "not found" };
+
+    await expect(client.getSpoolsCatalog()).rejects.toThrow("HTTP 404: not found");
+  });
+
+  it("reads the user's own spool weights, empty when unset", async () => {
+    expect(await client.getMySpoolWeights()).toBe("");
+
+    server.userSpools = "Sunlu weighed,171";
+    expect(await client.getMySpoolWeights()).toBe("Sunlu weighed,171");
+    expect(server.requests.map((r) => r.path)).toEqual(["/api/spools-config", "/api/spools-config"]);
+  });
 });

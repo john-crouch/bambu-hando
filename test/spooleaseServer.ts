@@ -1,12 +1,17 @@
 // ABOUTME: Local stand-in for a SpoolEase 0.7 console speaking the real encrypted protocol.
 // ABOUTME: Keeps custom-filament and spool state like the device, validates payloads, and records every request.
 
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 
 import { decryptText, deriveKey, encryptText } from "../src/encryption.js";
 
 export const TEST_SECURITY_KEY = "TESTKEY";
+
+/** A trimmed copy of the spool catalog a real SpoolEase 0.7 console serves at /spools-catalog. */
+export const SPOOLS_CATALOG = readFileSync(join(import.meta.dirname, "fixtures", "spoolease", "spools-catalog.txt"), "utf-8");
 
 export interface RecordedRequest {
   method: string;
@@ -26,6 +31,10 @@ export interface SpoolEaseServer {
   customFilaments: string | null;
   /** Stored spools, keyed by SpoolRecord field name; seed directly or via POST /api/spools/add-edit. */
   spools: Record<string, string>[];
+  /** Built-in spool weight catalog, served as plain text at /spools-catalog. */
+  spoolsCatalog: string;
+  /** The user's "My Spools List" (name,grams lines), null when unset. */
+  userSpools: string | null;
   close: () => Promise<void>;
 }
 
@@ -94,6 +103,8 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
     replies: {},
     customFilaments: null,
     spools: [],
+    spoolsCatalog: "",
+    userSpools: null,
     close: async () => {},
   };
 
@@ -110,6 +121,9 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
     if (method === "POST" && path === "/api/filaments-config") {
       storeCustomFilaments((body as { custom_filaments?: unknown }).custom_filaments);
       return JSON.stringify({ error_text: null });
+    }
+    if (method === "GET" && path === "/api/spools-config") {
+      return JSON.stringify({ spools: state.userSpools });
     }
     if (method === "GET" && path === "/api/spools") {
       return spoolsCsv(state.spools);
@@ -162,6 +176,12 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
       if (override && (override.status >= 400 || override.plain)) {
         res.writeHead(override.status);
         res.end(override.body);
+        return;
+      }
+      // A static file on the device (web_app.rs), not part of the encrypted API.
+      if (method === "GET" && path === "/spools-catalog") {
+        res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(state.spoolsCatalog);
         return;
       }
       if (method === "POST" && path === "/api/spools/add-edit") {

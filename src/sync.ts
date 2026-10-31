@@ -47,6 +47,17 @@ export class SetupError extends Error {
   override name = "SetupError";
 }
 
+/** Throws KeyCheckError when SpoolEase can't be reached or rejects the key. */
+export async function checkKey(client: SpoolEaseClient): Promise<void> {
+  let keyOk: boolean;
+  try {
+    keyOk = await client.testKey();
+  } catch (err) {
+    throw new KeyCheckError(`SpoolEase unreachable at ${client.baseUrl}: ${errorMessage(err)}`);
+  }
+  if (!keyOk) throw new KeyCheckError("SpoolEase key validation failed");
+}
+
 async function loadSystemProfiles(printers: string[]): Promise<SystemProfiles> {
   let system: SystemProfiles;
   try {
@@ -115,13 +126,7 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
 
   if (!dryRun) {
     onEvent({ type: "stage", stage: "key-check" });
-    let keyOk: boolean;
-    try {
-      keyOk = await client.testKey();
-    } catch (err) {
-      throw new KeyCheckError(`SpoolEase unreachable at ${client.baseUrl}: ${errorMessage(err)}`);
-    }
-    if (!keyOk) throw new KeyCheckError("SpoolEase key validation failed");
+    await checkKey(client);
 
     onEvent({ type: "stage", stage: "custom-filaments" });
     let existing: string | null = null;

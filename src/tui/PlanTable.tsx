@@ -6,7 +6,7 @@ import Spinner from "ink-spinner";
 
 import type { FilamentProfile, Status } from "../models.js";
 
-const COLUMNS = { swatch: 3, name: 22, brand: 12, material: 10, temps: 9, rgba: 10, code: 10, preset: 11, spool: 11 } as const;
+const COLUMNS = { swatch: 3, name: 22, brand: 12, material: 10, temps: 9, rgba: 10, code: 10, empty: 7, preset: 11, spool: 11 } as const;
 
 export interface RowProgress {
   preset?: Status;
@@ -70,6 +70,9 @@ export function PlanTable({ profiles, progress, activePresets, activeSpools }: P
         <Cell width={COLUMNS.code} dim>
           Code
         </Cell>
+        <Cell width={COLUMNS.empty} dim>
+          Empty
+        </Cell>
         <Cell width={COLUMNS.preset} dim>
           Preset
         </Cell>
@@ -90,6 +93,7 @@ export function PlanTable({ profiles, progress, activePresets, activeSpools }: P
             <Cell width={COLUMNS.temps}>{`${profile.nozzleTempMin}-${profile.nozzleTempMax}`}</Cell>
             <Cell width={COLUMNS.rgba}>{profile.colorRgba}</Cell>
             <Cell width={COLUMNS.code}>{profile.filamentId}</Cell>
+            <Cell width={COLUMNS.empty}>{profile.coreWeight ? `${profile.coreWeight} g` : "–"}</Cell>
             <Box width={COLUMNS.preset}>
               <StatusCell status={row.preset} active={activePresets} />
             </Box>

@@ -7,12 +7,14 @@ import { useMemo, useState } from "react";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
 import { bambuBaseFilamentDir } from "../paths.js";
 import { loadProfiles } from "../sources.js";
-import type { SpoolEaseConnection } from "../spoolease.js";
+import { SpoolEaseClient, type SpoolEaseConnection } from "../spoolease.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
-import { KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
+import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
+import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { SetupForm } from "./SetupForm.js";
+import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
 export interface FormValues {
   source: string;
@@ -35,8 +37,10 @@ export interface FormValues {
 
 type Screen =
   | { name: "form"; error: string }
-  | { name: "loading" }
+  | { name: "loading"; message: string }
   | { name: "pick" }
+  /** One menu per brand in prompts; groups covers every brand, including those decided without asking. */
+  | { name: "weights"; profiles: FilamentProfile[]; groups: WeightGroup[]; prompts: WeightGroup[]; step: number; cursor: number }
   | { name: "plan"; profiles: FilamentProfile[] }
   | { name: "running"; profiles: FilamentProfile[] }
   | { name: "done"; profiles: FilamentProfile[]; results: SyncResult[] }
@@ -93,11 +97,53 @@ export function App({ initial, onExit }: Props) {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [picker, setPicker] = useState(() => initialPickerState(initial.query));
+  // Empty spool weight per brand key; kept while going back and forth so earlier picks stay selected.
+  const [weightChoices, setWeightChoices] = useState<ReadonlyMap<string, WeightChoice>>(new Map());
+  const [weightWarnings, setWeightWarnings] = useState<string[]>([]);
   const matches = useMemo(
     () => (catalog ? filterProfiles(catalog.profiles, { brand: "", material: "", match: picker.query }) : []),
     [catalog, picker.query],
   );
   const fromSpoolmanDb = values.source.trim() === SPOOLMANDB_SOURCE;
+  const sourceName = fromSpoolmanDb ? "SpoolmanDB" : "Source file";
+
+  function showPlan(profiles: FilamentProfile[]): void {
+    setProgress([]);
+    setScreen({ name: "plan", profiles });
+  }
+
+  function back(): void {
+    setScreen(fromSpoolmanDb && catalog ? { name: "pick" } : { name: "form", error: "" });
+  }
+
+  // New spools need an empty spool weight: ask per brand when SpoolEase's catalog doesn't settle it.
+  async function chooseWeights(profiles: FilamentProfile[]): Promise<void> {
+    const target = connection(values);
+    setWeightWarnings([]);
+    if (!target || !values.createSpools) {
+      showPlan(profiles);
+      return;
+    }
+    setScreen({ name: "loading", message: "Reading spool weights from SpoolEase…" });
+    try {
+      // A wrong key would otherwise surface as an unreadable My Spools List.
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      const { entries, warnings } = await readSpoolWeights(client);
+      setWeightWarnings(warnings);
+      const groups = weightGroups(profiles, entries);
+      const prompts = groups.filter((g) => g.options.length !== 1);
+      if (prompts.length === 0) {
+        showPlan(applyWeights(profiles, groups, weightChoices));
+        return;
+      }
+      const first = prompts[0]!;
+      const cursor = itemIndex(weightItems(first, profiles, sourceName), weightChoices.get(first.key));
+      setScreen({ name: "weights", profiles, groups, prompts, step: 0, cursor });
+    } catch (err) {
+      setScreen({ name: "form", error: err instanceof Error ? err.message : String(err) });
+    }
+  }
 
   async function loadPlan(): Promise<void> {
     const error = validate(values);
@@ -105,7 +151,7 @@ export function App({ initial, onExit }: Props) {
       setScreen({ name: "form", error });
       return;
     }
-    setScreen({ name: "loading" });
+    setScreen({ name: "loading", message: fromSpoolmanDb ? "Loading SpoolmanDB…" : `Loading profiles from ${values.source}…` });
     try {
       if (fromSpoolmanDb) {
         setCatalog(await loadSpoolmanDb({ diameter: values.diameter }));
@@ -113,8 +159,7 @@ export function App({ initial, onExit }: Props) {
         return;
       }
       const profiles = await loadProfiles(values.source.trim());
-      setProgress([]);
-      setScreen({ name: "plan", profiles });
+      await chooseWeights(profiles);
     } catch (err) {
       setScreen({ name: "form", error: err instanceof Error ? err.message : String(err) });
     }
@@ -160,13 +205,27 @@ export function App({ initial, onExit }: Props) {
       const action = pickerInput(picker, input, key, matches);
       if (action.type === "update") setPicker(action.state);
       else if (action.type === "back") setScreen({ name: "form", error: "" });
-      else if (catalog) {
-        setProgress([]);
-        setScreen({ name: "plan", profiles: catalog.profiles.filter((p) => picker.selected.has(p.filamentId)) });
+      else if (catalog) void chooseWeights(catalog.profiles.filter((p) => picker.selected.has(p.filamentId)));
+    } else if (screen.name === "weights") {
+      const { profiles, groups, prompts, step } = screen;
+      const items = weightItems(prompts[step]!, profiles, sourceName);
+      const action = weightInput(screen.cursor, key, items.length);
+      const cursorFor = (index: number, choices: ReadonlyMap<string, WeightChoice>): number =>
+        itemIndex(weightItems(prompts[index]!, profiles, sourceName), choices.get(prompts[index]!.key));
+      if (action.type === "move") {
+        setScreen({ ...screen, cursor: action.cursor });
+      } else if (action.type === "back") {
+        if (step === 0) back();
+        else setScreen({ ...screen, step: step - 1, cursor: cursorFor(step - 1, weightChoices) });
+      } else if (action.type === "choose") {
+        const choices = new Map(weightChoices).set(prompts[step]!.key, items[screen.cursor]!.choice);
+        setWeightChoices(choices);
+        if (step + 1 < prompts.length) setScreen({ ...screen, step: step + 1, cursor: cursorFor(step + 1, choices) });
+        else showPlan(applyWeights(profiles, groups, choices));
       }
     } else if (screen.name === "plan") {
       if (input === "a") void apply(screen.profiles);
-      else if (input === "b") setScreen(fromSpoolmanDb && catalog ? { name: "pick" } : { name: "form", error: "" });
+      else if (input === "b") back();
       else if (input === "q") onExit(0);
     } else if (screen.name === "done") {
       if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
@@ -181,7 +240,23 @@ export function App({ initial, onExit }: Props) {
   }
 
   if (screen.name === "loading") {
-    return <Text>{fromSpoolmanDb ? "Loading SpoolmanDB…" : `Loading profiles from ${values.source}…`}</Text>;
+    return <Text>{screen.message}</Text>;
+  }
+
+  if (screen.name === "weights") {
+    const group = screen.prompts[screen.step]!;
+    return (
+      <WeightMenu
+        group={group}
+        profiles={screen.profiles}
+        items={weightItems(group, screen.profiles, sourceName)}
+        cursor={screen.cursor}
+        step={screen.step}
+        steps={screen.prompts.length}
+        sourceName={sourceName}
+        warnings={weightWarnings}
+      />
+    );
   }
 
   if (screen.name === "pick") {
@@ -224,7 +299,7 @@ export function App({ initial, onExit }: Props) {
         />
       </Box>
       {stage ? <Text color="cyan">{STAGE_LABELS[stage]}…</Text> : null}
-      {warnings.map((w) => (
+      {[...weightWarnings, ...warnings].map((w) => (
         <Text key={w} color="yellow">
           ! {w}
         </Text>

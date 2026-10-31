@@ -141,6 +141,19 @@ export class SpoolEaseClient {
     return typeof parsed.custom_filaments === "string" ? parsed.custom_filaments : "";
   }
 
+  /** SpoolEase's built-in spool weight catalog (name,grams lines), a plain-text file on the device. */
+  async getSpoolsCatalog(): Promise<string> {
+    const { status, body } = await this.request("/spools-catalog");
+    if (status >= 400) throw new Error(`HTTP ${status}: ${body}`);
+    return body;
+  }
+
+  /** The user's "My Spools List" of spool weights (name,grams lines; "" when unset). */
+  async getMySpoolWeights(): Promise<string> {
+    const parsed: { spools?: unknown } = JSON.parse(await this.getDecrypted("/api/spools-config"));
+    return typeof parsed.spools === "string" ? parsed.spools : "";
+  }
+
   /** slicer_filament values of every stored spool; throws when spools can't be listed. */
   async listSpoolFilamentIds(): Promise<Set<string>> {
     const records = parseCsvRecords(await this.getDecrypted("/api/spools"));

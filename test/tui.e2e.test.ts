@@ -124,11 +124,21 @@ describe("TUI in a real terminal", () => {
     key,
   ];
 
+  // SOURCE_FIXTURE's brands, Polymaker and Generic, aren't in the test console's empty spool catalog,
+  // so each asks for an empty spool weight once; enter keeps the source's.
+  async function keepSourceWeights(t: Terminal): Promise<void> {
+    for (const step of ["brand 1 of 2", "brand 2 of 2"]) {
+      await t.waitFor(step);
+      t.press(ENTER);
+    }
+  }
+
   it("applies a full sync, restores the cursor, and exits 0", async () => {
     terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags()], { HOME: home });
 
     await terminal.waitFor("Source (file or URL)");
     terminal.press(ENTER);
+    await keepSourceWeights(terminal);
     await terminal.waitFor("register filaments + create spools");
     await terminal.waitFor("[a] apply");
     terminal.press("a");
@@ -151,6 +161,7 @@ describe("TUI in a real terminal", () => {
     terminal.press(SOURCE_FIXTURE);
     await terminal.waitFor("source.json");
     terminal.press(ENTER);
+    await keepSourceWeights(terminal);
     await terminal.waitFor("3 profiles from");
     await terminal.waitFor("PABC1234");
     terminal.press("q");
@@ -166,6 +177,7 @@ describe("TUI in a real terminal", () => {
 
     await terminal.waitFor("Source (file or URL)");
     terminal.press(ENTER);
+    await keepSourceWeights(terminal);
     await terminal.waitFor("[a] apply");
     terminal.press("a");
     await terminal.waitFor("Done: 3 written, 0 failed");
@@ -177,7 +189,8 @@ describe("TUI in a real terminal", () => {
   });
 
   it("shows a rejected key and exits 2", async () => {
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags("WRONG")], { HOME: home });
+    // Without spools the key is first checked on apply; with them, before the plan (see tui.test.tsx).
+    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spools", ...spooleaseFlags("WRONG")], { HOME: home });
 
     await terminal.waitFor("Source (file or URL)");
     terminal.press(ENTER);

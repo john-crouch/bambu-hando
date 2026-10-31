@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { baseFilamentDir, installBambuStudio, X1C_06 } from "./bambuStudioSetup.js";
 import { expectedSpoolPayload, SOURCE_FIXTURE } from "./parity.js";
-import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
@@ -77,6 +77,27 @@ describe("bambu-hando binary", () => {
       const preset = JSON.parse(await readFile(report.bambu_preset_paths[0], "utf-8"));
       expect(preset).toMatchObject({ name: "Polymaker PolyLite™ PETG Black @Bambu Lab X1 Carbon 0.4 nozzle", filament_id: "Peddfd02" });
       expect(await readFile(join(home, ".cache", "bambu-hando", "filaments.json"), "utf-8")).toBe(spoolmanDb.files.get("/filaments.json"));
+    } finally {
+      await spoolmanDb.close();
+    }
+  });
+
+  it("asks for an empty spool weight among SpoolEase's catalog rows, then uses the one passed back", async () => {
+    server.spoolsCatalog = SPOOLS_CATALOG;
+    const spoolmanDb = await startSpoolmanDbServer();
+    try {
+      const args = ["--source", "spoolmandb", "--brand", "Polymaker", ...["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)]];
+      const env = { SPOOLMANDB_URL: spoolmanDb.url, SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY };
+
+      const asked = await spawnCli(args, home, env);
+      expect(asked.code).toBe(2);
+      expect(asked.stderr).toContain('--spool-weight "Polymaker=149"  PolyMaker - Cardboard - 149g');
+      expect(server.spools).toEqual([]);
+
+      const { code, stderr } = await spawnCli([...args, "--spool-weight", "Polymaker=149"], home, env);
+      expect(stderr).toBe("");
+      expect(code).toBe(0);
+      expect(server.spools[0]).toMatchObject({ brand: "Polymaker", weight_core: "149" });
     } finally {
       await spoolmanDb.close();
     }

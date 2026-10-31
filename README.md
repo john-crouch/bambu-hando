@@ -47,6 +47,14 @@ bambu-hando tui
 
 Fill in the setup form (arrow keys move, space toggles, enter loads the plan), review the plan table with color swatches and target paths, then press `a` to apply and watch per-profile progress. Any headless flag except `--dry-run` and `--report` prefills the form, for example `bambu-hando tui --source ./profiles.json`.
 
+When spools will be created, the TUI then asks for each brand's empty spool weight, read from your SpoolEase console:
+
+- A brand with several rows in SpoolEase's spool catalog (or your own "My Spools List", listed first) gets a menu of those rows, for example "Sunlu - Plastic (2.0 Version) - 165g" or "Sunlu - V3 - 179g". Rows for another spool size, such as 250 g or 3 kg spools, only show up for filaments of that size.
+- A brand with exactly one row gets that weight without asking.
+- A brand the catalog doesn't list offers the source's weight (SpoolmanDB's, the default) or Unspecified. With Unspecified, SpoolEase works the weight out itself the first time the full spool is weighed.
+
+The plan's Empty column shows the weight each new spool gets.
+
 With `spoolmandb` as the source, a picker opens before the plan: type to search (every word must appear in the name), tab marks the highlighted filament, ctrl+a marks every match, enter continues with what you marked, and esc returns to the form. Marks survive changing the search, and `b` on the plan returns to the picker. `--brand`, `--material` and `--match` prefill the search, for example `bambu-hando tui --source spoolmandb --brand Polymaker --skip-spoolease`.
 
 ## SpoolmanDB source
@@ -118,6 +126,18 @@ bambu-hando \
   --spoolease-security-key YOURKEY
 ```
 
+Empty spool weights follow the TUI's rules, with `--spool-weight <brand>=<grams|spoolmandb|unspecified>` (repeat per brand) in place of the menu. When a brand has several catalog rows and no `--spool-weight`, the run stops with exit code 2 before writing anything and lists one ready-to-paste flag per row:
+
+```text
+bambu-hando: error: SpoolEase lists several empty spool weights for these brands; run again with the --spool-weight you want:
+  Sunlu (1 filament; SpoolmanDB: 189 g)
+    --spool-weight "Sunlu=165"  Sunlu - Plastic (2.0 Version) - 165g
+    --spool-weight "Sunlu=202"  Sunlu - Plastic (2.0 Version) - 202g
+    ...
+```
+
+Single-row brands get their weight automatically, and stderr says which. This happens in dry runs too: they read the key check, the catalog and your spool list from SpoolEase, and write nothing.
+
 Register the filaments in SpoolEase without creating spools:
 
 ```bash
@@ -151,7 +171,7 @@ macOS:
 
 ## Safety behavior
 
-- Uses dry-run mode for planning
+- Uses dry-run mode for planning (no files written, nothing sent to SpoolEase beyond the key check and reading its spool weight lists)
 - Writes Bambu preset files atomically via temp file replacement
 - Produces JSON report output for auditability; each profile gets a `bambu_status` and `spoolease_status` of `written`, `planned`, `skipped` or `failed`
 - Exit codes: `0` success, `1` a profile failed, `2` invalid arguments, BambuStudio not set up (no system profiles, unknown printer) or SpoolEase key check failed

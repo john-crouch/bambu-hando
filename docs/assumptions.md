@@ -19,6 +19,8 @@ This project intentionally separates documented facts from inferred implementati
 - SpoolmanDB publishes its compiled database as `filaments.json` and `materials.json` on GitHub Pages (MIT license); each entry is one weight × diameter × color variant.
 - SpoolEase's spool add/edit DTO takes `core_weight` and `label_weight` as `i32`, and treats 0 as "unknown" (`web_app.rs`).
 - Since SpoolEase 0.7 (`0.7` branch, `web_app.rs` `AddSpoolDTO`), add/edit also requires `assigned_location`, `actual_location` (strings, empty for a new spool) and `spools_count` (`i32`, 1 for one spool); a missing field is a 400. Older consoles ignore these fields: the DTO doesn't deny unknown fields.
+- SpoolEase 0.7 serves its built-in spool weight catalog as a plain-text file at `GET /spools-catalog` (`web_app.rs`; credited to Scuk's Printables catalog and OnlySpoolz), and the user's own "My Spools List" as encrypted `{"spools": ...}` at `GET /api/spools-config` (`user_cores`). Both are `name,grams` lines, sometimes two pairs per line; its spool form (inventory web app) parses them pair by pair and offers them in an "Empty Weight(g)" dropdown, never applying one by itself.
+- When a spool whose core weight is 0 is weighed as new and full, and its label weight is known, SpoolEase sets the core weight to the measured weight minus the label weight (`view_model.rs` `set_spool_weight_async`). That is why "unspecified" (0) is a real choice.
 - SpoolEase signals most write failures in the body, not the status: `handle_web_app_post` always answers 200, so a failed spool add is a plain-text (unencrypted) message, and a refused custom-filaments CSV is an encrypted `{"error_text": ...}`. Only unparseable requests get 4xx. A successful add returns the new spool's `id`.
 
 ## Inferred details (best effort)
@@ -27,6 +29,7 @@ This project intentionally separates documented facts from inferred implementati
 - The Generic template for a material is the shortest-named Generic system preset whose `filament_type` matches the material, else its base (text before the first non-alphanumeric character).
 - SpoolmanDB product names are what the manufacturer calls the color, so they double as the spool color name; SpoolmanDB has no separate color-name field in its compiled output.
 - SpoolmanDB's single `extruder_temp` is used as both ends of the nozzle range. Its per-material `extruder_temp` is a general default, not tuned for any one product.
+- Catalog rows belong to a brand when their name, compared by letters and digits only, starts with the brand ("PolyMaker - Plastic" for Polymaker). Rows name their spool size only when it isn't 1 kg ("Sunlu 250g - Plastic - 55g"), so a row without one is taken as a 1 kg spool.
 - SpoolEase spool creation uses a blank tag_id/id path to create inventory entries, inferred from web-app route behavior.
 
 ## Practical fallback if preset parsing differs in your fork
