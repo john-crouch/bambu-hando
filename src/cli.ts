@@ -1,14 +1,30 @@
 // ABOUTME: Headless CLI for the BambuStudio + SpoolEase filament handoff flow.
 // ABOUTME: Parses flags, runs the sync, prints a JSON report, and maps outcomes to exit codes.
 
-import { writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 
 import { bambuDefaults } from "./bambuProfiles.js";
 import type { PresetOutcome } from "./bambuStudio.js";
+import { errorMessage } from "./errors.js";
+import { printPdf, renderLabelsPdf } from "./labelPdf.js";
+import {
+  DEFAULT_LABEL_FIELDS,
+  describeSpool,
+  filterSpools,
+  LABEL_FIELDS,
+  type LabelField,
+  type LabelSize,
+  labelContent,
+  parseLabelFields,
+  parseLabelSize,
+  type SpoolFilters,
+} from "./labels.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "./models.js";
 import { loadProfiles } from "./sources.js";
-import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
+import { type CustomFilament, SpoolEaseClient, type SpoolEaseConnection, type SpoolRecord } from "./spoolease.js";
 import { readSpoolEaseConfig } from "./spooleaseConfig.js";
 import {
   applyWeights,
@@ -26,11 +42,13 @@ import type { FormValues } from "./tui/App.js";
 const USAGE = `Usage:
   bambu-hando --source <file|url|spoolmandb> [options]
   bambu-hando tui [options]
+  bambu-hando labels [options]
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
 The tui command opens an interactive terminal UI; its options prefill the
 setup form (--dry-run and --report are headless only), and the SpoolmanDB
-filters prefill the filament search.
+filters prefill the filament search. The labels command makes QR spool
+labels for SpoolEase spools (bambu-hando labels --help).
 
 Options:
   --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
@@ -92,6 +110,63 @@ const OPTIONS = {
 
 const { "dry-run": _dryRun, report: _report, "spool-weight": _spoolWeight, ...TUI_OPTIONS } = OPTIONS;
 
+const LABELS_USAGE = `Usage:
+  bambu-hando labels (--spool-id <id>... | --brand/--material/--match | --all)
+                     (--output <file.pdf> | --printer <name>) [options]
+
+Make spool labels for SpoolEase spools: a PDF with one page per label, sized
+to the label, so any printer can print it. Each QR code holds SpoolEase's own
+link for the spool, with its ID.
+
+Spools:
+  --spool-id <id>                 SpoolEase spool ID; repeat for several (labels follow this order)
+  --brand <name>                  Spools of this brand (ignores case)
+  --material <type>               Spools of this material (ignores case)
+  --match <words>                 Words that must all appear in the spool's brand, material,
+                                  color or filament name
+  --all                           Every spool
+
+Label:
+  --fields <list>                 Comma-separated fields to show (default: ${DEFAULT_LABEL_FIELDS.join(",")})
+  --size <W>x<H>[in|mm]           Label size (default: 2.5x1.5in)
+
+Output:
+  --output <file.pdf>             Write the labels to this PDF
+  --printer <name>                Print with CUPS (lp), asking for the label's media size
+  --print-option <key=value>      Extra lp option, e.g. Darkness=14; repeat for several
+
+SpoolEase (default: the SpoolEase settings saved in BambuStudio):
+  --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
+  --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
+  --spoolease-port <port>         Port (default: 80)
+  --spoolease-https               Use HTTPS
+  -h, --help                      Show this help
+
+Fields (shown in this order):
+${LABEL_FIELDS.map((f) => `  ${f.key.padEnd(10)}${f.description}`).join("\n")}
+
+Exit codes: 0 success, 1 printing or another step failed, 2 invalid arguments, no matching
+spools, or SpoolEase key check failed.
+`;
+
+const LABEL_OPTIONS = {
+  "spool-id": { type: "string", multiple: true },
+  brand: { type: "string" },
+  material: { type: "string" },
+  match: { type: "string" },
+  all: { type: "boolean", default: false },
+  fields: { type: "string" },
+  size: { type: "string", default: "2.5x1.5in" },
+  output: { type: "string" },
+  printer: { type: "string" },
+  "print-option": { type: "string", multiple: true },
+  "spoolease-host": { type: "string" },
+  "spoolease-security-key": { type: "string" },
+  "spoolease-port": { type: "string", default: "80" },
+  "spoolease-https": { type: "boolean", default: false },
+  help: { type: "boolean", short: "h", default: false },
+} as const;
+
 export interface Io {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
@@ -108,6 +183,31 @@ function parseDiameter(value: string | undefined): number {
   const diameter = Number(value ?? "1.75");
   if (!Number.isFinite(diameter) || diameter <= 0) throw new UsageError("--diameter must be a positive number");
   return diameter;
+}
+
+function parsePort(value: string): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new UsageError("--spoolease-port must be a port number");
+  return port;
+}
+
+interface SpoolEaseFlags {
+  "spoolease-host"?: string;
+  "spoolease-security-key"?: string;
+  "spoolease-https": boolean;
+}
+
+/** Flags, then environment, then the SpoolEase settings saved in BambuStudio. */
+async function spooleaseConnection(values: SpoolEaseFlags, port: number, unless = ""): Promise<SpoolEaseConnection> {
+  const saved = await readSpoolEaseConfig();
+  const host = values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "";
+  const securityKey = values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "";
+  if (!host || !securityKey) {
+    throw new UsageError(
+      `SpoolEase host and security key are required${unless}: pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, or configure SpoolEase in BambuStudio`,
+    );
+  }
+  return { host, securityKey, port, https: values["spoolease-https"] };
 }
 
 export interface SpoolmanDbSelection extends ProfileFilters {
@@ -155,21 +255,8 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
     throw new UsageError("--brand, --material, --match and --diameter only apply to --source spoolmandb");
   }
 
-  const port = Number(values["spoolease-port"]);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new UsageError("--spoolease-port must be a port number");
-
-  let spoolease: SpoolEaseConnection | null = null;
-  if (!values["skip-spoolease"]) {
-    const saved = await readSpoolEaseConfig();
-    const host = values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "";
-    const securityKey = values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "";
-    if (!host || !securityKey) {
-      throw new UsageError(
-        "SpoolEase host and security key are required unless --skip-spoolease is set: pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, or configure SpoolEase in BambuStudio",
-      );
-    }
-    spoolease = { host, securityKey, port, https: values["spoolease-https"] };
-  }
+  const port = parsePort(values["spoolease-port"]);
+  const spoolease = values["skip-spoolease"] ? null : await spooleaseConnection(values, port, " unless --skip-spoolease is set");
 
   const createSpools = !values["skip-spools"];
   const spoolWeights: Settings["spoolWeights"] = new Map();
@@ -319,8 +406,133 @@ async function tuiCommand(argv: string[], io: Io): Promise<number> {
   return runTui(parsed.values);
 }
 
+interface LabelsSettings {
+  filters: SpoolFilters;
+  fields: LabelField[];
+  size: LabelSize;
+  output: string;
+  printer: string;
+  printOptions: string[];
+  spoolease: SpoolEaseConnection;
+}
+
+async function parseLabelsSettings(argv: string[]): Promise<{ settings: LabelsSettings | null; help: boolean }> {
+  let parsed;
+  try {
+    parsed = parseArgs({ args: argv, options: LABEL_OPTIONS, strict: true });
+  } catch (err) {
+    throw new UsageError(err instanceof Error ? err.message : String(err));
+  }
+  const { values } = parsed;
+  if (values.help) return { settings: null, help: true };
+
+  const filters = { ids: values["spool-id"] ?? [], brand: values.brand ?? "", material: values.material ?? "", match: values.match ?? "" };
+  if (!values.all && !filters.ids.length && !filters.brand && !filters.material && !filters.match) {
+    throw new UsageError("labels needs --spool-id, --brand, --material, --match or --all");
+  }
+  if (!values.output && !values.printer) throw new UsageError("labels needs --output, --printer or both");
+  if (values["print-option"] && !values.printer) throw new UsageError("--print-option only applies with --printer");
+  let size: LabelSize;
+  let fields: LabelField[];
+  try {
+    size = parseLabelSize(values.size);
+    fields = values.fields === undefined ? DEFAULT_LABEL_FIELDS : parseLabelFields(values.fields);
+  } catch (err) {
+    throw new UsageError(err instanceof Error ? err.message : String(err));
+  }
+  const spoolease = await spooleaseConnection(values, parsePort(values["spoolease-port"]));
+
+  return {
+    help: false,
+    settings: {
+      filters,
+      fields,
+      size,
+      output: values.output ?? "",
+      printer: values.printer ?? "",
+      printOptions: values["print-option"] ?? [],
+      spoolease,
+    },
+  };
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+async function labelsCommand(argv: string[], io: Io): Promise<number> {
+  let parsed;
+  try {
+    parsed = await parseLabelsSettings(argv);
+  } catch (err) {
+    if (!(err instanceof UsageError)) throw err;
+    io.stderr(`bambu-hando: error: ${err.message}\n\n${LABELS_USAGE}`);
+    return 2;
+  }
+  if (parsed.help || !parsed.settings) {
+    io.stdout(LABELS_USAGE);
+    return 0;
+  }
+  const settings = parsed.settings;
+
+  try {
+    const client = new SpoolEaseClient(settings.spoolease);
+    await checkKey(client);
+    const spools = await client.listSpools();
+    let filaments = new Map<string, CustomFilament>();
+    try {
+      filaments = await client.getCustomFilaments();
+    } catch (err) {
+      io.stderr(`Couldn't read custom filaments from SpoolEase, so labels show no filament names or temperatures: ${errorMessage(err)}\n`);
+    }
+
+    let chosen: SpoolRecord[];
+    try {
+      chosen = filterSpools(spools, filaments, settings.filters);
+    } catch (err) {
+      io.stderr(`bambu-hando: error: ${errorMessage(err)}\n`);
+      return 2;
+    }
+    if (chosen.length === 0) {
+      io.stderr("bambu-hando: error: no SpoolEase spools match the filters\n");
+      return 2;
+    }
+    for (const spool of chosen) io.stdout(`Spool #${spool.id}: ${describeSpool(spool)}\n`);
+
+    const pdf = await renderLabelsPdf(
+      chosen.map((spool) => labelContent(spool, filaments, settings.fields)),
+      settings.size,
+    );
+    const count = plural(chosen.length, "label");
+    if (settings.output) {
+      await writeFile(settings.output, pdf);
+      io.stdout(`Wrote ${count} to ${settings.output}\n`);
+    }
+    if (settings.printer) {
+      const tmp = settings.output ? "" : await mkdtemp(join(tmpdir(), "bambu-hando-labels-"));
+      try {
+        const path = settings.output || join(tmp, "labels.pdf");
+        if (tmp) await writeFile(path, pdf);
+        const reply = await printPdf(path, settings.printer, settings.size, settings.printOptions);
+        io.stdout(`Sent ${count} to ${settings.printer}${reply ? `: ${reply}` : ""}\n`);
+      } finally {
+        if (tmp) await rm(tmp, { recursive: true, force: true });
+      }
+    }
+    return 0;
+  } catch (err) {
+    if (err instanceof KeyCheckError) {
+      io.stderr(`${err.message}\n`);
+      return 2;
+    }
+    io.stderr(`bambu-hando: error: ${errorMessage(err)}\n`);
+    return 1;
+  }
+}
+
 export async function main(argv: string[], io: Io = processIo): Promise<number> {
   if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
+  if (argv[0] === "labels") return labelsCommand(argv.slice(1), io);
 
   let parsed;
   try {

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { baseFilamentDir, installBambuStudio, X1C_06 } from "./bambuStudioSetup.js";
 import { expectedSpoolPayload, SOURCE_FIXTURE } from "./parity.js";
 import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { decodeQr, readPdf } from "./pdf.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
@@ -37,6 +38,8 @@ describe("bambu-hando binary", () => {
   afterEach(async () => {
     await server.close();
   });
+
+  const spooleaseArgs = (): string[] => ["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port), "--spoolease-security-key", TEST_SECURITY_KEY];
 
   it("syncs presets to disk and spools to SpoolEase", async () => {
     const { code, stdout, stderr } = await spawnCli(
@@ -101,6 +104,24 @@ describe("bambu-hando binary", () => {
     } finally {
       await spoolmanDb.close();
     }
+  });
+
+  it("makes QR labels for the spools it created", async () => {
+    const sync = await spawnCli(["--source", SOURCE_FIXTURE, "--printer-preset", X1C_06, ...spooleaseArgs()], home);
+    expect(sync.code).toBe(0);
+
+    const output = join(home, "labels.pdf");
+    const { code, stdout, stderr } = await spawnCli(["labels", "--all", "--output", output, ...spooleaseArgs()], home);
+
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout).toContain(`Wrote 3 labels to ${output}`);
+    const pages = readPdf(await readFile(output));
+    expect(pages).toHaveLength(3);
+    const link = new URL(decodeQr(pages[0]!)!);
+    expect(link.origin + link.pathname).toBe("https://tag.spoolease.io/S1/");
+    expect(link.searchParams.get("ID")).toBe(server.spools[0]!.id);
+    expect(link.searchParams.get("SC")).toBe("PABC1234");
   });
 
   it("exits 2 for invalid arguments", async () => {

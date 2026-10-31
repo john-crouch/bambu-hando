@@ -22,6 +22,7 @@ Run everything with `npm test` (builds `dist/` first, then runs Vitest).
 4. Run apply mode.
 5. Open BambuStudio and inspect custom filament list.
 6. Open SpoolEase inventory and confirm spool entries/color values.
+7. Make a label for one of those spools (`bambu-hando labels --spool-id <id> --output label.pdf`), check it scans at the printer's resolution (`pdftoppm -r 203 -mono -png label.pdf label && zbarimg --raw label-1.png`), print it (`--printer <name>`), and scan the printed label with a phone: SpoolEase's spool card should show the same ID.
 
 ## Suggested cross-platform verification
 

@@ -23,7 +23,13 @@ This project intentionally separates documented facts from inferred implementati
 - When a spool whose core weight is 0 is weighed as new and full, and its label weight is known, SpoolEase sets the core weight to the measured weight minus the label weight (`view_model.rs` `set_spool_weight_async`). That is why "unspecified" (0) is a real choice.
 - SpoolEase signals most write failures in the body, not the status: `handle_web_app_post` always answers 200, so a failed spool add is a plain-text (unencrypted) message, and a refused custom-filaments CSV is an encrypted `{"error_text": ...}`. Only unparseable requests get 4xx. A successful add returns the new spool's `id`.
 
+- `GET /api/spools` is headerless CSV in `SpoolRecord` field order (`spool_record.rs`): `id`, `tag_id`, `material_type`, `material_subtype`, `color_name`, `color_code`, `note`, `brand`, `weight_advertised`, `weight_core`, `weight_new`, `weight_current`, `slicer_filament`, `added_time`, … `assigned_location`, `actual_location`. Spool IDs are short sequential numbers ("1", "2", …).
+- SpoolEase's NFC tags carry a link built by `SpoolRecord::to_tag_descriptor_s1`: `https://tag.spoolease.io/S1/?TG=<tag>&ID=…&DE=…&DA=…&M=…&MS=…&CC=…&CN=…&B=…&WL=…&WE=…&WF=…&SC=…&SN=…&NN=…&NX=…&N=…`. Values are percent-encoded except ASCII letters, digits and `;` (which joins several colors), and any value equal to its default (empty, 0) is left out (`part_val`). The tag app at that address (`webtag`) shows a spool card from these parameters and needs none of the rest. Labels use this link without `TG` (a label has no NFC tag) and without `SN`, `NN`, `NX` and `N` (they only make the QR code denser).
+- SpoolEase 0.7 has no QR scanning, and its inventory web app reads only `#sk=` (the security key) from its URL, so no link can open one spool on the console.
+
 ## Inferred details (best effort)
+
+- A multi-color spool's `color_code` column holds its RGBA codes joined with `;`, as in its tag links; no real multi-color record has been checked.
 
 - Inherits chains are merged child-over-parent. BambuStudio additionally lets a child's `nil` entry inherit the parent's value in multi-extruder-variant arrays; among Generic presets this only occurs in three H2-series TPU presets.
 - The Generic template for a material is the shortest-named Generic system preset whose `filament_type` matches the material, else its base (text before the first non-alphanumeric character).

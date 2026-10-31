@@ -6,8 +6,80 @@ import type { FilamentProfile } from "./models.js";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
-// GET /api/spools returns headerless CSV in SpoolRecord field order (spool_record.rs); slicer_filament is 13th.
-const SPOOL_SLICER_FILAMENT_COLUMN = 12;
+// GET /api/spools returns headerless CSV in SpoolRecord field order (spool_record.rs).
+const SPOOL_COLUMNS = {
+  id: 0,
+  tagId: 1,
+  material: 2,
+  subtype: 3,
+  colorName: 4,
+  colorCode: 5,
+  note: 6,
+  brand: 7,
+  weightAdvertised: 8,
+  weightCore: 9,
+  weightNew: 10,
+  slicerFilament: 12,
+  addedTime: 13,
+  assignedLocation: 21,
+  actualLocation: 22,
+} as const;
+
+/** A SpoolEase spool as GET /api/spools stores it; weights and times are null when unset. */
+export interface SpoolRecord {
+  id: string;
+  tagId: string;
+  material: string;
+  subtype: string;
+  colorName: string;
+  /** 8-char RGBA codes; SpoolEase keeps several for multi-color spools. */
+  colorCodes: string[];
+  note: string;
+  brand: string;
+  labelWeight: number | null;
+  coreWeight: number | null;
+  fullWeight: number | null;
+  /** The slicer filament code, i.e. our filamentId for spools bambu-hando created. */
+  slicerFilament: string;
+  /** Unix seconds. */
+  addedTime: number | null;
+  /** Where the spool is now, else where it belongs. */
+  location: string;
+}
+
+/** A row of SpoolEase's custom-filaments CSV: code,name,nozzle_temp_low,nozzle_temp_high,material. */
+export interface CustomFilament {
+  name: string;
+  nozzleTempMin: number | null;
+  nozzleTempMax: number | null;
+}
+
+function optionalInt(value: string | undefined): number | null {
+  if (!value?.trim()) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function spoolRecord(fields: string[]): SpoolRecord {
+  const at = (column: number) => fields[column] ?? "";
+  return {
+    id: at(SPOOL_COLUMNS.id),
+    tagId: at(SPOOL_COLUMNS.tagId),
+    material: at(SPOOL_COLUMNS.material),
+    subtype: at(SPOOL_COLUMNS.subtype),
+    colorName: at(SPOOL_COLUMNS.colorName),
+    // Inferred: SpoolEase joins several colors with ";" in its tag links (spool_record.rs to_tag_descriptor_s1).
+    colorCodes: at(SPOOL_COLUMNS.colorCode).split(";").filter(Boolean),
+    note: at(SPOOL_COLUMNS.note),
+    brand: at(SPOOL_COLUMNS.brand),
+    labelWeight: optionalInt(at(SPOOL_COLUMNS.weightAdvertised)),
+    coreWeight: optionalInt(at(SPOOL_COLUMNS.weightCore)),
+    fullWeight: optionalInt(at(SPOOL_COLUMNS.weightNew)),
+    slicerFilament: at(SPOOL_COLUMNS.slicerFilament),
+    addedTime: optionalInt(at(SPOOL_COLUMNS.addedTime)),
+    location: at(SPOOL_COLUMNS.actualLocation) || at(SPOOL_COLUMNS.assignedLocation),
+  };
+}
 
 /** Minimal RFC 4180 parser: quoted fields may contain commas, doubled quotes, and newlines. */
 function parseCsvRecords(text: string): string[][] {
@@ -156,8 +228,25 @@ export class SpoolEaseClient {
 
   /** slicer_filament values of every stored spool; throws when spools can't be listed. */
   async listSpoolFilamentIds(): Promise<Set<string>> {
-    const records = parseCsvRecords(await this.getDecrypted("/api/spools"));
-    return new Set(records.map((fields) => fields[SPOOL_SLICER_FILAMENT_COLUMN] ?? "").filter(Boolean));
+    const spools = await this.listSpools();
+    return new Set(spools.map((spool) => spool.slicerFilament).filter(Boolean));
+  }
+
+  /** Every stored spool; throws when spools can't be listed. */
+  async listSpools(): Promise<SpoolRecord[]> {
+    return parseCsvRecords(await this.getDecrypted("/api/spools")).map(spoolRecord);
+  }
+
+  /** Custom filaments by code; throws when the list can't be read. */
+  async getCustomFilaments(): Promise<Map<string, CustomFilament>> {
+    const filaments = new Map<string, CustomFilament>();
+    // SpoolEase itself splits these lines on every comma (view_model.rs), so this does too.
+    for (const line of (await this.getCustomFilamentsCsv()).split(/\r?\n/)) {
+      const [code, name, low, high] = line.split(",");
+      if (!code || name === undefined) continue;
+      filaments.set(code, { name, nozzleTempMin: optionalInt(low), nozzleTempMax: optionalInt(high) });
+    }
+    return filaments;
   }
 }
 

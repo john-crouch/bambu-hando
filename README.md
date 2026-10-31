@@ -171,6 +171,21 @@ Linux:
 macOS:
 - the same under ~/Library/Application Support/BambuStudio
 
+## Spool labels
+
+`bambu-hando labels` makes QR labels for spools already in SpoolEase, including the ones a sync just created:
+
+```bash
+bambu-hando labels --spool-id 7 --output labels.pdf          # one spool
+bambu-hando labels --brand sunlu --printer Label-Printer       # print straight to a CUPS printer
+bambu-hando labels --all --fields qr,brand,material,color,id --size 40x30mm --output labels.pdf
+```
+
+- The output is a PDF with one page per label, each page exactly the label's size (2.5×1.5 in by default; `--size` takes inches or millimeters), so any printer can print it. The QR code is drawn as vector shapes and the text uses Helvetica, so labels stay sharp at a thermal printer's 203 dpi.
+- `--printer <name>` prints through CUPS (`lp`), asking for the label size as the media (`media=Custom.2.5x1.5in`); `--print-option key=value` passes printer options such as `Darkness=14` along. `lpstat -p` lists printer names.
+- `--fields` picks what the label shows; `bambu-hando labels --help` lists them all (brand, material, filament name, color name, color code, nozzle temperatures, label and empty weight, filament code, location, date added, note, spool ID). Fields always print in the same order, and ones a spool has no value for are left out. Text shrinks to fit and long lines end in "…".
+- The QR code holds SpoolEase's own spool link, the one its NFC tags carry: `https://tag.spoolease.io/S1/?ID=<spool id>&M=…&B=…`. Scanning it with a phone shows SpoolEase's spool card. The SpoolEase console has no QR scanner, and its inventory page can't open one spool from a link, so the ID on the card is how you find the spool there.
+
 ## Safety behavior
 
 - Uses dry-run mode for planning (no files written, nothing sent to SpoolEase beyond the key check and reading its spool weight lists)

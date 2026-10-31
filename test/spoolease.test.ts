@@ -125,6 +125,75 @@ describe("SpoolEaseClient", () => {
     await expect(client.listSpoolFilamentIds()).rejects.toThrow("HTTP 500: db locked");
   });
 
+  it("reads spool records, with empty weights as unknown and the actual location before the assigned one", async () => {
+    server.spools.push(
+      {
+        id: "1",
+        tag_id: "04A1B2C3D4E5F6",
+        material_type: "PETG",
+        material_subtype: "HF",
+        color_name: "2.0 Vivid Yellow",
+        color_code: "F1C400FF",
+        note: 'Bought "cheap", twice',
+        brand: "Sunlu",
+        weight_advertised: "1000",
+        weight_core: "189",
+        weight_new: "1189",
+        slicer_filament: "P4840583",
+        added_time: "1761955200",
+        assigned_location: "Shelf A",
+        actual_location: "AMS 1",
+      },
+      { id: "2", color_code: "D4AF37FF;C0C0C0FF", assigned_location: "Shelf B" },
+    );
+
+    expect(await client.listSpools()).toEqual([
+      {
+        id: "1",
+        tagId: "04A1B2C3D4E5F6",
+        material: "PETG",
+        subtype: "HF",
+        colorName: "2.0 Vivid Yellow",
+        colorCodes: ["F1C400FF"],
+        note: 'Bought "cheap", twice',
+        brand: "Sunlu",
+        labelWeight: 1000,
+        coreWeight: 189,
+        fullWeight: 1189,
+        slicerFilament: "P4840583",
+        addedTime: 1761955200,
+        location: "AMS 1",
+      },
+      {
+        id: "2",
+        tagId: "",
+        material: "",
+        subtype: "",
+        colorName: "",
+        colorCodes: ["D4AF37FF", "C0C0C0FF"],
+        note: "",
+        brand: "",
+        labelWeight: null,
+        coreWeight: null,
+        fullWeight: null,
+        slicerFilament: "",
+        addedTime: null,
+        location: "Shelf B",
+      },
+    ]);
+  });
+
+  it("reads custom filament names and temperatures by code, skipping malformed rows", async () => {
+    server.customFilaments = "P4840583,Sunlu PETG 2.0 Vivid Yellow,230,250,PETG\r\nbroken\r\nPabc,No temps,,,PLA";
+
+    expect(await client.getCustomFilaments()).toEqual(
+      new Map([
+        ["P4840583", { name: "Sunlu PETG 2.0 Vivid Yellow", nozzleTempMin: 230, nozzleTempMax: 250 }],
+        ["Pabc", { name: "No temps", nozzleTempMin: null, nozzleTempMax: null }],
+      ]),
+    );
+  });
+
   it("stores the custom filaments CSV", async () => {
     expect(await client.setCustomFilamentsCsv("a,b")).toEqual({ ok: true, id: "" });
     expect(server.requests[0]?.body).toEqual({ custom_filaments: "a,b" });
