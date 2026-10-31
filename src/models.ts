@@ -35,6 +35,8 @@ export interface SyncResult {
   bambuStatus: Status;
   spooleaseStatus: Status;
   detail: string;
+  /** Empty spool weight a new spool gets (0 = unspecified); null when the run creates no spools. */
+  coreWeight: number | null;
 }
 
 export function resultFailed(result: SyncResult): boolean {

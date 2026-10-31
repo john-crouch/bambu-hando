@@ -105,6 +105,7 @@ export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) 
       bambuStatus,
       spooleaseStatus: spool.status,
       detail,
+      coreWeight: options.spoolease && options.createSpools ? profile.coreWeight : null,
     };
   });
 

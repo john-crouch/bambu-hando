@@ -215,6 +215,7 @@ export function buildReport(source: string, dryRun: boolean, presets: PresetOutc
       bambu_status: r.bambuStatus,
       spoolease_status: r.spooleaseStatus,
       detail: r.detail,
+      core_weight_g: r.coreWeight,
     })),
   };
   return `${JSON.stringify(report, null, 2)}\n`;

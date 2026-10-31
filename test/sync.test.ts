@@ -120,7 +120,24 @@ describe("runSync", () => {
   it("marks SpoolEase skipped when no connection is given", async () => {
     const { results } = await runSync(options({ spoolease: null }), record);
 
-    expect(results[0]).toEqual({ profileName: "PETG Red", filamentId: "PABC1234", bambuStatus: "written", spooleaseStatus: "skipped", detail: "SpoolEase skipped" });
+    expect(results[0]).toEqual({
+      profileName: "PETG Red",
+      filamentId: "PABC1234",
+      bambuStatus: "written",
+      spooleaseStatus: "skipped",
+      detail: "SpoolEase skipped",
+      coreWeight: null,
+    });
+  });
+
+  it("reports the empty spool weight only when spools are created, 0 meaning unspecified", async () => {
+    const profiles = [{ ...profileAt(0), coreWeight: 165 }, { ...profileAt(1), coreWeight: 0 }];
+
+    const planned = await runSync(options({ profiles, createSpools: true, dryRun: true }));
+    const filamentsOnly = await runSync(options({ profiles, createSpools: false, dryRun: true }));
+
+    expect(planned.results.map((r) => r.coreWeight)).toEqual([165, 0]);
+    expect(filamentsOnly.results.map((r) => r.coreWeight)).toEqual([null, null]);
   });
 
   it("throws KeyCheckError when the key is rejected", async () => {

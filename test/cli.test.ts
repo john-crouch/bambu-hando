@@ -70,6 +70,7 @@ describe("cli", () => {
       bambu_status: "written",
       spoolease_status: "written",
       detail: "registered PABC1234",
+      core_weight_g: null,
     });
     expect(server.spools).toEqual([]);
   });
@@ -262,10 +263,11 @@ describe("cli", () => {
     });
 
     it("uses the weight chosen with --spool-weight", async () => {
-      const { code } = await run(["--source", "spoolmandb", "--brand", "Polymaker", "--spool-weight", "polymaker=149", ...spooleaseArgs()]);
+      const { code, stdout } = await run(["--source", "spoolmandb", "--brand", "Polymaker", "--spool-weight", "polymaker=149", ...spooleaseArgs()]);
 
       expect(code).toBe(0);
       expect(server.spools[0]).toMatchObject({ brand: "Polymaker", weight_core: "149" });
+      expect(JSON.parse(stdout).results[0].core_weight_g).toBe(149);
     });
 
     it("keeps SpoolmanDB's weight for brands the catalog doesn't list, unless told unspecified", async () => {

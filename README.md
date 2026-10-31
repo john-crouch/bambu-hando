@@ -173,7 +173,7 @@ macOS:
 
 - Uses dry-run mode for planning (no files written, nothing sent to SpoolEase beyond the key check and reading its spool weight lists)
 - Writes Bambu preset files atomically via temp file replacement
-- Produces JSON report output for auditability; each profile gets a `bambu_status` and `spoolease_status` of `written`, `planned`, `skipped` or `failed`
+- Produces JSON report output for auditability; each profile gets a `bambu_status` and `spoolease_status` of `written`, `planned`, `skipped` or `failed`, and a `core_weight_g`: the empty spool weight its new spool gets (0 for unspecified, `null` when the run creates no spools)
 - Exit codes: `0` success, `1` a profile failed, `2` invalid arguments, BambuStudio not set up (no system profiles, unknown printer) or SpoolEase key check failed
 
 ## Development
