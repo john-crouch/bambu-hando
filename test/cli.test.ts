@@ -456,9 +456,10 @@ describe("cli labels", () => {
     expect(code).toBe(0);
     expect(stdout).toBe(`Spool #2: Polymaker PLA Black\nSpool #1: Sunlu PETG 2.0 Vivid Yellow\nWrote 2 labels to ${output}\n`);
     const pages = readPdf(await readFile(output));
-    expect(pages.map((p) => [p.width, p.height])).toEqual([
-      [180, 108],
-      [180, 108],
+    // The default is the common 57x32 mm thermal label.
+    expect(pages.map((p) => [p.width.toFixed(2), p.height.toFixed(2)])).toEqual([
+      ["161.57", "90.71"],
+      ["161.57", "90.71"],
     ]);
     expect(decodeQr(pages[1]!)).toBe("https://tag.spoolease.io/S1/?ID=1&M=PETG&CC=F1C400FF&CN=2%2E0%20Vivid%20Yellow&B=Sunlu&WL=1000&WE=189&SC=P4840583");
     expect(pages[1]!.texts.map((t) => t.text)).toEqual(["Sunlu", "PETG", "2.0 Vivid Yellow", "230–250 °C", "1000 g", "Spool #1"]);
@@ -481,7 +482,7 @@ describe("cli labels", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("Sent 2 labels to Label-Printer: request id is Label-7 (1 file(s))\n");
     const args = (await readFile(join(lpLog, "args"), "utf-8")).trim().split("\n");
-    expect(args.slice(0, -1)).toEqual(["-d", "Label-Printer", "-t", "bambu-hando labels", "-o", "media=Custom.2.5x1.5in", "-o", "Darkness=14", "--"]);
+    expect(args.slice(0, -1)).toEqual(["-d", "Label-Printer", "-t", "bambu-hando labels", "-o", "media=Custom.57x32mm", "-o", "Darkness=14", "--"]);
     expect(readPdf(await readFile(join(lpLog, "printed.pdf")))).toHaveLength(2);
     await expect(readFile(args.at(-1)!)).rejects.toThrow("ENOENT");
   });

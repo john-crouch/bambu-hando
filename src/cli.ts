@@ -128,7 +128,7 @@ Spools:
 
 Label:
   --fields <list>                 Comma-separated fields to show (default: ${DEFAULT_LABEL_FIELDS.join(",")})
-  --size <W>x<H>[in|mm]           Label size (default: 2.5x1.5in)
+  --size <W>x<H>[in|mm]           Label size (default: 57x32mm, the common 2.25x1.25in roll)
 
 Output:
   --output <file.pdf>             Write the labels to this PDF
@@ -156,7 +156,7 @@ const LABEL_OPTIONS = {
   match: { type: "string" },
   all: { type: "boolean", default: false },
   fields: { type: "string" },
-  size: { type: "string", default: "2.5x1.5in" },
+  size: { type: "string", default: "57x32mm" },
   output: { type: "string" },
   printer: { type: "string" },
   "print-option": { type: "string", multiple: true },

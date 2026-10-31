@@ -37,6 +37,19 @@ describe("renderLabelsPdf", () => {
     expect(decodeQr(page!)).toBe(URL);
   });
 
+  it("fits the QR code and every line on a 57x32 mm label", async () => {
+    const size = parseLabelSize("57x32mm");
+    const [page] = readPdf(await renderLabelsPdf([label], size));
+
+    expect(decodeQr(page!)).toBe(URL);
+    expect(page!.texts).toHaveLength(6);
+    for (const text of page!.texts) {
+      expect(text.y).toBeGreaterThan(0);
+      expect(text.y).toBeLessThan(size.height);
+    }
+    for (const r of page!.rects) expect(r.x + r.width).toBeLessThan(size.width);
+  });
+
   it("keeps the QR code scannable on small labels", async () => {
     const [page] = readPdf(await renderLabelsPdf([label], parseLabelSize("40x30mm")));
 
