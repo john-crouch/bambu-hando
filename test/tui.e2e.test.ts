@@ -104,7 +104,8 @@ class Terminal {
   }
 }
 
-describe("TUI in a real terminal", () => {
+// Each waitFor may take WAIT_MS, and a test chains several; vitest's 5 s default cut slow runs short.
+describe("TUI in a real terminal", { timeout: 30_000 }, () => {
   let server: SpoolEaseServer;
   let home: string;
   let terminal: Terminal | undefined;
