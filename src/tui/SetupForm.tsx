@@ -1,23 +1,24 @@
-// ABOUTME: TUI setup form for source, BambuStudio, and SpoolEase connection settings.
-// ABOUTME: Arrow/tab keys move focus, space toggles switches, enter submits, esc returns to the menu; the key is masked.
+// ABOUTME: TUI settings: import file, BambuStudio folder and printers (chosen from lists), and the SpoolEase connection.
+// ABOUTME: Arrow/tab keys move focus, enter or space changes the focused row, esc returns to the menu; the key is masked.
 
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
-import { useState } from "react";
 
 import type { FormValues } from "./App.js";
 
-type TextKey = "source" | "presetFolder" | "printerPreset" | "host" | "port" | "securityKey";
+type TextKey = "source" | "host" | "port" | "securityKey";
+export type ChoiceKey = "presetFolder" | "printerPreset";
 type ToggleKey = "overwritePresets" | "https" | "skipSpoolease" | "createSpools";
 
 type Field =
   | { key: TextKey; label: string; kind: "text" | "secret"; spoolease: boolean }
+  | { key: ChoiceKey; label: string; kind: "choice"; spoolease: boolean }
   | { key: ToggleKey; label: string; kind: "toggle"; spoolease: boolean };
 
-const FIELDS: Field[] = [
-  { key: "source", label: "Source (file or URL)", kind: "text", spoolease: false },
-  { key: "presetFolder", label: "Preset folder", kind: "text", spoolease: false },
-  { key: "printerPreset", label: "Printer preset(s)", kind: "text", spoolease: false },
+export const FIELDS: Field[] = [
+  { key: "source", label: "Import file or URL", kind: "text", spoolease: false },
+  { key: "presetFolder", label: "Preset folder", kind: "choice", spoolease: false },
+  { key: "printerPreset", label: "Printer preset(s)", kind: "choice", spoolease: false },
   { key: "overwritePresets", label: "Overwrite presets", kind: "toggle", spoolease: false },
   { key: "host", label: "SpoolEase host", kind: "text", spoolease: true },
   { key: "port", label: "SpoolEase port", kind: "text", spoolease: true },
@@ -33,28 +34,32 @@ const LABEL_WIDTH = 2 + Math.max(...FIELDS.map((f) => f.label.length)) + 2;
 interface Props {
   values: FormValues;
   error: string;
+  /** Index into FIELDS; kept by App so returning from a list lands on the same row. */
+  focus: number;
+  onFocus: (focus: number) => void;
   onChange: (values: FormValues) => void;
-  onSubmit: () => void;
+  /** Open the list for a choice row. */
+  onChoose: (key: ChoiceKey) => void;
   onBack: () => void;
 }
 
-export function SetupForm({ values, error, onChange, onSubmit, onBack }: Props) {
-  const [focus, setFocus] = useState(0);
+export function SetupForm({ values, error, focus, onFocus, onChange, onChoose, onBack }: Props) {
   const focused = FIELDS[focus];
+  const down = (): void => onFocus((focus + 1) % FIELDS.length);
 
   useInput((input, key) => {
     if (key.escape) {
       onBack();
     } else if (key.upArrow || (key.tab && key.shift)) {
-      setFocus((f) => (f + FIELDS.length - 1) % FIELDS.length);
+      onFocus((focus + FIELDS.length - 1) % FIELDS.length);
     } else if (key.downArrow || key.tab) {
-      setFocus((f) => (f + 1) % FIELDS.length);
-    } else if (focused?.kind === "toggle" && input === " ") {
+      down();
+    } else if (focused?.kind === "toggle" && (input === " " || key.return)) {
       onChange({ ...values, [focused.key]: !values[focused.key] });
-    } else if (focused?.kind === "toggle" && key.return) {
-      // Text fields submit through TextInput's own onSubmit.
-      onSubmit();
+    } else if (focused?.kind === "choice" && (input === " " || key.return)) {
+      onChoose(focused.key);
     }
+    // Enter in a text field moves on, through TextInput's onSubmit.
   });
 
   return (
@@ -74,22 +79,24 @@ export function SetupForm({ values, error, onChange, onSubmit, onBack }: Props) 
               </Box>
               {field.kind === "toggle" ? (
                 <Text dimColor={dimmed}>{values[field.key] ? "[x]" : "[ ]"}</Text>
+              ) : field.kind === "choice" ? (
+                <Text color={isFocused ? "cyan" : undefined}>{values[field.key]}</Text>
               ) : (
                 <TextInput
                   value={values[field.key]}
                   focus={isFocused}
                   mask={field.kind === "secret" ? "*" : undefined}
                   onChange={(value) => onChange({ ...values, [field.key]: value })}
-                  onSubmit={onSubmit}
+                  onSubmit={down}
                 />
               )}
             </Box>
           );
         })}
       </Box>
-      <Text dimColor>Source can be a JSON file or URL, or spoolmandb to search the SpoolmanDB filament database.</Text>
+      <Text dimColor>A JSON file or URL of filament profiles shows up as Import on the menu. Folder and printers open a list.</Text>
       {error ? <Text color="red">{error}</Text> : null}
-      <Text dimColor>↑/↓ move · space toggle · enter load plan · esc menu · ctrl+c quit</Text>
+      <Text dimColor>↑/↓ move · enter change · esc menu · ctrl+c quit</Text>
     </Box>
   );
 }

@@ -1,7 +1,7 @@
 // ABOUTME: Integration tests for the Ink TUI: setup form, plan view, live apply, and exit codes.
 // ABOUTME: Drives the real sync against a local SpoolEase server and a temporary HOME.
 
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,6 +21,7 @@ import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStud
 
 const ENTER = "\r";
 const DOWN = "\u001B[B";
+const UP = "\u001B[A";
 const TAB = "\t";
 const ESC = "\u001B";
 const CTRL_A = "\u0001";
@@ -81,7 +82,7 @@ describe("TUI", () => {
   // "s" jumps to Settings on the start menu.
   async function openSettings(stdin: { write: (data: string) => void }, lastFrame: () => string | undefined): Promise<void> {
     await press(stdin, "s", ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("Source (file or URL)"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("Import file or URL"));
   }
 
   // SOURCE_FIXTURE's brands, Polymaker and Generic (the brandless profiles), aren't in the test console's
@@ -138,25 +139,18 @@ describe("TUI", () => {
     await settle();
     await openSettings(stdin, lastFrame);
 
-    expect(lastFrame()).toMatch(/Source \(file or URL\) +spoolmandb/);
+    expect(lastFrame()).toMatch(/Import file or URL +spoolmandb/);
   });
 
-  it("requires a source before loading", async () => {
+  it("offers a file typed in settings as Import on the start menu, and shows its plan", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ source: "" })} onExit={onExit} />);
     await settle();
+    expect(lastFrame()).not.toContain("Import");
     await openSettings(stdin, lastFrame);
 
+    await press(stdin, SOURCE_FIXTURE, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
     await press(stdin, ENTER);
-
-    expect(lastFrame()).toContain("Source is required");
-  });
-
-  it("accepts typed input and shows the plan with swatches, codes, and targets", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "" })} onExit={onExit} />);
-    await settle();
-    await openSettings(stdin, lastFrame);
-
-    await press(stdin, SOURCE_FIXTURE, ENTER);
     await keepSourceWeights(stdin, lastFrame);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("3 profiles"));
@@ -180,7 +174,50 @@ describe("TUI", () => {
     await press(stdin, ENTER);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("ENOENT"));
-    expect(lastFrame()).toContain("Source");
+    expect(lastFrame()).toContain("Import file or URL");
+  });
+
+  it("chooses printers from BambuStudio's list in settings", async () => {
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await openSettings(stdin, lastFrame);
+
+    await press(stdin, DOWN, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[x] X1 Carbon 0.4 nozzle"));
+    expect(lastFrame()).toContain("[ ] X1 Carbon 0.6 nozzle");
+    await press(stdin, DOWN, " ", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain(`${X1C_04}, ${X1C_06}`));
+    await press(stdin, ESC);
+
+    await vi.waitFor(() => expect(lastFrame()).toContain(`BambuStudio: default · ${X1C_04}, ${X1C_06}`));
+  });
+
+  it("keeps the printers when the checklist is cancelled", async () => {
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await openSettings(stdin, lastFrame);
+
+    await press(stdin, DOWN, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[x] X1 Carbon 0.4 nozzle"));
+    await press(stdin, " ", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Tick at least one"));
+    await press(stdin, ESC);
+
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/Printer preset\(s\) +Bambu Lab X1 Carbon 0.4 nozzle/));
+  });
+
+  it("chooses the preset folder from BambuStudio's user folders", async () => {
+    await mkdir(join(home, ".config", "BambuStudio", "user", "1234567890"), { recursive: true });
+    await mkdir(join(home, ".config", "BambuStudio", "user", "default"), { recursive: true });
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await openSettings(stdin, lastFrame);
+
+    await press(stdin, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("(*) default"));
+    await press(stdin, UP, ENTER);
+
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/Preset folder +1234567890/));
   });
 
   it("toggles skip SpoolEase so host and key are no longer required", async () => {
@@ -191,7 +228,7 @@ describe("TUI", () => {
     expect(lastFrame()).toContain("SpoolEase host and security key are required");
 
     // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip
-    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, ENTER, ESC, ENTER);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("SpoolEase: skipped"));
   });
@@ -222,7 +259,7 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("existing presets kept"));
     await press(stdin, "b");
     // source, preset folder, printer preset, overwrite presets
-    await press(stdin, DOWN, DOWN, DOWN, " ", ENTER);
+    await press(stdin, DOWN, DOWN, DOWN, " ", ESC, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("existing presets replaced"));
   });
 
@@ -235,7 +272,7 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
     await press(stdin, "b");
     // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip, create spools
-    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ENTER);
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ESC, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments only"));
     await press(stdin, "a");
 

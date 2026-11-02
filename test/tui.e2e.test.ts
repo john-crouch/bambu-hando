@@ -24,6 +24,7 @@ const CTRL_C = "\u0003";
 const DOWN = "\u001B[B";
 const RIGHT = "\u001B[C";
 const TAB = "\t";
+const ESC = "\u001B";
 const SHOW_CURSOR = "\u001B[?25h";
 const WAIT_MS = 8_000;
 
@@ -194,6 +195,8 @@ describe("TUI in a real terminal", () => {
     await terminal.waitFor("Security key");
     terminal.press(SOURCE_FIXTURE);
     await terminal.waitFor("source.json");
+    terminal.press(ESC);
+    await terminal.waitFor("Import source.json");
     terminal.press(ENTER);
     await keepSourceWeights(terminal);
     await terminal.waitFor("3 profiles from");

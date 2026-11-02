@@ -1,15 +1,18 @@
 // ABOUTME: Root TUI component: start menu → (settings) → (SpoolmanDB browser or search) → plan → live apply → summary (→ labels).
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
+import { readdir } from "node:fs/promises";
+
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 
+import { SystemProfiles } from "../bambuProfiles.js";
 import { errorMessage } from "../errors.js";
 import { type LabelTarget, makeLabels } from "../labelJob.js";
 import { listPrinters } from "../labelPdf.js";
 import { loadLabelSettings, saveLabelSettings } from "../labelSettings.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
-import { bambuBaseFilamentDir } from "../paths.js";
+import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot } from "../paths.js";
 import { loadProfiles } from "../sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "../spoolease.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
@@ -17,10 +20,11 @@ import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, we
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { saveTuiSettings } from "../tuiSettings.js";
 import { Browse, browseInput, initialBrowseState } from "./Browse.js";
+import { type ChoiceItem, ChoiceList, choiceInput, type ChoiceState, initialChoiceState } from "./ChoiceList.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
-import { SetupForm } from "./SetupForm.js";
+import { type ChoiceKey, SetupForm } from "./SetupForm.js";
 import { initialLabelForm, LabelForm, type LabelFormState, labelFormInput, labelFormSettings, labelFormTarget } from "./LabelForm.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
@@ -46,6 +50,7 @@ export interface FormValues {
 type Screen =
   | { name: "home"; cursor: number }
   | { name: "form"; error: string }
+  | { name: "choose"; field: ChoiceKey; title: string; items: ChoiceItem[]; multi: boolean; state: ChoiceState }
   | { name: "loading"; message: string }
   | { name: "browse" }
   | { name: "pick" }
@@ -114,6 +119,7 @@ export function App({ initial, onExit }: Props) {
   const [screen, setScreen] = useState<Screen>(() => ({ name: "home", cursor: initialHomeCursor(homeItems(initial.source)) }));
   // The source of the current run: SpoolmanDB or the file/URL from the settings, which stays on the menu.
   const [activeSource, setActiveSource] = useState(initial.source.trim());
+  const [formFocus, setFormFocus] = useState(0);
   const [progress, setProgress] = useState<RowProgress[]>([]);
   const [stage, setStage] = useState<SyncStage | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -175,6 +181,34 @@ export function App({ initial, onExit }: Props) {
 
   function home(): void {
     setScreen({ name: "home", cursor: initialHomeCursor(homeItems(values.source)) });
+  }
+
+  /** BambuStudio's user folders, or its instantiable printers, as a list to choose from. */
+  async function openChoice(field: ChoiceKey): Promise<void> {
+    setScreen({ name: "loading", message: field === "presetFolder" ? "Reading BambuStudio folders…" : "Reading BambuStudio printers…" });
+    try {
+      let items: ChoiceItem[];
+      let current: string[];
+      if (field === "presetFolder") {
+        const entries = await readdir(bambuUserRoot(), { withFileTypes: true }).catch(() => []);
+        current = [values.presetFolder.trim()];
+        const names = new Set([...entries.filter((e) => e.isDirectory()).map((e) => e.name), ...current.filter(Boolean)]);
+        items = [...names].sort().map((name) => ({ value: name, label: name, detail: name === "default" ? "used when not logged in to BambuStudio" : "" }));
+      } else {
+        const known = (await SystemProfiles.load(bambuConfigDir())).printers();
+        current = printers(values);
+        const unknown = current.filter((p) => !known.includes(p));
+        items = [
+          ...known.map((name) => ({ value: name, label: name.replace(/^Bambu Lab /, "") })),
+          ...unknown.map((name) => ({ value: name, label: name, detail: "not in BambuStudio's printers" })),
+        ];
+      }
+      const multi = field === "printerPreset";
+      const title = multi ? "Printers to write presets for" : "BambuStudio preset folder";
+      setScreen({ name: "choose", field, title, items, multi, state: initialChoiceState(items, current) });
+    } catch (err) {
+      setScreen({ name: "form", error: errorMessage(err) });
+    }
   }
 
   async function loadPlan(source: string): Promise<void> {
@@ -287,6 +321,14 @@ export function App({ initial, onExit }: Props) {
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
         else onExit(0);
       }
+    } else if (screen.name === "choose") {
+      const action = choiceInput(screen.state, input, key, screen.items, screen.multi);
+      if (action.type === "update") setScreen({ ...screen, state: action.state });
+      else if (action.type === "cancel") setScreen({ name: "form", error: "" });
+      else if (action.type === "done") {
+        setValues({ ...values, [screen.field]: action.values.join(", ") });
+        setScreen({ name: "form", error: "" });
+      }
     } else if (screen.name === "browse") {
       if (!catalog) return;
       const action = browseInput(browse, input, key, catalog.profiles, picker.selected);
@@ -357,7 +399,21 @@ export function App({ initial, onExit }: Props) {
   }
 
   if (screen.name === "form") {
-    return <SetupForm values={values} error={screen.error} onChange={setValues} onSubmit={() => void loadPlan(values.source)} onBack={home} />;
+    return (
+      <SetupForm
+        values={values}
+        error={screen.error}
+        focus={formFocus}
+        onFocus={setFormFocus}
+        onChange={setValues}
+        onChoose={(field) => void openChoice(field)}
+        onBack={home}
+      />
+    );
+  }
+
+  if (screen.name === "choose") {
+    return <ChoiceList title={screen.title} items={screen.items} state={screen.state} multi={screen.multi} />;
   }
 
   if (screen.name === "loading") {
