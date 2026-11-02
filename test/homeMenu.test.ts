@@ -5,7 +5,7 @@ import type { Key } from "ink";
 import { describe, expect, it } from "vitest";
 
 import { homeInput, homeItems, initialHomeCursor } from "../src/tui/HomeMenu.js";
-import { listMove, typeAhead } from "../src/tui/menu.js";
+import { listMove, TYPE_AHEAD_MS, typeAhead, typeAheadJump } from "../src/tui/menu.js";
 
 function key(overrides: Partial<Key> = {}): Key {
   return overrides as Key;
@@ -26,6 +26,36 @@ describe("typeAhead", () => {
 
   it("stays put when nothing starts with the letter", () => {
     expect(typeAhead(labels, 1, "z")).toBe(1);
+  });
+});
+
+describe("typeAheadJump", () => {
+  const brands = ["Search by name…", "Siddament", "SMARTFIL", "Snapmaker", "Sunlu", "Ultimaker"];
+
+  it("builds a prefix from letters typed in quick succession", () => {
+    const s = typeAheadJump(brands, 0, "s", undefined, 1_000);
+    expect(s).toEqual({ cursor: 1, typed: { text: "s", at: 1_000 } });
+    expect(typeAheadJump(brands, s.cursor, "u", s.typed, 1_000 + TYPE_AHEAD_MS - 1)).toEqual({ cursor: 4, typed: { text: "su", at: 1_999 } });
+  });
+
+  it("starts over after a pause", () => {
+    const s = typeAheadJump(brands, 0, "s", undefined, 1_000);
+    expect(typeAheadJump(brands, s.cursor, "u", s.typed, 1_000 + TYPE_AHEAD_MS + 1).cursor).toBe(5);
+  });
+
+  it("cycles through the items of a repeated letter", () => {
+    let jump = typeAheadJump(brands, 0, "s", undefined, 0);
+    jump = typeAheadJump(brands, jump.cursor, "s", jump.typed, 10);
+    expect(jump.cursor).toBe(2);
+    jump = typeAheadJump(brands, jump.cursor, "s", jump.typed, 20);
+    expect(jump.cursor).toBe(3);
+  });
+
+  it("keeps the cursor on an item that still matches the longer prefix", () => {
+    const sm = typeAheadJump(brands, 0, "s", undefined, 0);
+    const smart = typeAheadJump(brands, 2, "m", { text: "s", at: 0 }, 10);
+    expect(sm.cursor).toBe(1);
+    expect(smart.cursor).toBe(2);
   });
 });
 

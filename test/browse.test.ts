@@ -112,6 +112,15 @@ describe("browseInput", () => {
     expect(act(atAcmePla, "", { return: true }, new Set(["Z1"]))).toEqual({ type: "done", selected: new Set(["Z1"]) });
   });
 
+  it("jumps to a brand by the first letters typed quickly", () => {
+    const brands = ["Siddament", "Snapmaker", "Sunlu"].map((b, i) => profile(b, "PLA", "Black", `B${i}`));
+    const s = browseInput(start, "s", key(), brands, none, 0);
+    if (s.type !== "update") throw new Error("expected an update");
+    const su = browseInput(s.state, "u", key(), brands, none, 100);
+
+    expect(su).toMatchObject({ type: "update", state: { cursor: 3 } });
+  });
+
   it("jumps by first letter and moves with the arrows", () => {
     expect(update(start, "z").state.cursor).toBe(2);
     expect(update(start, "", { downArrow: true }).state.cursor).toBe(1);

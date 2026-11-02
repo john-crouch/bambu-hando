@@ -4,7 +4,7 @@
 import { Box, type Key, Text } from "ink";
 
 import type { FilamentProfile } from "../models.js";
-import { listMove, typeAhead, typedLetter } from "./menu.js";
+import { listMove, type Typed, typeAheadJump, typedLetter } from "./menu.js";
 import { visibleRange } from "./Picker.js";
 
 const ROWS = 14;
@@ -19,6 +19,8 @@ export interface BrowseState {
   /** Where the cursor was on the brand and material lists, restored when going back up. */
   brandCursor: number;
   materialCursor: number;
+  /** Letters typed for type-ahead, and when. */
+  typed?: Typed;
 }
 
 export type BrowseRow =
@@ -76,7 +78,14 @@ export function browseRows(state: BrowseState, profiles: FilamentProfile[], sele
     .map((profile) => ({ kind: "product" as const, label: productLabel(profile), profile }));
 }
 
-export function browseInput(state: BrowseState, input: string, key: Key, profiles: FilamentProfile[], selected: ReadonlySet<string>): BrowseAction {
+export function browseInput(
+  state: BrowseState,
+  input: string,
+  key: Key,
+  profiles: FilamentProfile[],
+  selected: ReadonlySet<string>,
+  now: number = Date.now(),
+): BrowseAction {
   const rows = browseRows(state, profiles, selected);
   const next = (changes: Partial<BrowseState>, nextSelected?: ReadonlySet<string>): BrowseAction => ({
     type: "update",
@@ -121,7 +130,7 @@ export function browseInput(state: BrowseState, input: string, key: Key, profile
   const moved = listMove(state.cursor, key, rows.length, ROWS);
   if (moved !== null) return next({ cursor: moved });
   const letter = typedLetter(input, key);
-  if (letter) return next({ cursor: typeAhead(rows.map((r) => r.label), state.cursor, letter) });
+  if (letter) return next(typeAheadJump(rows.map((r) => r.label), state.cursor, letter, state.typed, now));
   return { type: "none" };
 }
 
