@@ -346,7 +346,7 @@ export function App({ initial, onExit }: Props) {
   return (
     <Box flexDirection="column">
       <Text bold>
-        {screen.profiles.length} profiles from {values.source}
+        {plural(screen.profiles.length, "profile")} from {values.source}
       </Text>
       <Text>
         Presets → {bambuBaseFilamentDir(values.presetFolder.trim())} for {printers(values).join(", ")} (
@@ -372,7 +372,9 @@ export function App({ initial, onExit }: Props) {
           ! {w}
         </Text>
       ))}
-      {screen.name === "plan" ? <Text dimColor>[a] apply · [b] back to settings · [q] quit</Text> : null}
+      {screen.name === "plan" ? (
+        <Text dimColor>[a] apply · [b] back to {fromSpoolmanDb && catalog ? "filaments" : "settings"} · [q] quit</Text>
+      ) : null}
       {screen.name === "done" ? (
         <Box flexDirection="column">
           <Text bold color={failed.length ? "red" : "green"}>

@@ -6,7 +6,7 @@ import Spinner from "ink-spinner";
 
 import type { FilamentProfile, Status } from "../models.js";
 
-const COLUMNS = { swatch: 3, name: 22, brand: 12, material: 10, temps: 9, rgba: 10, code: 10, empty: 7, preset: 11, spool: 11 } as const;
+const COLUMNS = { swatch: 3, name: 22, brand: 12, material: 10, temps: 10, rgba: 10, code: 10, empty: 7, preset: 11, spool: 11 } as const;
 
 export interface RowProgress {
   preset?: Status;
@@ -28,9 +28,10 @@ function StatusCell({ status, active }: { status: Status | undefined; active: bo
   return <Text dimColor>·</Text>;
 }
 
+/** A column cell: truncated to its width, keeping one blank column before the next cell. */
 function Cell({ width, children, dim }: { width: number; children: string; dim?: boolean }) {
   return (
-    <Box width={width}>
+    <Box width={width} paddingRight={1}>
       <Text wrap="truncate-end" dimColor={dim}>
         {children}
       </Text>

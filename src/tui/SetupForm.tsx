@@ -27,7 +27,8 @@ const FIELDS: Field[] = [
   { key: "createSpools", label: "Create spools", kind: "toggle", spoolease: true },
 ];
 
-const LABEL_WIDTH = 22;
+// Focus marker, the longest label, and a gap before the value.
+const LABEL_WIDTH = 2 + Math.max(...FIELDS.map((f) => f.label.length)) + 2;
 
 interface Props {
   values: FormValues;

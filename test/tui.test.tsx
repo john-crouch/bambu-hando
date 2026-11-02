@@ -92,6 +92,13 @@ describe("TUI", () => {
     expect(lastFrame()).not.toContain(TEST_SECURITY_KEY);
   });
 
+  it("keeps a gap between every form label and its value", async () => {
+    const { lastFrame } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    expect(lastFrame()).toMatch(/Source \(file or URL\) +spoolmandb/);
+  });
+
   it("requires a source before loading", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ source: "" })} onExit={onExit} />);
     await settle();
@@ -118,6 +125,7 @@ describe("TUI", () => {
     expect(frame).toContain(baseFilamentDir(home));
     expect(frame).toContain(`127.0.0.1:${server.port}`);
     expect(frame).toContain("200 g");
+    expect(frame).toContain("[b] back to settings");
     expect(server.requests.map((r) => r.path)).toEqual(["/api/test-key", "/api/spools-config", "/spools-catalog"]);
   });
 
@@ -276,7 +284,7 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: Polymaker"));
     await press(stdin, ENTER);
 
-    await vi.waitFor(() => expect(lastFrame()).toContain("1 profiles from spoolmandb"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 profile from spoolmandb"));
     expect(lastFrame()).toContain("Peddfd02");
   });
 
@@ -303,6 +311,8 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight"));
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    expect(lastFrame()).toContain("1 profile from spoolmandb");
+    expect(lastFrame()).toContain("[b] back to filaments");
     await press(stdin, "b");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
