@@ -19,7 +19,10 @@ npx vitest run -t "masks the security key" # single test by name
 npm run typecheck                          # tsc over src + test, no emit
 node dist/bin.js --source test/fixtures/source.json --skip-spoolease --dry-run   # headless
 node dist/bin.js tui --source test/fixtures/source.json                         # TUI (needs a real TTY)
+npm run tui:snap -- "wait=ctrl+c quit" snap=form -- --source spoolmandb           # TUI screens as text (your real HOME)
 ```
+
+`scripts/tui-snap.mjs` runs the built TUI in a real pty rendered by `@xterm/headless` and prints screens exactly as a terminal shows them (the in-process `ink-testing-library` renderer measures ambiguous-width characters such as `™` differently, so check layout changes with it). It only reads unless your steps apply a run.
 
 ESM with `module: nodenext`: relative imports must use `.js` extensions even from `.ts`/`.tsx`. Dependencies are pinned exact (`--save-exact`); prefer versions at least two weeks old.
 

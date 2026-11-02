@@ -22,7 +22,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "npm run build && vitest run",
-    "start": "node dist/bin.js"
+    "start": "node dist/bin.js",
+    "tui:snap": "npm run build && node scripts/tui-snap.mjs"
   },
   "dependencies": {
     "ink": "7.1.1",
@@ -37,6 +38,7 @@
     "@types/pdfkit": "0.17.6",
     "@types/qrcode": "1.5.6",
     "@types/react": "19.3.0",
+    "@xterm/headless": "6.0.0",
     "ink-testing-library": "4.0.0",
     "jsqr": "1.4.0",
     "node-pty": "1.1.0",
