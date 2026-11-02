@@ -116,9 +116,11 @@ const KEY_WIDTH = 14;
 interface Props {
   state: LabelFormState;
   spoolIds: string[];
+  /** Spools the run just created, rather than ones picked on the console. */
+  fresh: boolean;
 }
 
-export function LabelForm({ state, spoolIds }: Props) {
+export function LabelForm({ state, spoolIds, fresh }: Props) {
   const row = (index: number, label: string, value: string, hint = "") => {
     const active = state.cursor === index;
     return (
@@ -138,7 +140,7 @@ export function LabelForm({ state, spoolIds }: Props) {
   return (
     <Box flexDirection="column">
       <Text bold>
-        Labels for {spoolIds.length} new spool{spoolIds.length === 1 ? "" : "s"}: {spoolIds.map((id) => `#${id}`).join(", ")}
+        Labels for {spoolIds.length} {fresh ? "new " : ""}spool{spoolIds.length === 1 ? "" : "s"}: {spoolIds.map((id) => `#${id}`).join(", ")}
       </Text>
       <Box flexDirection="column" marginY={1}>
         {LABEL_FIELDS.map((f, i) => row(i, `[${state.fields.includes(f.key) ? "x" : " "}] ${f.key}`, "", f.description))}

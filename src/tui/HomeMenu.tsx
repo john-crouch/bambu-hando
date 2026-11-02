@@ -1,4 +1,4 @@
-// ABOUTME: TUI start menu: add spools from SpoolmanDB, import the --source file, settings, or quit.
+// ABOUTME: TUI start menu: add spools from SpoolmanDB, import the --source file, label existing spools, settings, quit.
 // ABOUTME: Key handling is a pure function so App's always-on useInput can drive it without a listener of its own.
 
 import { basename } from "node:path";
@@ -10,7 +10,7 @@ import { listMove, typeAhead, typedLetter } from "./menu.js";
 
 const LABEL_WIDTH = 46;
 
-export type HomeId = "spoolmandb" | "import" | "settings" | "quit";
+export type HomeId = "spoolmandb" | "import" | "labels" | "settings" | "quit";
 
 export interface HomeItem {
   id: HomeId;
@@ -20,12 +20,13 @@ export interface HomeItem {
 
 export type HomeAction = { type: "move"; cursor: number } | { type: "choose"; id: HomeId } | { type: "none" };
 
-/** SpoolmanDB, settings and quit, plus an import item when the source is a file or URL. */
-export function homeItems(source: string): HomeItem[] {
+/** SpoolmanDB, settings and quit, plus import for a file or URL source and labels when SpoolEase is set up. */
+export function homeItems(source: string, spoolease: boolean): HomeItem[] {
   const file = source.trim();
   return [
     { id: "spoolmandb", label: "Add spools from SpoolmanDB", detail: "browse brands, materials and colors" },
     ...(file && file !== SPOOLMANDB_SOURCE ? [{ id: "import" as const, label: `Import ${basename(file)}`, detail: "sync the profiles it lists" }] : []),
+    ...(spoolease ? [{ id: "labels" as const, label: "Print labels for existing spools", detail: "pick spools on your SpoolEase console" }] : []),
     { id: "settings", label: "Settings", detail: "BambuStudio folder and printers, SpoolEase" },
     { id: "quit", label: "Quit", detail: "" },
   ];
@@ -53,9 +54,11 @@ interface Props {
   cursor: number;
   /** One line per setting the next run uses: preset folder and printers, SpoolEase. */
   context: string[];
+  /** What the last labels made from the menu did. */
+  outcome: { ok: boolean; lines: string[] } | null;
 }
 
-export function HomeMenu({ items, cursor, context }: Props) {
+export function HomeMenu({ items, cursor, context, outcome }: Props) {
   return (
     <Box flexDirection="column">
       <Text bold>bambu-hando: sync filament profiles to BambuStudio and SpoolEase</Text>
@@ -80,6 +83,11 @@ export function HomeMenu({ items, cursor, context }: Props) {
       {context.map((line) => (
         <Text key={line} dimColor>
           {line}
+        </Text>
+      ))}
+      {outcome?.lines.map((line) => (
+        <Text key={line} color={outcome.ok ? "green" : "red"}>
+          {outcome.ok ? "✓" : "✗"} {line}
         </Text>
       ))}
       <Text dimColor>↑/↓ move · letter jumps · enter choose · ctrl+c quit</Text>

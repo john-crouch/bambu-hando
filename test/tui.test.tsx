@@ -699,6 +699,41 @@ describe("TUI", () => {
       await expect(readFile(join(lpLog, "args"))).rejects.toThrow("ENOENT");
     });
 
+    it("prints labels for spools already on the console, from the start menu", async () => {
+      server.spools.push(
+        { id: "1", material_type: "PETG", color_name: "Black", color_code: "000000FF", brand: "Acme", weight_advertised: "1000", slicer_filament: "PA000001" },
+        { id: "2", material_type: "PLA", color_name: "Vivid Yellow", color_code: "F1C400FF", brand: "Sunlu", weight_advertised: "1000", slicer_filament: "PA000002" },
+      );
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, "p", ENTER);
+      // Newest first.
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/› \[ \] #2 Sunlu PLA Vivid Yellow[\s\S]*#1 Acme PETG Black/));
+      await press(stdin, " ", ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 1 spool: #2"));
+      await press(stdin, UP, UP, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Don't print"));
+      await press(stdin, DOWN, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Printer +Label-Printer/));
+      await press(stdin, DOWN, DOWN, ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("Sent 1 label to Label-Printer"));
+      expect(lastFrame()).toContain("Print labels for existing spools");
+      const pages = readPdf(await readFile(join(lpLog, "printed.pdf")));
+      expect(pages.map((p) => new URL(decodeQr(p)!).searchParams.get("ID"))).toEqual(["2"]);
+    });
+
+    it("says so when the console has no spools to label", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, "p", ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("The SpoolEase console has no spools yet"));
+      expect(lastFrame()).toContain("Print labels for existing spools");
+    });
+
     it("offers no labels when the run created no spools", async () => {
       const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
       await settle();

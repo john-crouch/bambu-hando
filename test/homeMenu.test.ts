@@ -74,32 +74,36 @@ describe("listMove", () => {
 });
 
 describe("homeItems", () => {
-  it("offers SpoolmanDB, settings and quit", () => {
-    expect(homeItems("spoolmandb").map((i) => i.id)).toEqual(["spoolmandb", "settings", "quit"]);
-    expect(homeItems("").map((i) => i.id)).toEqual(["spoolmandb", "settings", "quit"]);
+  it("offers SpoolmanDB, labels for existing spools, settings and quit", () => {
+    expect(homeItems("spoolmandb", true).map((i) => i.id)).toEqual(["spoolmandb", "labels", "settings", "quit"]);
+    expect(homeItems("", true).map((i) => i.id)).toEqual(["spoolmandb", "labels", "settings", "quit"]);
+  });
+
+  it("leaves labels out when SpoolEase is skipped", () => {
+    expect(homeItems("spoolmandb", false).map((i) => i.id)).toEqual(["spoolmandb", "settings", "quit"]);
   });
 
   it("adds an import item for a file or URL source", () => {
-    const items = homeItems("/tmp/profiles.json");
+    const items = homeItems("/tmp/profiles.json", true);
 
-    expect(items.map((i) => i.id)).toEqual(["spoolmandb", "import", "settings", "quit"]);
+    expect(items.map((i) => i.id)).toEqual(["spoolmandb", "import", "labels", "settings", "quit"]);
     expect(items[1]?.label).toBe("Import profiles.json");
-    expect(homeItems("https://example.com/shared/list.json")[1]?.label).toBe("Import list.json");
+    expect(homeItems("https://example.com/shared/list.json", true)[1]?.label).toBe("Import list.json");
   });
 
   it("starts on the import item when there is one, else on SpoolmanDB", () => {
-    expect(initialHomeCursor(homeItems("/tmp/profiles.json"))).toBe(1);
-    expect(initialHomeCursor(homeItems("spoolmandb"))).toBe(0);
+    expect(initialHomeCursor(homeItems("/tmp/profiles.json", true))).toBe(1);
+    expect(initialHomeCursor(homeItems("spoolmandb", true))).toBe(0);
   });
 });
 
 describe("homeInput", () => {
-  const items = homeItems("/tmp/profiles.json");
+  const items = homeItems("/tmp/profiles.json", true);
 
   it("moves, jumps by letter, and chooses with enter", () => {
     expect(homeInput(0, "", key({ downArrow: true }), items)).toEqual({ type: "move", cursor: 1 });
-    expect(homeInput(0, "s", key(), items)).toEqual({ type: "move", cursor: 2 });
-    expect(homeInput(2, "", key({ return: true }), items)).toEqual({ type: "choose", id: "settings" });
+    expect(homeInput(0, "s", key(), items)).toEqual({ type: "move", cursor: 3 });
+    expect(homeInput(3, "", key({ return: true }), items)).toEqual({ type: "choose", id: "settings" });
   });
 
   it("ignores other keys", () => {

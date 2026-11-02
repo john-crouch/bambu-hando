@@ -69,7 +69,8 @@ type Screen =
   | { name: "plan"; profiles: FilamentProfile[] }
   | { name: "running"; profiles: FilamentProfile[] }
   | { name: "done"; profiles: FilamentProfile[]; results: SyncResult[] }
-  | { name: "labels"; profiles: FilamentProfile[]; results: SyncResult[]; form: LabelFormState }
+  /** Labels for spoolIds; back is the screen esc and making the labels return to (the summary or the menu). */
+  | { name: "labels"; spoolIds: string[]; fresh: boolean; form: LabelFormState; back: Screen }
   | { name: "error"; message: string; exitCode: number };
 
 const STAGE_LABELS: Record<SyncStage, string> = {
@@ -126,7 +127,7 @@ interface Props {
 
 export function App({ initial, onExit }: Props) {
   const [values, setValues] = useState(initial);
-  const [screen, setScreen] = useState<Screen>(() => ({ name: "home", cursor: initialHomeCursor(homeItems(initial.source)) }));
+  const [screen, setScreen] = useState<Screen>(() => ({ name: "home", cursor: initialHomeCursor(homeItems(initial.source, !initial.skipSpoolease)) }));
   // The source of the current run: SpoolmanDB or the file/URL from the settings, which stays on the menu.
   const [activeSource, setActiveSource] = useState(initial.source.trim());
   const [formFocus, setFormFocus] = useState(0);
@@ -190,8 +191,12 @@ export function App({ initial, onExit }: Props) {
     }
   }
 
+  function menuItems() {
+    return homeItems(values.source, connection(values) !== null);
+  }
+
   function home(): void {
-    setScreen({ name: "home", cursor: initialHomeCursor(homeItems(values.source)) });
+    setScreen({ name: "home", cursor: initialHomeCursor(menuItems()) });
   }
 
   /** BambuStudio's user folders, or its instantiable printers, as a list to choose from. */
@@ -259,6 +264,7 @@ export function App({ initial, onExit }: Props) {
 
   async function apply(profiles: FilamentProfile[]): Promise<void> {
     setScreen({ name: "running", profiles });
+    setLabelsDone(null);
     setProgress([]);
     setWarnings([]);
     try {
@@ -295,21 +301,54 @@ export function App({ initial, onExit }: Props) {
     }
   }
 
-  async function openLabels(profiles: FilamentProfile[], results: SyncResult[]): Promise<void> {
+  async function openLabels(spoolIds: string[], fresh: boolean, back: Screen): Promise<void> {
     setScreen({ name: "loading", message: "Looking for printers…" });
     const [saved, printerList] = await Promise.all([loadLabelSettings(), listPrinters()]);
-    setScreen({ name: "labels", profiles, results, form: initialLabelForm(saved, printerList) });
+    setScreen({ name: "labels", spoolIds, fresh, back, form: initialLabelForm(saved, printerList) });
   }
 
-  async function printLabels(profiles: FilamentProfile[], results: SyncResult[], form: LabelFormState, target: LabelTarget): Promise<void> {
+  /** The console's spools, newest first, to tick the ones to label. */
+  async function openSpoolLabels(): Promise<void> {
+    const target = connection(values);
+    if (!target) return;
+    setLabelsDone(null);
+    setScreen({ name: "loading", message: "Reading spools from SpoolEase…" });
+    const backHome: Screen = { name: "home", cursor: initialHomeCursor(menuItems()) };
+    try {
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      const spools = await client.listSpools();
+      if (spools.length === 0) {
+        setLabelsDone({ ok: false, lines: ["The SpoolEase console has no spools yet"] });
+        setScreen(backHome);
+        return;
+      }
+      const items = [...spools]
+        .sort((a, b) => Number(b.id) - Number(a.id))
+        .map((spool) => ({ value: spool.id, label: `#${spool.id} ${[spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ")}` }));
+      setScreen({
+        name: "choose",
+        title: "Spools to label",
+        items,
+        multi: true,
+        state: initialChoiceState(items, []),
+        onDone: (ids) => void openLabels(ids, false, backHome),
+        onCancel: () => setScreen(backHome),
+      });
+    } catch (err) {
+      setLabelsDone({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
+      setScreen(backHome);
+    }
+  }
+
+  async function printLabels(spoolIds: string[], back: Screen, form: LabelFormState, target: LabelTarget): Promise<void> {
     const spoolease = connection(values);
     setScreen({ name: "loading", message: "Making labels…" });
     const lines: string[] = [];
     let ok = true;
     try {
       if (!spoolease) throw new Error("SpoolEase is skipped");
-      const ids = newSpoolIds(results);
-      const made = await makeLabels(new SpoolEaseClient(spoolease), { ids, brand: "", material: "", match: "" }, target, (w) => lines.push(w));
+      const made = await makeLabels(new SpoolEaseClient(spoolease), { ids: spoolIds, brand: "", material: "", match: "" }, target, (w) => lines.push(w));
       const count = plural(made.spools.length, "label");
       if (target.output) lines.push(`Wrote ${count} to ${target.output}`);
       if (made.printError) {
@@ -328,19 +367,20 @@ export function App({ initial, onExit }: Props) {
       lines.push(`Couldn't remember these label choices: ${errorMessage(err)}`);
     }
     setLabelsDone({ ok, lines });
-    setScreen({ name: "done", profiles, results });
+    setScreen(back);
   }
 
   // Always subscribed: toggling isActive re-attaches Ink's listener in an effect after the
   // new screen renders, so a key pressed right after "Done" appears could be dropped.
   useInput((input, key) => {
     if (screen.name === "home") {
-      const items = homeItems(values.source);
+      const items = menuItems();
       const action = homeInput(screen.cursor, input, key, items);
       if (action.type === "move") setScreen({ name: "home", cursor: action.cursor });
       else if (action.type === "choose") {
         if (action.id === "spoolmandb") void loadPlan(SPOOLMANDB_SOURCE);
         else if (action.id === "import") void loadPlan(values.source);
+        else if (action.id === "labels") void openSpoolLabels();
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
         else onExit(0);
       }
@@ -393,7 +433,7 @@ export function App({ initial, onExit }: Props) {
       else if (input === "q") onExit(0);
     } else if (screen.name === "done") {
       if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
-      else if (input === "l" && newSpoolIds(screen.results).length > 0) void openLabels(screen.profiles, screen.results);
+      else if (input === "l" && newSpoolIds(screen.results).length > 0) void openLabels(newSpoolIds(screen.results), true, screen);
     } else if (screen.name === "labels") {
       const action = labelFormInput(screen.form, input, key);
       if (action.type === "update") setScreen({ ...screen, form: action.state });
@@ -411,11 +451,11 @@ export function App({ initial, onExit }: Props) {
           onDone: ([value = ""]) => setScreen({ ...labels, form: { ...labels.form, [size ? "size" : "printer"]: value } }),
           onCancel: () => setScreen(labels),
         });
-      } else if (action.type === "back") setScreen({ name: "done", profiles: screen.profiles, results: screen.results });
+      } else if (action.type === "back") setScreen(screen.back);
       else {
         const checked = labelFormTarget(screen.form);
         if ("error" in checked) setScreen({ ...screen, form: { ...screen.form, error: checked.error } });
-        else void printLabels(screen.profiles, screen.results, screen.form, checked.target);
+        else void printLabels(screen.spoolIds, screen.back, screen.form, checked.target);
       }
     } else if (screen.name === "error") {
       if (input === "b") setScreen({ name: "form", error: "" });
@@ -429,7 +469,7 @@ export function App({ initial, onExit }: Props) {
       `BambuStudio: ${values.presetFolder.trim()} · ${printers(values).join(", ")}`,
       `SpoolEase: ${target ? `${target.host}${values.createSpools ? "" : " (register filaments only)"}` : "skipped"}`,
     ];
-    return <HomeMenu items={homeItems(values.source)} cursor={screen.cursor} context={context} />;
+    return <HomeMenu items={menuItems()} cursor={screen.cursor} context={context} outcome={labelsDone} />;
   }
 
   if (screen.name === "form") {
@@ -481,7 +521,7 @@ export function App({ initial, onExit }: Props) {
   }
 
   if (screen.name === "labels") {
-    return <LabelForm state={screen.form} spoolIds={newSpoolIds(screen.results)} />;
+    return <LabelForm state={screen.form} spoolIds={screen.spoolIds} fresh={screen.fresh} />;
   }
 
   if (screen.name === "error") {
