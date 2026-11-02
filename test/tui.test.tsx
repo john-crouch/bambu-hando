@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { labelSettingsPath } from "../src/labelSettings.js";
 import { tuiSettingsPath } from "../src/tuiSettings.js";
 import { App, type FormValues } from "../src/tui/App.js";
-import { PRINTER_ROW } from "../src/tui/LabelForm.js";
 import { installFakeLp } from "./fakeLp.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { decodeQr, readPdf } from "./pdf.js";
@@ -26,7 +25,6 @@ const TAB = "\t";
 const ESC = "\u001B";
 const CTRL_A = "\u0001";
 const BACKSPACE = "\u007F";
-const RIGHT = "\u001B[C";
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -657,9 +655,12 @@ describe("TUI", () => {
 
       await press(stdin, "l");
       await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 3 new spools: #1, #2, #3"));
-      await press(stdin, ...Array<string>(PRINTER_ROW).fill(DOWN), RIGHT, RIGHT);
-      await vi.waitFor(() => expect(lastFrame()).toContain("‹ Label-Printer/spools ›"));
-      await press(stdin, ENTER);
+      // The cursor starts on Make labels; Printer is two rows up and opens a list.
+      await press(stdin, UP, UP, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Don't print"));
+      await press(stdin, DOWN, DOWN, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Printer +Label-Printer\/spools/));
+      await press(stdin, DOWN, DOWN, ENTER);
 
       await vi.waitFor(() => expect(lastFrame()).toContain("Sent 3 labels to Label-Printer/spools: request id is Label-7 (1 file(s))"));
       expect(lastFrame()).toContain("Done: 3 written, 0 failed");
@@ -667,6 +668,20 @@ describe("TUI", () => {
       const pages = readPdf(await readFile(join(lpLog, "printed.pdf")));
       expect(pages.map((p) => new URL(decodeQr(p)!).searchParams.get("ID"))).toEqual(["1", "2", "3"]);
       expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toMatchObject({ printer: "Label-Printer/spools", size: "57x32mm" });
+    });
+
+    it("chooses the label size from a list of common sizes", async () => {
+      const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+      await settle();
+      await applyAndFinish(lastFrame, stdin);
+      await press(stdin, "l");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 3 new spools"));
+
+      await press(stdin, UP, UP, UP, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("(*) 57x32mm"));
+      await press(stdin, DOWN, ENTER);
+
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Size +50x30mm/));
     });
 
     it("explains what's missing, and goes back to the summary with escape", async () => {

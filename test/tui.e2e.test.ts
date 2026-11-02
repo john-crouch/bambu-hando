@@ -10,7 +10,6 @@ import { fileURLToPath } from "node:url";
 import { spawn, type IPty } from "node-pty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { PRINTER_ROW } from "../src/tui/LabelForm.js";
 import { installFakeLp } from "./fakeLp.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { readPdf } from "./pdf.js";
@@ -22,7 +21,7 @@ const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
 const CTRL_C = "\u0003";
 const DOWN = "\u001B[B";
-const RIGHT = "\u001B[C";
+const UP = "\u001B[A";
 const TAB = "\t";
 const ESC = "\u001B";
 const SHOW_CURSOR = "\u001B[?25h";
@@ -170,13 +169,22 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     await terminal.waitFor("[l] labels for 3 new spools");
     terminal.press("l");
     await terminal.waitFor("Labels for 3 new spools");
-    // One key per write: Ink reads a burst of escape sequences as a single (escape) keypress.
-    for (const k of [...Array<string>(PRINTER_ROW).fill(DOWN), RIGHT]) {
+    // The cursor starts on Make labels; Printer is two rows up. One key per write, spaced: Ink reads a
+    // burst of escape sequences as a single (escape) keypress.
+    for (const k of [UP, UP, ENTER]) {
       terminal.press(k);
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    await terminal.waitFor("‹ Label-Printer ›");
-    terminal.press(ENTER);
+    await terminal.waitFor("Don't print");
+    for (const k of [DOWN, ENTER]) {
+      terminal.press(k);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await terminal.waitFor("Label-Printer");
+    for (const k of [DOWN, DOWN, ENTER]) {
+      terminal.press(k);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     await terminal.waitFor("Sent 3 labels to Label-Printer");
     terminal.press("q");
 

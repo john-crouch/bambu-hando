@@ -12,6 +12,9 @@ import {
   labelFormSettings,
   labelFormTarget,
   type LabelFormState,
+  labelPrinterItems,
+  labelSizeItems,
+  MAKE_ROW,
   OUTPUT_ROW,
   PRINTER_ROW,
   SIZE_ROW,
@@ -37,15 +40,16 @@ describe("initialLabelForm", () => {
   it("starts from the saved choices, offering a saved printer even when lpstat doesn't list it", () => {
     const state = initialLabelForm({ ...DEFAULT_LABEL_SETTINGS, printer: "Gone-Printer", output: "/tmp/l.pdf" }, PRINTERS);
 
-    expect(state).toMatchObject({ fields: DEFAULT_LABEL_SETTINGS.fields, size: "57x32mm", printer: "Gone-Printer", output: "/tmp/l.pdf", cursor: 0 });
+    // The choices are remembered, so the cursor starts on Make labels.
+    expect(state).toMatchObject({ fields: DEFAULT_LABEL_SETTINGS.fields, size: "57x32mm", printer: "Gone-Printer", output: "/tmp/l.pdf", cursor: MAKE_ROW });
     expect(state.printers).toEqual([...PRINTERS, "Gone-Printer"]);
   });
 });
 
 describe("labelFormInput", () => {
-  it("moves between rows and toggles fields with space, keeping label order", () => {
-    let state = form();
-    state = update(state, " ");
+  it("moves between rows and toggles fields with space or enter, keeping label order", () => {
+    let state = form({ cursor: 0 });
+    state = update(state, "", { return: true });
     expect(state.fields).not.toContain("qr");
     state = update(state, "", { downArrow: true });
     state = update(state, "", { downArrow: true });
@@ -60,8 +64,8 @@ describe("labelFormInput", () => {
   });
 
   it("stops at the first and last rows", () => {
-    expect(update(form(), "", { upArrow: true }).cursor).toBe(0);
-    expect(update(form({ cursor: OUTPUT_ROW }), "", { downArrow: true }).cursor).toBe(OUTPUT_ROW);
+    expect(update(form({ cursor: 0 }), "", { upArrow: true }).cursor).toBe(0);
+    expect(update(form(), "", { downArrow: true }).cursor).toBe(MAKE_ROW);
   });
 
   it("edits the size and PDF path by typing", () => {
@@ -76,18 +80,13 @@ describe("labelFormInput", () => {
     expect(state.output).toBe("~/my labels.pdf");
   });
 
-  it("cycles the printer with left and right, including not printing", () => {
-    let state = form({ cursor: PRINTER_ROW });
-    expect(state.printer).toBe("");
-    state = update(state, "", { rightArrow: true });
-    expect(state.printer).toBe("Label-Printer");
-    state = update(state, "", { rightArrow: true });
-    expect(state.printer).toBe("Label-Printer/spools");
-    state = update(state, "", { leftArrow: true });
-    state = update(state, "", { leftArrow: true });
-    expect(state.printer).toBe("");
-    state = update(state, "", { leftArrow: true });
-    expect(state.printer).toBe("Office-Laser");
+  it("opens the size and printer lists with enter or space", () => {
+    expect(labelFormInput(form({ cursor: SIZE_ROW }), "", key({ return: true }))).toEqual({ type: "choose", list: "size" });
+    expect(labelFormInput(form({ cursor: PRINTER_ROW }), " ", key())).toEqual({ type: "choose", list: "printer" });
+  });
+
+  it("moves on from the PDF path with enter", () => {
+    expect(update(form({ cursor: OUTPUT_ROW }), "", { return: true }).cursor).toBe(MAKE_ROW);
   });
 
   it("ignores typing on rows that aren't text", () => {
@@ -95,9 +94,22 @@ describe("labelFormInput", () => {
     expect(update(state, "x")).toEqual(state);
   });
 
-  it("submits with enter and goes back with escape", () => {
+  it("makes the labels with enter on its row, and goes back with escape", () => {
     expect(labelFormInput(form(), "", key({ return: true }))).toEqual({ type: "submit" });
     expect(labelFormInput(form(), "", key({ escape: true }))).toEqual({ type: "back" });
+  });
+});
+
+describe("label lists", () => {
+  it("offers common label sizes, the default first, plus a size of your own", () => {
+    expect(labelSizeItems("57x32mm")[0]).toMatchObject({ value: "57x32mm" });
+    expect(labelSizeItems("57x32mm").every((item) => parseLabelSize(item.value))).toBe(true);
+    expect(labelSizeItems("70x40mm").at(-1)).toEqual({ value: "70x40mm", label: "70x40mm", detail: "your size" });
+  });
+
+  it("offers not printing, then every printer", () => {
+    expect(labelPrinterItems(PRINTERS).map((i) => i.value)).toEqual(["", ...PRINTERS]);
+    expect(labelPrinterItems(PRINTERS)[0]?.label).toBe("Don't print");
   });
 });
 

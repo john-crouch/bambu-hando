@@ -25,7 +25,16 @@ import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, SetupForm } from "./SetupForm.js";
-import { initialLabelForm, LabelForm, type LabelFormState, labelFormInput, labelFormSettings, labelFormTarget } from "./LabelForm.js";
+import {
+  initialLabelForm,
+  LabelForm,
+  type LabelFormState,
+  labelFormInput,
+  labelFormSettings,
+  labelFormTarget,
+  labelPrinterItems,
+  labelSizeItems,
+} from "./LabelForm.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
 export interface FormValues {
@@ -50,7 +59,8 @@ export interface FormValues {
 type Screen =
   | { name: "home"; cursor: number }
   | { name: "form"; error: string }
-  | { name: "choose"; field: ChoiceKey; title: string; items: ChoiceItem[]; multi: boolean; state: ChoiceState }
+  /** A list opened from settings or the label screen; onDone and onCancel return to it. */
+  | { name: "choose"; title: string; items: ChoiceItem[]; multi: boolean; state: ChoiceState; onDone: (values: string[]) => void; onCancel: () => void }
   | { name: "loading"; message: string }
   | { name: "browse" }
   | { name: "pick" }
@@ -206,7 +216,19 @@ export function App({ initial, onExit }: Props) {
       }
       const multi = field === "printerPreset";
       const title = multi ? "Printers to write presets for" : "BambuStudio preset folder";
-      setScreen({ name: "choose", field, title, items, multi, state: initialChoiceState(items, current) });
+      const toForm = (): void => setScreen({ name: "form", error: "" });
+      setScreen({
+        name: "choose",
+        title,
+        items,
+        multi,
+        state: initialChoiceState(items, current),
+        onDone: (chosen) => {
+          setValues({ ...values, [field]: chosen.join(", ") });
+          toForm();
+        },
+        onCancel: toForm,
+      });
     } catch (err) {
       setScreen({ name: "form", error: errorMessage(err) });
     }
@@ -325,11 +347,8 @@ export function App({ initial, onExit }: Props) {
     } else if (screen.name === "choose") {
       const action = choiceInput(screen.state, input, key, screen.items, screen.multi);
       if (action.type === "update") setScreen({ ...screen, state: action.state });
-      else if (action.type === "cancel") setScreen({ name: "form", error: "" });
-      else if (action.type === "done") {
-        setValues({ ...values, [screen.field]: action.values.join(", ") });
-        setScreen({ name: "form", error: "" });
-      }
+      else if (action.type === "cancel") screen.onCancel();
+      else if (action.type === "done") screen.onDone(action.values);
     } else if (screen.name === "browse") {
       if (!catalog) return;
       const action = browseInput(browse, input, key, catalog.profiles, picker.selected);
@@ -378,7 +397,21 @@ export function App({ initial, onExit }: Props) {
     } else if (screen.name === "labels") {
       const action = labelFormInput(screen.form, input, key);
       if (action.type === "update") setScreen({ ...screen, form: action.state });
-      else if (action.type === "back") setScreen({ name: "done", profiles: screen.profiles, results: screen.results });
+      else if (action.type === "choose") {
+        const labels = screen;
+        const size = action.list === "size";
+        const items = size ? labelSizeItems(labels.form.size) : labelPrinterItems(labels.form.printers);
+        const current = size ? labels.form.size : labels.form.printer;
+        setScreen({
+          name: "choose",
+          title: size ? "Label size" : "Print with",
+          items,
+          multi: false,
+          state: initialChoiceState(items, [current]),
+          onDone: ([value = ""]) => setScreen({ ...labels, form: { ...labels.form, [size ? "size" : "printer"]: value } }),
+          onCancel: () => setScreen(labels),
+        });
+      } else if (action.type === "back") setScreen({ name: "done", profiles: screen.profiles, results: screen.results });
       else {
         const checked = labelFormTarget(screen.form);
         if ("error" in checked) setScreen({ ...screen, form: { ...screen.form, error: checked.error } });
