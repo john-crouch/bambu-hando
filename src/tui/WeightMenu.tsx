@@ -1,4 +1,4 @@
-// ABOUTME: Per-brand empty spool weight menu: SpoolEase catalog rows, or the source's weight vs unspecified.
+// ABOUTME: Per-brand empty spool weight menu: SpoolEase catalog rows, then the source's weight and unspecified.
 // ABOUTME: Key handling is a pure function so App's always-on useInput can drive it without a listener of its own.
 
 import { Box, type Key, Text } from "ink";
@@ -18,16 +18,18 @@ export interface WeightItem {
 
 export type WeightAction = { type: "move"; cursor: number } | { type: "choose" } | { type: "back" } | { type: "none" };
 
-/** The brand's catalog rows; a brand the catalog doesn't list chooses between the source's weight and unspecified. */
+/**
+ * The brand's catalog rows, then the source's weight and unspecified, which are always offered: when the
+ * spool in hand matches no catalog row, SpoolEase can still work its weight out on the first full weigh.
+ */
 export function weightItems(group: WeightGroup, profiles: FilamentProfile[], sourceName: string): WeightItem[] {
-  if (group.options.length > 0) {
-    return group.options.map((option) => ({
-      label: option.label,
-      detail: `${option.grams} g${option.mine ? " · My Spools List" : ""}`,
-      choice: { kind: "grams", grams: option.grams },
-    }));
-  }
+  const rows: WeightItem[] = group.options.map((option) => ({
+    label: option.label,
+    detail: `${option.grams} g${option.mine ? " · My Spools List" : ""}`,
+    choice: { kind: "grams", grams: option.grams },
+  }));
   return [
+    ...rows,
     { label: sourceName, detail: describeSourceWeights(profiles, group), choice: { kind: "source" } },
     { label: "Unspecified", detail: "SpoolEase works it out when the full spool is first weighed", choice: { kind: "unspecified" } },
   ];

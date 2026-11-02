@@ -335,7 +335,8 @@ describe("TUI", () => {
       expect(frame).toContain("SpoolmanDB says 140 g");
       expect(frame).toContain("› PolyMaker - Cardboard - 137g");
       expect(frame).toContain("Polymaker PolyTerra PLA (Cardboard Spool) - 147g");
-      expect(frame).not.toContain("Unspecified");
+      expect(frame).toContain("SpoolmanDB");
+      expect(frame).toContain("Unspecified");
 
       await press(stdin, DOWN, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
@@ -344,6 +345,24 @@ describe("TUI", () => {
 
       await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
       expect(server.spools[0]).toMatchObject({ brand: "Polymaker", weight_core: "149" });
+    });
+
+    it("can leave the weight unspecified for a brand the catalog lists", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
+      await press(stdin, CTRL_A, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: Polymaker"));
+      await press(stdin, ...Array<string>(7).fill(DOWN));
+      await vi.waitFor(() => expect(lastFrame()).toContain("› Unspecified"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      await press(stdin, "a");
+
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
+      expect(server.spools[0]).toMatchObject({ brand: "Polymaker", weight_core: "" });
     });
 
     it("takes a brand's only catalog row without asking", async () => {

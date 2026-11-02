@@ -51,7 +51,7 @@ Fill in the setup form (arrow keys move, space toggles, enter loads the plan), r
 
 When spools will be created, the TUI then asks for each brand's empty spool weight, read from your SpoolEase console:
 
-- A brand with several rows in SpoolEase's spool catalog (or your own "My Spools List", listed first) gets a menu of those rows, for example "Sunlu - Plastic (2.0 Version) - 165g" or "Sunlu - V3 - 179g". Rows for another spool size, such as 250 g or 3 kg spools, only show up for filaments of that size.
+- A brand with several rows in SpoolEase's spool catalog (or your own "My Spools List", listed first) gets a menu of those rows, for example "Sunlu - Plastic (2.0 Version) - 165g" or "Sunlu - V3 - 179g", followed by the source's weight and Unspecified for a spool that matches none of them. Rows for another spool size, such as 250 g or 3 kg spools, only show up for filaments of that size.
 - A brand with exactly one row gets that weight without asking.
 - A brand the catalog doesn't list offers the source's weight (SpoolmanDB's, the default) or Unspecified. With Unspecified, SpoolEase works the weight out itself the first time the full spool is weighed.
 
