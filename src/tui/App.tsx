@@ -1,4 +1,4 @@
-// ABOUTME: Root TUI component: start menu → (settings) → (SpoolmanDB picker) → plan → live apply → summary (→ labels), plus errors.
+// ABOUTME: Root TUI component: start menu → (settings) → (SpoolmanDB browser or search) → plan → live apply → summary (→ labels).
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
 import { Box, Text, useInput } from "ink";
@@ -16,6 +16,7 @@ import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from 
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { saveTuiSettings } from "../tuiSettings.js";
+import { Browse, browseInput, initialBrowseState } from "./Browse.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
@@ -46,6 +47,7 @@ type Screen =
   | { name: "home"; cursor: number }
   | { name: "form"; error: string }
   | { name: "loading"; message: string }
+  | { name: "browse" }
   | { name: "pick" }
   /** One menu per brand in prompts; groups covers every brand, including those decided without asking. */
   | { name: "weights"; profiles: FilamentProfile[]; groups: WeightGroup[]; prompts: WeightGroup[]; step: number; cursor: number }
@@ -117,6 +119,9 @@ export function App({ initial, onExit }: Props) {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [picker, setPicker] = useState(() => initialPickerState(initial.query));
+  // The browser shares the picker's selection; chooser is where b and esc return to from the weights and plan.
+  const [browse, setBrowse] = useState(initialBrowseState);
+  const [chooser, setChooser] = useState<"browse" | "pick">("browse");
   // Empty spool weight per brand key; kept while going back and forth so earlier picks stay selected.
   const [weightChoices, setWeightChoices] = useState<ReadonlyMap<string, WeightChoice>>(new Map());
   const [weightWarnings, setWeightWarnings] = useState<string[]>([]);
@@ -135,7 +140,8 @@ export function App({ initial, onExit }: Props) {
   }
 
   function back(): void {
-    setScreen(fromSpoolmanDb && catalog ? { name: "pick" } : { name: "form", error: "" });
+    if (!fromSpoolmanDb || !catalog) setScreen({ name: "form", error: "" });
+    else setScreen(chooser === "pick" ? { name: "pick" } : { name: "browse" });
   }
 
   // New spools need an empty spool weight: ask per brand when SpoolEase's catalog doesn't settle it.
@@ -183,7 +189,8 @@ export function App({ initial, onExit }: Props) {
     try {
       if (spoolmanDb) {
         setCatalog(await loadSpoolmanDb({ diameter: values.diameter }));
-        setScreen({ name: "pick" });
+        // A search given on the command line (--brand/--material/--match) opens the name search.
+        setScreen(picker.query ? { name: "pick" } : { name: "browse" });
         return;
       }
       const profiles = await loadProfiles(source.trim());
@@ -280,11 +287,27 @@ export function App({ initial, onExit }: Props) {
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
         else onExit(0);
       }
+    } else if (screen.name === "browse") {
+      if (!catalog) return;
+      const action = browseInput(browse, input, key, catalog.profiles, picker.selected);
+      if (action.type === "update") {
+        setBrowse(action.state);
+        if (action.selected) setPicker({ ...picker, selected: action.selected });
+      } else if (action.type === "search") setScreen({ name: "pick" });
+      else if (action.type === "back") home();
+      else if (action.type === "done") {
+        setPicker({ ...picker, selected: action.selected });
+        setChooser("browse");
+        void chooseWeights(catalog.profiles.filter((p) => action.selected.has(p.filamentId)));
+      }
     } else if (screen.name === "pick") {
       const action = pickerInput(picker, input, key, matches);
       if (action.type === "update") setPicker(action.state);
-      else if (action.type === "back") home();
-      else if (catalog) void chooseWeights(catalog.profiles.filter((p) => picker.selected.has(p.filamentId)));
+      else if (action.type === "back") setScreen({ name: "browse" });
+      else if (catalog) {
+        setChooser("pick");
+        void chooseWeights(catalog.profiles.filter((p) => picker.selected.has(p.filamentId)));
+      }
     } else if (screen.name === "weights") {
       const { profiles, groups, prompts, step } = screen;
       const items = weightItems(prompts[step]!, profiles, sourceName);
@@ -355,6 +378,10 @@ export function App({ initial, onExit }: Props) {
         warnings={weightWarnings}
       />
     );
+  }
+
+  if (screen.name === "browse") {
+    return <Browse state={browse} profiles={catalog?.profiles ?? []} selected={picker.selected} warnings={catalog?.warnings ?? []} />;
   }
 
   if (screen.name === "pick") {

@@ -293,7 +293,9 @@ describe("TUI", () => {
     await settle();
 
     await press(stdin, ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("SpoolmanDB: 9 filaments"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("Search by name…"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("SpoolmanDB: 9 filaments · 9 match"));
     await press(stdin, "3dhojor", "x");
     await vi.waitFor(() => expect(lastFrame()).toContain("0 match"));
     await press(stdin, BACKSPACE);
@@ -332,15 +334,69 @@ describe("TUI", () => {
     expect(lastFrame()).toContain("Peddfd02");
   });
 
-  it("asks for a selection, and escape returns to the start menu", async () => {
+  it("asks for a selection, and escape returns to the brands, then the start menu", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
     await settle();
 
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Search by name…"));
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("9 match"));
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Select filaments with tab"));
 
+    await press(stdin, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Search by name…"));
+    await press(stdin, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
+  });
+
+  it("browses brand, material and color, applies the chosen color, and b returns to its colors", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
+    // RatRig has one material, so enter goes straight to its colors.
+    await press(stdin, "r", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig / ABS"));
+    expect(lastFrame()).toContain("Punkfil Brute Black");
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: RatRig"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 profile from spoolmandb"));
+    expect(lastFrame()).toContain("P9a3bd74");
+
+    await press(stdin, "b");
+    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig / ABS"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: RatRig"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await press(stdin, "a");
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
+    expect(server.spools[0]).toMatchObject({ slicer_filament: "P9a3bd74" });
+  });
+
+  it("goes up a level at a time with escape, keeping what is selected", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
+    // "3" jumps to 3D Printing Canada; 3DHoJor is next.
+    await press(stdin, "3", DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("PLA-CF"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("3DHoJor / ABS+"));
+    await press(stdin, " ");
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+
+    await press(stdin, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/› ABS\+ +1 +1 selected/));
+    await press(stdin, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/› 3DHoJor +3 +1 selected/));
     await press(stdin, ESC);
     await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
   });
@@ -349,6 +405,8 @@ describe("TUI", () => {
     const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
     await settle();
 
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Search by name…"));
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("9 match"));
     await press(stdin, TAB, ENTER);
