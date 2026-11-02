@@ -27,6 +27,10 @@ This project intentionally separates documented facts from inferred implementati
 - SpoolEase's NFC tags carry a link built by `SpoolRecord::to_tag_descriptor_s1`: `https://tag.spoolease.io/S1/?TG=<tag>&ID=…&DE=…&DA=…&M=…&MS=…&CC=…&CN=…&B=…&WL=…&WE=…&WF=…&SC=…&SN=…&NN=…&NX=…&N=…`. Values are percent-encoded except ASCII letters, digits and `;` (which joins several colors), and any value equal to its default (empty, 0) is left out (`part_val`). The tag app at that address (`webtag`) shows a spool card from these parameters and needs none of the rest. Labels use this link without `TG` (a label has no NFC tag) and without `SN`, `NN`, `NX` and `N` (they only make the QR code denser).
 - SpoolEase 0.7 has no QR scanning, and its inventory web app reads only `#sk=` (the security key) from its URL, so no link can open one spool on the console.
 
+## Verified on hardware
+
+- The ID link holds end to end (SpoolEase 0.7, a Bambu printer with an AMS): a loaded spool's `slicer_filament` reaches the AMS tray's `tray_info_idx` together with the material, color and nozzle range from its custom-filaments CSV row, BambuStudio records it in `BambuStudio.conf` `ams_filament_ids`, and its AMS sync shows the user preset whose `filament_id` matches.
+
 ## Inferred details (best effort)
 
 - A multi-color spool's `color_code` column holds its RGBA codes joined with `;`, as in its tag links; no real multi-color record has been checked.
