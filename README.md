@@ -71,6 +71,7 @@ bambu-hando --source spoolmandb --brand Polymaker --material PETG --match "polyl
 
 - `--brand` and `--material` match exactly, ignoring case. Every word in `--match` must appear somewhere in the filament name.
 - `--diameter` picks 1.75 (default) or 2.85 mm filaments.
+- A run syncs at most 10 filaments, so a broad filter like `--material PLA` (thousands of matches) can't flood BambuStudio and SpoolEase with presets and spools. With more matches it exits 2 before writing anything and lists them; narrow the filters or raise the cap with `--max-filaments <n>`. `--dry-run` is not capped.
 - Profiles are named `<manufacturer> <material> <product>`; the material is left out when the product name already contains it (`Polymaker PolyLite™ PETG Black`).
 - Nozzle temperatures come from the filament, then from SpoolmanDB's per-material defaults, then fall back to 190-240 °C. Spools get the filament's net and empty-spool weights (0, meaning unknown, when SpoolmanDB doesn't list a spool weight).
 - Multi-color filaments use their first color.

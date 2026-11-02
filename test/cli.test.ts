@@ -329,6 +329,57 @@ describe("cli", () => {
     );
   });
 
+  it("caps SpoolmanDB matches at --max-filaments", async () => {
+    const { code, stderr } = await run(["--source", "spoolmandb", "--brand", "3dhojor", "--max-filaments", "2", "--skip-spoolease"]);
+
+    expect(code).toBe(2);
+    expect(stderr).toContain("3 SpoolmanDB filaments match the filters, more than --max-filaments (2):");
+    expect(stderr).toContain("pass --max-filaments 3 to sync them all");
+  });
+
+  describe("match cap", () => {
+    const COLORS = ["Red", "Orange", "Yellow", "Green", "Blue", "Indigo", "Violet", "Black", "White", "Grey", "Brown"];
+
+    beforeEach(() => {
+      spoolmanDb.files.set(
+        "/filaments.json",
+        JSON.stringify(COLORS.map((name) => ({ manufacturer: "Acme", name, material: "PLA", diameter: 1.75, weight: 1000 }))),
+      );
+    });
+
+    it("exits 2 without writing anything when more than 10 filaments match", async () => {
+      const { code, stdout, stderr } = await run(["--source", "spoolmandb", "--brand", "Acme", ...spooleaseArgs()]);
+
+      expect(code).toBe(2);
+      expect(stdout).toBe("");
+      expect(stderr).toBe(
+        [
+          "bambu-hando: error: 11 SpoolmanDB filaments match the filters, more than --max-filaments (10):",
+          ...COLORS.slice(0, 10).map((color) => `  Acme PLA ${color}`),
+          "  ...and 1 more",
+          "Narrow the filters (for example with --match), or pass --max-filaments 11 to sync them all; --dry-run lists every match.",
+          "",
+        ].join("\n"),
+      );
+      expect(server.requests).toEqual([]);
+      await expect(readdir(baseFilamentDir(home, "1234567890"))).rejects.toThrow();
+    });
+
+    it("syncs them all when --max-filaments allows it", async () => {
+      const { code, stdout } = await run(["--source", "spoolmandb", "--brand", "Acme", "--max-filaments", "11", "--skip-spoolease"]);
+
+      expect(code).toBe(0);
+      expect(JSON.parse(stdout).profiles_count).toBe(11);
+    });
+
+    it("doesn't cap a dry run", async () => {
+      const { code, stdout } = await run(["--source", "spoolmandb", "--brand", "Acme", "--dry-run", "--skip-spoolease"]);
+
+      expect(code).toBe(0);
+      expect(JSON.parse(stdout).profiles_count).toBe(11);
+    });
+  });
+
   it("writes to BambuStudio's logged-in preset folder for its selected printer by default", async () => {
     const { code, stdout } = await run(["--source", SOURCE_FIXTURE, "--skip-spoolease"]);
 
@@ -364,8 +415,11 @@ describe("cli", () => {
 
   it.each([
     [["--source", "spoolmandb", "--skip-spoolease"], "--source spoolmandb needs at least one of --brand, --material, --match"],
-    [["--source", SOURCE_FIXTURE, "--brand", "Polymaker", "--skip-spoolease"], "--brand, --material, --match and --diameter only apply to --source spoolmandb"],
+    [["--source", SOURCE_FIXTURE, "--brand", "Polymaker", "--skip-spoolease"], "--brand, --material, --match, --diameter and --max-filaments only apply to --source spoolmandb"],
+    [["--source", SOURCE_FIXTURE, "--max-filaments", "20", "--skip-spoolease"], "--brand, --material, --match, --diameter and --max-filaments only apply to --source spoolmandb"],
     [["--source", "spoolmandb", "--brand", "Polymaker", "--diameter", "thick", "--skip-spoolease"], "--diameter must be a positive number"],
+    [["--source", "spoolmandb", "--brand", "Polymaker", "--max-filaments", "0", "--skip-spoolease"], "--max-filaments must be a whole number of at least 1"],
+    [["--source", "spoolmandb", "--brand", "Polymaker", "--max-filaments", "ten", "--skip-spoolease"], "--max-filaments must be a whole number of at least 1"],
     [[], "--source is required"],
     [
       ["--source", SOURCE_FIXTURE],

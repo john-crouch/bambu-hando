@@ -36,6 +36,9 @@ import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE 
 import { checkKey, KeyCheckError, runSync, SetupError } from "./sync.js";
 import type { FormValues } from "./tui/App.js";
 
+/** Headless SpoolmanDB runs sync at most this many filaments unless --max-filaments says otherwise. */
+const DEFAULT_MAX_FILAMENTS = 10;
+
 const USAGE = `Usage:
   bambu-hando --source <file|url|spoolmandb> [options]
   bambu-hando tui [options]
@@ -43,9 +46,9 @@ const USAGE = `Usage:
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
 The tui command opens an interactive terminal UI; its options prefill the
-setup form (--dry-run and --report are headless only), and the SpoolmanDB
-filters prefill the filament search. The labels command makes QR spool
-labels for SpoolEase spools (bambu-hando labels --help).
+setup form (--dry-run, --report and --max-filaments are headless only), and
+the SpoolmanDB filters prefill the filament search. The labels command makes
+QR spool labels for SpoolEase spools (bambu-hando labels --help).
 
 Options:
   --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
@@ -83,6 +86,8 @@ SpoolmanDB filters (--source spoolmandb needs at least one of the first three):
   --material <type>               Material, e.g. PETG (ignores case)
   --match <words>                 Words that must all appear in the filament name
   --diameter <mm>                 Filament diameter (default: 1.75)
+  --max-filaments <n>             Most filaments a run may sync (default: ${DEFAULT_MAX_FILAMENTS}); more matches
+                                  exit 2 before anything is written. --dry-run is not capped
 
 Exit codes: 0 success, 1 a profile failed, 2 invalid arguments, BambuStudio not set up,
 or SpoolEase key check failed.
@@ -110,11 +115,13 @@ const OPTIONS = {
   material: { type: "string" },
   match: { type: "string" },
   diameter: { type: "string" },
+  "max-filaments": { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } as const;
 
 const {
   "dry-run": _dryRun,
+  "max-filaments": _maxFilaments,
   report: _report,
   "spool-weight": _spoolWeight,
   "label-output": _labelOutput,
@@ -193,10 +200,31 @@ const processIo: Io = {
 
 class UsageError extends Error {}
 
+const LISTED_MATCHES = 10;
+
+function tooManyMatches(profiles: FilamentProfile[], maxFilaments: number): string {
+  const listed = profiles.slice(0, LISTED_MATCHES).map((p) => `  ${p.name}`);
+  const more = profiles.length - listed.length;
+  return [
+    `bambu-hando: error: ${profiles.length} SpoolmanDB filaments match the filters, more than --max-filaments (${maxFilaments}):`,
+    ...listed,
+    ...(more > 0 ? [`  ...and ${more} more`] : []),
+    `Narrow the filters (for example with --match), or pass --max-filaments ${profiles.length} to sync them all; --dry-run lists every match.`,
+    "",
+  ].join("\n");
+}
+
 function parseDiameter(value: string | undefined): number {
   const diameter = Number(value ?? "1.75");
   if (!Number.isFinite(diameter) || diameter <= 0) throw new UsageError("--diameter must be a positive number");
   return diameter;
+}
+
+function parseMaxFilaments(value: string | undefined): number {
+  if (value === undefined) return DEFAULT_MAX_FILAMENTS;
+  const max = Number(value);
+  if (!/^\d+$/.test(value) || max < 1) throw new UsageError("--max-filaments must be a whole number of at least 1");
+  return max;
 }
 
 function parsePort(value: string): number {
@@ -226,6 +254,8 @@ async function spooleaseConnection(values: SpoolEaseFlags, port: number, unless 
 
 export interface SpoolmanDbSelection extends ProfileFilters {
   diameter: number;
+  /** Most matching filaments a run may sync (dry runs are not capped). */
+  maxFilaments: number;
 }
 
 export interface Settings {
@@ -266,9 +296,9 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
     if (!filters.brand && !filters.material && !filters.match) {
       throw new UsageError("--source spoolmandb needs at least one of --brand, --material, --match");
     }
-    spoolmanDb = { ...filters, diameter: parseDiameter(values.diameter) };
-  } else if (filters.brand || filters.material || filters.match || values.diameter !== undefined) {
-    throw new UsageError("--brand, --material, --match and --diameter only apply to --source spoolmandb");
+    spoolmanDb = { ...filters, diameter: parseDiameter(values.diameter), maxFilaments: parseMaxFilaments(values["max-filaments"]) };
+  } else if (filters.brand || filters.material || filters.match || values.diameter !== undefined || values["max-filaments"] !== undefined) {
+    throw new UsageError("--brand, --material, --match, --diameter and --max-filaments only apply to --source spoolmandb");
   }
 
   const port = parsePort(values["spoolease-port"]);
@@ -598,6 +628,11 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
         io.stderr(
           "bambu-hando: error: no SpoolmanDB filaments match the filters (Bambu Lab filaments are never included: BambuStudio ships its own presets for them)\n",
         );
+        return 2;
+      }
+      const { maxFilaments } = settings.spoolmanDb;
+      if (profiles.length > maxFilaments && !settings.dryRun) {
+        io.stderr(tooManyMatches(profiles, maxFilaments));
         return 2;
       }
     } else {
