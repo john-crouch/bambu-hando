@@ -32,13 +32,13 @@ describe("tui-snap", () => {
 
   it("plays keys and prints each requested screen as the terminal shows it", async () => {
     const { code, stdout } = await snap(
-      ["wait=ctrl+c quit", "snap=form", "key=enter", "wait=[a] apply", "snap=plan", "--", "--source", SOURCE_FIXTURE, "--skip-spoolease"],
+      ["wait=ctrl+c quit", "snap=menu", "key=enter", "wait=[a] apply", "snap=plan", "--", "--source", SOURCE_FIXTURE, "--skip-spoolease"],
       home,
     );
 
     expect(code).toBe(0);
-    expect(stdout).toContain("--- form ---");
-    expect(stdout).toMatch(/Source \(file or URL\) +\//);
+    expect(stdout).toContain("--- menu ---");
+    expect(stdout).toContain("› Import source.json");
     expect(stdout).toContain("--- plan ---");
     expect(stdout).toContain("3 profiles from");
     // Quits with ctrl+c when the steps run out.
@@ -50,7 +50,7 @@ describe("tui-snap", () => {
 
     expect(code).toBe(1);
     expect(stdout).toContain('timed out waiting for "no such text"');
-    expect(stdout).toContain("Source (file or URL)");
+    expect(stdout).toContain("Add spools from SpoolmanDB");
   });
 
   it("rejects an unknown step", async () => {

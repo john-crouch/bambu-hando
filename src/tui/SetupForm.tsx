@@ -1,5 +1,5 @@
 // ABOUTME: TUI setup form for source, BambuStudio, and SpoolEase connection settings.
-// ABOUTME: Arrow/tab keys move focus, space toggles switches, enter submits; the key is masked.
+// ABOUTME: Arrow/tab keys move focus, space toggles switches, enter submits, esc returns to the menu; the key is masked.
 
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
@@ -35,14 +35,17 @@ interface Props {
   error: string;
   onChange: (values: FormValues) => void;
   onSubmit: () => void;
+  onBack: () => void;
 }
 
-export function SetupForm({ values, error, onChange, onSubmit }: Props) {
+export function SetupForm({ values, error, onChange, onSubmit, onBack }: Props) {
   const [focus, setFocus] = useState(0);
   const focused = FIELDS[focus];
 
   useInput((input, key) => {
-    if (key.upArrow || (key.tab && key.shift)) {
+    if (key.escape) {
+      onBack();
+    } else if (key.upArrow || (key.tab && key.shift)) {
       setFocus((f) => (f + FIELDS.length - 1) % FIELDS.length);
     } else if (key.downArrow || key.tab) {
       setFocus((f) => (f + 1) % FIELDS.length);
@@ -86,7 +89,7 @@ export function SetupForm({ values, error, onChange, onSubmit }: Props) {
       </Box>
       <Text dimColor>Source can be a JSON file or URL, or spoolmandb to search the SpoolmanDB filament database.</Text>
       {error ? <Text color="red">{error}</Text> : null}
-      <Text dimColor>↑/↓ move · space toggle · enter load plan · ctrl+c quit</Text>
+      <Text dimColor>↑/↓ move · space toggle · enter load plan · esc menu · ctrl+c quit</Text>
     </Box>
   );
 }

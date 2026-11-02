@@ -47,7 +47,7 @@ npm link   # puts bambu-hando on your PATH
 bambu-hando tui
 ```
 
-Fill in the setup form (arrow keys move, space toggles, enter loads the plan), review the plan table with color swatches and target paths, then press `a` to apply and watch per-profile progress. Any headless flag except `--dry-run` and `--report` prefills the form, for example `bambu-hando tui --source ./profiles.json`.
+It opens on a menu: **Add spools from SpoolmanDB**, **Import** the file given with `--source` (the menu starts on it), **Settings**, or **Quit**; arrow keys or the first letter move, enter chooses. The menu shows the BambuStudio folder, printers and SpoolEase console the run will use. Settings is a form (arrow keys move, space toggles, enter loads the plan, esc returns to the menu); its values come from BambuStudio, so you rarely need it. Review the plan table with color swatches and target paths, then press `a` to apply and watch per-profile progress. Any headless flag except `--dry-run`, `--report` and `--max-filaments` prefills the settings, for example `bambu-hando tui --source ./profiles.json`.
 
 When spools will be created, the TUI then asks for each brand's empty spool weight, read from your SpoolEase console:
 
@@ -59,7 +59,7 @@ The plan's Empty column shows the weight each new spool gets.
 
 After the run, `l` on the summary opens labels for the spools it just created: space ticks the fields to show, ←/→ picks a printer (every CUPS destination, printer instances included), and you can type a label size and a path to save the PDF. Enter makes the labels; the summary then says what was printed or saved. Your choices are remembered for next time in `~/.config/bambu-hando/labels.json` (`~/Library/Application Support/bambu-hando` on macOS).
 
-With `spoolmandb` as the source, a picker opens before the plan: type to search (every word must appear in the name), tab marks the highlighted filament, ctrl+a marks every match, enter continues with what you marked, and esc returns to the form. Marks survive changing the search, and `b` on the plan returns to the picker. `--brand`, `--material` and `--match` prefill the search, for example `bambu-hando tui --source spoolmandb --brand Polymaker --skip-spoolease`.
+With `spoolmandb` as the source, a picker opens before the plan: type to search (every word must appear in the name), tab marks the highlighted filament, ctrl+a marks every match, enter continues with what you marked, and esc returns to the menu. Marks survive changing the search, and `b` on the plan returns to the picker. `--brand`, `--material` and `--match` prefill the search, for example `bambu-hando tui --source spoolmandb --brand Polymaker --skip-spoolease`.
 
 ## SpoolmanDB source
 

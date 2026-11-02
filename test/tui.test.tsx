@@ -78,6 +78,12 @@ describe("TUI", () => {
     }
   }
 
+  // "s" jumps to Settings on the start menu.
+  async function openSettings(stdin: { write: (data: string) => void }, lastFrame: () => string | undefined): Promise<void> {
+    await press(stdin, "s", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Source (file or URL)"));
+  }
+
   // SOURCE_FIXTURE's brands, Polymaker and Generic (the brandless profiles), aren't in the test console's
   // empty catalog, so each asks once; enter keeps the source's weight.
   async function keepSourceWeights(stdin: { write: (data: string) => void }, lastFrame: () => string | undefined): Promise<void> {
@@ -87,17 +93,50 @@ describe("TUI", () => {
     }
   }
 
-  it("masks the security key on the setup form", async () => {
+  it("opens on a start menu, on the import of the given source, showing where the run writes", async () => {
     const { lastFrame } = render(<App initial={values()} onExit={onExit} />);
     await settle();
+
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Add spools from SpoolmanDB");
+    expect(frame).toContain("› Import source.json");
+    expect(frame).toContain("Settings");
+    expect(frame).toContain(`BambuStudio: default · ${X1C_04}`);
+    expect(frame).toContain("SpoolEase: 127.0.0.1");
+  });
+
+  it("quits from the start menu", async () => {
+    const { stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, "q", ENTER);
+
+    expect(onExit).toHaveBeenCalledWith(0);
+  });
+
+  it("goes back from settings to the start menu with escape", async () => {
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await openSettings(stdin, lastFrame);
+
+    await press(stdin, ESC);
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
+  });
+
+  it("masks the security key on the setup form", async () => {
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await openSettings(stdin, lastFrame);
 
     expect(lastFrame()).toContain("Security key");
     expect(lastFrame()).not.toContain(TEST_SECURITY_KEY);
   });
 
   it("keeps a gap between every form label and its value", async () => {
-    const { lastFrame } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
     await settle();
+    await openSettings(stdin, lastFrame);
 
     expect(lastFrame()).toMatch(/Source \(file or URL\) +spoolmandb/);
   });
@@ -105,6 +144,7 @@ describe("TUI", () => {
   it("requires a source before loading", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ source: "" })} onExit={onExit} />);
     await settle();
+    await openSettings(stdin, lastFrame);
 
     await press(stdin, ENTER);
 
@@ -114,6 +154,7 @@ describe("TUI", () => {
   it("accepts typed input and shows the plan with swatches, codes, and targets", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ source: "" })} onExit={onExit} />);
     await settle();
+    await openSettings(stdin, lastFrame);
 
     await press(stdin, SOURCE_FIXTURE, ENTER);
     await keepSourceWeights(stdin, lastFrame);
@@ -291,7 +332,7 @@ describe("TUI", () => {
     expect(lastFrame()).toContain("Peddfd02");
   });
 
-  it("asks for a selection, and escape returns to the form", async () => {
+  it("asks for a selection, and escape returns to the start menu", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
     await settle();
 
@@ -301,7 +342,7 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Select filaments with tab"));
 
     await press(stdin, ESC);
-    await vi.waitFor(() => expect(lastFrame()).toContain("Printer preset"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
   });
 
   it("goes back from the plan to the picker and keeps the selection", async () => {

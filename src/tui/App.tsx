@@ -1,4 +1,4 @@
-// ABOUTME: Root TUI component: setup form → (SpoolmanDB picker) → plan → live apply → summary (→ labels), plus error screen.
+// ABOUTME: Root TUI component: start menu → (settings) → (SpoolmanDB picker) → plan → live apply → summary (→ labels), plus errors.
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
 import { Box, Text, useInput } from "ink";
@@ -16,6 +16,7 @@ import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from 
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { saveTuiSettings } from "../tuiSettings.js";
+import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { SetupForm } from "./SetupForm.js";
@@ -42,6 +43,7 @@ export interface FormValues {
 }
 
 type Screen =
+  | { name: "home"; cursor: number }
   | { name: "form"; error: string }
   | { name: "loading"; message: string }
   | { name: "pick" }
@@ -107,7 +109,9 @@ interface Props {
 
 export function App({ initial, onExit }: Props) {
   const [values, setValues] = useState(initial);
-  const [screen, setScreen] = useState<Screen>({ name: "form", error: "" });
+  const [screen, setScreen] = useState<Screen>(() => ({ name: "home", cursor: initialHomeCursor(homeItems(initial.source)) }));
+  // The source of the current run: SpoolmanDB or the file/URL from the settings, which stays on the menu.
+  const [activeSource, setActiveSource] = useState(initial.source.trim());
   const [progress, setProgress] = useState<RowProgress[]>([]);
   const [stage, setStage] = useState<SyncStage | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -122,7 +126,7 @@ export function App({ initial, onExit }: Props) {
     () => (catalog ? filterProfiles(catalog.profiles, { brand: "", material: "", match: picker.query }) : []),
     [catalog, picker.query],
   );
-  const fromSpoolmanDb = values.source.trim() === SPOOLMANDB_SOURCE;
+  const fromSpoolmanDb = activeSource === SPOOLMANDB_SOURCE;
   const sourceName = fromSpoolmanDb ? "SpoolmanDB" : "Source file";
 
   function showPlan(profiles: FilamentProfile[]): void {
@@ -163,20 +167,26 @@ export function App({ initial, onExit }: Props) {
     }
   }
 
-  async function loadPlan(): Promise<void> {
-    const error = validate(values);
+  function home(): void {
+    setScreen({ name: "home", cursor: initialHomeCursor(homeItems(values.source)) });
+  }
+
+  async function loadPlan(source: string): Promise<void> {
+    const error = validate({ ...values, source });
     if (error) {
       setScreen({ name: "form", error });
       return;
     }
-    setScreen({ name: "loading", message: fromSpoolmanDb ? "Loading SpoolmanDB…" : `Loading profiles from ${values.source}…` });
+    const spoolmanDb = source.trim() === SPOOLMANDB_SOURCE;
+    setActiveSource(source.trim());
+    setScreen({ name: "loading", message: spoolmanDb ? "Loading SpoolmanDB…" : `Loading profiles from ${source}…` });
     try {
-      if (fromSpoolmanDb) {
+      if (spoolmanDb) {
         setCatalog(await loadSpoolmanDb({ diameter: values.diameter }));
         setScreen({ name: "pick" });
         return;
       }
-      const profiles = await loadProfiles(values.source.trim());
+      const profiles = await loadProfiles(source.trim());
       await chooseWeights(profiles);
     } catch (err) {
       setScreen({ name: "form", error: err instanceof Error ? err.message : String(err) });
@@ -260,10 +270,20 @@ export function App({ initial, onExit }: Props) {
   // Always subscribed: toggling isActive re-attaches Ink's listener in an effect after the
   // new screen renders, so a key pressed right after "Done" appears could be dropped.
   useInput((input, key) => {
-    if (screen.name === "pick") {
+    if (screen.name === "home") {
+      const items = homeItems(values.source);
+      const action = homeInput(screen.cursor, input, key, items);
+      if (action.type === "move") setScreen({ name: "home", cursor: action.cursor });
+      else if (action.type === "choose") {
+        if (action.id === "spoolmandb") void loadPlan(SPOOLMANDB_SOURCE);
+        else if (action.id === "import") void loadPlan(values.source);
+        else if (action.id === "settings") setScreen({ name: "form", error: "" });
+        else onExit(0);
+      }
+    } else if (screen.name === "pick") {
       const action = pickerInput(picker, input, key, matches);
       if (action.type === "update") setPicker(action.state);
-      else if (action.type === "back") setScreen({ name: "form", error: "" });
+      else if (action.type === "back") home();
       else if (catalog) void chooseWeights(catalog.profiles.filter((p) => picker.selected.has(p.filamentId)));
     } else if (screen.name === "weights") {
       const { profiles, groups, prompts, step } = screen;
@@ -304,8 +324,17 @@ export function App({ initial, onExit }: Props) {
     }
   });
 
+  if (screen.name === "home") {
+    const target = connection(values);
+    const context = [
+      `BambuStudio: ${values.presetFolder.trim()} · ${printers(values).join(", ")}`,
+      `SpoolEase: ${target ? `${target.host}${values.createSpools ? "" : " (register filaments only)"}` : "skipped"}`,
+    ];
+    return <HomeMenu items={homeItems(values.source)} cursor={screen.cursor} context={context} />;
+  }
+
   if (screen.name === "form") {
-    return <SetupForm values={values} error={screen.error} onChange={setValues} onSubmit={() => void loadPlan()} />;
+    return <SetupForm values={values} error={screen.error} onChange={setValues} onSubmit={() => void loadPlan(values.source)} onBack={home} />;
   }
 
   if (screen.name === "loading") {
@@ -352,7 +381,7 @@ export function App({ initial, onExit }: Props) {
   return (
     <Box flexDirection="column">
       <Text bold>
-        {plural(screen.profiles.length, "profile")} from {values.source}
+        {plural(screen.profiles.length, "profile")} from {activeSource}
       </Text>
       <Text>
         Presets → {bambuBaseFilamentDir(values.presetFolder.trim())} for {printers(values).join(", ")} (

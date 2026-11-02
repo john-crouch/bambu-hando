@@ -141,7 +141,7 @@ describe("TUI in a real terminal", () => {
   it("applies a full sync, restores the cursor, and exits 0", async () => {
     terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags()], { HOME: home });
 
-    await terminal.waitFor("Source (file or URL)");
+    await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press(ENTER);
     await keepSourceWeights(terminal);
     await terminal.waitFor("register filaments + create spools");
@@ -160,7 +160,7 @@ describe("TUI in a real terminal", () => {
     const lpLog = await installFakeLp(home);
     terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags()], { HOME: home });
 
-    await terminal.waitFor("Source (file or URL)");
+    await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press(ENTER);
     await keepSourceWeights(terminal);
     await terminal.waitFor("[a] apply");
@@ -188,6 +188,9 @@ describe("TUI in a real terminal", () => {
       SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
     });
 
+    await terminal.waitFor("Add spools from SpoolmanDB");
+    terminal.press("s");
+    terminal.press(ENTER);
     await terminal.waitFor("Security key");
     terminal.press(SOURCE_FIXTURE);
     await terminal.waitFor("source.json");
@@ -206,7 +209,7 @@ describe("TUI in a real terminal", () => {
     await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
     terminal = new Terminal(["--source", SOURCE_FIXTURE, "--spoolease-port", String(server.port)], { HOME: home });
 
-    await terminal.waitFor("Source (file or URL)");
+    await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press(ENTER);
     await keepSourceWeights(terminal);
     await terminal.waitFor("[a] apply");
@@ -236,7 +239,7 @@ describe("TUI in a real terminal", () => {
     it("lets --printer-preset override them", async () => {
       terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease", "--printer-preset", X1C_06], { HOME: home });
 
-      await terminal.waitFor("Printer preset(s)");
+      await terminal.waitFor("BambuStudio:");
       await terminal.waitFor(X1C_06);
       terminal.press(CTRL_C);
       await terminal.exited;
@@ -248,7 +251,7 @@ describe("TUI in a real terminal", () => {
     // Without spools the key is first checked on apply; with them, before the plan (see tui.test.tsx).
     terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spools", ...spooleaseFlags("WRONG")], { HOME: home });
 
-    await terminal.waitFor("Source (file or URL)");
+    await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press(ENTER);
     await terminal.waitFor("[a] apply");
     terminal.press("a");
@@ -267,7 +270,7 @@ describe("TUI in a real terminal", () => {
         SPOOLMANDB_URL: spoolmanDb.url,
       });
 
-      await terminal.waitFor("Source (file or URL)");
+      await terminal.waitFor("Add spools from SpoolmanDB");
       terminal.press(ENTER);
       await terminal.waitFor("1 match");
       terminal.press(TAB);
@@ -288,7 +291,7 @@ describe("TUI in a real terminal", () => {
   it("exits 130 on ctrl+c", async () => {
     terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease"], { HOME: home });
 
-    await terminal.waitFor("Source (file or URL)");
+    await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press(CTRL_C);
 
     expect(await terminal.exited).toBe(130);
