@@ -34,6 +34,7 @@ import {
 } from "./spoolWeights.js";
 import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE } from "./spoolmanDb.js";
 import { checkKey, KeyCheckError, runSync, SetupError } from "./sync.js";
+import { loadTuiSettings } from "./tuiSettings.js";
 import type { FormValues } from "./tui/App.js";
 
 /** Headless SpoolmanDB runs sync at most this many filaments unless --max-filaments says otherwise. */
@@ -477,15 +478,16 @@ async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | nu
   const { values } = parsed;
   if (values.help) return { values: null, help: true };
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
-  const defaults = await bambuDefaults();
-  const saved = await readSpoolEaseConfig();
+  const [defaults, saved, remembered] = await Promise.all([bambuDefaults(), readSpoolEaseConfig(), loadTuiSettings()]);
+  // --printer-preset, else the printers of the last TUI run, else the printer selected in BambuStudio.
+  const printerList = values["printer-preset"] ?? (remembered.printers.length ? remembered.printers : [defaults.printer]);
 
   return {
     help: false,
     values: {
       source: values.source ?? "",
       presetFolder: values["preset-folder"] ?? defaults.presetFolder,
-      printerPreset: (values["printer-preset"] ?? [defaults.printer]).join(", "),
+      printerPreset: printerList.join(", "),
       overwritePresets: values["overwrite-presets"],
       host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "",
       port: values["spoolease-port"],

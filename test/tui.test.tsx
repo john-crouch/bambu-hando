@@ -9,6 +9,7 @@ import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { labelSettingsPath } from "../src/labelSettings.js";
+import { tuiSettingsPath } from "../src/tuiSettings.js";
 import { App, type FormValues } from "../src/tui/App.js";
 import { PRINTER_ROW } from "../src/tui/LabelForm.js";
 import { installFakeLp } from "./fakeLp.js";
@@ -39,6 +40,8 @@ describe("TUI", () => {
     vi.stubEnv("HOME", home);
     await installBambuStudio(home);
     vi.stubEnv("XDG_CACHE_HOME", undefined);
+    // Applying saves the TUI's choices in the config directory, which must be inside the temporary HOME.
+    vi.stubEnv("XDG_CONFIG_HOME", undefined);
     server = await startSpoolEaseServer();
     spoolmanDb = await startSpoolmanDbServer();
     vi.stubEnv("SPOOLMANDB_URL", spoolmanDb.url);
@@ -450,7 +453,7 @@ describe("TUI", () => {
     expect(lastFrame()).toContain("Printer preset");
   });
 
-  it("writes one preset per comma-separated printer", async () => {
+  it("writes one preset per comma-separated printer and remembers them", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ skipSpoolease: true, printerPreset: `${X1C_04}, ${X1C_06}` })} onExit={onExit} />);
     await settle();
 
@@ -460,6 +463,7 @@ describe("TUI", () => {
 
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
     expect(await readdir(baseFilamentDir(home))).toHaveLength(6);
+    expect(JSON.parse(await readFile(tuiSettingsPath(), "utf-8"))).toEqual({ printers: [X1C_04, X1C_06] });
   });
 
   it("shows setup errors such as an unknown printer and exits 2", async () => {

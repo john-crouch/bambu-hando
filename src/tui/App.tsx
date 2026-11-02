@@ -15,6 +15,7 @@ import { SpoolEaseClient, type SpoolEaseConnection } from "../spoolease.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
+import { saveTuiSettings } from "../tuiSettings.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { SetupForm } from "./SetupForm.js";
@@ -186,6 +187,11 @@ export function App({ initial, onExit }: Props) {
     setScreen({ name: "running", profiles });
     setProgress([]);
     setWarnings([]);
+    try {
+      await saveTuiSettings({ printers: printers(values) });
+    } catch (err) {
+      setWarnings((w) => [...w, `Couldn't remember these printers: ${errorMessage(err)}`]);
+    }
     try {
       const { results } = await runSync(
         {

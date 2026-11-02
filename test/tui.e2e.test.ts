@@ -2,7 +2,7 @@
 // ABOUTME: Sends real keystrokes via node-pty and asserts on rendered frames, files, and exit codes.
 
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,7 @@ import { SOURCE_FIXTURE } from "./parity.js";
 import { readPdf } from "./pdf.js";
 import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
-import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04 } from "./bambuStudioSetup.js";
+import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
@@ -217,6 +217,31 @@ describe("TUI in a real terminal", () => {
     expect(await terminal.exited).toBe(0);
     expect(server.requests[0]?.path).toBe("/api/test-key");
     expect(terminal.raw).not.toContain(TEST_SECURITY_KEY);
+  });
+
+  describe("remembered printers", () => {
+    beforeEach(async () => {
+      await mkdir(join(home, ".config", "bambu-hando"), { recursive: true });
+      await writeFile(join(home, ".config", "bambu-hando", "tui.json"), JSON.stringify({ printers: [X1C_04, X1C_06] }), "utf-8");
+    });
+
+    it("starts from the printers of the last run", async () => {
+      terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease"], { HOME: home });
+
+      await terminal.waitFor(`${X1C_04}, ${X1C_06}`);
+      terminal.press(CTRL_C);
+      await terminal.exited;
+    });
+
+    it("lets --printer-preset override them", async () => {
+      terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease", "--printer-preset", X1C_06], { HOME: home });
+
+      await terminal.waitFor("Printer preset(s)");
+      await terminal.waitFor(X1C_06);
+      terminal.press(CTRL_C);
+      await terminal.exited;
+      expect(terminal.text).not.toContain(X1C_04);
+    });
   });
 
   it("shows a rejected key and exits 2", async () => {
