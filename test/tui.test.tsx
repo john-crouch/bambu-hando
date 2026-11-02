@@ -125,13 +125,30 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
   });
 
-  it("masks the security key on the setup form", async () => {
+  it("shows the SpoolEase connection as one row that opens with enter, key masked", async () => {
     const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await openSettings(stdin, lastFrame);
+    expect(lastFrame()).toMatch(new RegExp(`SpoolEase console +127\\.0\\.0\\.1:${server.port}`));
+    expect(lastFrame()).not.toContain("Security key");
+
+    // import, preset folder, printers, overwrite, skip SpoolEase, create spools, SpoolEase console
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Security key"));
+    expect(lastFrame()).toMatch(/Host +127\.0\.0\.1/);
+    expect(lastFrame()).not.toContain(TEST_SECURITY_KEY);
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).not.toContain("Security key"));
+  });
+
+  it("opens the SpoolEase connection when the host or key is missing", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ host: "" })} onExit={onExit} />);
     await settle();
     await openSettings(stdin, lastFrame);
 
     expect(lastFrame()).toContain("Security key");
-    expect(lastFrame()).not.toContain(TEST_SECURITY_KEY);
+    expect(lastFrame()).toMatch(/SpoolEase console +no host:/);
   });
 
   it("keeps a gap between every form label and its value", async () => {
@@ -227,8 +244,8 @@ describe("TUI", () => {
     await press(stdin, ENTER);
     expect(lastFrame()).toContain("SpoolEase host and security key are required");
 
-    // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip
-    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, ENTER, ESC, ENTER);
+    // import, preset folder, printers, overwrite presets, skip SpoolEase
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, ENTER, ESC, ENTER);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("SpoolEase: skipped"));
   });
@@ -272,7 +289,8 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
     await press(stdin, "b");
     // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip, create spools
-    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ESC, ENTER);
+    // import, preset folder, printers, overwrite presets, skip SpoolEase, create spools
+    await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ESC, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments only"));
     await press(stdin, "a");
 

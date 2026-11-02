@@ -24,7 +24,7 @@ import { type ChoiceItem, ChoiceList, choiceInput, type ChoiceState, initialChoi
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
-import { type ChoiceKey, SetupForm } from "./SetupForm.js";
+import { type ChoiceKey, connectionOpen, SetupForm } from "./SetupForm.js";
 import { initialLabelForm, LabelForm, type LabelFormState, labelFormInput, labelFormSettings, labelFormTarget } from "./LabelForm.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
@@ -120,6 +120,7 @@ export function App({ initial, onExit }: Props) {
   // The source of the current run: SpoolmanDB or the file/URL from the settings, which stays on the menu.
   const [activeSource, setActiveSource] = useState(initial.source.trim());
   const [formFocus, setFormFocus] = useState(0);
+  const [connectionRequested, setConnectionRequested] = useState(false);
   const [progress, setProgress] = useState<RowProgress[]>([]);
   const [stage, setStage] = useState<SyncStage | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -405,6 +406,8 @@ export function App({ initial, onExit }: Props) {
         error={screen.error}
         focus={formFocus}
         onFocus={setFormFocus}
+        connection={connectionOpen(values, connectionRequested)}
+        onConnection={() => setConnectionRequested(!connectionRequested)}
         onChange={setValues}
         onChoose={(field) => void openChoice(field)}
         onBack={home}

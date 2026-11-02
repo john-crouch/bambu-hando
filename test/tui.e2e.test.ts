@@ -193,9 +193,16 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press("s");
     terminal.press(ENTER);
-    await terminal.waitFor("Security key");
+    await terminal.waitFor("Import file or URL");
     terminal.press(SOURCE_FIXTURE);
     await terminal.waitFor("source.json");
+    // Down to the SpoolEase console row and open it, to see the key masked. One key per write, spaced:
+    // Ink reads a burst of escape sequences as a single (escape) keypress.
+    for (const k of [...Array<string>(6).fill(DOWN), ENTER]) {
+      terminal.press(k);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await terminal.waitFor("Security key");
     terminal.press(ESC);
     await terminal.waitFor("Import source.json");
     terminal.press(ENTER);
