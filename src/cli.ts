@@ -396,6 +396,7 @@ async function chooseSpoolWeights(
   profiles: FilamentProfile[],
   spoolease: SpoolEaseConnection,
   chosen: Settings["spoolWeights"],
+  sourceName: string,
   io: Io,
 ): Promise<FilamentProfile[] | null> {
   // A wrong key would otherwise surface as an unreadable My Spools List.
@@ -417,7 +418,7 @@ async function chooseSpoolWeights(
     const lines = ["bambu-hando: error: SpoolEase lists several empty spool weights for these brands; run again with the --spool-weight you want:"];
     for (const group of open) {
       const count = group.profiles.length;
-      lines.push(`  ${group.brand} (${count} filament${count === 1 ? "" : "s"}; SpoolmanDB: ${describeSourceWeights(profiles, group)})`);
+      lines.push(`  ${group.brand} (${count} filament${count === 1 ? "" : "s"}; ${sourceName}: ${describeSourceWeights(profiles, group)})`);
       const flags = group.options.map((o) => `--spool-weight "${group.brand}=${o.grams}"`);
       const width = Math.max(...flags.map((f) => f.length));
       group.options.forEach((option, i) => {
@@ -641,7 +642,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
       profiles = await loadProfiles(settings.source);
     }
     if (settings.spoolease && settings.createSpools) {
-      const weighed = await chooseSpoolWeights(profiles, settings.spoolease, settings.spoolWeights, io);
+      const weighed = await chooseSpoolWeights(profiles, settings.spoolease, settings.spoolWeights, settings.spoolmanDb ? "SpoolmanDB" : "Source file", io);
       if (!weighed) return 2;
       profiles = weighed;
     }

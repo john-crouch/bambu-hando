@@ -257,6 +257,16 @@ describe("cli", () => {
       await expect(readdir(join(home, ".config", "BambuStudio", "user"))).rejects.toThrow("ENOENT");
     });
 
+    it("names a source file, not SpoolmanDB, as where the listed weight comes from", async () => {
+      const path = join(home, "polymaker.json");
+      await writeFile(path, JSON.stringify({ profiles: [{ name: "Polymaker PETG Teal", brand: "Polymaker", material: "PETG", spool_weight: 180 }] }), "utf-8");
+
+      const { code, stderr } = await run(["--source", path, "--dry-run", ...spooleaseArgs()]);
+
+      expect(code).toBe(2);
+      expect(stderr).toContain("  Polymaker (1 filament; Source file: 180 g)\n");
+    });
+
     it("lists the user's own spools first and marks them", async () => {
       server.userSpools = "Polymaker weighed on my scale,151";
 
