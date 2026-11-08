@@ -15,6 +15,8 @@ export interface ChoiceItem {
   /** What the list shows and type-ahead matches. */
   label: string;
   detail?: string;
+  /** "#RRGGBB" drawn as a color swatch before the label. */
+  swatch?: string;
 }
 
 export interface ChoiceState {
@@ -67,6 +69,7 @@ interface Props {
 
 export function ChoiceList({ title, items, state, multi }: Props) {
   const [start, end] = visibleRange(state.cursor, items.length, ROWS);
+  const swatches = items.some((item) => item.swatch);
   return (
     <Box flexDirection="column">
       <Text bold>{title}</Text>
@@ -82,6 +85,11 @@ export function ChoiceList({ title, items, state, multi }: Props) {
               <Box width={4}>
                 <Text>{multi ? (on ? "[x]" : "[ ]") : on ? "(*)" : "( )"}</Text>
               </Box>
+              {swatches ? (
+                <Box width={3}>
+                  <Text backgroundColor={item.swatch}>{item.swatch ? "  " : ""}</Text>
+                </Box>
+              ) : null}
               <Box width={LABEL_WIDTH} paddingRight={1}>
                 <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
                   {item.label}

@@ -9,6 +9,7 @@ import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { labelSettingsPath } from "../src/labelSettings.js";
+import { derivedFilamentId } from "../src/sources.js";
 import { tuiSettingsPath } from "../src/tuiSettings.js";
 import { App, type FormValues } from "../src/tui/App.js";
 import { installFakeLp } from "./fakeLp.js";
@@ -430,6 +431,63 @@ describe("TUI", () => {
 
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
     expect(server.spools[0]).toMatchObject({ slicer_filament: "P9a3bd74" });
+  });
+
+  it("adds a color the catalog doesn't list, with a listed color's settings, and applies it", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
+    await press(stdin, "r", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig / ABS"));
+
+    await press(stdin, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Other color: RatRig / ABS"));
+    await press(stdin, DOWN, DOWN, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Choose the listed color it's like"));
+    await press(stdin, UP, UP, UP, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Which listed RatRig ABS color has the same settings?"));
+    await press(stdin, ENTER);
+    // Choosing it moves on to the name.
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/› Color name/));
+    expect(lastFrame()).toMatch(/Settings from .*Punkfil Brute Black/);
+    await press(stdin, ..."Punkfil Brute Red", ENTER, ..."ad0000", ENTER, ENTER);
+
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/› \[x\] +Punkfil Brute Red/));
+    expect(lastFrame()).toContain("1 selected");
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: RatRig"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await press(stdin, "a");
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
+    const id = derivedFilamentId("RatRig ABS Punkfil Brute Red");
+    expect(server.customFilaments).toContain(`${id},RatRig ABS Punkfil Brute Red,`);
+    expect(server.spools[0]).toMatchObject({ slicer_filament: id, color_name: "Punkfil Brute Red", color_code: "AD0000FF" });
+    expect(await readdir(baseFilamentDir(home))).toEqual([`RatRig ABS Punkfil Brute Red @${X1C_04}.json`]);
+  });
+
+  it("refuses an unlisted color with a name that's already listed, and esc returns to the colors", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
+    await press(stdin, "r", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig / ABS"));
+    await press(stdin, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Other color: RatRig / ABS"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Which listed RatRig ABS color"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toMatch(/› Color name/));
+
+    await press(stdin, ..."punkfil brute black", ENTER, ..."000000", ENTER, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig ABS punkfil brute black is already listed"));
+    await press(stdin, ESC);
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig / ABS"));
+    expect(lastFrame()).toContain("0 selected");
   });
 
   it("goes up a level at a time with escape, keeping what is selected", async () => {

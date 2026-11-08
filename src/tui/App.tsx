@@ -20,12 +20,13 @@ import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from 
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { saveTuiSettings } from "../tuiSettings.js";
-import { Browse, browseInput, initialBrowseState } from "./Browse.js";
+import { Browse, browseInput, browseRows, initialBrowseState } from "./Browse.js";
 import { type ChoiceItem, ChoiceList, choiceInput, type ChoiceState, initialChoiceState } from "./ChoiceList.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, SetupForm } from "./SetupForm.js";
+import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, initialColorForm } from "./ColorForm.js";
 import { SpoolCopies } from "./SpoolCopies.js";
 import {
   initialLabelForm,
@@ -66,6 +67,8 @@ type Screen =
   | { name: "loading"; message: string }
   | { name: "browse" }
   | { name: "pick" }
+  /** A color the catalog doesn't list, for the brand and material open in the browser. */
+  | { name: "color"; form: ColorFormState }
   /** One menu per brand in prompts; groups covers every brand, including those decided without asking. */
   | { name: "weights"; profiles: FilamentProfile[]; groups: WeightGroup[]; prompts: WeightGroup[]; step: number; cursor: number }
   | { name: "plan"; profiles: FilamentProfile[] }
@@ -476,11 +479,49 @@ export function App({ initial, onExit }: Props) {
         setBrowse(action.state);
         if (action.selected) setPicker({ ...picker, selected: action.selected });
       } else if (action.type === "search") setScreen({ name: "pick" });
+      else if (action.type === "other") setScreen({ name: "color", form: initialColorForm() });
       else if (action.type === "back") home();
       else if (action.type === "done") {
         setPicker({ ...picker, selected: action.selected });
         setChooser("browse");
         void chooseWeights(catalog.profiles.filter((p) => action.selected.has(p.filamentId)));
+      }
+    } else if (screen.name === "color") {
+      if (!catalog) return;
+      const action = colorFormInput(screen.form, input, key);
+      if (action.type === "update") setScreen({ ...screen, form: action.state });
+      else if (action.type === "back") setScreen({ name: "browse" });
+      else if (action.type === "choose") {
+        const form = screen.form;
+        const listed = browseRows(browse, catalog.profiles, picker.selected).flatMap((r) => (r.kind === "product" ? [r.profile] : []));
+        const items = listed.map((p) => ({
+          value: p.filamentId,
+          label: p.colorName,
+          detail: `${p.nozzleTempMin}-${p.nozzleTempMax} °C · ${p.labelWeight} g`,
+          swatch: `#${p.colorRgba.slice(0, 6)}`,
+        }));
+        setScreen({
+          name: "choose",
+          title: `Which listed ${browse.brand} ${browse.material} color has the same settings?`,
+          items,
+          multi: false,
+          state: initialChoiceState(items, form.base ? [form.base.filamentId] : []),
+          onDone: ([id]) => setScreen({ name: "color", form: { ...form, base: listed.find((p) => p.filamentId === id) ?? null, cursor: form.base ? form.cursor : form.cursor + 1 } }),
+          onCancel: () => setScreen({ name: "color", form }),
+        });
+      } else {
+        const made = colorFormProfile(screen.form, catalog.profiles);
+        if ("error" in made) setScreen({ ...screen, form: { ...screen.form, error: made.error } });
+        else {
+          // The new color joins the catalog for this session, ticked, so it goes on like any listed color.
+          const profiles = [...catalog.profiles, made.profile];
+          const selected = new Set(picker.selected).add(made.profile.filamentId);
+          const cursor = browseRows(browse, profiles, selected).findIndex((r) => r.kind === "product" && r.profile.filamentId === made.profile.filamentId);
+          setCatalog({ ...catalog, profiles });
+          setPicker({ ...picker, selected });
+          setBrowse({ ...browse, cursor });
+          setScreen({ name: "browse" });
+        }
       }
     } else if (screen.name === "pick") {
       const action = pickerInput(picker, input, key, matches);
@@ -603,6 +644,10 @@ export function App({ initial, onExit }: Props) {
 
   if (screen.name === "browse") {
     return <Browse state={browse} profiles={catalog?.profiles ?? []} selected={picker.selected} warnings={catalog?.warnings ?? []} />;
+  }
+
+  if (screen.name === "color") {
+    return <ColorForm state={screen.form} brand={browse.brand ?? ""} material={browse.material ?? ""} />;
   }
 
   if (screen.name === "pick") {

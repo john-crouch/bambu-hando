@@ -66,7 +66,7 @@ describe("browseRows", () => {
       { kind: "material", label: "PETG", count: 1, selected: 0 },
       { kind: "material", label: "PLA", count: 2, selected: 0 },
     ]);
-    expect(browseRows(atAcmePla, CATALOG, none).map((r) => r.label)).toEqual(["Blue", "Red"]);
+    expect(browseRows(atAcmePla, CATALOG, none).map((r) => r.label)).toEqual(["Blue", "Red", "Other color…"]);
   });
 });
 
@@ -94,6 +94,11 @@ describe("browseInput", () => {
     expect(act(start, "", { escape: true })).toEqual({ type: "back" });
   });
 
+  it("opens the form for a color that isn't listed from the last row", () => {
+    expect(act({ ...atAcmePla, cursor: 2 }, "", { return: true })).toEqual({ type: "other" });
+    expect(act({ ...atAcmePla, cursor: 2 }, " ")).toEqual({ type: "none" });
+  });
+
   it("toggles a color with space and moves down", () => {
     const { state, selected } = update(atAcmePla, " ");
     expect([...selected]).toEqual(["A2"]);
@@ -119,6 +124,18 @@ describe("browseInput", () => {
     const su = browseInput(s.state, "u", key(), brands, none, 100);
 
     expect(su).toMatchObject({ type: "update", state: { cursor: 3 } });
+  });
+
+  it("starts a fresh type-ahead in the list it opens", () => {
+    const typed = { text: "acme", at: 0 };
+    const opened = update({ ...start, cursor: 1, typed }, "", { return: true }).state;
+    const p = browseInput(opened, "p", key(), CATALOG, none, 100);
+
+    expect(opened.typed).toBeUndefined();
+    // A fresh "p" goes to the next item starting with it, PLA; a stale "acmep" would match nothing and stay on PETG.
+    expect(browseRows(opened, CATALOG, none).map((r) => r.label)).toEqual(["PETG", "PLA"]);
+    expect(p).toMatchObject({ type: "update", state: { cursor: 1 } });
+    expect(update({ ...atAcme, typed }, "", { escape: true }).state.typed).toBeUndefined();
   });
 
   it("jumps by first letter and moves with the arrows", () => {

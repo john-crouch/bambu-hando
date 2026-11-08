@@ -27,11 +27,15 @@ export type BrowseRow =
   | { kind: "search"; label: string }
   | { kind: "brand"; label: string; count: number; selected: number }
   | { kind: "material"; label: string; count: number; selected: number }
-  | { kind: "product"; label: string; profile: FilamentProfile };
+  | { kind: "product"; label: string; profile: FilamentProfile }
+  /** Last on every color list: a color the catalog doesn't list. */
+  | { kind: "other"; label: string };
 
 export type BrowseAction =
   | { type: "update"; state: BrowseState; selected?: ReadonlySet<string> }
   | { type: "search" }
+  /** Open the form for a color of the current brand and material that isn't listed. */
+  | { type: "other" }
   | { type: "back" }
   | { type: "done"; selected: ReadonlySet<string> }
   | { type: "none" };
@@ -72,10 +76,11 @@ export function browseRows(state: BrowseState, profiles: FilamentProfile[], sele
   }
   const ofBrand = profiles.filter((p) => p.brand === state.brand);
   if (state.material === null) return groups(ofBrand, (p) => p.material, selected).map((g) => ({ kind: "material" as const, ...g }));
-  return ofBrand
+  const products = ofBrand
     .filter((p) => p.material === state.material)
     .sort((a, b) => byName(productLabel(a), productLabel(b)))
     .map((profile) => ({ kind: "product" as const, label: productLabel(profile), profile }));
+  return [...products, { kind: "other", label: "Other color…" }];
 }
 
 export function browseInput(
@@ -93,9 +98,10 @@ export function browseInput(
     ...(nextSelected ? { selected: nextSelected } : {}),
   });
 
+  // Each list starts its own type-ahead: letters typed for the brand must not carry into its materials.
   if (key.escape) {
-    if (state.material !== null && materialsOf(profiles, state.brand).length > 1) return next({ material: null, cursor: state.materialCursor });
-    if (state.brand !== null) return next({ brand: null, material: null, cursor: state.brandCursor });
+    if (state.material !== null && materialsOf(profiles, state.brand).length > 1) return next({ material: null, cursor: state.materialCursor, typed: undefined });
+    if (state.brand !== null) return next({ brand: null, material: null, cursor: state.brandCursor, typed: undefined });
     return { type: "back" };
   }
 
@@ -105,9 +111,10 @@ export function browseInput(
     if (row.kind === "search") return { type: "search" };
     if (row.kind === "brand") {
       const materials = materialsOf(profiles, row.label);
-      return next({ brand: row.label, material: materials.length === 1 ? materials[0]! : null, cursor: 0, brandCursor: state.cursor });
+      return next({ brand: row.label, material: materials.length === 1 ? materials[0]! : null, cursor: 0, brandCursor: state.cursor, typed: undefined });
     }
-    if (row.kind === "material") return next({ material: row.label, cursor: 0, materialCursor: state.cursor });
+    if (row.kind === "material") return next({ material: row.label, cursor: 0, materialCursor: state.cursor, typed: undefined });
+    if (row.kind === "other") return { type: "other" };
     return { type: "done", selected: selected.size > 0 ? selected : new Set([row.profile.filamentId]) };
   }
 
@@ -192,6 +199,13 @@ export function Browse({ state, profiles, selected, warnings }: Props) {
                 <Cell width={COLUMNS.temps}>{`${row.profile.nozzleTempMin}-${row.profile.nozzleTempMax}`}</Cell>
                 <Cell width={COLUMNS.code} dim>
                   {row.profile.filamentId}
+                </Cell>
+              </>
+            ) : row.kind === "other" ? (
+              <>
+                <Box width={COLUMNS.mark + COLUMNS.swatch} />
+                <Cell width={COLUMNS.label} color={color}>
+                  {row.label}
                 </Cell>
               </>
             ) : (
