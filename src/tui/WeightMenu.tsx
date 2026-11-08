@@ -6,8 +6,12 @@ import { Box, type Key, Text } from "ink";
 import type { FilamentProfile } from "../models.js";
 import { describeSourceWeights, type WeightChoice, type WeightGroup } from "../spoolWeights.js";
 import { visibleRange } from "./Picker.js";
+import { listRows } from "./screenSize.js";
 
 const ROWS = 12;
+// Title, the filaments, the catalog line, the list's margins, "… more" and the hint line, plus a spare
+// line; warnings come on top.
+const CHROME = 8;
 const LABEL_WIDTH = 52;
 
 export interface WeightItem {
@@ -60,10 +64,12 @@ interface Props {
   steps: number;
   sourceName: string;
   warnings: string[];
+  /** The terminal's height in rows, when known. */
+  height?: number;
 }
 
-export function WeightMenu({ group, profiles, items, cursor, step, steps, sourceName, warnings }: Props) {
-  const [start, end] = visibleRange(cursor, items.length, ROWS);
+export function WeightMenu({ group, profiles, items, cursor, step, steps, sourceName, warnings, height }: Props) {
+  const [start, end] = visibleRange(cursor, items.length, listRows(height, CHROME + warnings.length, ROWS));
   const names = group.profiles.map((i) => profiles[i]?.name ?? "");
   const count = names.length;
 

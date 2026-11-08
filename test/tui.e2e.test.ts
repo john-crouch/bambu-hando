@@ -44,12 +44,12 @@ class Terminal {
   readonly exited: Promise<number>;
   private readonly pty: IPty;
 
-  constructor(args: string[], env: Record<string, string>) {
+  constructor(args: string[], env: Record<string, string>, size = { cols: 120, rows: 40 }) {
     // A minimal env on purpose: CI-like variables would switch Ink to non-interactive rendering.
     this.pty = spawn(process.execPath, [BIN, "tui", ...args], {
       name: "xterm-256color",
-      cols: 120,
-      rows: 40,
+      cols: size.cols,
+      rows: size.rows,
       env: { PATH: process.env.PATH ?? "", TERM: "xterm-256color", ...env },
     });
     this.pty.onData((data) => {
@@ -92,6 +92,10 @@ class Terminal {
 
   press(keys: string): void {
     this.pty.write(keys);
+  }
+
+  resize(cols: number, rows: number): void {
+    this.pty.resize(cols, rows);
   }
 
   kill(): void {
@@ -190,6 +194,27 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
 
     expect(await terminal.exited).toBe(0);
     expect(readPdf(await readFile(join(lpLog, "printed.pdf")))).toHaveLength(3);
+  });
+
+  it("fits a list to the terminal's height and follows a resize", async () => {
+    for (let i = 1; i <= 12; i++) {
+      server.spools.push({ id: String(i), brand: "Acme", material_type: "PLA", color_name: `Color ${i}`, color_code: "808080FF" });
+    }
+    terminal = new Terminal(["--skip-spools", ...spooleaseFlags()], { HOME: home }, { cols: 100, rows: 16 });
+
+    await terminal.waitFor("Print labels for existing spools");
+    terminal.press("p");
+    await terminal.waitFor("Print labels for existing spools");
+    terminal.press(ENTER);
+    // 16 rows hold 9 of the 12 spools, newest first, around the title, hints and a spare line.
+    await terminal.waitFor("#4 Acme PLA Color 4");
+    await terminal.waitFor("… 3 more");
+    expect(terminal.text).not.toContain("#3 Acme PLA Color 3");
+
+    terminal.resize(100, 30);
+    await terminal.waitFor("#1 Acme PLA Color 1");
+    terminal.press(CTRL_C);
+    expect(await terminal.exited).toBe(130);
   });
 
   it("accepts typed input and never echoes the security key from the environment", async () => {

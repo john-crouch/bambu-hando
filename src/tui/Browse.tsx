@@ -6,8 +6,16 @@ import { Box, type Key, Text } from "ink";
 import type { FilamentProfile } from "../models.js";
 import { listMove, type Typed, typeAheadJump, typedLetter } from "./menu.js";
 import { visibleRange } from "./Picker.js";
+import { listRows } from "./screenSize.js";
 
 const ROWS = 14;
+// Title, the level line with its margins, "… more" and the hint line, plus a spare line; warnings come on top.
+const CHROME = 7;
+
+/** Rows on screen at once in a terminal `height` rows tall, below `warnings` warning lines. */
+export function browseListRows(height: number | undefined, warnings: number): number {
+  return listRows(height, CHROME + warnings, ROWS);
+}
 const COLUMNS = { cursor: 2, mark: 4, swatch: 3, label: 40, count: 7, temps: 10, code: 10 } as const;
 
 export interface BrowseState {
@@ -90,6 +98,7 @@ export function browseInput(
   profiles: FilamentProfile[],
   selected: ReadonlySet<string>,
   now: number = Date.now(),
+  page: number = ROWS,
 ): BrowseAction {
   const rows = browseRows(state, profiles, selected);
   const next = (changes: Partial<BrowseState>, nextSelected?: ReadonlySet<string>): BrowseAction => ({
@@ -134,7 +143,7 @@ export function browseInput(
     return next({}, toggled);
   }
 
-  const moved = listMove(state.cursor, key, rows.length, ROWS);
+  const moved = listMove(state.cursor, key, rows.length, page);
   if (moved !== null) return next({ cursor: moved });
   const letter = typedLetter(input, key);
   if (letter) return next(typeAheadJump(rows.map((r) => r.label), state.cursor, letter, state.typed, now));
@@ -156,11 +165,13 @@ interface Props {
   profiles: FilamentProfile[];
   selected: ReadonlySet<string>;
   warnings: string[];
+  /** The terminal's height in rows, when known. */
+  height?: number;
 }
 
-export function Browse({ state, profiles, selected, warnings }: Props) {
+export function Browse({ state, profiles, selected, warnings, height }: Props) {
   const rows = browseRows(state, profiles, selected);
-  const [start, end] = visibleRange(state.cursor, rows.length, ROWS);
+  const [start, end] = visibleRange(state.cursor, rows.length, browseListRows(height, warnings.length));
   const where = state.brand === null ? "Brands" : state.material === null ? state.brand : `${state.brand} / ${state.material}`;
   const up = state.brand === null ? "menu" : state.material !== null && materialsOf(profiles, state.brand).length > 1 ? "materials" : "brands";
   const hint =

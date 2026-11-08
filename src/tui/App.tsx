@@ -23,15 +23,16 @@ import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, we
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { saveTuiSettings } from "../tuiSettings.js";
 import { Busy } from "./Busy.js";
-import { Browse, browseInput, browseRows, initialBrowseState } from "./Browse.js";
-import { type ChoiceItem, ChoiceList, choiceInput, type ChoiceState, initialChoiceState } from "./ChoiceList.js";
+import { Browse, browseInput, browseListRows, browseRows, initialBrowseState } from "./Browse.js";
+import { type ChoiceItem, ChoiceList, choiceInput, choiceRows, type ChoiceState, initialChoiceState } from "./ChoiceList.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
-import { initialPickerState, Picker, pickerInput } from "./Picker.js";
+import { initialPickerState, Picker, pickerInput, pickerRows } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, SetupForm } from "./SetupForm.js";
 import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, initialColorForm } from "./ColorForm.js";
 import { SpoolCopies } from "./SpoolCopies.js";
-import { checkInput, checkLines, SyncCheck } from "./SyncCheck.js";
+import { checkInput, checkLines, checkRows, SyncCheck } from "./SyncCheck.js";
+import { useTerminalRows } from "./screenSize.js";
 import {
   initialLabelForm,
   LabelForm,
@@ -173,6 +174,8 @@ export function App({ initial, onExit }: Props) {
   );
   // A failed run keeps the exit code at 1 even when quitting later from the menu.
   const [runFailed, setRunFailed] = useState(false);
+  // Lists grow and shrink with the terminal.
+  const height = useTerminalRows();
   const fromSpoolmanDb = activeSource === SPOOLMANDB_SOURCE;
   const sourceName = fromSpoolmanDb ? "SpoolmanDB" : "Source file";
 
@@ -522,13 +525,13 @@ export function App({ initial, onExit }: Props) {
         else onExit(runFailed ? 1 : 0);
       }
     } else if (screen.name === "choose") {
-      const action = choiceInput(screen.state, input, key, screen.items, screen.multi);
+      const action = choiceInput(screen.state, input, key, screen.items, screen.multi, Date.now(), choiceRows(height));
       if (action.type === "update") setScreen({ ...screen, state: action.state });
       else if (action.type === "cancel") screen.onCancel();
       else if (action.type === "done") screen.onDone(action.values);
     } else if (screen.name === "browse") {
       if (!catalog) return;
-      const action = browseInput(browse, input, key, catalog.profiles, picker.selected);
+      const action = browseInput(browse, input, key, catalog.profiles, picker.selected, Date.now(), browseListRows(height, catalog.warnings.length));
       if (action.type === "update") {
         setBrowse(action.state);
         if (action.selected) setPicker({ ...picker, selected: action.selected });
@@ -578,7 +581,7 @@ export function App({ initial, onExit }: Props) {
         }
       }
     } else if (screen.name === "pick") {
-      const action = pickerInput(picker, input, key, matches);
+      const action = pickerInput(picker, input, key, matches, pickerRows(height, catalog?.warnings.length ?? 0));
       if (action.type === "update") setPicker(action.state);
       else if (action.type === "back") setScreen({ name: "browse" });
       else if (catalog) {
@@ -647,7 +650,7 @@ export function App({ initial, onExit }: Props) {
         else void printLabels(screen.spoolIds, screen.back, screen.form, checked.target);
       }
     } else if (screen.name === "check") {
-      const action = checkInput(screen.top, input, key, checkLines(screen.sections).length);
+      const action = checkInput(screen.top, input, key, checkLines(screen.sections).length, checkRows(height, screen.warnings.length));
       if (action.type === "scroll") setScreen({ ...screen, top: action.top });
       else if (action.type === "back") home();
       else if (action.type === "again") void openCheck();
@@ -684,7 +687,7 @@ export function App({ initial, onExit }: Props) {
   }
 
   if (screen.name === "choose") {
-    return <ChoiceList title={screen.title} items={screen.items} state={screen.state} multi={screen.multi} />;
+    return <ChoiceList title={screen.title} items={screen.items} state={screen.state} multi={screen.multi} height={height} />;
   }
 
   if (screen.name === "loading") {
@@ -703,12 +706,13 @@ export function App({ initial, onExit }: Props) {
         steps={screen.prompts.length}
         sourceName={sourceName}
         warnings={weightWarnings}
+        height={height}
       />
     );
   }
 
   if (screen.name === "browse") {
-    return <Browse state={browse} profiles={catalog?.profiles ?? []} selected={picker.selected} warnings={catalog?.warnings ?? []} />;
+    return <Browse state={browse} profiles={catalog?.profiles ?? []} selected={picker.selected} warnings={catalog?.warnings ?? []} height={height} />;
   }
 
   if (screen.name === "color") {
@@ -716,7 +720,7 @@ export function App({ initial, onExit }: Props) {
   }
 
   if (screen.name === "pick") {
-    return <Picker catalogSize={catalog?.profiles.length ?? 0} matches={matches} state={picker} warnings={catalog?.warnings ?? []} />;
+    return <Picker catalogSize={catalog?.profiles.length ?? 0} matches={matches} state={picker} warnings={catalog?.warnings ?? []} height={height} />;
   }
 
   if (screen.name === "copies") {
@@ -736,7 +740,7 @@ export function App({ initial, onExit }: Props) {
   if (screen.name === "check") {
     const target = connection(values);
     const compared = `BambuStudio ${values.presetFolder.trim()} · SpoolEase ${target ? `${target.host}:${target.port}` : "skipped"}`;
-    return <SyncCheck sections={screen.sections} top={screen.top} compared={compared} warnings={screen.warnings} />;
+    return <SyncCheck sections={screen.sections} top={screen.top} compared={compared} warnings={screen.warnings} height={height} />;
   }
 
   if (screen.name === "labels") {

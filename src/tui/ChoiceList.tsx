@@ -5,8 +5,16 @@ import { Box, type Key, Text } from "ink";
 
 import { listMove, type Typed, typeAheadJump, typedLetter } from "./menu.js";
 import { visibleRange } from "./Picker.js";
+import { listRows } from "./screenSize.js";
 
 const ROWS = 16;
+// Title, the list's top and bottom margins, "… more", an error and the hint line, plus a spare line.
+const CHROME = 7;
+
+/** Items on screen at once in a terminal `height` rows tall. */
+export function choiceRows(height?: number): number {
+  return listRows(height, CHROME, ROWS);
+}
 const LABEL_WIDTH = 40;
 
 export interface ChoiceItem {
@@ -35,7 +43,7 @@ export function initialChoiceState(items: ChoiceItem[], current: string[]): Choi
   return { cursor: Math.max(0, cursor), ticked: new Set(current), error: "" };
 }
 
-export function choiceInput(state: ChoiceState, input: string, key: Key, items: ChoiceItem[], multi: boolean, now: number = Date.now()): ChoiceAction {
+export function choiceInput(state: ChoiceState, input: string, key: Key, items: ChoiceItem[], multi: boolean, now: number = Date.now(), rows: number = ROWS): ChoiceAction {
   const next = (changes: Partial<ChoiceState>): ChoiceAction => ({ type: "update", state: { ...state, error: "", ...changes } });
   if (key.escape) return { type: "cancel" };
   if (key.return) {
@@ -53,7 +61,7 @@ export function choiceInput(state: ChoiceState, input: string, key: Key, items: 
     if (!ticked.delete(item.value)) ticked.add(item.value);
     return next({ ticked });
   }
-  const moved = listMove(state.cursor, key, items.length, ROWS);
+  const moved = listMove(state.cursor, key, items.length, rows);
   if (moved !== null) return next({ cursor: moved });
   const letter = typedLetter(input, key);
   if (letter) return next(typeAheadJump(items.map((i) => i.label), state.cursor, letter, state.typed, now));
@@ -65,10 +73,12 @@ interface Props {
   items: ChoiceItem[];
   state: ChoiceState;
   multi: boolean;
+  /** The terminal's height in rows, when known. */
+  height?: number;
 }
 
-export function ChoiceList({ title, items, state, multi }: Props) {
-  const [start, end] = visibleRange(state.cursor, items.length, ROWS);
+export function ChoiceList({ title, items, state, multi, height }: Props) {
+  const [start, end] = visibleRange(state.cursor, items.length, choiceRows(height));
   const swatches = items.some((item) => item.swatch);
   return (
     <Box flexDirection="column">

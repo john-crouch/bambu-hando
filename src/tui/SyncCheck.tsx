@@ -4,9 +4,18 @@
 import { Box, type Key, Text } from "ink";
 
 import type { CheckSection } from "../syncCheck.js";
+import { listRows } from "./screenSize.js";
 
-/** Report lines on screen at once. */
+/** Report lines on screen at once when the terminal's height is unknown. */
 export const CHECK_ROWS = 30;
+// Title, summary, the report's margins, "… above", "… more" and the hint line, plus a spare line;
+// warnings come on top.
+const CHROME = 8;
+
+/** Report lines on screen at once in a terminal `height` rows tall, below `warnings` warning lines. */
+export function checkRows(height: number | undefined, warnings: number): number {
+  return listRows(height, CHROME + warnings, CHECK_ROWS);
+}
 
 export interface CheckLine {
   tone: "problem" | "note" | "ok" | "why" | "item";
@@ -64,11 +73,14 @@ interface Props {
   /** What was compared, e.g. "BambuStudio default · SpoolEase http://host:80". */
   compared: string;
   warnings: string[];
+  /** The terminal's height in rows, when known. */
+  height?: number;
 }
 
-export function SyncCheck({ sections, top, compared, warnings }: Props) {
+export function SyncCheck({ sections, top, compared, warnings, height }: Props) {
   const lines = checkLines(sections);
-  const shown = lines.slice(top, top + CHECK_ROWS);
+  const rows = checkRows(height, warnings.length);
+  const shown = lines.slice(top, top + rows);
   const summary = checkSummary(sections);
   const more = lines.length - top - shown.length;
 
@@ -92,7 +104,7 @@ export function SyncCheck({ sections, top, compared, warnings }: Props) {
         ))}
         {more > 0 ? <Text dimColor>… {more} more</Text> : null}
       </Box>
-      <Text dimColor>{lines.length > CHECK_ROWS ? "↑/↓ scroll · " : ""}[r] check again · [b] back to menu · [q] quit</Text>
+      <Text dimColor>{lines.length > rows ? "↑/↓ scroll · " : ""}[r] check again · [b] back to menu · [q] quit</Text>
     </Box>
   );
 }
