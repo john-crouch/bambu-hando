@@ -14,6 +14,7 @@ import { listPrinters } from "../labelPdf.js";
 import { loadLabelSettings, saveLabelSettings } from "../labelSettings.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
 import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot, tildePath } from "../paths.js";
+import { type ConsoleState, type ProfilePlan, previewPlan } from "../planPreview.js";
 import { loadProfiles } from "../sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite } from "../spoolease.js";
 import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
@@ -27,7 +28,7 @@ import { Browse, browseInput, browseListRows, browseRows, initialBrowseState } f
 import { type ChoiceItem, ChoiceList, choiceInput, choiceRows, type ChoiceState, initialChoiceState } from "./ChoiceList.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import { initialPickerState, Picker, pickerInput, pickerRows } from "./Picker.js";
-import { PlanTable, type RowProgress } from "./PlanTable.js";
+import { PlanNotes, PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, formTyping, SetupForm } from "./SetupForm.js";
 import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, colorFormTyping, initialColorForm } from "./ColorForm.js";
 import { Help, type HelpTopic } from "./Help.js";
@@ -78,7 +79,8 @@ type Screen =
   | { name: "color"; form: ColorFormState }
   /** One menu per brand in prompts; groups covers every brand, including those decided without asking. */
   | { name: "weights"; profiles: FilamentProfile[]; groups: WeightGroup[]; prompts: WeightGroup[]; step: number; cursor: number }
-  | { name: "plan"; profiles: FilamentProfile[] }
+  /** plans: what the run would do to each profile, null when it couldn't be worked out; warning says why. */
+  | { name: "plan"; profiles: FilamentProfile[]; plans: ProfilePlan[] | null; warning: string }
   | { name: "running"; profiles: FilamentProfile[] }
   | { name: "done"; profiles: FilamentProfile[]; results: SyncResult[] }
   /** More spools of a filament the console has: results is null until applied, then fills in one copy at a time. */
@@ -183,9 +185,33 @@ export function App({ initial, onExit }: Props) {
   const fromSpoolmanDb = activeSource === SPOOLMANDB_SOURCE;
   const sourceName = fromSpoolmanDb ? "SpoolmanDB" : "Source file";
 
-  function showPlan(profiles: FilamentProfile[]): void {
+  /** The plan, with what the run would do to each profile's presets, custom filament row and spool; reads only. */
+  async function showPlan(profiles: FilamentProfile[]): Promise<void> {
     setProgress([]);
-    setScreen({ name: "plan", profiles });
+    setScreen({ name: "loading", message: "Comparing with what BambuStudio and SpoolEase have…" });
+    const target = connection(values);
+    let spoolease: ConsoleState | null = null;
+    let warning = "";
+    if (target) {
+      try {
+        const client = new SpoolEaseClient(target);
+        await checkKey(client);
+        const [csv, spooledIds] = await Promise.all([
+          client.getCustomFilamentsCsv(),
+          values.createSpools ? client.listSpoolFilamentIds() : Promise.resolve(new Set<string>()),
+        ]);
+        spoolease = { csv, spooledIds };
+      } catch (err) {
+        warning = `Couldn't read SpoolEase to show what the run changes there: ${errorMessage(err)}`;
+      }
+    }
+    const plans = await previewPlan(profiles, { presetFolder: values.presetFolder.trim(), printers: printers(values) }, spoolease, values.createSpools).catch(
+      (err: unknown) => {
+        warning = `Couldn't look for existing presets: ${errorMessage(err)}`;
+        return null;
+      },
+    );
+    setScreen({ name: "plan", profiles, plans, warning });
   }
 
   function back(): void {
@@ -198,7 +224,7 @@ export function App({ initial, onExit }: Props) {
     const target = connection(values);
     setWeightWarnings([]);
     if (!target || !values.createSpools) {
-      showPlan(profiles);
+      await showPlan(profiles);
       return;
     }
     setScreen({ name: "loading", message: "Reading spool weights from SpoolEase…" });
@@ -211,7 +237,7 @@ export function App({ initial, onExit }: Props) {
       const groups = weightGroups(profiles, entries);
       const prompts = groups.filter((g) => g.options.length !== 1);
       if (prompts.length === 0) {
-        showPlan(applyWeights(profiles, groups, weightChoices));
+        await showPlan(applyWeights(profiles, groups, weightChoices));
         return;
       }
       const first = prompts[0]!;
@@ -635,7 +661,7 @@ export function App({ initial, onExit }: Props) {
         const choices = new Map(weightChoices).set(prompts[step]!.key, items[screen.cursor]!.choice);
         setWeightChoices(choices);
         if (step + 1 < prompts.length) setScreen({ ...screen, step: step + 1, cursor: cursorFor(step + 1, choices) });
-        else showPlan(applyWeights(profiles, groups, choices));
+        else void showPlan(applyWeights(profiles, groups, choices));
       }
     } else if (screen.name === "plan") {
       if (input === "a") void apply(screen.profiles);
@@ -821,10 +847,14 @@ export function App({ initial, onExit }: Props) {
         <PlanTable
           profiles={screen.profiles}
           progress={progress}
+          plans={screen.name === "plan" ? screen.plans : null}
+          overwrite={values.overwritePresets}
           activePresets={stage === "presets"}
           activeSpools={stage === "spools"}
         />
       </Box>
+      {screen.name === "plan" && screen.plans ? <PlanNotes profiles={screen.profiles} plans={screen.plans} overwrite={values.overwritePresets} /> : null}
+      {screen.name === "plan" && screen.warning ? <Text color="yellow">! {screen.warning}</Text> : null}
       {stage ? <Busy color="cyan" message={`${STAGE_LABELS[stage]}…`} /> : null}
       {[...weightWarnings, ...warnings].map((w) => (
         <Text key={w} color="yellow">

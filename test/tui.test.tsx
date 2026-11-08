@@ -203,7 +203,7 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("3 profiles"));
     const frame = lastFrame() ?? "";
     expect(frame).toContain("PETG Red");
-    expect(frame).toContain("FF2200FF");
+    expect(frame).toContain("+ new");
     expect(frame).toContain("PABC1234");
     expect(frame).toContain("Pb1a2a16");
     expect(frame).toContain("230-255");
@@ -212,7 +212,15 @@ describe("TUI", () => {
     expect(frame).toContain(`127.0.0.1:${server.port}`);
     expect(frame).toContain("200 g");
     expect(frame).toContain("[b] back to menu");
-    expect(server.requests.map((r) => r.path)).toEqual(["/api/test-key", "/api/spools-config", "/spools-catalog"]);
+    // Spool weights, then what the plan compares against: reads only, besides the key checks.
+    expect(server.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      "POST /api/test-key",
+      "GET /api/spools-config",
+      "GET /spools-catalog",
+      "POST /api/test-key",
+      "GET /api/filaments-config",
+      "GET /api/spools",
+    ]);
   });
 
   it("shows source loading errors on the form", async () => {
@@ -415,6 +423,35 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("✓ 1 profile from spoolmandb: 1 written, 0 failed, 1 new spool"));
     await press(stdin, "a", ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("SpoolmanDB: 9 filaments · 0 selected"));
+  });
+
+  it("shows on the plan what a run would change, and that a second run finds it all there", async () => {
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await press(stdin, ENTER);
+    await keepSourceWeights(stdin, lastFrame);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    expect(lastFrame()?.match(/\+ new +add \+ spool/g)).toHaveLength(3);
+
+    await press(stdin, "a");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
+    await press(stdin, "m");
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
+    // Renamed on the console since: the next run puts the source's name back.
+    server.customFilaments = server.customFilaments!.replace(/^PABC1234,[^,]*,/m, "PABC1234,Old Red,");
+    const requests = server.requests.length;
+
+    await press(stdin, ENTER);
+    await keepSourceWeights(stdin, lastFrame);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    const frame = lastFrame() ?? "";
+    expect(frame.match(/= kept +has spool/g)).toHaveLength(2);
+    expect(frame).toMatch(/= kept +update/);
+    expect(frame).toContain("↻ PABC1234 is Old Red 230-255 °C on SpoolEase; the run changes it to Polymaker PETG Red 230-255 °C");
+    expect(frame).toContain("= kept: 3 presets are there already");
+    expect(frame).toContain("has spool: the console has a spool of 3 filaments already");
+    // Working the plan out only reads.
+    expect(server.requests.slice(requests).filter((r) => r.method !== "GET").map((r) => r.path)).toEqual(["/api/test-key", "/api/test-key"]);
   });
 
   it("searches SpoolmanDB, picks filaments with tab, and applies them", async () => {
