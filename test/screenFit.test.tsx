@@ -9,6 +9,7 @@ import type { FilamentProfile } from "../src/models.js";
 import type { CheckSection } from "../src/syncCheck.js";
 import { Browse, browseInput, initialBrowseState } from "../src/tui/Browse.js";
 import { ChoiceList, choiceInput, initialChoiceState } from "../src/tui/ChoiceList.js";
+import { HomeMenu } from "../src/tui/HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "../src/tui/Picker.js";
 import { checkInput, checkRows, SyncCheck } from "../src/tui/SyncCheck.js";
 import { WeightMenu, weightItems } from "../src/tui/WeightMenu.js";
@@ -101,5 +102,34 @@ describe("lists sized to the terminal", () => {
     const rows = checkRows(HEIGHT, warnings.length);
     expect(lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length).toBe(rows);
     expect(checkInput(0, "", key({ pageDown: true }), 42, rows)).toEqual({ type: "scroll", top: rows });
+  });
+});
+
+describe("rows too wide for the terminal", () => {
+  // ink-testing-library renders 100 columns wide.
+  const LONG = "a detail long enough to run past the right edge of a 100-column terminal and wrap if it could";
+
+  it("keep the menu's labels in one column and cut the detail", () => {
+    const items = [
+      { id: "spoolmandb" as const, label: "Add spools from SpoolmanDB", detail: LONG },
+      { id: "settings" as const, label: "Settings", detail: LONG },
+    ];
+    const { lastFrame } = render(<HomeMenu items={items} cursor={0} context={[]} outcome={null} />);
+    const rows = lines(lastFrame()).filter((line) => line.includes("a detail"));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.indexOf("a detail"))).toEqual([rows[0]!.indexOf("a detail"), rows[0]!.indexOf("a detail")]);
+    expect(rows.every((row) => row.trimEnd().endsWith("…"))).toBe(true);
+  });
+
+  it("keep a choice list's labels in one column and cut the detail", () => {
+    const items = [
+      { value: "1", label: "Acme PLA Red", detail: LONG },
+      { value: "2", label: "Acme PLA Blue", detail: LONG },
+    ];
+    const { lastFrame } = render(<ChoiceList title="Pick" items={items} state={initialChoiceState(items, [])} multi={false} />);
+    const rows = lines(lastFrame()).filter((line) => line.includes("a detail"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.indexOf("a detail")).toBe(rows[1]!.indexOf("a detail"));
+    expect(rows.every((row) => row.trimEnd().endsWith("…"))).toBe(true);
   });
 });

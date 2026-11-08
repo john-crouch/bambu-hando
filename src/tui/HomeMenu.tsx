@@ -72,12 +72,14 @@ export function HomeMenu({ items, cursor, context, outcome }: Props) {
               <Box width={2}>
                 <Text>{active ? "›" : ""}</Text>
               </Box>
-              <Box width={LABEL_WIDTH} paddingRight={1}>
+              <Box width={LABEL_WIDTH} flexShrink={0} paddingRight={1}>
                 <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
                   {item.label}
                 </Text>
               </Box>
-              <Text dimColor>{item.detail}</Text>
+              <Text dimColor wrap="truncate-end">
+                {item.detail}
+              </Text>
             </Box>
           );
         })}

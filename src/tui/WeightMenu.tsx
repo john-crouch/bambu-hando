@@ -101,7 +101,7 @@ export function WeightMenu({ group, profiles, items, cursor, step, steps, source
               <Box width={2}>
                 <Text>{active ? "›" : ""}</Text>
               </Box>
-              <Box width={LABEL_WIDTH} paddingRight={1}>
+              <Box width={LABEL_WIDTH} flexShrink={0} paddingRight={1}>
                 <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
                   {item.label}
                 </Text>
