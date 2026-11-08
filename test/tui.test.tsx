@@ -9,6 +9,7 @@ import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { labelSettingsPath } from "../src/labelSettings.js";
+import { barcodesPath, rememberBarcode } from "../src/barcodes.js";
 import { derivedFilamentId } from "../src/sources.js";
 import { tuiSettingsPath } from "../src/tuiSettings.js";
 import { App, type FormValues } from "../src/tui/App.js";
@@ -822,6 +823,48 @@ describe("TUI", () => {
     await press(stdin, ESC, ESC);
     await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
     expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+  });
+
+  it("learns which filament a scanned barcode is, then goes straight to more spools of it", async () => {
+    server.customFilaments = "PA000001,Sunlu PETG Elite Red,240,260,PETG\r\nPB000002,Acme PLA Blue,200,220,PLA";
+    server.spools.push(
+      { id: "1", brand: "Sunlu", material_type: "PETG", color_name: "Red", weight_advertised: "1000", weight_core: "180", slicer_filament: "PA000001" },
+      { id: "2", brand: "Acme", material_type: "PLA", color_name: "Blue", weight_advertised: "1000", slicer_filament: "PB000002" },
+    );
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, "b", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Barcode scan: more spools of what you scan"));
+    // A scanner types the code and enter together.
+    await press(stdin, "00150603Z\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Which filament is barcode 00150603Z?"));
+    await press(stdin, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"));
+    expect(JSON.parse(await readFile(barcodesPath(), "utf-8"))).toEqual({ "00150603Z": { code: "PA000001", name: "Sunlu PETG Elite Red" } });
+
+    // esc from how many goes back to scanning; the same barcode, typed by hand, is known now.
+    await press(stdin, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 known so far"));
+    await press(stdin, "0", "0", "1", "5", "0", "6", "0", "3", "z", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Barcode 00150603Z is Sunlu PETG Elite Red"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Add 1 spool of Sunlu PETG Elite Red"));
+    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+  });
+
+  it("asks again when a known barcode's filament has no spool on the console any more", async () => {
+    await rememberBarcode("4000000000001", { code: "PGONE001", name: "Gone PLA" });
+    server.spools.push({ id: "2", brand: "Acme", material_type: "PLA", color_name: "Blue", slicer_filament: "PB000002" });
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, "b", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Barcode scan"));
+    await press(stdin, "4000000000001\r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Which filament is barcode 4000000000001? (it was Gone PLA, which no spool on the console is now)"));
   });
 
   it("gives presets without a filament ID the one BambuStudio would make, from the check", async () => {

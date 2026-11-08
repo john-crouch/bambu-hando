@@ -3,7 +3,7 @@
 
 import { Box, Text } from "ink";
 
-export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "spools", "error"] as const;
+export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "spools", "scan", "error"] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
 
@@ -117,6 +117,12 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
           ["esc", "clear the filter, then back to the menu"],
           QUIT,
         ],
+      };
+    case "scan":
+      return {
+        title: "barcode scan",
+        about: "A scanner types like a keyboard. Each barcode is asked about once, then known.",
+        keys: [["scan or type", "the barcode (UPC, EAN, a maker's code)"], ["enter", "look it up"], ["backspace", "delete a character"], ["esc", "back to the menu"], QUIT],
       };
     case "ids":
       return {

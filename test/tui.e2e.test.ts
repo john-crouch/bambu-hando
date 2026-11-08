@@ -228,6 +228,20 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     expect(await terminal.exited).toBe(130);
   });
 
+  it("reads a scanner's barcode, sent with its enter in one burst", async () => {
+    server.customFilaments = "PA000001,Sunlu PETG Elite Red,240,260,PETG";
+    server.spools.push({ id: "1", brand: "Sunlu", material_type: "PETG", color_name: "Red", slicer_filament: "PA000001" });
+    terminal = new Terminal(["--skip-spools", ...spooleaseFlags()], { HOME: home });
+
+    await terminal.waitFor("Barcode: more spools of what you scan");
+    await terminal.pressEach("b", ENTER);
+    await terminal.waitFor("Barcode: ");
+    terminal.press("00150603Z\r");
+    await terminal.waitFor("Which filament is barcode 00150603Z?");
+    terminal.press(CTRL_C);
+    expect(await terminal.exited).toBe(130);
+  });
+
   it("accepts typed input and never echoes the security key from the environment", async () => {
     terminal = new Terminal(["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)], {
       HOME: home,

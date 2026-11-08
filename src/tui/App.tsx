@@ -7,6 +7,7 @@ import { basename } from "node:path";
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 
+import { type BarcodeFilament, loadBarcodes, normalizeBarcode, rememberBarcode } from "../barcodes.js";
 import { SystemProfiles } from "../bambuProfiles.js";
 import { errorMessage } from "../errors.js";
 import { type LabelTarget, makeLabels } from "../labelJob.js";
@@ -25,6 +26,7 @@ import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from 
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { saveTuiSettings } from "../tuiSettings.js";
+import { BarcodeScan, scanInput } from "./BarcodeScan.js";
 import { Busy } from "./Busy.js";
 import { Browse, browseInput, browseListRows, browseRows, initialBrowseState } from "./Browse.js";
 import { type ChoiceItem, ChoiceList, choiceInput, choiceRows, type ChoiceState, initialChoiceState } from "./ChoiceList.js";
@@ -93,6 +95,8 @@ type Screen =
   | { name: "labels"; spoolIds: string[]; fresh: boolean; form: LabelFormState; back: Screen }
   /** The read-only sync check; top is the first report line on screen; fixes, presets [f] can give an ID. */
   | { name: "check"; sections: CheckSection[]; warnings: string[]; top: number; fixes: IdFix[] }
+  /** A barcode being scanned or typed; filaments are the console's, barcodes the ones learned so far. */
+  | { name: "scan"; code: string; error: string; filaments: CopyableFilament[]; barcodes: ReadonlyMap<string, BarcodeFilament> }
   /** The console's spools as an inventory, with the custom-filament names they're listed by. */
   | { name: "spools"; spools: SpoolRecord[]; names: ReadonlyMap<string, CustomFilament>; state: SpoolListState }
   /** Filament IDs for presets without one: results is null until written. */
@@ -485,6 +489,78 @@ export function App({ initial, onExit }: Props) {
     update({ results: [...results], running: false });
   }
 
+  /** The barcode screen, with the console's filaments a barcode can be. */
+  async function openScan(): Promise<void> {
+    const target = connection(values);
+    if (!target) return;
+    setOutcome(null);
+    setScreen({ name: "loading", message: "Reading spools from SpoolEase…" });
+    try {
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      const spools = await client.listSpools();
+      const names = await client.getCustomFilaments().catch(() => new Map<string, CustomFilament>());
+      const filaments = copyableFilaments(spools, names);
+      if (filaments.length === 0) {
+        setOutcome({ ok: false, lines: ["No spool on the console has a filament code to copy"] });
+        home();
+        return;
+      }
+      await scanAgain(filaments);
+    } catch (err) {
+      setOutcome({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
+      home();
+    }
+  }
+
+  async function scanAgain(filaments: CopyableFilament[], error = ""): Promise<void> {
+    setScreen({ name: "scan", code: "", error, filaments, barcodes: await loadBarcodes() });
+  }
+
+  /** A known barcode goes to its filament (or another, if it was learned wrong); a new one asks which it is. */
+  function lookUpBarcode(scan: Extract<Screen, { name: "scan" }>, typed: string): void {
+    const barcode = normalizeBarcode(typed);
+    const known = scan.barcodes.get(barcode);
+    const filament = known ? scan.filaments.find((f) => f.code === known.code) : undefined;
+    const back = (): void => void scanAgain(scan.filaments);
+    if (!filament) {
+      chooseBarcodeFilament(scan.filaments, barcode, known ?? null, back);
+      return;
+    }
+    const items = [
+      { value: "more", label: `More spools of ${filament.name}`, detail: plural(filament.count, "spool") + " now", swatch: swatchOf(filament.spool.colorCodes) },
+      { value: "other", label: "A different filament", detail: "if this barcode was learned wrong" },
+    ];
+    setScreen({
+      name: "choose",
+      title: `Barcode ${barcode} is ${filament.name}`,
+      items,
+      multi: false,
+      state: initialChoiceState(items, []),
+      onDone: ([choice]) => (choice === "more" ? chooseCopyCount(scan.filaments, filament, 1, back) : chooseBarcodeFilament(scan.filaments, barcode, null, back)),
+      onCancel: back,
+    });
+  }
+
+  function chooseBarcodeFilament(filaments: CopyableFilament[], barcode: string, gone: BarcodeFilament | null, back: () => void): void {
+    const items = filaments.map((f) => ({ value: f.code, label: f.name, detail: plural(f.count, "spool"), swatch: swatchOf(f.spool.colorCodes) }));
+    setScreen({
+      name: "choose",
+      title: `Which filament is barcode ${barcode}?${gone ? ` (it was ${gone.name}, which no spool on the console is now)` : ""}`,
+      items,
+      multi: false,
+      state: initialChoiceState(items, []),
+      onDone: ([code]) => {
+        const filament = filaments.find((f) => f.code === code)!;
+        rememberBarcode(barcode, { code: filament.code, name: filament.name }).then(
+          () => chooseCopyCount(filaments, filament, 1, back),
+          (err: unknown) => void scanAgain(filaments, `Couldn't remember barcode ${barcode}: ${errorMessage(err)}`),
+        );
+      },
+      onCancel: back,
+    });
+  }
+
   /** The console's spools with what's left on each; reads only. */
   async function openSpools(): Promise<void> {
     const target = connection(values);
@@ -645,6 +721,7 @@ export function App({ initial, onExit }: Props) {
         if (action.id === "spoolmandb") void loadPlan(SPOOLMANDB_SOURCE);
         else if (action.id === "import") void loadPlan(values.source);
         else if (action.id === "more") void openMoreSpools();
+        else if (action.id === "barcode") void openScan();
         else if (action.id === "labels") void openSpoolLabels();
         else if (action.id === "spools") void openSpools();
         else if (action.id === "check") void openCheck();
@@ -783,6 +860,11 @@ export function App({ initial, onExit }: Props) {
       else if (action.type === "again") void openCheck();
       else if (action.type === "fix" && screen.fixes.length > 0) setScreen({ name: "ids", fixes: screen.fixes, results: null, running: false });
       else if (action.type === "quit") onExit(0);
+    } else if (screen.name === "scan") {
+      const action = scanInput(screen.code, input, key);
+      if (action.type === "update") setScreen({ ...screen, code: action.code, error: "" });
+      else if (action.type === "back") home();
+      else if (action.type === "submit") lookUpBarcode(screen, action.code);
     } else if (screen.name === "spools") {
       const rows = inventoryRows(screen.spools, screen.names, screen.state.filter, screen.state.sort);
       const action = spoolListInput(screen.state, input, key, rows.length, spoolListRows(height));
@@ -889,6 +971,10 @@ export function App({ initial, onExit }: Props) {
     const target = connection(values);
     const compared = `BambuStudio ${values.presetFolder.trim()} · SpoolEase ${target ? `${target.host}:${target.port}` : "skipped"}`;
     return <SyncCheck sections={screen.sections} top={screen.top} compared={compared} warnings={screen.warnings} fixable={screen.fixes.length} height={height} />;
+  }
+
+  if (screen.name === "scan") {
+    return <BarcodeScan code={screen.code} error={screen.error} known={screen.barcodes.size} />;
   }
 
   if (screen.name === "spools") {
