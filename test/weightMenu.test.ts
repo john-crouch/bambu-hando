@@ -43,7 +43,7 @@ describe("weightItems", () => {
       { label: "Sunlu - V3 - 179g", detail: "179 g", choice: { kind: "grams", grams: 179 } },
       { label: "Sunlu V3 with Cardboard - 219g", detail: "219 g", choice: { kind: "grams", grams: 219 } },
       { label: "SpoolmanDB", detail: "189 g", choice: { kind: "source" } },
-      { label: "Unspecified", detail: "SpoolEase works it out when the full spool is first weighed", choice: { kind: "unspecified" } },
+      { label: "Unspecified", detail: "SpoolEase works it out on the first full weigh", choice: { kind: "unspecified" } },
     ]);
   });
 
@@ -53,7 +53,7 @@ describe("weightItems", () => {
 
     expect(weightItems(group!, profiles, "SpoolmanDB")).toEqual([
       { label: "SpoolmanDB", detail: "150 g", choice: { kind: "source" } },
-      { label: "Unspecified", detail: "SpoolEase works it out when the full spool is first weighed", choice: { kind: "unspecified" } },
+      { label: "Unspecified", detail: "SpoolEase works it out on the first full weigh", choice: { kind: "unspecified" } },
     ]);
   });
 

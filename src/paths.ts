@@ -46,3 +46,9 @@ export function configDir(
   if (platform === "darwin") return posix.join(home, "Library", "Application Support", "bambu-hando");
   throw new Error(`Unsupported OS for this tool: ${platform}`);
 }
+
+/** `path` with the home folder written as "~", for display. */
+export function tildePath(path: string, home: string = homedir()): string {
+  if (path === home) return "~";
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}

@@ -176,7 +176,8 @@ describe("TUI", () => {
     expect(frame).toContain("PABC1234");
     expect(frame).toContain("Pb1a2a16");
     expect(frame).toContain("230-255");
-    expect(frame).toContain(baseFilamentDir(home));
+    expect(frame).toMatch(new RegExp(`Presets: +${baseFilamentDir(home).replace(home, "~").replace(/[.]/g, "\\.")} · existing presets kept`));
+    expect(frame).toMatch(new RegExp(`Printers: +${X1C_04.replace(/[.]/g, "\\.")}`));
     expect(frame).toContain(`127.0.0.1:${server.port}`);
     expect(frame).toContain("200 g");
     expect(frame).toContain("[b] back to menu");

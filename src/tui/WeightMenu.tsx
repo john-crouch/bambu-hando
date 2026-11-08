@@ -31,7 +31,7 @@ export function weightItems(group: WeightGroup, profiles: FilamentProfile[], sou
   return [
     ...rows,
     { label: sourceName, detail: describeSourceWeights(profiles, group), choice: { kind: "source" } },
-    { label: "Unspecified", detail: "SpoolEase works it out when the full spool is first weighed", choice: { kind: "unspecified" } },
+    { label: "Unspecified", detail: "SpoolEase works it out on the first full weigh", choice: { kind: "unspecified" } },
   ];
 }
 
@@ -95,12 +95,14 @@ export function WeightMenu({ group, profiles, items, cursor, step, steps, source
               <Box width={2}>
                 <Text>{active ? "›" : ""}</Text>
               </Box>
-              <Box width={LABEL_WIDTH}>
+              <Box width={LABEL_WIDTH} paddingRight={1}>
                 <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
                   {item.label}
                 </Text>
               </Box>
-              <Text dimColor>{item.detail}</Text>
+              <Text dimColor wrap="truncate-end">
+                {item.detail}
+              </Text>
             </Box>
           );
         })}

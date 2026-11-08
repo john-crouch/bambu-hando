@@ -13,7 +13,7 @@ import { type LabelTarget, makeLabels } from "../labelJob.js";
 import { listPrinters } from "../labelPdf.js";
 import { loadLabelSettings, saveLabelSettings } from "../labelSettings.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
-import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot } from "../paths.js";
+import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot, tildePath } from "../paths.js";
 import { loadProfiles } from "../sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite } from "../spoolease.js";
 import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
@@ -750,16 +750,22 @@ export function App({ initial, onExit }: Props) {
       <Text bold>
         {plural(screen.profiles.length, "profile")} from {activeSource}
       </Text>
-      <Text>
-        Presets → {bambuBaseFilamentDir(values.presetFolder.trim())} for {printers(values).join(", ")} (
-        {values.overwritePresets ? "existing presets replaced" : "existing presets kept"})
-      </Text>
-      <Text>
-        SpoolEase:{" "}
-        {target
-          ? `${target.https ? "https" : "http"}://${target.host}:${target.port} (${values.createSpools ? "register filaments + create spools" : "register filaments only"})`
-          : "skipped"}
-      </Text>
+      <Box flexDirection="column" marginTop={1}>
+        <Text>
+          {"Presets:   "}
+          {tildePath(bambuBaseFilamentDir(values.presetFolder.trim()))} · {values.overwritePresets ? "existing presets replaced" : "existing presets kept"}
+        </Text>
+        <Text>
+          {"Printers:  "}
+          {printers(values).join(", ")}
+        </Text>
+        <Text>
+          {"SpoolEase: "}
+          {target
+            ? `${target.https ? "https" : "http"}://${target.host}:${target.port} · ${values.createSpools ? "register filaments + create spools" : "register filaments only"}`
+            : "skipped"}
+        </Text>
+      </Box>
       <Box marginY={1}>
         <PlanTable
           profiles={screen.profiles}
