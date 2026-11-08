@@ -94,6 +94,17 @@ class Terminal {
     this.pty.write(keys);
   }
 
+  /**
+   * One key per write, spaced: keys arriving in one read reach the app as a single input ("s\r"), which
+   * matches no key, and a burst of escape sequences reads as one escape.
+   */
+  async pressEach(...keys: string[]): Promise<void> {
+    for (const key of keys) {
+      this.pty.write(key);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
   resize(cols: number, rows: number): void {
     this.pty.resize(cols, rows);
   }
@@ -224,8 +235,7 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     });
 
     await terminal.waitFor("Add spools from SpoolmanDB");
-    terminal.press("s");
-    terminal.press(ENTER);
+    await terminal.pressEach("s", ENTER);
     await terminal.waitFor("Import file or URL");
     terminal.press(SOURCE_FIXTURE);
     await terminal.waitFor("source.json");
