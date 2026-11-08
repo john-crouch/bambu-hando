@@ -70,7 +70,8 @@ export function HomeMenu({ items, cursor, context, outcome }: Props) {
           const active = index === cursor;
           return (
             <Box key={item.id}>
-              <Box width={2}>
+              {/* Fixed boxes keep their width: Ink measures a detail cut with "…" a column too wide and would take it from them. */}
+              <Box width={2} flexShrink={0}>
                 <Text>{active ? "›" : ""}</Text>
               </Box>
               <Box width={LABEL_WIDTH} flexShrink={0} paddingRight={1}>

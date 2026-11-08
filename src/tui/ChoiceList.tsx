@@ -89,14 +89,15 @@ export function ChoiceList({ title, items, state, multi, height }: Props) {
           const on = state.ticked.has(item.value);
           return (
             <Box key={item.value}>
-              <Box width={2}>
+              {/* Fixed boxes keep their width: Ink measures a detail cut with "…" a column too wide and would take it from them. */}
+              <Box width={2} flexShrink={0}>
                 <Text>{active ? "›" : ""}</Text>
               </Box>
-              <Box width={4}>
+              <Box width={4} flexShrink={0}>
                 <Text>{multi ? (on ? "[x]" : "[ ]") : on ? "(*)" : "( )"}</Text>
               </Box>
               {swatches ? (
-                <Box width={3}>
+                <Box width={3} flexShrink={0}>
                   <Text backgroundColor={item.swatch}>{item.swatch ? "  " : ""}</Text>
                 </Box>
               ) : null}

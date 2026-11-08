@@ -146,6 +146,9 @@ describe("rows too wide for the terminal", () => {
     const rows = lines(lastFrame()).filter((line) => line.includes("a detail"));
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.indexOf("a detail"))).toEqual([rows[0]!.indexOf("a detail"), rows[0]!.indexOf("a detail")]);
+    // The cursor column keeps its width too: Ink measures the cut detail's "…" a column wide.
+    expect(rows[0]).toMatch(/^› Add spools/);
+    expect(rows[1]).toMatch(/^ {2}Settings/);
     expect(rows.every((row) => row.trimEnd().endsWith("…"))).toBe(true);
   });
 

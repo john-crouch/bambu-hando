@@ -98,7 +98,7 @@ export function WeightMenu({ group, profiles, items, cursor, step, steps, source
           const active = start + offset === cursor;
           return (
             <Box key={item.label}>
-              <Box width={2}>
+              <Box width={2} flexShrink={0}>
                 <Text>{active ? "›" : ""}</Text>
               </Box>
               <Box width={LABEL_WIDTH} flexShrink={0} paddingRight={1}>
