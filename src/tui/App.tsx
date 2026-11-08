@@ -22,6 +22,7 @@ import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from 
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
 import { saveTuiSettings } from "../tuiSettings.js";
+import { Busy } from "./Busy.js";
 import { Browse, browseInput, browseRows, initialBrowseState } from "./Browse.js";
 import { type ChoiceItem, ChoiceList, choiceInput, type ChoiceState, initialChoiceState } from "./ChoiceList.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
@@ -687,7 +688,7 @@ export function App({ initial, onExit }: Props) {
   }
 
   if (screen.name === "loading") {
-    return <Text>{screen.message}</Text>;
+    return <Busy message={screen.message} />;
   }
 
   if (screen.name === "weights") {
@@ -784,7 +785,7 @@ export function App({ initial, onExit }: Props) {
           activeSpools={stage === "spools"}
         />
       </Box>
-      {stage ? <Text color="cyan">{STAGE_LABELS[stage]}…</Text> : null}
+      {stage ? <Busy color="cyan" message={`${STAGE_LABELS[stage]}…`} /> : null}
       {[...weightWarnings, ...warnings].map((w) => (
         <Text key={w} color="yellow">
           ! {w}

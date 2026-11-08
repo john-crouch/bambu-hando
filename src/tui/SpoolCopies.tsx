@@ -4,6 +4,7 @@
 import { Box, Text } from "ink";
 
 import type { SpoolEaseWrite } from "../spoolease.js";
+import { Busy } from "./Busy.js";
 import type { CopyableFilament } from "../spoolCopies.js";
 
 function plural(count: number, noun: string): string {
@@ -62,7 +63,7 @@ export function SpoolCopies({ filament, count, target, results, running, outcome
           </Text>
         ),
       )}
-      {running ? <Text color="cyan">Adding spools to SpoolEase…</Text> : null}
+      {running ? <Busy color="cyan" message="Adding spools to SpoolEase…" /> : null}
       {done ? (
         <Text bold color={failed ? "red" : "green"}>
           Done: {created.length} added, {failed} failed
