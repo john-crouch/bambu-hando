@@ -34,6 +34,7 @@ This project intentionally separates documented facts from inferred implementati
 ## Inferred details (best effort)
 
 - A multi-color spool's `color_code` column holds its RGBA codes joined with `;`, as in its tag links; no real multi-color record has been checked.
+- The sync check (`syncCheck.ts`) treats spool codes starting with `GF` as Bambu Lab's: every `filament_id` in the BBL bundle starts with it (86 of 86 in an installed bundle), and SpoolEase reads a Bambu Lab spool's code from its tag, so those need no custom filament. Real user presets made outside BambuStudio's Create filament were seen with `filament_id: "null"`; the check reports those as presets without an ID.
 - More spools of a filament (`spoolCopies.ts`) send only the first of those codes as the copy's `rgba`: `AddSpoolDTO` takes one `rgba` string, and how SpoolEase would read a `;`-joined one is unverified.
 
 - Inherits chains are merged child-over-parent. BambuStudio additionally lets a child's `nil` entry inherit the parent's value in multi-extruder-variant arrays; among Generic presets this only occurs in three H2-series TPU presets.

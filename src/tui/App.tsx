@@ -16,6 +16,7 @@ import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot } from "../paths.js
 import { loadProfiles } from "../sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite } from "../spoolease.js";
 import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
+import { type CheckSection, checkSync, readUserPresets } from "../syncCheck.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
@@ -28,6 +29,7 @@ import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, SetupForm } from "./SetupForm.js";
 import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, initialColorForm } from "./ColorForm.js";
 import { SpoolCopies } from "./SpoolCopies.js";
+import { checkInput, checkLines, SyncCheck } from "./SyncCheck.js";
 import {
   initialLabelForm,
   LabelForm,
@@ -78,6 +80,8 @@ type Screen =
   | { name: "copies"; filaments: CopyableFilament[]; filament: CopyableFilament; count: number; results: SpoolEaseWrite[] | null; running: boolean }
   /** Labels for spoolIds; back is the screen esc and making the labels return to (the summary or the menu). */
   | { name: "labels"; spoolIds: string[]; fresh: boolean; form: LabelFormState; back: Screen }
+  /** The read-only sync check; top is the first report line on screen. */
+  | { name: "check"; sections: CheckSection[]; warnings: string[]; top: number }
   | { name: "error"; message: string; exitCode: number };
 
 /** How many copies the count list offers. */
@@ -423,6 +427,27 @@ export function App({ initial, onExit }: Props) {
     update({ results: [...results], running: false });
   }
 
+  /** Compare the preset folder's presets with the console's custom filaments and spools; writes nothing. */
+  async function openCheck(): Promise<void> {
+    const target = connection(values);
+    if (!target) return;
+    setLabelsDone(null);
+    setScreen({ name: "loading", message: "Comparing BambuStudio presets with SpoolEase…" });
+    try {
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      const [{ presets, warnings }, csv, spools] = await Promise.all([
+        readUserPresets(values.presetFolder.trim()),
+        client.getCustomFilamentsCsv(),
+        client.listSpools(),
+      ]);
+      setScreen({ name: "check", sections: checkSync({ presets, csv, spools }), warnings, top: 0 });
+    } catch (err) {
+      setLabelsDone({ ok: false, lines: [`Couldn't check: ${errorMessage(err)}`] });
+      home();
+    }
+  }
+
   async function printLabels(spoolIds: string[], back: Screen, form: LabelFormState, target: LabelTarget): Promise<void> {
     const spoolease = connection(values);
     setScreen({ name: "loading", message: "Making labels…" });
@@ -464,6 +489,7 @@ export function App({ initial, onExit }: Props) {
         else if (action.id === "import") void loadPlan(values.source);
         else if (action.id === "more") void openMoreSpools();
         else if (action.id === "labels") void openSpoolLabels();
+        else if (action.id === "check") void openCheck();
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
         else onExit(0);
       }
@@ -587,6 +613,12 @@ export function App({ initial, onExit }: Props) {
         if ("error" in checked) setScreen({ ...screen, form: { ...screen.form, error: checked.error } });
         else void printLabels(screen.spoolIds, screen.back, screen.form, checked.target);
       }
+    } else if (screen.name === "check") {
+      const action = checkInput(screen.top, input, key, checkLines(screen.sections).length);
+      if (action.type === "scroll") setScreen({ ...screen, top: action.top });
+      else if (action.type === "back") home();
+      else if (action.type === "again") void openCheck();
+      else if (action.type === "quit") onExit(0);
     } else if (screen.name === "error") {
       if (input === "b") setScreen({ name: "form", error: "" });
       else if (input === "q") onExit(screen.exitCode);
@@ -666,6 +698,12 @@ export function App({ initial, onExit }: Props) {
         outcome={labelsDone}
       />
     );
+  }
+
+  if (screen.name === "check") {
+    const target = connection(values);
+    const compared = `BambuStudio ${values.presetFolder.trim()} · SpoolEase ${target ? `${target.host}:${target.port}` : "skipped"}`;
+    return <SyncCheck sections={screen.sections} top={screen.top} compared={compared} warnings={screen.warnings} />;
   }
 
   if (screen.name === "labels") {

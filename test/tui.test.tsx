@@ -1,7 +1,7 @@
 // ABOUTME: Integration tests for the Ink TUI: setup form, plan view, live apply, and exit codes.
 // ABOUTME: Drives the real sync against a local SpoolEase server and a temporary HOME.
 
-import { mkdir, mkdtemp, readdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -650,6 +650,33 @@ describe("TUI", () => {
       await vi.waitFor(() => expect(lastFrame()).toContain("Couldn't read the spool catalog from SpoolEase: HTTP 404: not found"));
       expect(lastFrame()).toContain("Empty spool weight: RatRig");
     });
+  });
+
+  it("checks that presets, custom filaments and spools line up, without writing, and checks again with r", async () => {
+    const base = baseFilamentDir(home);
+    await mkdir(base, { recursive: true });
+    await writeFile(join(base, `Studio Only @${X1C_04}.json`), JSON.stringify({ name: `Studio Only @${X1C_04}`, inherits: "", filament_id: "PA000009" }));
+    server.customFilaments = "PA000002,No Preset,200,220,PLA";
+    server.spools.push({ id: "1", brand: "Acme", material_type: "PLA", slicer_filament: "PZZZZZZ1" });
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, "c", ENTER);
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("2 problems, 1 note"));
+    expect(lastFrame()).toContain("✗ SpoolEase filaments without a BambuStudio preset: 1");
+    expect(lastFrame()).toContain("No Preset (PA000002)");
+    expect(lastFrame()).toContain("#1 Acme PLA (PZZZZZZ1)");
+    expect(lastFrame()).toContain(`Studio Only (PA000009) · ${X1C_04}`);
+    expect(lastFrame()).toContain("✓ Custom filament rows SpoolEase misreads: none");
+    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+
+    server.customFilaments = "PA000009,Studio Only,200,220,PLA";
+    server.spools.splice(0);
+    await press(stdin, "r");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Everything lines up"));
+    await press(stdin, "b");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Check sync"));
   });
 
   it("shows SpoolmanDB download errors on the form", async () => {
