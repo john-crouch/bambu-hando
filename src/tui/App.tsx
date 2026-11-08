@@ -17,8 +17,9 @@ import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot, tildePath } from "
 import { type ConsoleState, type ProfilePlan, previewPlan } from "../planPreview.js";
 import { fixPresetIds, type IdFix, type IdFixResult, idFixes } from "../presetIds.js";
 import { loadProfiles } from "../sources.js";
-import { SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite } from "../spoolease.js";
+import { type CustomFilament, SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite, type SpoolRecord } from "../spoolease.js";
 import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
+import { inventoryRows } from "../spoolInventory.js";
 import { type CheckSection, checkLines, readCheck } from "../syncCheck.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
@@ -35,6 +36,7 @@ import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, color
 import { Help, type HelpTopic } from "./Help.js";
 import { PresetIds } from "./PresetIds.js";
 import { SpoolCopies } from "./SpoolCopies.js";
+import { initialSpoolList, SpoolList, spoolListInput, spoolListRows, type SpoolListState } from "./SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
 import { useTerminalRows } from "./screenSize.js";
 import {
@@ -91,6 +93,8 @@ type Screen =
   | { name: "labels"; spoolIds: string[]; fresh: boolean; form: LabelFormState; back: Screen }
   /** The read-only sync check; top is the first report line on screen; fixes, presets [f] can give an ID. */
   | { name: "check"; sections: CheckSection[]; warnings: string[]; top: number; fixes: IdFix[] }
+  /** The console's spools as an inventory, with the custom-filament names they're listed by. */
+  | { name: "spools"; spools: SpoolRecord[]; names: ReadonlyMap<string, CustomFilament>; state: SpoolListState }
   /** Filament IDs for presets without one: results is null until written. */
   | { name: "ids"; fixes: IdFix[]; results: IdFixResult[] | null; running: boolean }
   | { name: "error"; message: string; exitCode: number }
@@ -445,7 +449,8 @@ export function App({ initial, onExit }: Props) {
     });
   }
 
-  function chooseCopyCount(filaments: CopyableFilament[], filament: CopyableFilament, current: number): void {
+  /** onCancel: where esc goes; the filament list unless the count was asked for from elsewhere. */
+  function chooseCopyCount(filaments: CopyableFilament[], filament: CopyableFilament, current: number, onCancel?: () => void): void {
     const items = Array.from({ length: MAX_COPIES }, (_, i) => ({ value: String(i + 1), label: plural(i + 1, "spool") }));
     setScreen({
       name: "choose",
@@ -454,7 +459,7 @@ export function App({ initial, onExit }: Props) {
       multi: false,
       state: initialChoiceState(items, [String(current)]),
       onDone: ([count]) => setScreen({ name: "copies", filaments, filament, count: Number(count), results: null, running: false }),
-      onCancel: () => chooseCopyFilament(filaments, filament.code),
+      onCancel: onCancel ?? (() => chooseCopyFilament(filaments, filament.code)),
     });
   }
 
@@ -478,6 +483,56 @@ export function App({ initial, onExit }: Props) {
     }
     if (results.some((r) => !r.ok)) setRunFailed(true);
     update({ results: [...results], running: false });
+  }
+
+  /** The console's spools with what's left on each; reads only. */
+  async function openSpools(): Promise<void> {
+    const target = connection(values);
+    if (!target) return;
+    setOutcome(null);
+    setScreen({ name: "loading", message: "Reading spools from SpoolEase…" });
+    try {
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      const spools = await client.listSpools();
+      if (spools.length === 0) {
+        setOutcome({ ok: false, lines: ["The SpoolEase console has no spools yet"] });
+        home();
+        return;
+      }
+      // Names only make the list nicer; spools carry the rest.
+      const names = await client.getCustomFilaments().catch(() => new Map<string, CustomFilament>());
+      setScreen({ name: "spools", spools, names, state: initialSpoolList() });
+    } catch (err) {
+      setOutcome({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
+      home();
+    }
+  }
+
+  /** What to do with one spool from the list: a label, or more spools of its filament. */
+  function chooseSpoolAction(list: Extract<Screen, { name: "spools" }>, spool: SpoolRecord, name: string): void {
+    const items = [
+      { value: "label", label: "Print a label", detail: "the label screen, for this spool" },
+      ...(spool.slicerFilament ? [{ value: "more", label: "Add more spools of this filament", detail: "copies of its newest spool" }] : []),
+    ];
+    const back = (): void => setScreen(list);
+    setScreen({
+      name: "choose",
+      title: `#${spool.id} ${name}`,
+      items,
+      multi: false,
+      state: initialChoiceState(items, []),
+      onDone: ([action]) => {
+        if (action === "label") {
+          void openLabels([spool.id], false, list);
+          return;
+        }
+        const filaments = copyableFilaments(list.spools, list.names);
+        const filament = filaments.find((f) => f.code === spool.slicerFilament);
+        if (filament) chooseCopyCount(filaments, filament, 1, back);
+      },
+      onCancel: back,
+    });
   }
 
   /** Compare the preset folder's presets with the console's custom filaments and spools; writes nothing. */
@@ -591,6 +646,7 @@ export function App({ initial, onExit }: Props) {
         else if (action.id === "import") void loadPlan(values.source);
         else if (action.id === "more") void openMoreSpools();
         else if (action.id === "labels") void openSpoolLabels();
+        else if (action.id === "spools") void openSpools();
         else if (action.id === "check") void openCheck();
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
         else onExit(runFailed ? 1 : 0);
@@ -727,6 +783,15 @@ export function App({ initial, onExit }: Props) {
       else if (action.type === "again") void openCheck();
       else if (action.type === "fix" && screen.fixes.length > 0) setScreen({ name: "ids", fixes: screen.fixes, results: null, running: false });
       else if (action.type === "quit") onExit(0);
+    } else if (screen.name === "spools") {
+      const rows = inventoryRows(screen.spools, screen.names, screen.state.filter, screen.state.sort);
+      const action = spoolListInput(screen.state, input, key, rows.length, spoolListRows(height));
+      if (action.type === "update") setScreen({ ...screen, state: action.state });
+      else if (action.type === "back") home();
+      else if (action.type === "choose") {
+        const row = rows[action.index]!;
+        chooseSpoolAction(screen, row.spool, row.name);
+      }
     } else if (screen.name === "ids") {
       if (screen.running) return;
       if (input === "q") onExit(runFailed ? 1 : 0);
@@ -824,6 +889,11 @@ export function App({ initial, onExit }: Props) {
     const target = connection(values);
     const compared = `BambuStudio ${values.presetFolder.trim()} · SpoolEase ${target ? `${target.host}:${target.port}` : "skipped"}`;
     return <SyncCheck sections={screen.sections} top={screen.top} compared={compared} warnings={screen.warnings} fixable={screen.fixes.length} height={height} />;
+  }
+
+  if (screen.name === "spools") {
+    const rows = inventoryRows(screen.spools, screen.names, screen.state.filter, screen.state.sort);
+    return <SpoolList rows={rows} total={screen.spools.length} state={screen.state} height={height} />;
   }
 
   if (screen.name === "ids") {

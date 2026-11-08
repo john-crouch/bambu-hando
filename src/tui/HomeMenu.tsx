@@ -10,7 +10,7 @@ import { listMove, typeAhead, typedLetter } from "./menu.js";
 
 const LABEL_WIDTH = 46;
 
-export type HomeId = "spoolmandb" | "import" | "more" | "labels" | "check" | "settings" | "quit";
+export type HomeId = "spoolmandb" | "import" | "more" | "labels" | "spools" | "check" | "settings" | "quit";
 
 export interface HomeItem {
   id: HomeId;
@@ -28,6 +28,7 @@ export function homeItems(source: string, spoolease: boolean): HomeItem[] {
     ...(file && file !== SPOOLMANDB_SOURCE ? [{ id: "import" as const, label: `Import ${basename(file)}`, detail: "sync the profiles it lists" }] : []),
     ...(spoolease ? [{ id: "more" as const, label: "More spools of a filament you have", detail: "copy a spool already on your console" }] : []),
     ...(spoolease ? [{ id: "labels" as const, label: "Print labels for existing spools", detail: "pick spools on your SpoolEase console" }] : []),
+    ...(spoolease ? [{ id: "spools" as const, label: "Your spools on the console", detail: "what's left on each and where it is" }] : []),
     ...(spoolease ? [{ id: "check" as const, label: "Check sync", detail: "compare presets, custom filaments and spools; changes nothing" }] : []),
     { id: "settings", label: "Settings", detail: "BambuStudio folder and printers, SpoolEase" },
     { id: "quit", label: "Quit", detail: "" },

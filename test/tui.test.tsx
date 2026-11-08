@@ -791,6 +791,39 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Check sync"));
   });
 
+  it("lists the console's spools with what's left, filters and sorts them, and offers a label or more spools from one", async () => {
+    server.customFilaments = "PA000001,Sunlu PETG Elite Red,240,260,PETG";
+    server.spools.push(
+      { id: "1", brand: "Sunlu", material_type: "PETG", color_name: "Red", color_code: "AD0000FF", weight_advertised: "1000", weight_core: "189", weight_current: "753", slicer_filament: "PA000001", actual_location: "AMS 1" },
+      { id: "2", brand: "Acme", material_type: "PLA", color_name: "Blue", color_code: "0000FFFF", weight_advertised: "1000", weight_core: "200", weight_current: "300" },
+    );
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, "y", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Your spools on the console: 2 · newest first"));
+    expect(lastFrame()).toMatch(/#1 +Sunlu PETG Elite Red +564 g/);
+    expect(lastFrame()).toMatch(/#2 +Acme PLA Blue +100 g/);
+
+    await press(stdin, TAB, TAB);
+    await vi.waitFor(() => expect(lastFrame()).toContain("least left first"));
+    await press(stdin, "e", "l", "i");
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 of 2"));
+    expect(lastFrame()).not.toContain("Acme PLA Blue");
+
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("#1 Sunlu PETG Elite Red"));
+    expect(lastFrame()).toContain("Print a label");
+    await press(stdin, DOWN, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"));
+    // esc goes back to the list as it was, filter and sort kept.
+    await press(stdin, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 of 2 · least left first"));
+    await press(stdin, ESC, ESC);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
+    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+  });
+
   it("gives presets without a filament ID the one BambuStudio would make, from the check", async () => {
     const base = baseFilamentDir(home);
     await mkdir(base, { recursive: true });

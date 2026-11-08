@@ -19,8 +19,10 @@ const SPOOL_COLUMNS = {
   weightAdvertised: 8,
   weightCore: 9,
   weightNew: 10,
+  weightCurrent: 11,
   slicerFilament: 12,
   addedTime: 13,
+  consumedSinceWeight: 17,
   assignedLocation: 21,
   actualLocation: 22,
 } as const;
@@ -39,6 +41,10 @@ export interface SpoolRecord {
   labelWeight: number | null;
   coreWeight: number | null;
   fullWeight: number | null;
+  /** What the spool weighed, core included, when it was last put on the scale. */
+  currentWeight: number | null;
+  /** Grams printed from it since then. */
+  consumedSinceWeighed: number;
   /** The slicer filament code, i.e. our filamentId for spools bambu-hando created. */
   slicerFilament: string;
   /** Unix seconds. */
@@ -60,6 +66,12 @@ function optionalInt(value: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** SpoolEase's serialize_f32_base64 (shared/src/utils.rs): a little-endian f32, base64 without padding; "" is 0. */
+function base64Float(value: string): number {
+  const bytes = Buffer.from(value, "base64");
+  return bytes.length === 4 ? bytes.readFloatLE(0) : 0;
+}
+
 function spoolRecord(fields: string[]): SpoolRecord {
   const at = (column: number) => fields[column] ?? "";
   return {
@@ -75,6 +87,8 @@ function spoolRecord(fields: string[]): SpoolRecord {
     labelWeight: optionalInt(at(SPOOL_COLUMNS.weightAdvertised)),
     coreWeight: optionalInt(at(SPOOL_COLUMNS.weightCore)),
     fullWeight: optionalInt(at(SPOOL_COLUMNS.weightNew)),
+    currentWeight: optionalInt(at(SPOOL_COLUMNS.weightCurrent)),
+    consumedSinceWeighed: base64Float(at(SPOOL_COLUMNS.consumedSinceWeight)),
     slicerFilament: at(SPOOL_COLUMNS.slicerFilament),
     addedTime: optionalInt(at(SPOOL_COLUMNS.addedTime)),
     location: at(SPOOL_COLUMNS.actualLocation) || at(SPOOL_COLUMNS.assignedLocation),

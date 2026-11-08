@@ -26,6 +26,8 @@ function spool(overrides: Partial<SpoolRecord> = {}): SpoolRecord {
     labelWeight: 1000,
     coreWeight: 189,
     fullWeight: null,
+    currentWeight: null,
+    consumedSinceWeighed: 0,
     slicerFilament: "P4840583",
     addedTime: null,
     location: "",
@@ -91,6 +93,8 @@ describe("spoolTagUrl", () => {
         colorCodes: ["D4AF37FF", "C0C0C0FF"],
         coreWeight: null,
         fullWeight: 1140,
+        currentWeight: null,
+        consumedSinceWeighed: 0,
         addedTime: 1761955200,
       }),
     );

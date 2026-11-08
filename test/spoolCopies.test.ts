@@ -20,6 +20,8 @@ function spool(overrides: Partial<SpoolRecord>): SpoolRecord {
     labelWeight: 1000,
     coreWeight: 189,
     fullWeight: null,
+    currentWeight: null,
+    consumedSinceWeighed: 0,
     slicerFilament: "P1111111",
     addedTime: null,
     location: "",

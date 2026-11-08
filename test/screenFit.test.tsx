@@ -11,6 +11,8 @@ import { Browse, browseInput, initialBrowseState } from "../src/tui/Browse.js";
 import { ChoiceList, choiceInput, initialChoiceState } from "../src/tui/ChoiceList.js";
 import { HomeMenu } from "../src/tui/HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "../src/tui/Picker.js";
+import { inventoryRows } from "../src/spoolInventory.js";
+import { initialSpoolList, SpoolList, spoolListInput } from "../src/tui/SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "../src/tui/SyncCheck.js";
 import { WeightMenu, weightItems } from "../src/tui/WeightMenu.js";
 
@@ -90,6 +92,32 @@ describe("lists sized to the terminal", () => {
       <WeightMenu group={group} profiles={PROFILES} items={items} cursor={0} step={0} steps={1} sourceName="SpoolmanDB" warnings={[]} height={HEIGHT} />,
     );
     expectFits(lastFrame());
+  });
+
+  it("SpoolList fills the height below its filter and column header", () => {
+    const spools = PROFILES.map((p, i) => ({
+      id: String(i + 1),
+      tagId: "",
+      material: "PLA",
+      subtype: "",
+      colorName: p.colorName,
+      colorCodes: [],
+      note: "",
+      brand: "Acme",
+      labelWeight: 1000,
+      coreWeight: 200,
+      fullWeight: null,
+      currentWeight: null,
+      consumedSinceWeighed: 0,
+      slicerFilament: "",
+      addedTime: null,
+      location: "",
+    }));
+    const rows = inventoryRows(spools, new Map(), "", "newest");
+    const { lastFrame } = render(<SpoolList rows={rows} total={40} state={initialSpoolList()} height={HEIGHT} />);
+    expectFits(lastFrame());
+    const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
+    expect(spoolListInput(initialSpoolList(), "", key({ pageDown: true }), 40, shown)).toMatchObject({ state: { cursor: shown } });
   });
 
   it("SyncCheck fills the height, scrolled into the middle", () => {

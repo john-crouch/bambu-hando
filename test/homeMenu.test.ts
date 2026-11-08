@@ -74,9 +74,9 @@ describe("listMove", () => {
 });
 
 describe("homeItems", () => {
-  it("offers SpoolmanDB, more spools of a filament, labels for existing spools, the sync check, settings and quit", () => {
-    expect(homeItems("spoolmandb", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "labels", "check", "settings", "quit"]);
-    expect(homeItems("", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "labels", "check", "settings", "quit"]);
+  it("offers SpoolmanDB, more spools of a filament, labels for existing spools, the spool list, the sync check, settings and quit", () => {
+    expect(homeItems("spoolmandb", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "labels", "spools", "check", "settings", "quit"]);
+    expect(homeItems("", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "labels", "spools", "check", "settings", "quit"]);
   });
 
   it("leaves out what needs the console when SpoolEase is skipped", () => {
@@ -86,7 +86,7 @@ describe("homeItems", () => {
   it("adds an import item for a file or URL source", () => {
     const items = homeItems("/tmp/profiles.json", true);
 
-    expect(items.map((i) => i.id)).toEqual(["spoolmandb", "import", "more", "labels", "check", "settings", "quit"]);
+    expect(items.map((i) => i.id)).toEqual(["spoolmandb", "import", "more", "labels", "spools", "check", "settings", "quit"]);
     expect(items[1]?.label).toBe("Import profiles.json");
     expect(homeItems("https://example.com/shared/list.json", true)[1]?.label).toBe("Import list.json");
   });
@@ -102,8 +102,8 @@ describe("homeInput", () => {
 
   it("moves, jumps by letter, and chooses with enter", () => {
     expect(homeInput(0, "", key({ downArrow: true }), items)).toEqual({ type: "move", cursor: 1 });
-    expect(homeInput(0, "s", key(), items)).toEqual({ type: "move", cursor: 5 });
-    expect(homeInput(5, "", key({ return: true }), items)).toEqual({ type: "choose", id: "settings" });
+    expect(homeInput(0, "s", key(), items)).toEqual({ type: "move", cursor: 6 });
+    expect(homeInput(6, "", key({ return: true }), items)).toEqual({ type: "choose", id: "settings" });
   });
 
   it("ignores other keys", () => {
