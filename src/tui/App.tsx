@@ -2,6 +2,7 @@
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
 import { readdir } from "node:fs/promises";
+import { basename } from "node:path";
 
 import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
@@ -157,12 +158,14 @@ export function App({ initial, onExit }: Props) {
   // Empty spool weight per brand key; kept while going back and forth so earlier picks stay selected.
   const [weightChoices, setWeightChoices] = useState<ReadonlyMap<string, WeightChoice>>(new Map());
   const [weightWarnings, setWeightWarnings] = useState<string[]>([]);
-  // Outcome of the last labels made from the summary.
-  const [labelsDone, setLabelsDone] = useState<{ ok: boolean; lines: string[] } | null>(null);
+  // What the last run, copies or labels did, shown on the screen they return to.
+  const [outcome, setOutcome] = useState<{ ok: boolean; lines: string[] } | null>(null);
   const matches = useMemo(
     () => (catalog ? filterProfiles(catalog.profiles, { brand: "", material: "", match: picker.query }) : []),
     [catalog, picker.query],
   );
+  // A failed run keeps the exit code at 1 even when quitting later from the menu.
+  const [runFailed, setRunFailed] = useState(false);
   const fromSpoolmanDb = activeSource === SPOOLMANDB_SOURCE;
   const sourceName = fromSpoolmanDb ? "SpoolmanDB" : "Source file";
 
@@ -172,7 +175,7 @@ export function App({ initial, onExit }: Props) {
   }
 
   function back(): void {
-    if (!fromSpoolmanDb || !catalog) setScreen({ name: "form", error: "" });
+    if (!fromSpoolmanDb || !catalog) home();
     else setScreen(chooser === "pick" ? { name: "pick" } : { name: "browse" });
   }
 
@@ -278,7 +281,7 @@ export function App({ initial, onExit }: Props) {
 
   async function apply(profiles: FilamentProfile[]): Promise<void> {
     setScreen({ name: "running", profiles });
-    setLabelsDone(null);
+    setOutcome(null);
     setProgress([]);
     setWarnings([]);
     try {
@@ -303,6 +306,7 @@ export function App({ initial, onExit }: Props) {
           else setProgress((p) => applyEvent(p, event));
         },
       );
+      if (results.some(resultFailed)) setRunFailed(true);
       setScreen({ name: "done", profiles, results });
     } catch (err) {
       setScreen({
@@ -325,7 +329,7 @@ export function App({ initial, onExit }: Props) {
   async function openSpoolLabels(): Promise<void> {
     const target = connection(values);
     if (!target) return;
-    setLabelsDone(null);
+    setOutcome(null);
     setScreen({ name: "loading", message: "Reading spools from SpoolEase…" });
     const backHome: Screen = { name: "home", cursor: initialHomeCursor(menuItems()) };
     try {
@@ -333,7 +337,7 @@ export function App({ initial, onExit }: Props) {
       await checkKey(client);
       const spools = await client.listSpools();
       if (spools.length === 0) {
-        setLabelsDone({ ok: false, lines: ["The SpoolEase console has no spools yet"] });
+        setOutcome({ ok: false, lines: ["The SpoolEase console has no spools yet"] });
         setScreen(backHome);
         return;
       }
@@ -350,7 +354,7 @@ export function App({ initial, onExit }: Props) {
         onCancel: () => setScreen(backHome),
       });
     } catch (err) {
-      setLabelsDone({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
+      setOutcome({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
       setScreen(backHome);
     }
   }
@@ -359,7 +363,7 @@ export function App({ initial, onExit }: Props) {
   async function openMoreSpools(): Promise<void> {
     const target = connection(values);
     if (!target) return;
-    setLabelsDone(null);
+    setOutcome(null);
     setScreen({ name: "loading", message: "Reading spools from SpoolEase…" });
     try {
       const client = new SpoolEaseClient(target);
@@ -369,13 +373,13 @@ export function App({ initial, onExit }: Props) {
       const names = await client.getCustomFilaments().catch(() => new Map());
       const filaments = copyableFilaments(spools, names);
       if (filaments.length === 0) {
-        setLabelsDone({ ok: false, lines: ["No spool on the console has a filament code to copy"] });
+        setOutcome({ ok: false, lines: ["No spool on the console has a filament code to copy"] });
         home();
         return;
       }
       chooseCopyFilament(filaments, null);
     } catch (err) {
-      setLabelsDone({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
+      setOutcome({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
       home();
     }
   }
@@ -409,7 +413,7 @@ export function App({ initial, onExit }: Props) {
   async function addCopies(filament: CopyableFilament, count: number): Promise<void> {
     const target = connection(values);
     if (!target) return;
-    setLabelsDone(null);
+    setOutcome(null);
     const update = (changes: { results?: SpoolEaseWrite[]; running?: boolean }) =>
       setScreen((s) => (s.name === "copies" ? { ...s, ...changes } : s));
     update({ results: [], running: true });
@@ -424,6 +428,7 @@ export function App({ initial, onExit }: Props) {
     } catch (err) {
       results.push({ ok: false, error: errorMessage(err) });
     }
+    if (results.some((r) => !r.ok)) setRunFailed(true);
     update({ results: [...results], running: false });
   }
 
@@ -431,7 +436,7 @@ export function App({ initial, onExit }: Props) {
   async function openCheck(): Promise<void> {
     const target = connection(values);
     if (!target) return;
-    setLabelsDone(null);
+    setOutcome(null);
     setScreen({ name: "loading", message: "Comparing BambuStudio presets with SpoolEase…" });
     try {
       const client = new SpoolEaseClient(target);
@@ -443,9 +448,21 @@ export function App({ initial, onExit }: Props) {
       ]);
       setScreen({ name: "check", sections: checkSync({ presets, csv, spools }), warnings, top: 0 });
     } catch (err) {
-      setLabelsDone({ ok: false, lines: [`Couldn't check: ${errorMessage(err)}`] });
+      setOutcome({ ok: false, lines: [`Couldn't check: ${errorMessage(err)}`] });
       home();
     }
+  }
+
+  /** Back to the menu after a run, saying what it did; the next run starts with nothing selected. */
+  function finishRun(profiles: FilamentProfile[], results: SyncResult[]): void {
+    const failed = results.filter(resultFailed).length;
+    const created = newSpoolIds(results).length;
+    const source = fromSpoolmanDb ? activeSource : basename(activeSource);
+    const spools = created > 0 ? `, ${plural(created, "new spool")}` : "";
+    setOutcome({ ok: failed === 0, lines: [`${plural(profiles.length, "profile")} from ${source}: ${results.length - failed} written, ${failed} failed${spools}`] });
+    setPicker({ ...picker, selected: new Set() });
+    setWeightChoices(new Map());
+    setScreen({ name: "home", cursor: initialHomeCursor(menuItems()) });
   }
 
   async function printLabels(spoolIds: string[], back: Screen, form: LabelFormState, target: LabelTarget): Promise<void> {
@@ -473,7 +490,7 @@ export function App({ initial, onExit }: Props) {
     } catch (err) {
       lines.push(`Couldn't remember these label choices: ${errorMessage(err)}`);
     }
-    setLabelsDone({ ok, lines });
+    setOutcome({ ok, lines });
     setScreen(back);
   }
 
@@ -491,7 +508,7 @@ export function App({ initial, onExit }: Props) {
         else if (action.id === "labels") void openSpoolLabels();
         else if (action.id === "check") void openCheck();
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
-        else onExit(0);
+        else onExit(runFailed ? 1 : 0);
       }
     } else if (screen.name === "choose") {
       const action = choiceInput(screen.state, input, key, screen.items, screen.multi);
@@ -581,6 +598,7 @@ export function App({ initial, onExit }: Props) {
     } else if (screen.name === "done") {
       if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
       else if (input === "l" && newSpoolIds(screen.results).length > 0) void openLabels(newSpoolIds(screen.results), true, screen);
+      else if (input === "m") finishRun(screen.profiles, screen.results);
     } else if (screen.name === "copies") {
       if (screen.running) return;
       const created = (screen.results ?? []).flatMap((r) => (r.ok ? [r.id] : []));
@@ -589,7 +607,11 @@ export function App({ initial, onExit }: Props) {
         if (input === "a") void addCopies(screen.filament, screen.count);
         else if (input === "b") chooseCopyCount(screen.filaments, screen.filament, screen.count);
       } else if (input === "l" && created.length > 0) void openLabels(created, true, screen);
-      else if (input === "m") home();
+      else if (input === "m") {
+        const failed = (screen.results ?? []).length - created.length;
+        setOutcome({ ok: failed === 0, lines: [`${plural(created.length, "spool")} of ${screen.filament.name} added${failed ? `, ${failed} failed` : ""}`] });
+        home();
+      }
     } else if (screen.name === "labels") {
       const action = labelFormInput(screen.form, input, key);
       if (action.type === "update") setScreen({ ...screen, form: action.state });
@@ -631,7 +653,7 @@ export function App({ initial, onExit }: Props) {
       `BambuStudio: ${values.presetFolder.trim()} · ${printers(values).join(", ")}`,
       `SpoolEase: ${target ? `${target.host}${values.createSpools ? "" : " (register filaments only)"}` : "skipped"}`,
     ];
-    return <HomeMenu items={menuItems()} cursor={screen.cursor} context={context} outcome={labelsDone} />;
+    return <HomeMenu items={menuItems()} cursor={screen.cursor} context={context} outcome={outcome} />;
   }
 
   if (screen.name === "form") {
@@ -695,7 +717,7 @@ export function App({ initial, onExit }: Props) {
         target={target ? `${target.https ? "https" : "http"}://${target.host}:${target.port}` : "skipped"}
         results={screen.results}
         running={screen.running}
-        outcome={labelsDone}
+        outcome={outcome}
       />
     );
   }
@@ -753,7 +775,7 @@ export function App({ initial, onExit }: Props) {
         </Text>
       ))}
       {screen.name === "plan" ? (
-        <Text dimColor>[a] apply · [b] back to {fromSpoolmanDb && catalog ? "filaments" : "settings"} · [q] quit</Text>
+        <Text dimColor>[a] apply · [b] back to {fromSpoolmanDb && catalog ? "filaments" : "menu"} · [q] quit</Text>
       ) : null}
       {screen.name === "done" ? (
         <Box flexDirection="column">
@@ -765,12 +787,12 @@ export function App({ initial, onExit }: Props) {
               ✗ {r.profileName}: {r.detail}
             </Text>
           ))}
-          {labelsDone?.lines.map((line) => (
-            <Text key={line} color={labelsDone.ok ? "green" : "red"}>
-              {labelsDone.ok ? "✓" : "✗"} {line}
+          {outcome?.lines.map((line) => (
+            <Text key={line} color={outcome.ok ? "green" : "red"}>
+              {outcome.ok ? "✓" : "✗"} {line}
             </Text>
           ))}
-          <Text dimColor>{created > 0 ? `[l] labels for ${plural(created, "new spool")} · [q] quit` : "[q] quit"}</Text>
+          <Text dimColor>{created > 0 ? `[l] labels for ${plural(created, "new spool")} · [m] menu · [q] quit` : "[m] menu · [q] quit"}</Text>
         </Box>
       ) : null}
     </Box>

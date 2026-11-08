@@ -179,7 +179,7 @@ describe("TUI", () => {
     expect(frame).toContain(baseFilamentDir(home));
     expect(frame).toContain(`127.0.0.1:${server.port}`);
     expect(frame).toContain("200 g");
-    expect(frame).toContain("[b] back to settings");
+    expect(frame).toContain("[b] back to menu");
     expect(server.requests.map((r) => r.path)).toEqual(["/api/test-key", "/api/spools-config", "/spools-catalog"]);
   });
 
@@ -274,6 +274,8 @@ describe("TUI", () => {
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("existing presets kept"));
     await press(stdin, "b");
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
+    await openSettings(stdin, lastFrame);
     // source, preset folder, printer preset, overwrite presets
     await press(stdin, DOWN, DOWN, DOWN, " ", ESC, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("existing presets replaced"));
@@ -287,7 +289,8 @@ describe("TUI", () => {
     await keepSourceWeights(stdin, lastFrame);
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments + create spools"));
     await press(stdin, "b");
-    // source, preset folder, printer preset, overwrite presets, host, port, key, https, skip, create spools
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
+    await openSettings(stdin, lastFrame);
     // import, preset folder, printers, overwrite presets, skip SpoolEase, create spools
     await press(stdin, DOWN, DOWN, DOWN, DOWN, DOWN, " ", ESC, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("register filaments only"));
@@ -315,6 +318,23 @@ describe("TUI", () => {
     expect(onExit).toHaveBeenCalledWith(1);
   });
 
+  it("still exits 1 when quitting from the menu after a run that failed", async () => {
+    server.replies["/api/spools/add-edit"] = { status: 500, body: "spool store full" };
+    const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
+    await settle();
+    await press(stdin, ENTER);
+    await keepSourceWeights(stdin, lastFrame);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await press(stdin, "a");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 0 written, 3 failed"));
+
+    await press(stdin, "m");
+    await vi.waitFor(() => expect(lastFrame()).toContain("✗ 3 profiles from source.json: 0 written, 3 failed"));
+    await press(stdin, "q", ENTER);
+
+    expect(onExit).toHaveBeenCalledWith(1);
+  });
+
   it("shows key check errors and exits 2", async () => {
     const { lastFrame, stdin } = render(<App initial={values({ securityKey: "WRONG", createSpools: false })} onExit={onExit} />);
     await settle();
@@ -330,16 +350,39 @@ describe("TUI", () => {
     expect(onExit).toHaveBeenCalledWith(2);
   });
 
-  it("goes back from the plan to the form", async () => {
+  it("goes back from an import's plan to the menu it came from", async () => {
     const { lastFrame, stdin } = render(<App initial={values()} onExit={onExit} />);
     await settle();
 
     await press(stdin, ENTER);
     await keepSourceWeights(stdin, lastFrame);
-    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply · [b] back to menu"));
     await press(stdin, "b");
 
-    await vi.waitFor(() => expect(lastFrame()).toContain("Printer preset"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
+  });
+
+  it("returns to the menu after a run, says what it did, and starts the next run with nothing selected", async () => {
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
+    await press(stdin, "r", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig / ABS"));
+    await press(stdin, " ");
+    await vi.waitFor(() => expect(lastFrame()).toContain("1 selected"));
+    await press(stdin, UP, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: RatRig"));
+    await press(stdin, ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    await press(stdin, "a");
+    await vi.waitFor(() => expect(lastFrame()).toContain("[l] labels for 1 new spool · [m] menu · [q] quit"));
+
+    await press(stdin, "m");
+
+    await vi.waitFor(() => expect(lastFrame()).toContain("✓ 1 profile from spoolmandb: 1 written, 0 failed, 1 new spool"));
+    await press(stdin, "a", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("SpoolmanDB: 9 filaments · 0 selected"));
   });
 
   it("searches SpoolmanDB, picks filaments with tab, and applies them", async () => {
