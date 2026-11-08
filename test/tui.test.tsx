@@ -734,6 +734,95 @@ describe("TUI", () => {
       expect(lastFrame()).toContain("Print labels for existing spools");
     });
 
+    describe("more spools of a filament you have", () => {
+      beforeEach(() => {
+        server.spools.push(
+          { id: "1", material_type: "PETG", color_name: "Black", color_code: "000000FF", brand: "Acme", weight_advertised: "1000", slicer_filament: "PA000001" },
+          {
+            id: "2",
+            material_type: "PLA",
+            color_name: "Vivid Yellow",
+            color_code: "F1C400FF",
+            brand: "Sunlu",
+            weight_advertised: "1000",
+            weight_core: "189",
+            slicer_filament: "PA000002",
+          },
+        );
+        server.customFilaments = "PA000002,Sunlu PLA 2.0 Vivid Yellow,200,220,PLA";
+      });
+
+      it("adds copies of a filament's spool without touching presets or the CSV, then labels them", async () => {
+        const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+        await settle();
+
+        await press(stdin, "m", ENTER);
+        // Named from the custom filaments CSV when it lists the code, else from the spool.
+        await vi.waitFor(() => expect(lastFrame()).toMatch(/Acme PETG Black +1 spool[\s\S]*Sunlu PLA 2\.0 Vivid Yellow +1 spool/));
+        await press(stdin, DOWN, ENTER);
+        await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PLA 2.0 Vivid Yellow?"));
+        await press(stdin, DOWN, ENTER);
+        await vi.waitFor(() => expect(lastFrame()).toContain("Add 2 spools of Sunlu PLA 2.0 Vivid Yellow"));
+        expect(lastFrame()).toContain("1000 g on a 189 g spool");
+        expect(server.spools).toHaveLength(2);
+
+        await press(stdin, "a");
+
+        await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 added, 0 failed"));
+        expect(lastFrame()).toContain("[l] labels for 2 new spools");
+        expect(server.spools.slice(2)).toMatchObject([
+          { id: "3", brand: "Sunlu", material_type: "PLA", color_name: "Vivid Yellow", weight_core: "189", slicer_filament: "PA000002" },
+          { id: "4", slicer_filament: "PA000002" },
+        ]);
+        // The key is checked when the list opens and again right before writing.
+        expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual([
+          "/api/test-key",
+          "/api/test-key",
+          "/api/spools/add-edit",
+          "/api/spools/add-edit",
+        ]);
+        await expect(readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).rejects.toThrow("ENOENT");
+
+        await press(stdin, "l");
+        await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 2 new spools: #3, #4"));
+        await press(stdin, ESC);
+        await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 added, 0 failed"));
+        await press(stdin, "m");
+        await vi.waitFor(() => expect(lastFrame()).toContain("More spools of a filament you have"));
+      });
+
+      it("goes back a step at a time and keeps what was chosen", async () => {
+        const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+        await settle();
+        await press(stdin, "m", ENTER);
+        await vi.waitFor(() => expect(lastFrame()).toContain("Which filament?"));
+        await press(stdin, DOWN, ENTER);
+        await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools"));
+        await press(stdin, "3", ENTER);
+        await vi.waitFor(() => expect(lastFrame()).toContain("Add 3 spools of Sunlu"));
+
+        await press(stdin, "b");
+        await vi.waitFor(() => expect(lastFrame()).toContain("› (*) 3 spools"));
+        await press(stdin, ESC);
+        await vi.waitFor(() => expect(lastFrame()).toMatch(/› \(\*\) Sunlu PLA 2\.0 Vivid Yellow/));
+        await press(stdin, ESC);
+
+        await vi.waitFor(() => expect(lastFrame()).toContain("More spools of a filament you have"));
+        expect(server.spools).toHaveLength(2);
+      });
+
+      it("says so when no spool on the console has a filament code to copy", async () => {
+        server.spools.splice(0, 2, { id: "1", brand: "Acme" });
+        const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+        await settle();
+
+        await press(stdin, "m", ENTER);
+
+        await vi.waitFor(() => expect(lastFrame()).toContain("No spool on the console has a filament code to copy"));
+        expect(lastFrame()).toContain("More spools of a filament you have");
+      });
+    });
+
     it("offers no labels when the run created no spools", async () => {
       const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
       await settle();

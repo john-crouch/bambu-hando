@@ -1,4 +1,4 @@
-// ABOUTME: TUI start menu: add spools from SpoolmanDB, import the --source file, label existing spools, settings, quit.
+// ABOUTME: TUI start menu: add spools from SpoolmanDB, import the --source file, more spools, label existing spools, settings, quit.
 // ABOUTME: Key handling is a pure function so App's always-on useInput can drive it without a listener of its own.
 
 import { basename } from "node:path";
@@ -10,7 +10,7 @@ import { listMove, typeAhead, typedLetter } from "./menu.js";
 
 const LABEL_WIDTH = 46;
 
-export type HomeId = "spoolmandb" | "import" | "labels" | "settings" | "quit";
+export type HomeId = "spoolmandb" | "import" | "more" | "labels" | "settings" | "quit";
 
 export interface HomeItem {
   id: HomeId;
@@ -20,12 +20,13 @@ export interface HomeItem {
 
 export type HomeAction = { type: "move"; cursor: number } | { type: "choose"; id: HomeId } | { type: "none" };
 
-/** SpoolmanDB, settings and quit, plus import for a file or URL source and labels when SpoolEase is set up. */
+/** SpoolmanDB, settings and quit, plus import for a file or URL source, and more spools and labels when SpoolEase is set up. */
 export function homeItems(source: string, spoolease: boolean): HomeItem[] {
   const file = source.trim();
   return [
     { id: "spoolmandb", label: "Add spools from SpoolmanDB", detail: "browse brands, materials and colors" },
     ...(file && file !== SPOOLMANDB_SOURCE ? [{ id: "import" as const, label: `Import ${basename(file)}`, detail: "sync the profiles it lists" }] : []),
+    ...(spoolease ? [{ id: "more" as const, label: "More spools of a filament you have", detail: "copy a spool already on your console" }] : []),
     ...(spoolease ? [{ id: "labels" as const, label: "Print labels for existing spools", detail: "pick spools on your SpoolEase console" }] : []),
     { id: "settings", label: "Settings", detail: "BambuStudio folder and printers, SpoolEase" },
     { id: "quit", label: "Quit", detail: "" },

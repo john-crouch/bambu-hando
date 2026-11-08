@@ -203,6 +203,11 @@ export class SpoolEaseClient {
     return this.write("/api/spools/add-edit", spoolPayload(profile));
   }
 
+  /** Create a spool record from a ready AddSpoolDTO payload (spoolCopyPayload). */
+  addSpoolCopy(payload: Record<string, unknown>): Promise<SpoolEaseWrite> {
+    return this.write("/api/spools/add-edit", payload);
+  }
+
   setCustomFilamentsCsv(csvText: string): Promise<SpoolEaseWrite> {
     return this.write("/api/filaments-config", { custom_filaments: csvText });
   }

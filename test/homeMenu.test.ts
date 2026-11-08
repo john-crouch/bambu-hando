@@ -74,19 +74,19 @@ describe("listMove", () => {
 });
 
 describe("homeItems", () => {
-  it("offers SpoolmanDB, labels for existing spools, settings and quit", () => {
-    expect(homeItems("spoolmandb", true).map((i) => i.id)).toEqual(["spoolmandb", "labels", "settings", "quit"]);
-    expect(homeItems("", true).map((i) => i.id)).toEqual(["spoolmandb", "labels", "settings", "quit"]);
+  it("offers SpoolmanDB, more spools of a filament, labels for existing spools, settings and quit", () => {
+    expect(homeItems("spoolmandb", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "labels", "settings", "quit"]);
+    expect(homeItems("", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "labels", "settings", "quit"]);
   });
 
-  it("leaves labels out when SpoolEase is skipped", () => {
+  it("leaves out what needs the console when SpoolEase is skipped", () => {
     expect(homeItems("spoolmandb", false).map((i) => i.id)).toEqual(["spoolmandb", "settings", "quit"]);
   });
 
   it("adds an import item for a file or URL source", () => {
     const items = homeItems("/tmp/profiles.json", true);
 
-    expect(items.map((i) => i.id)).toEqual(["spoolmandb", "import", "labels", "settings", "quit"]);
+    expect(items.map((i) => i.id)).toEqual(["spoolmandb", "import", "more", "labels", "settings", "quit"]);
     expect(items[1]?.label).toBe("Import profiles.json");
     expect(homeItems("https://example.com/shared/list.json", true)[1]?.label).toBe("Import list.json");
   });
@@ -102,8 +102,8 @@ describe("homeInput", () => {
 
   it("moves, jumps by letter, and chooses with enter", () => {
     expect(homeInput(0, "", key({ downArrow: true }), items)).toEqual({ type: "move", cursor: 1 });
-    expect(homeInput(0, "s", key(), items)).toEqual({ type: "move", cursor: 3 });
-    expect(homeInput(3, "", key({ return: true }), items)).toEqual({ type: "choose", id: "settings" });
+    expect(homeInput(0, "s", key(), items)).toEqual({ type: "move", cursor: 4 });
+    expect(homeInput(4, "", key({ return: true }), items)).toEqual({ type: "choose", id: "settings" });
   });
 
   it("ignores other keys", () => {

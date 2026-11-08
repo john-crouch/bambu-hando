@@ -14,7 +14,8 @@ import { loadLabelSettings, saveLabelSettings } from "../labelSettings.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
 import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot } from "../paths.js";
 import { loadProfiles } from "../sources.js";
-import { SpoolEaseClient, type SpoolEaseConnection } from "../spoolease.js";
+import { SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite } from "../spoolease.js";
+import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
@@ -25,6 +26,7 @@ import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js
 import { initialPickerState, Picker, pickerInput } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, SetupForm } from "./SetupForm.js";
+import { SpoolCopies } from "./SpoolCopies.js";
 import {
   initialLabelForm,
   LabelForm,
@@ -69,9 +71,14 @@ type Screen =
   | { name: "plan"; profiles: FilamentProfile[] }
   | { name: "running"; profiles: FilamentProfile[] }
   | { name: "done"; profiles: FilamentProfile[]; results: SyncResult[] }
+  /** More spools of a filament the console has: results is null until applied, then fills in one copy at a time. */
+  | { name: "copies"; filaments: CopyableFilament[]; filament: CopyableFilament; count: number; results: SpoolEaseWrite[] | null; running: boolean }
   /** Labels for spoolIds; back is the screen esc and making the labels return to (the summary or the menu). */
   | { name: "labels"; spoolIds: string[]; fresh: boolean; form: LabelFormState; back: Screen }
   | { name: "error"; message: string; exitCode: number };
+
+/** How many copies the count list offers. */
+const MAX_COPIES = 8;
 
 const STAGE_LABELS: Record<SyncStage, string> = {
   presets: "Writing BambuStudio presets",
@@ -341,6 +348,78 @@ export function App({ initial, onExit }: Props) {
     }
   }
 
+  /** Filaments with spools on the console, to add more spools of one. */
+  async function openMoreSpools(): Promise<void> {
+    const target = connection(values);
+    if (!target) return;
+    setLabelsDone(null);
+    setScreen({ name: "loading", message: "Reading spools from SpoolEase…" });
+    try {
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      const spools = await client.listSpools();
+      // Names only make the list nicer; spools carry everything a copy needs.
+      const names = await client.getCustomFilaments().catch(() => new Map());
+      const filaments = copyableFilaments(spools, names);
+      if (filaments.length === 0) {
+        setLabelsDone({ ok: false, lines: ["No spool on the console has a filament code to copy"] });
+        home();
+        return;
+      }
+      chooseCopyFilament(filaments, null);
+    } catch (err) {
+      setLabelsDone({ ok: false, lines: [`Couldn't read the spools: ${errorMessage(err)}`] });
+      home();
+    }
+  }
+
+  function chooseCopyFilament(filaments: CopyableFilament[], current: string | null): void {
+    const items = filaments.map((f) => ({ value: f.code, label: f.name, detail: plural(f.count, "spool") }));
+    setScreen({
+      name: "choose",
+      title: "Which filament? (more spools of one you have)",
+      items,
+      multi: false,
+      state: initialChoiceState(items, current ? [current] : []),
+      onDone: ([code]) => chooseCopyCount(filaments, filaments.find((f) => f.code === code)!, 1),
+      onCancel: home,
+    });
+  }
+
+  function chooseCopyCount(filaments: CopyableFilament[], filament: CopyableFilament, current: number): void {
+    const items = Array.from({ length: MAX_COPIES }, (_, i) => ({ value: String(i + 1), label: plural(i + 1, "spool") }));
+    setScreen({
+      name: "choose",
+      title: `How many new spools of ${filament.name}?`,
+      items,
+      multi: false,
+      state: initialChoiceState(items, [String(current)]),
+      onDone: ([count]) => setScreen({ name: "copies", filaments, filament, count: Number(count), results: null, running: false }),
+      onCancel: () => chooseCopyFilament(filaments, filament.code),
+    });
+  }
+
+  async function addCopies(filament: CopyableFilament, count: number): Promise<void> {
+    const target = connection(values);
+    if (!target) return;
+    setLabelsDone(null);
+    const update = (changes: { results?: SpoolEaseWrite[]; running?: boolean }) =>
+      setScreen((s) => (s.name === "copies" ? { ...s, ...changes } : s));
+    update({ results: [], running: true });
+    const results: SpoolEaseWrite[] = [];
+    try {
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      await addSpoolCopies(client, filament, count, (_, result) => {
+        results.push(result);
+        update({ results: [...results] });
+      });
+    } catch (err) {
+      results.push({ ok: false, error: errorMessage(err) });
+    }
+    update({ results: [...results], running: false });
+  }
+
   async function printLabels(spoolIds: string[], back: Screen, form: LabelFormState, target: LabelTarget): Promise<void> {
     const spoolease = connection(values);
     setScreen({ name: "loading", message: "Making labels…" });
@@ -380,6 +459,7 @@ export function App({ initial, onExit }: Props) {
       else if (action.type === "choose") {
         if (action.id === "spoolmandb") void loadPlan(SPOOLMANDB_SOURCE);
         else if (action.id === "import") void loadPlan(values.source);
+        else if (action.id === "more") void openMoreSpools();
         else if (action.id === "labels") void openSpoolLabels();
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
         else onExit(0);
@@ -434,6 +514,15 @@ export function App({ initial, onExit }: Props) {
     } else if (screen.name === "done") {
       if (input === "q") onExit(screen.results.some(resultFailed) ? 1 : 0);
       else if (input === "l" && newSpoolIds(screen.results).length > 0) void openLabels(newSpoolIds(screen.results), true, screen);
+    } else if (screen.name === "copies") {
+      if (screen.running) return;
+      const created = (screen.results ?? []).flatMap((r) => (r.ok ? [r.id] : []));
+      if (input === "q") onExit(screen.results?.some((r) => !r.ok) ? 1 : 0);
+      else if (screen.results === null) {
+        if (input === "a") void addCopies(screen.filament, screen.count);
+        else if (input === "b") chooseCopyCount(screen.filaments, screen.filament, screen.count);
+      } else if (input === "l" && created.length > 0) void openLabels(created, true, screen);
+      else if (input === "m") home();
     } else if (screen.name === "labels") {
       const action = labelFormInput(screen.form, input, key);
       if (action.type === "update") setScreen({ ...screen, form: action.state });
@@ -518,6 +607,20 @@ export function App({ initial, onExit }: Props) {
 
   if (screen.name === "pick") {
     return <Picker catalogSize={catalog?.profiles.length ?? 0} matches={matches} state={picker} warnings={catalog?.warnings ?? []} />;
+  }
+
+  if (screen.name === "copies") {
+    const target = connection(values);
+    return (
+      <SpoolCopies
+        filament={screen.filament}
+        count={screen.count}
+        target={target ? `${target.https ? "https" : "http"}://${target.host}:${target.port}` : "skipped"}
+        results={screen.results}
+        running={screen.running}
+        outcome={labelsDone}
+      />
+    );
   }
 
   if (screen.name === "labels") {
