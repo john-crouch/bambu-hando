@@ -837,8 +837,8 @@ describe("TUI", () => {
       await settle();
 
       await press(stdin, "p", ENTER);
-      // Newest first.
-      await vi.waitFor(() => expect(lastFrame()).toMatch(/› \[ \] #2 Sunlu PLA Vivid Yellow[\s\S]*#1 Acme PETG Black/));
+      // Newest first, each with a swatch of its color between the mark and the name.
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/› \[ \] {4}#2 Sunlu PLA Vivid Yellow[\s\S]*#1 Acme PETG Black/));
       await press(stdin, " ", ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 1 spool: #2"));
       await press(stdin, UP, UP, ENTER);
@@ -887,7 +887,7 @@ describe("TUI", () => {
 
         await press(stdin, "m", ENTER);
         // Named from the custom filaments CSV when it lists the code, else from the spool.
-        await vi.waitFor(() => expect(lastFrame()).toMatch(/Acme PETG Black +1 spool[\s\S]*Sunlu PLA 2\.0 Vivid Yellow +1 spool/));
+        await vi.waitFor(() => expect(lastFrame()).toMatch(/› \( \) {4}Acme PETG Black +1 spool[\s\S]*Sunlu PLA 2\.0 Vivid Yellow +1 spool/));
         await press(stdin, DOWN, ENTER);
         await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PLA 2.0 Vivid Yellow?"));
         await press(stdin, DOWN, ENTER);
@@ -933,7 +933,7 @@ describe("TUI", () => {
         await press(stdin, "b");
         await vi.waitFor(() => expect(lastFrame()).toContain("› (*) 3 spools"));
         await press(stdin, ESC);
-        await vi.waitFor(() => expect(lastFrame()).toMatch(/› \(\*\) Sunlu PLA 2\.0 Vivid Yellow/));
+        await vi.waitFor(() => expect(lastFrame()).toMatch(/› \(\*\) +Sunlu PLA 2\.0 Vivid Yellow/));
         await press(stdin, ESC);
 
         await vi.waitFor(() => expect(lastFrame()).toContain("More spools of a filament you have"));

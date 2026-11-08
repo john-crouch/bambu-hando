@@ -124,6 +124,12 @@ function newSpoolIds(results: SyncResult[]): string[] {
   return results.map((r) => r.spoolId).filter((id): id is string => Boolean(id));
 }
 
+/** A spool's (first) color as "#RRGGBB" for a list swatch. */
+function swatchOf(colorCodes: string[]): string | undefined {
+  const code = colorCodes[0];
+  return code && /^[0-9A-F]{6}/i.test(code) ? `#${code.slice(0, 6)}` : undefined;
+}
+
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
@@ -343,7 +349,11 @@ export function App({ initial, onExit }: Props) {
       }
       const items = [...spools]
         .sort((a, b) => Number(b.id) - Number(a.id))
-        .map((spool) => ({ value: spool.id, label: `#${spool.id} ${[spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ")}` }));
+        .map((spool) => ({
+          value: spool.id,
+          label: `#${spool.id} ${[spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ")}`,
+          swatch: swatchOf(spool.colorCodes),
+        }));
       setScreen({
         name: "choose",
         title: "Spools to label",
@@ -385,7 +395,7 @@ export function App({ initial, onExit }: Props) {
   }
 
   function chooseCopyFilament(filaments: CopyableFilament[], current: string | null): void {
-    const items = filaments.map((f) => ({ value: f.code, label: f.name, detail: plural(f.count, "spool") }));
+    const items = filaments.map((f) => ({ value: f.code, label: f.name, detail: plural(f.count, "spool"), swatch: swatchOf(f.spool.colorCodes) }));
     setScreen({
       name: "choose",
       title: "Which filament? (more spools of one you have)",
