@@ -53,9 +53,9 @@ describe("readUserPresets", () => {
     const { presets, warnings } = await readUserPresets("default");
 
     expect(presets).toEqual([
-      { name: "Acme PLA Red", filamentId: "PA000001", printer: "Printer A" },
-      { name: "Rock", filamentId: "", printer: "Printer A" },
-      { name: "Own", filamentId: "PA000002", printer: "Printer B" },
+      { name: "Acme PLA Red", filamentId: "PA000001", printer: "Printer A", path: join(base, "Acme PLA Red @Printer A.json") },
+      { name: "Rock", filamentId: "", printer: "Printer A", path: join(base, "Rock @Printer A.json") },
+      { name: "Own", filamentId: "PA000002", printer: "Printer B", path: join(base, "..", "Own @Printer B.json") },
     ]);
     expect(warnings).toEqual([expect.stringMatching(/^Couldn't read BambuStudio preset .*broken\.json: /)]);
   });
@@ -67,9 +67,9 @@ describe("readUserPresets", () => {
 
 describe("checkSync", () => {
   const presets: UserPreset[] = [
-    { name: "Acme PLA Red", filamentId: "PA000001", printer: "Printer A" },
-    { name: "Acme PLA Red", filamentId: "PA000001", printer: "Printer B" },
-    { name: "Studio Only", filamentId: "PA000009", printer: "Printer A" },
+    { name: "Acme PLA Red", filamentId: "PA000001", printer: "Printer A", path: "" },
+    { name: "Acme PLA Red", filamentId: "PA000001", printer: "Printer B", path: "" },
+    { name: "Studio Only", filamentId: "PA000009", printer: "Printer A", path: "" },
   ];
   const csv = "PA000001,Acme PLA Red,200,220,PLA\r\nPA000002,No Preset,200,220,PLA";
 
@@ -99,7 +99,7 @@ describe("checkSync", () => {
   });
 
   it("lists presets without a filament ID once per filament, as notes", () => {
-    const noId = [...presets, { name: "Rock", filamentId: "", printer: "Printer A" }, { name: "Rock", filamentId: "", printer: "Printer B" }];
+    const noId = [...presets, { name: "Rock", filamentId: "", printer: "Printer A", path: "" }, { name: "Rock", filamentId: "", printer: "Printer B", path: "" }];
 
     expect(section("presetsNoId", checkSync({ presets: noId, csv, spools: [] }))).toMatchObject({ problem: false, items: ["Rock · Printer A, Printer B"] });
     expect(section("presetsOnly", checkSync({ presets: noId, csv, spools: [] })).items).toEqual(["Studio Only (PA000009) · Printer A"]);

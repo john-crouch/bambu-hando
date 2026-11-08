@@ -48,11 +48,12 @@ describe("checkInput", () => {
     expect(checkInput(0, "", key({ downArrow: true }), 10, 20)).toEqual({ type: "scroll", top: 0 });
   });
 
-  it("goes back with escape or b, checks again with r, and quits with q", () => {
+  it("goes back with escape or b, checks again with r, fixes IDs with f, and quits with q", () => {
     expect(checkInput(0, "", key({ escape: true }), 5, 20)).toEqual({ type: "back" });
     expect(checkInput(0, "b", key(), 5, 20)).toEqual({ type: "back" });
     expect(checkInput(0, "r", key(), 5, 20)).toEqual({ type: "again" });
     expect(checkInput(0, "q", key(), 5, 20)).toEqual({ type: "quit" });
+    expect(checkInput(0, "f", key(), 5, 20)).toEqual({ type: "fix" });
     expect(checkInput(0, "x", key(), 5, 20)).toEqual({ type: "none" });
   });
 });

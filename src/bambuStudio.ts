@@ -115,7 +115,8 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
-async function writeAtomic(path: string, content: string): Promise<void> {
+/** Writes through a temporary file and a rename, so a reader never sees half a file. */
+export async function writeAtomic(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temp = `${path}.tmp`;
   await writeFile(temp, content, "utf-8");

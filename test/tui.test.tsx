@@ -791,6 +791,33 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Check sync"));
   });
 
+  it("gives presets without a filament ID the one BambuStudio would make, from the check", async () => {
+    const base = baseFilamentDir(home);
+    await mkdir(base, { recursive: true });
+    const rock = join(base, `Rock PLA @${X1C_04}.json`);
+    await writeFile(rock, `${JSON.stringify({ name: `Rock PLA @${X1C_04}`, inherits: "", filament_id: "null" }, null, 4)}\n`);
+    await writeFile(join(base, `Rock PLA @${X1C_04}.info`), "sync_info = \nupdated_time = 1700000000\n");
+    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await settle();
+
+    await press(stdin, "c", ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[f] give 1 preset a filament ID"));
+    await press(stdin, "f");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Give 1 BambuStudio preset a filament ID"));
+    expect(lastFrame()).toMatch(new RegExp(`Rock PLA @${X1C_04.replace(/[.]/g, "\\.")}\\.json +${derivedFilamentId("Rock PLA")}`));
+    expect(JSON.parse(await readFile(rock, "utf-8")).filament_id).toBe("null");
+
+    await press(stdin, "a");
+    await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 preset given an ID, 0 failed"));
+    expect(JSON.parse(await readFile(rock, "utf-8")).filament_id).toBe(derivedFilamentId("Rock PLA"));
+    expect(await readFile(join(base, `Rock PLA @${X1C_04}.info`), "utf-8")).not.toContain("updated_time = 1700000000");
+
+    // Back to the check, which looks again: the preset now has an ID SpoolEase doesn't know, a note.
+    await press(stdin, "b");
+    await vi.waitFor(() => expect(lastFrame()).toContain("✓ BambuStudio presets without a filament ID: none"));
+    expect(lastFrame()).toContain(`Rock PLA (${derivedFilamentId("Rock PLA")})`);
+  });
+
   it("shows SpoolmanDB download errors on the form", async () => {
     spoolmanDb.failWith = 503;
     const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);

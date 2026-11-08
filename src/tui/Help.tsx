@@ -3,7 +3,7 @@
 
 import { Box, Text } from "ink";
 
-export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "error"] as const;
+export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "error"] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
 
@@ -101,7 +101,13 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
       return {
         title: "the sync check",
         about: "Where BambuStudio and SpoolEase disagree, problems first; it changes nothing.",
-        keys: [["↑/↓", "scroll"], PAGE, ["[r]", "check again"], ["[b] or esc", "back to the menu"], ["[q]", "quit"], QUIT],
+        keys: [["↑/↓", "scroll"], PAGE, ["[f]", "give presets without a filament ID one"], ["[r]", "check again"], ["[b] or esc", "back to the menu"], ["[q]", "quit"], QUIT],
+      };
+    case "ids":
+      return {
+        title: "filament IDs",
+        about: "Presets without a filament ID get the one BambuStudio would give them.",
+        keys: [["[a]", "write the IDs into the presets"], ["[b]", "back to the check, which looks again"], ["[m]", "back to the menu, once written"], ["[q]", "quit"], QUIT],
       };
     case "error":
       return {

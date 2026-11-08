@@ -17,13 +17,14 @@ export function checkRows(height: number | undefined, warnings: number): number 
   return listRows(height, CHROME + warnings, CHECK_ROWS);
 }
 
-export type CheckAction = { type: "scroll"; top: number } | { type: "back" } | { type: "again" } | { type: "quit" } | { type: "none" };
+export type CheckAction = { type: "scroll"; top: number } | { type: "back" } | { type: "again" } | { type: "fix" } | { type: "quit" } | { type: "none" };
 
 export function checkInput(top: number, input: string, key: Key, lineCount: number, rows: number = CHECK_ROWS): CheckAction {
   const last = Math.max(0, lineCount - rows);
   const scroll = (to: number): CheckAction => ({ type: "scroll", top: Math.max(0, Math.min(to, last)) });
   if (key.escape || input === "b") return { type: "back" };
   if (input === "r") return { type: "again" };
+  if (input === "f") return { type: "fix" };
   if (input === "q") return { type: "quit" };
   if (key.upArrow) return scroll(top - 1);
   if (key.downArrow) return scroll(top + 1);
@@ -46,11 +47,13 @@ interface Props {
   /** What was compared, e.g. "BambuStudio default · SpoolEase http://host:80". */
   compared: string;
   warnings: string[];
+  /** Presets without a filament ID that [f] can give one. */
+  fixable?: number;
   /** The terminal's height in rows, when known. */
   height?: number;
 }
 
-export function SyncCheck({ sections, top, compared, warnings, height }: Props) {
+export function SyncCheck({ sections, top, compared, warnings, fixable = 0, height }: Props) {
   const lines = checkLines(sections);
   const rows = checkRows(height, warnings.length);
   const shown = lines.slice(top, top + rows);
@@ -77,7 +80,10 @@ export function SyncCheck({ sections, top, compared, warnings, height }: Props) 
         ))}
         {more > 0 ? <Text dimColor>… {more} more</Text> : null}
       </Box>
-      <Text dimColor>{lines.length > rows ? "↑/↓ scroll · " : ""}[r] check again · [b] back to menu · [q] quit · ? help</Text>
+      <Text dimColor>
+        {lines.length > rows ? "↑/↓ scroll · " : ""}
+        {fixable > 0 ? `[f] give ${fixable} preset${fixable === 1 ? "" : "s"} a filament ID · ` : ""}[r] check again · [b] back to menu · [q] quit · ? help
+      </Text>
     </Box>
   );
 }

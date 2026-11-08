@@ -199,7 +199,9 @@ bambu-hando check                         # text report
 bambu-hando check --json > check.json     # snake_case JSON: summary, sections, warnings
 ```
 
-It exits `0` when there are no problems (notes don't count), `1` when there are, and `2` for invalid arguments or a rejected key, so it works from cron or a script after changing presets in BambuStudio. `--preset-folder` and the SpoolEase flags work as for a sync, with the same defaults.
+In the TUI, `f` on Check sync gives presets without a filament ID (missing, or the string `"null"`, seen in presets made outside BambuStudio's Create filament) the ID Create filament would give them, `P` plus the start of the md5 of the filament's name, the same for every printer's preset. It lists each file and its ID first and writes nothing until `a`; logged in, BambuStudio uploads the change on its next sync. A preset that has an ID by the time `a` is pressed is left alone.
+
+`bambu-hando check` exits `0` when there are no problems (notes don't count), `1` when there are, and `2` for invalid arguments or a rejected key, so it works from cron or a script after changing presets in BambuStudio. `--preset-folder` and the SpoolEase flags work as for a sync, with the same defaults.
 
 ## Safety behavior
 

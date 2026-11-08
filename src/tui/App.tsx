@@ -15,6 +15,7 @@ import { loadLabelSettings, saveLabelSettings } from "../labelSettings.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
 import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot, tildePath } from "../paths.js";
 import { type ConsoleState, type ProfilePlan, previewPlan } from "../planPreview.js";
+import { fixPresetIds, type IdFix, type IdFixResult, idFixes } from "../presetIds.js";
 import { loadProfiles } from "../sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite } from "../spoolease.js";
 import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
@@ -32,6 +33,7 @@ import { PlanNotes, PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, formTyping, SetupForm } from "./SetupForm.js";
 import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, colorFormTyping, initialColorForm } from "./ColorForm.js";
 import { Help, type HelpTopic } from "./Help.js";
+import { PresetIds } from "./PresetIds.js";
 import { SpoolCopies } from "./SpoolCopies.js";
 import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
 import { useTerminalRows } from "./screenSize.js";
@@ -87,8 +89,10 @@ type Screen =
   | { name: "copies"; filaments: CopyableFilament[]; filament: CopyableFilament; count: number; results: SpoolEaseWrite[] | null; running: boolean }
   /** Labels for spoolIds; back is the screen esc and making the labels return to (the summary or the menu). */
   | { name: "labels"; spoolIds: string[]; fresh: boolean; form: LabelFormState; back: Screen }
-  /** The read-only sync check; top is the first report line on screen. */
-  | { name: "check"; sections: CheckSection[]; warnings: string[]; top: number }
+  /** The read-only sync check; top is the first report line on screen; fixes, presets [f] can give an ID. */
+  | { name: "check"; sections: CheckSection[]; warnings: string[]; top: number; fixes: IdFix[] }
+  /** Filament IDs for presets without one: results is null until written. */
+  | { name: "ids"; fixes: IdFix[]; results: IdFixResult[] | null; running: boolean }
   | { name: "error"; message: string; exitCode: number }
   /** The help page for back, which any key returns to. */
   | { name: "help"; topic: HelpTopic; multi: boolean; back: Screen };
@@ -485,12 +489,20 @@ export function App({ initial, onExit }: Props) {
     try {
       const client = new SpoolEaseClient(target);
       await checkKey(client);
-      const { sections, warnings } = await readCheck(client, values.presetFolder.trim());
-      setScreen({ name: "check", sections, warnings, top: 0 });
+      const { sections, warnings, presets } = await readCheck(client, values.presetFolder.trim());
+      setScreen({ name: "check", sections, warnings, top: 0, fixes: idFixes(presets) });
     } catch (err) {
       setOutcome({ ok: false, lines: [`Couldn't check: ${errorMessage(err)}`] });
       home();
     }
+  }
+
+  /** Writes the IDs, then shows each preset's result. */
+  async function writeIds(fixes: IdFix[]): Promise<void> {
+    setScreen({ name: "ids", fixes, results: null, running: true });
+    const results = await fixPresetIds(fixes);
+    if (results.some((r) => !r.ok)) setRunFailed(true);
+    setScreen({ name: "ids", fixes, results, running: false });
   }
 
   /** Back to the menu after a run, saying what it did; the next run starts with nothing selected. */
@@ -547,7 +559,8 @@ export function App({ initial, onExit }: Props) {
       case "labels":
         return labelFormTyping(s.form) ? null : page("labels");
       case "copies":
-        return s.running ? null : page("copies");
+      case "ids":
+        return s.running ? null : page(s.name);
       case "loading":
       case "running":
       case "help":
@@ -712,7 +725,19 @@ export function App({ initial, onExit }: Props) {
       if (action.type === "scroll") setScreen({ ...screen, top: action.top });
       else if (action.type === "back") home();
       else if (action.type === "again") void openCheck();
+      else if (action.type === "fix" && screen.fixes.length > 0) setScreen({ name: "ids", fixes: screen.fixes, results: null, running: false });
       else if (action.type === "quit") onExit(0);
+    } else if (screen.name === "ids") {
+      if (screen.running) return;
+      if (input === "q") onExit(runFailed ? 1 : 0);
+      else if (input === "b") void openCheck();
+      else if (input === "a" && screen.results === null) void writeIds(screen.fixes);
+      else if (input === "m" && screen.results !== null) {
+        const written = screen.results.filter((r) => r.ok).length;
+        const failed = screen.results.length - written;
+        setOutcome({ ok: failed === 0, lines: [`${plural(written, "BambuStudio preset")} given a filament ID${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load`] });
+        home();
+      }
     } else if (screen.name === "error") {
       if (input === "b") setScreen({ name: "form", error: "" });
       else if (input === "q") onExit(screen.exitCode);
@@ -798,7 +823,11 @@ export function App({ initial, onExit }: Props) {
   if (screen.name === "check") {
     const target = connection(values);
     const compared = `BambuStudio ${values.presetFolder.trim()} · SpoolEase ${target ? `${target.host}:${target.port}` : "skipped"}`;
-    return <SyncCheck sections={screen.sections} top={screen.top} compared={compared} warnings={screen.warnings} height={height} />;
+    return <SyncCheck sections={screen.sections} top={screen.top} compared={compared} warnings={screen.warnings} fixable={screen.fixes.length} height={height} />;
+  }
+
+  if (screen.name === "ids") {
+    return <PresetIds fixes={screen.fixes} results={screen.results} running={screen.running} />;
   }
 
   if (screen.name === "labels") {

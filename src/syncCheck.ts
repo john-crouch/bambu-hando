@@ -15,6 +15,8 @@ export interface UserPreset {
   /** "" when the preset has none, or the string "null". */
   filamentId: string;
   printer: string;
+  /** The preset's file. */
+  path: string;
 }
 
 export interface CheckSection {
@@ -58,7 +60,7 @@ export async function readUserPresets(presetFolder: string): Promise<{ presets: 
       // Seen in real presets made outside BambuStudio's Create filament: the string "null" as the ID.
       const id = typeof preset.filament_id === "string" && preset.filament_id !== "null" ? preset.filament_id : "";
       const name = typeof preset.name === "string" && preset.name ? preset.name : file.slice(0, -".json".length);
-      presets.push({ ...splitPresetName(name), filamentId: id });
+      presets.push({ ...splitPresetName(name), filamentId: id, path });
     }
   }
   return { presets, warnings };
@@ -193,7 +195,10 @@ export function checkSummary(sections: CheckSection[]): string {
 }
 
 /** Reads the preset folder's presets and the console's custom filaments and spools, and checks them; writes nothing. */
-export async function readCheck(client: SpoolEaseClient, presetFolder: string): Promise<{ sections: CheckSection[]; warnings: string[] }> {
+export async function readCheck(
+  client: SpoolEaseClient,
+  presetFolder: string,
+): Promise<{ sections: CheckSection[]; warnings: string[]; presets: UserPreset[] }> {
   const [{ presets, warnings }, csv, spools] = await Promise.all([readUserPresets(presetFolder), client.getCustomFilamentsCsv(), client.listSpools()]);
-  return { sections: checkSync({ presets, csv, spools }), warnings };
+  return { sections: checkSync({ presets, csv, spools }), warnings, presets };
 }
