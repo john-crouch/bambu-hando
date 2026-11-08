@@ -3,7 +3,7 @@
 
 import { Box, type Key, Text } from "ink";
 
-import type { CheckSection } from "../syncCheck.js";
+import { type CheckLine, checkLines, type CheckSection, checkSummary } from "../syncCheck.js";
 import { listRows } from "./screenSize.js";
 
 /** Report lines on screen at once when the terminal's height is unknown. */
@@ -17,34 +17,7 @@ export function checkRows(height: number | undefined, warnings: number): number 
   return listRows(height, CHROME + warnings, CHECK_ROWS);
 }
 
-export interface CheckLine {
-  tone: "problem" | "note" | "ok" | "why" | "item";
-  text: string;
-}
-
 export type CheckAction = { type: "scroll"; top: number } | { type: "back" } | { type: "again" } | { type: "quit" } | { type: "none" };
-
-export function checkLines(sections: CheckSection[]): CheckLine[] {
-  return sections.flatMap((section): CheckLine[] => {
-    if (section.items.length === 0) return [{ tone: "ok", text: `✓ ${section.title}: none` }];
-    return [
-      { tone: section.problem ? "problem" : "note", text: `${section.problem ? "✗" : "!"} ${section.title}: ${section.items.length}` },
-      { tone: "why", text: `  ${section.why}` },
-      ...section.items.map((item): CheckLine => ({ tone: "item", text: `    ${item}` })),
-    ];
-  });
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-export function checkSummary(sections: CheckSection[]): string {
-  const count = (problem: boolean) => sections.filter((s) => s.problem === problem).reduce((sum, s) => sum + s.items.length, 0);
-  const problems = count(true);
-  const notes = count(false);
-  return problems + notes === 0 ? "Everything lines up" : `${plural(problems, "problem")}, ${plural(notes, "note")}`;
-}
 
 export function checkInput(top: number, input: string, key: Key, lineCount: number, rows: number = CHECK_ROWS): CheckAction {
   const last = Math.max(0, lineCount - rows);

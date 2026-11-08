@@ -4,8 +4,8 @@
 import type { Key } from "ink";
 import { describe, expect, it } from "vitest";
 
-import type { CheckSection } from "../src/syncCheck.js";
-import { checkInput, checkLines, checkSummary } from "../src/tui/SyncCheck.js";
+import { type CheckSection, checkLines, checkSummary } from "../src/syncCheck.js";
+import { checkInput } from "../src/tui/SyncCheck.js";
 
 function key(overrides: Partial<Key> = {}): Key {
   return overrides as Key;

@@ -705,3 +705,105 @@ describe("cli sync labels", () => {
     expect(stderr).toContain(`bambu-hando: error: ${message}`);
   });
 });
+
+describe("cli check", () => {
+  let server: SpoolEaseServer;
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "bambu-hando-home-"));
+    vi.stubEnv("HOME", home);
+    await installBambuStudio(home, { presetFolder: "1234567890" });
+    vi.stubEnv("SPOOLEASE_HOST", undefined);
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
+    server = await startSpoolEaseServer();
+  });
+
+  afterEach(async () => {
+    await server.close();
+  });
+
+  const spooleaseArgs = (key = TEST_SECURITY_KEY): string[] => [
+    "--spoolease-host",
+    "127.0.0.1",
+    "--spoolease-port",
+    String(server.port),
+    "--spoolease-security-key",
+    key,
+  ];
+
+  // A sync leaves presets, custom filaments and spools that line up.
+  async function synced(): Promise<void> {
+    const { code } = await run(["--source", SOURCE_FIXTURE, ...spooleaseArgs()]);
+    expect(code).toBe(0);
+  }
+
+  it("reports that everything lines up after a sync, reads only, and exits 0", async () => {
+    await synced();
+    const before = server.requests.length;
+
+    const { code, stdout } = await run(["check", ...spooleaseArgs()]);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain("Sync check: BambuStudio 1234567890 · SpoolEase 127.0.0.1:");
+    expect(stdout).toContain("Everything lines up");
+    expect(stdout).toContain("✓ SpoolEase filaments without a BambuStudio preset: none");
+    // The key check is a POST that changes nothing; everything else is read.
+    expect(server.requests.slice(before).filter((r) => r.method !== "GET").map((r) => r.path)).toEqual(["/api/test-key"]);
+  });
+
+  it("lists problems and exits 1", async () => {
+    await synced();
+    server.spools.push({ id: "9", brand: "Acme", material_type: "PLA", color_name: "Red", slicer_filament: "PZZZZZZZ" });
+
+    const { code, stdout } = await run(["check", ...spooleaseArgs()]);
+
+    expect(code).toBe(1);
+    expect(stdout).toContain("1 problem, 0 notes");
+    expect(stdout).toContain("✗ Spools whose filament SpoolEase doesn't list: 1");
+    expect(stdout).toContain("    #9 Acme PLA Red (PZZZZZZZ)");
+  });
+
+  it("exits 0 when there are only notes", async () => {
+    server.spools.push({ id: "1", brand: "Acme", material_type: "PLA", color_name: "Red" });
+
+    const { code, stdout } = await run(["check", ...spooleaseArgs()]);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain("0 problems, 1 note");
+  });
+
+  it("prints a snake_case JSON report with --json", async () => {
+    await synced();
+    server.spools.push({ id: "9", brand: "Acme", material_type: "PLA", color_name: "Red", slicer_filament: "PZZZZZZZ" });
+
+    const { code, stdout } = await run(["check", "--json", "--preset-folder", "1234567890", ...spooleaseArgs()]);
+
+    expect(code).toBe(1);
+    const report = JSON.parse(stdout);
+    expect(report).toMatchObject({ preset_folder: "1234567890", summary: { problems: 1, notes: 0 }, warnings: [] });
+    expect(report.spoolease).toMatch(/^127\.0\.0\.1:\d+$/);
+    expect(report.sections.find((s: { key: string }) => s.key === "unknown_code")).toEqual({
+      key: "unknown_code",
+      title: "Spools whose filament SpoolEase doesn't list",
+      problem: true,
+      items: ["#9 Acme PLA Red (PZZZZZZZ)"],
+    });
+  });
+
+  it("exits 2 on a rejected key", async () => {
+    const { code, stderr } = await run(["check", ...spooleaseArgs("WRONG")]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("SpoolEase key validation failed");
+  });
+
+  it("exits 2 with usage for an unknown flag, and shows help", async () => {
+    const bad = await run(["check", "--nope"]);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain("bambu-hando check");
+
+    const help = await run(["check", "--help"]);
+    expect(help.code).toBe(0);
+    expect(help.stdout).toContain("bambu-hando check");
+  });
+});

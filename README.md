@@ -190,6 +190,17 @@ bambu-hando labels --all --fields qr,brand,material,color,id --size 40x30mm --ou
 - A sync can make the labels for the spools it creates: `--label-output <file.pdf>` and/or `--label-printer <name>`, with `--label-fields` and `--label-size` like `--fields` and `--size` here. Only spools that run created get labels; the report's `labels` entry says what happened (`written`, `planned` in a dry run, `skipped` when no spool was created, `failed` exits 1 after the sync itself is done).
 - The QR code holds SpoolEase's own spool link, the one its NFC tags carry: `https://tag.spoolease.io/S1/?ID=<spool id>&M=…&B=…`. Scanning it with a phone shows SpoolEase's spool card. The SpoolEase console has no QR scanner, and its inventory page can't open one spool from a link, so the ID on the card is how you find the spool there.
 
+## Sync check
+
+`bambu-hando check` is the TUI's Check sync without the TUI: it compares the preset folder's presets with the console's custom filaments and spools, prints the report, and changes nothing. Problems are what breaks the link between a spool and its preset in the AMS (a custom filament with no preset, a spool whose filament code SpoolEase doesn't list, a custom filament row SpoolEase misreads); notes are worth knowing but harmless (presets the console doesn't know, presets without a filament ID, spools without a filament code).
+
+```bash
+bambu-hando check                         # text report
+bambu-hando check --json > check.json     # snake_case JSON: summary, sections, warnings
+```
+
+It exits `0` when there are no problems (notes don't count), `1` when there are, and `2` for invalid arguments or a rejected key, so it works from cron or a script after changing presets in BambuStudio. `--preset-folder` and the SpoolEase flags work as for a sync, with the same defaults.
+
 ## Safety behavior
 
 - Uses dry-run mode for planning (no files written, nothing sent to SpoolEase beyond the key check and reading its spool weight lists)

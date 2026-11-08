@@ -17,7 +17,7 @@ import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot, tildePath } from "
 import { loadProfiles } from "../sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite } from "../spoolease.js";
 import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
-import { type CheckSection, checkSync, readUserPresets } from "../syncCheck.js";
+import { type CheckSection, checkLines, readCheck } from "../syncCheck.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
@@ -32,7 +32,7 @@ import { type ChoiceKey, connectionOpen, formTyping, SetupForm } from "./SetupFo
 import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, colorFormTyping, initialColorForm } from "./ColorForm.js";
 import { Help, type HelpTopic } from "./Help.js";
 import { SpoolCopies } from "./SpoolCopies.js";
-import { checkInput, checkLines, checkRows, SyncCheck } from "./SyncCheck.js";
+import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
 import { useTerminalRows } from "./screenSize.js";
 import {
   initialLabelForm,
@@ -459,12 +459,8 @@ export function App({ initial, onExit }: Props) {
     try {
       const client = new SpoolEaseClient(target);
       await checkKey(client);
-      const [{ presets, warnings }, csv, spools] = await Promise.all([
-        readUserPresets(values.presetFolder.trim()),
-        client.getCustomFilamentsCsv(),
-        client.listSpools(),
-      ]);
-      setScreen({ name: "check", sections: checkSync({ presets, csv, spools }), warnings, top: 0 });
+      const { sections, warnings } = await readCheck(client, values.presetFolder.trim());
+      setScreen({ name: "check", sections, warnings, top: 0 });
     } catch (err) {
       setOutcome({ ok: false, lines: [`Couldn't check: ${errorMessage(err)}`] });
       home();

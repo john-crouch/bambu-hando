@@ -67,6 +67,18 @@ describe("bambu-hando binary", () => {
     expect(server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body)).toEqual([0, 1, 2].map(expectedSpoolPayload));
   });
 
+  it("checks a sync without loading the TUI, exiting 1 on a problem", async () => {
+    expect((await spawnCli(["--source", SOURCE_FIXTURE, ...spooleaseArgs()], home)).code).toBe(0);
+    const clean = await spawnCli(["check", ...spooleaseArgs()], home);
+    expect(clean).toMatchObject({ code: 0, stderr: "" });
+    expect(clean.stdout).toContain("Everything lines up");
+
+    server.customFilaments += "\nPNOPRESET,Acme PLA Ghost,200,220,PLA";
+    const { code, stdout } = await spawnCli(["check", "--json", ...spooleaseArgs()], home);
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout).sections[0]).toMatchObject({ key: "csv_only", items: ["Acme PLA Ghost (PNOPRESET)"] });
+  });
+
   it("downloads SpoolmanDB filaments and writes linked presets", async () => {
     const spoolmanDb = await startSpoolmanDbServer();
     try {

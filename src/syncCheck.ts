@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { errorMessage } from "./errors.js";
 import { bambuBaseFilamentDir, bambuFilamentDir } from "./paths.js";
-import type { SpoolRecord } from "./spoolease.js";
+import type { SpoolEaseClient, SpoolRecord } from "./spoolease.js";
 
 /** A BambuStudio user preset with its own filament_id: one per filament and printer. */
 export interface UserPreset {
@@ -157,4 +157,43 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
         .map(spoolLine),
     },
   ];
+}
+
+/** One line of the report as text, with how it is shown. */
+export interface CheckLine {
+  tone: "problem" | "note" | "ok" | "why" | "item";
+  text: string;
+}
+
+/** The report as lines: each section's count, why it matters and its items, or one line when it's empty. */
+export function checkLines(sections: CheckSection[]): CheckLine[] {
+  return sections.flatMap((section): CheckLine[] => {
+    if (section.items.length === 0) return [{ tone: "ok", text: `✓ ${section.title}: none` }];
+    return [
+      { tone: section.problem ? "problem" : "note", text: `${section.problem ? "✗" : "!"} ${section.title}: ${section.items.length}` },
+      { tone: "why", text: `  ${section.why}` },
+      ...section.items.map((item): CheckLine => ({ tone: "item", text: `    ${item}` })),
+    ];
+  });
+}
+
+/** Items in problem sections and in note sections. */
+export function checkCounts(sections: CheckSection[]): { problems: number; notes: number } {
+  const count = (problem: boolean) => sections.filter((s) => s.problem === problem).reduce((sum, s) => sum + s.items.length, 0);
+  return { problems: count(true), notes: count(false) };
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+export function checkSummary(sections: CheckSection[]): string {
+  const { problems, notes } = checkCounts(sections);
+  return problems + notes === 0 ? "Everything lines up" : `${plural(problems, "problem")}, ${plural(notes, "note")}`;
+}
+
+/** Reads the preset folder's presets and the console's custom filaments and spools, and checks them; writes nothing. */
+export async function readCheck(client: SpoolEaseClient, presetFolder: string): Promise<{ sections: CheckSection[]; warnings: string[] }> {
+  const [{ presets, warnings }, csv, spools] = await Promise.all([readUserPresets(presetFolder), client.getCustomFilamentsCsv(), client.listSpools()]);
+  return { sections: checkSync({ presets, csv, spools }), warnings };
 }

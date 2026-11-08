@@ -34,6 +34,7 @@ import {
 } from "./spoolWeights.js";
 import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE } from "./spoolmanDb.js";
 import { checkKey, KeyCheckError, runSync, SetupError } from "./sync.js";
+import { checkCounts, checkLines, checkSummary, readCheck } from "./syncCheck.js";
 import { loadTuiSettings } from "./tuiSettings.js";
 import type { FormValues } from "./tui/App.js";
 
@@ -44,12 +45,15 @@ const USAGE = `Usage:
   bambu-hando --source <file|url|spoolmandb> [options]
   bambu-hando tui [options]
   bambu-hando labels [options]
+  bambu-hando check [options]
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
 The tui command opens an interactive terminal UI; its options prefill the
 setup form (--dry-run, --report and --max-filaments are headless only), and
 the SpoolmanDB filters prefill the filament search. The labels command makes
-QR spool labels for SpoolEase spools (bambu-hando labels --help).
+QR spool labels for SpoolEase spools (bambu-hando labels --help). The check
+command reports what doesn't line up between BambuStudio and SpoolEase
+(bambu-hando check --help).
 
 Options:
   --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
@@ -182,6 +186,40 @@ const LABEL_OPTIONS = {
   output: { type: "string" },
   printer: { type: "string" },
   "print-option": { type: "string", multiple: true },
+  "spoolease-host": { type: "string" },
+  "spoolease-security-key": { type: "string" },
+  "spoolease-port": { type: "string", default: "80" },
+  "spoolease-https": { type: "boolean", default: false },
+  help: { type: "boolean", short: "h", default: false },
+} as const;
+
+const CHECK_USAGE = `Usage:
+  bambu-hando check [--json] [options]
+
+Check that BambuStudio's presets, SpoolEase's custom filaments and its spools
+line up: problems (a spool that finds no preset in the AMS, a custom filament
+row SpoolEase misreads) and notes (presets SpoolEase doesn't know, spools
+without a filament). Reads only; changes nothing.
+
+Options:
+  --preset-folder <name>          BambuStudio user preset folder (default: the logged-in
+                                  user's folder from BambuStudio.conf, else default)
+  --json                          Print a snake_case JSON report instead of text
+  --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
+  --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
+  --spoolease-port <port>         Port (default: 80)
+  --spoolease-https               Use HTTPS
+  -h, --help                      Show this help
+
+SpoolEase defaults to the SpoolEase settings saved in BambuStudio.
+
+Exit codes: 0 no problems (notes don't count), 1 problems or a failed read,
+2 invalid arguments or SpoolEase key check failed.
+`;
+
+const CHECK_OPTIONS = {
+  "preset-folder": { type: "string" },
+  json: { type: "boolean", default: false },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
   "spoolease-port": { type: "string", default: "80" },
@@ -603,9 +641,59 @@ async function labelsCommand(argv: string[], io: Io): Promise<number> {
   }
 }
 
+const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+
+async function checkCommand(argv: string[], io: Io): Promise<number> {
+  let values;
+  let spoolease: SpoolEaseConnection;
+  try {
+    ({ values } = parseArgs({ args: argv, options: CHECK_OPTIONS, strict: true }));
+    if (values.help) {
+      io.stdout(CHECK_USAGE);
+      return 0;
+    }
+    spoolease = await spooleaseConnection(values, parsePort(values["spoolease-port"]));
+  } catch (err) {
+    io.stderr(`bambu-hando: error: ${errorMessage(err)}\n\n${CHECK_USAGE}`);
+    return 2;
+  }
+
+  try {
+    const presetFolder = values["preset-folder"] ?? (await bambuDefaults()).presetFolder;
+    const client = new SpoolEaseClient(spoolease);
+    await checkKey(client);
+    const { sections, warnings } = await readCheck(client, presetFolder);
+    const counts = checkCounts(sections);
+    const where = `${spoolease.host}:${spoolease.port}`;
+    if (values.json) {
+      const report = {
+        preset_folder: presetFolder,
+        spoolease: where,
+        summary: counts,
+        sections: sections.map((section) => ({ key: snakeCase(section.key), title: section.title, problem: section.problem, items: section.items })),
+        warnings,
+      };
+      io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+    } else {
+      for (const warning of warnings) io.stderr(`${warning}\n`);
+      const lines = [`Sync check: BambuStudio ${presetFolder} · SpoolEase ${where}`, checkSummary(sections), "", ...checkLines(sections).map((line) => line.text)];
+      io.stdout(`${lines.join("\n")}\n`);
+    }
+    return counts.problems > 0 ? 1 : 0;
+  } catch (err) {
+    if (err instanceof KeyCheckError) {
+      io.stderr(`${err.message}\n`);
+      return 2;
+    }
+    io.stderr(`bambu-hando: error: ${errorMessage(err)}\n`);
+    return 1;
+  }
+}
+
 export async function main(argv: string[], io: Io = processIo): Promise<number> {
   if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
   if (argv[0] === "labels") return labelsCommand(argv.slice(1), io);
+  if (argv[0] === "check") return checkCommand(argv.slice(1), io);
 
   let parsed;
   try {
