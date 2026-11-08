@@ -37,6 +37,12 @@ export function connectionOpen(values: FormValues, requested: boolean): boolean 
   return requested || !values.host.trim() || !values.securityKey;
 }
 
+/** Whether the focused row is a text field, where ? is typed rather than opening help. */
+export function formTyping(connection: boolean, focus: number): boolean {
+  const kind = FIELDS.filter((field) => connection || !field.inConnection)[focus]?.kind;
+  return kind === "text" || kind === "secret";
+}
+
 function connectionSummary(values: FormValues): string {
   return `${values.host.trim() || "no host"}:${values.port}${values.https ? " (HTTPS)" : ""}`;
 }
@@ -117,7 +123,7 @@ export function SetupForm({ values, error, focus, onFocus, connection, onConnect
       </Box>
       <Text dimColor>A JSON file or URL of filament profiles shows up as Import on the menu. Folder and printers open a list.</Text>
       {error ? <Text color="red">{error}</Text> : null}
-      <Text dimColor>↑/↓ move · enter change · esc menu · ctrl+c quit</Text>
+      <Text dimColor>↑/↓ move · enter change · esc menu{focused?.kind === "text" || focused?.kind === "secret" ? "" : " · ? help"} · ctrl+c quit</Text>
     </Box>
   );
 }

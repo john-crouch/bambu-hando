@@ -71,6 +71,11 @@ function toggle(fields: LabelField[], field: LabelField): LabelField[] {
   return LABEL_FIELDS.map((f) => f.key).filter((key) => on.includes(key));
 }
 
+/** Whether keys go into free text, where ? is typed rather than opening help: the PDF path (a size never has one). */
+export function labelFormTyping(state: LabelFormState): boolean {
+  return state.cursor === OUTPUT_ROW;
+}
+
 export function labelFormInput(state: LabelFormState, input: string, key: Key): LabelFormAction {
   const next = (changes: Partial<LabelFormState>): LabelFormAction => ({ type: "update", state: { ...state, error: "", ...changes } });
   const field = LABEL_FIELDS[state.cursor]?.key;
@@ -155,7 +160,7 @@ export function LabelForm({ state, spoolIds, fresh }: Props) {
         </Text>
       ) : null}
       <Box marginTop={1}>
-        <Text dimColor>↑/↓ move · enter change · type to edit size or PDF path · esc back</Text>
+        <Text dimColor>↑/↓ move · enter change · type to edit size or PDF path · esc back{labelFormTyping(state) ? "" : " · ? help"}</Text>
       </Box>
     </Box>
   );

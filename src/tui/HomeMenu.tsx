@@ -92,7 +92,7 @@ export function HomeMenu({ items, cursor, context, outcome }: Props) {
           {outcome.ok ? "✓" : "✗"} {line}
         </Text>
       ))}
-      <Text dimColor>↑/↓ move · letter jumps · enter choose · ctrl+c quit</Text>
+      <Text dimColor>↑/↓ move · enter choose · ? help · ctrl+c quit</Text>
     </Box>
   );
 }

@@ -114,7 +114,7 @@ export function WeightMenu({ group, profiles, items, cursor, step, steps, source
         })}
         {items.length > end ? <Text dimColor>… {items.length - end} more</Text> : null}
       </Box>
-      <Text dimColor>↑/↓ move · enter choose · esc back</Text>
+      <Text dimColor>↑/↓ move · enter choose · esc back · ? help</Text>
     </Box>
   );
 }

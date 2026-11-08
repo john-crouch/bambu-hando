@@ -176,8 +176,8 @@ export function Browse({ state, profiles, selected, warnings, height }: Props) {
   const up = state.brand === null ? "menu" : state.material !== null && materialsOf(profiles, state.brand).length > 1 ? "materials" : "brands";
   const hint =
     state.material === null
-      ? `↑/↓ move · letter jumps · enter open · esc ${up}`
-      : `↑/↓ move · letter jumps · space select · ctrl+a all · enter continue · esc ${up}`;
+      ? `↑/↓ move · enter open · esc ${up} · ? help`
+      : `↑/↓ move · space select · enter continue · esc ${up} · ? help`;
 
   return (
     <Box flexDirection="column">

@@ -46,6 +46,11 @@ export function typedColor(hex: string): string | null {
   return match ? `#${match[1]!.toUpperCase()}` : null;
 }
 
+/** Whether keys go into free text, where ? is typed rather than opening help: the name (a hex color never has one). */
+export function colorFormTyping(state: ColorFormState): boolean {
+  return state.cursor === NAME_ROW;
+}
+
 export function colorFormInput(state: ColorFormState, input: string, key: Key): ColorFormAction {
   const next = (changes: Partial<ColorFormState>): ColorFormAction => ({ type: "update", state: { ...state, error: "", ...changes } });
   const text = state.cursor === NAME_ROW ? "colorName" : state.cursor === HEX_ROW ? "hex" : null;
@@ -139,7 +144,7 @@ export function ColorForm({ state, brand, material }: Props) {
         <Box marginTop={1}>{row(ADD_ROW, "Add color", <Text />, "")}</Box>
       </Box>
       {state.error ? <Text color="red">{state.error}</Text> : null}
-      <Text dimColor>↑/↓ move · enter choose or next · type to edit name and color · esc back to colors</Text>
+      <Text dimColor>↑/↓ move · enter choose or next · type to edit name and color · esc back to colors{colorFormTyping(state) ? "" : " · ? help"}</Text>
     </Box>
   );
 }

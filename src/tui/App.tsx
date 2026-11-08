@@ -28,8 +28,9 @@ import { type ChoiceItem, ChoiceList, choiceInput, choiceRows, type ChoiceState,
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import { initialPickerState, Picker, pickerInput, pickerRows } from "./Picker.js";
 import { PlanTable, type RowProgress } from "./PlanTable.js";
-import { type ChoiceKey, connectionOpen, SetupForm } from "./SetupForm.js";
-import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, initialColorForm } from "./ColorForm.js";
+import { type ChoiceKey, connectionOpen, formTyping, SetupForm } from "./SetupForm.js";
+import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, colorFormTyping, initialColorForm } from "./ColorForm.js";
+import { Help, type HelpTopic } from "./Help.js";
 import { SpoolCopies } from "./SpoolCopies.js";
 import { checkInput, checkLines, checkRows, SyncCheck } from "./SyncCheck.js";
 import { useTerminalRows } from "./screenSize.js";
@@ -39,6 +40,7 @@ import {
   type LabelFormState,
   labelFormInput,
   labelFormSettings,
+  labelFormTyping,
   labelFormTarget,
   labelPrinterItems,
   labelSizeItems,
@@ -85,7 +87,9 @@ type Screen =
   | { name: "labels"; spoolIds: string[]; fresh: boolean; form: LabelFormState; back: Screen }
   /** The read-only sync check; top is the first report line on screen. */
   | { name: "check"; sections: CheckSection[]; warnings: string[]; top: number }
-  | { name: "error"; message: string; exitCode: number };
+  | { name: "error"; message: string; exitCode: number }
+  /** The help page for back, which any key returns to. */
+  | { name: "help"; topic: HelpTopic; multi: boolean; back: Screen };
 
 /** How many copies the count list offers. */
 const MAX_COPIES = 8;
@@ -508,9 +512,41 @@ export function App({ initial, onExit }: Props) {
     setScreen(back);
   }
 
+  /** The help page ? opens here, or null where ? is typed (a text field) or nothing waits for keys. */
+  function helpTopic(s: Screen): { topic: HelpTopic; multi: boolean } | null {
+    const page = (topic: HelpTopic, multi = false) => ({ topic, multi });
+    switch (s.name) {
+      case "form":
+        return formTyping(connectionOpen(values, connectionRequested), formFocus) ? null : page("form");
+      case "choose":
+        return page("choose", s.multi);
+      case "color":
+        return colorFormTyping(s.form) ? null : page("color");
+      case "labels":
+        return labelFormTyping(s.form) ? null : page("labels");
+      case "copies":
+        return s.running ? null : page("copies");
+      case "loading":
+      case "running":
+      case "help":
+        return null;
+      default:
+        return page(s.name);
+    }
+  }
+
   // Always subscribed: toggling isActive re-attaches Ink's listener in an effect after the
   // new screen renders, so a key pressed right after "Done" appears could be dropped.
   useInput((input, key) => {
+    if (screen.name === "help") {
+      setScreen(screen.back);
+      return;
+    }
+    const help = input === "?" && !key.ctrl && !key.meta ? helpTopic(screen) : null;
+    if (help) {
+      setScreen({ name: "help", ...help, back: screen });
+      return;
+    }
     if (screen.name === "home") {
       const items = menuItems();
       const action = homeInput(screen.cursor, input, key, items);
@@ -747,11 +783,15 @@ export function App({ initial, onExit }: Props) {
     return <LabelForm state={screen.form} spoolIds={screen.spoolIds} fresh={screen.fresh} />;
   }
 
+  if (screen.name === "help") {
+    return <Help topic={screen.topic} multi={screen.multi} />;
+  }
+
   if (screen.name === "error") {
     return (
       <Box flexDirection="column">
         <Text color="red">✗ {screen.message}</Text>
-        <Text dimColor>[b] back to settings · [q] quit</Text>
+        <Text dimColor>[b] back to settings · [q] quit · ? help</Text>
       </Box>
     );
   }
@@ -796,7 +836,7 @@ export function App({ initial, onExit }: Props) {
         </Text>
       ))}
       {screen.name === "plan" ? (
-        <Text dimColor>[a] apply · [b] back to {fromSpoolmanDb && catalog ? "filaments" : "menu"} · [q] quit</Text>
+        <Text dimColor>[a] apply · [b] back to {fromSpoolmanDb && catalog ? "filaments" : "menu"} · [q] quit · ? help</Text>
       ) : null}
       {screen.name === "done" ? (
         <Box flexDirection="column">
@@ -813,7 +853,7 @@ export function App({ initial, onExit }: Props) {
               {outcome.ok ? "✓" : "✗"} {line}
             </Text>
           ))}
-          <Text dimColor>{created > 0 ? `[l] labels for ${plural(created, "new spool")} · [m] menu · [q] quit` : "[m] menu · [q] quit"}</Text>
+          <Text dimColor>{created > 0 ? `[l] labels for ${plural(created, "new spool")} · [m] menu · [q] quit · ? help` : "[m] menu · [q] quit · ? help"}</Text>
         </Box>
       ) : null}
     </Box>

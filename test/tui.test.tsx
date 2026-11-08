@@ -105,6 +105,37 @@ describe("TUI", () => {
     expect(frame).toContain("SpoolEase: 127.0.0.1");
   });
 
+  describe("help", () => {
+    it("opens with ? and goes back to the same screen and row with any key", async () => {
+      const { stdin, lastFrame } = render(<App initial={values()} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, DOWN, "?");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Help: the menu"));
+      expect(lastFrame()).not.toContain("Add spools from SpoolmanDB");
+
+      await press(stdin, "x");
+      await vi.waitFor(() => expect(lastFrame()).toContain("› More spools of a filament you have"));
+      expect(onExit).not.toHaveBeenCalled();
+    });
+
+    it("types ? into a settings text field instead", async () => {
+      const { stdin, lastFrame } = render(<App initial={values({ source: "" })} onExit={onExit} />);
+      await settle();
+      await openSettings(stdin, lastFrame);
+
+      // The form opens on its first row, the import file's text field.
+      await press(stdin, "?");
+      await settle();
+      expect(lastFrame()).not.toContain("Help:");
+      expect(lastFrame()).toContain("Import file or URL");
+      expect(lastFrame()).toContain("?");
+
+      await press(stdin, DOWN, "?");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Help: settings"));
+    });
+  });
+
   it("quits from the start menu", async () => {
     const { stdin } = render(<App initial={values()} onExit={onExit} />);
     await settle();

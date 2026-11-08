@@ -104,7 +104,7 @@ export function SyncCheck({ sections, top, compared, warnings, height }: Props) 
         ))}
         {more > 0 ? <Text dimColor>… {more} more</Text> : null}
       </Box>
-      <Text dimColor>{lines.length > rows ? "↑/↓ scroll · " : ""}[r] check again · [b] back to menu · [q] quit</Text>
+      <Text dimColor>{lines.length > rows ? "↑/↓ scroll · " : ""}[r] check again · [b] back to menu · [q] quit · ? help</Text>
     </Box>
   );
 }

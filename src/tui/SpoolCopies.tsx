@@ -74,9 +74,9 @@ export function SpoolCopies({ filament, count, target, results, running, outcome
           {outcome.ok ? "✓" : "✗"} {line}
         </Text>
       ))}
-      {results === null ? <Text dimColor>[a] add · [b] back to how many · [q] quit</Text> : null}
+      {results === null ? <Text dimColor>[a] add · [b] back to how many · [q] quit · ? help</Text> : null}
       {done ? (
-        <Text dimColor>{created.length > 0 ? `[l] labels for ${plural(created.length, "new spool")} · [m] menu · [q] quit` : "[m] menu · [q] quit"}</Text>
+        <Text dimColor>{created.length > 0 ? `[l] labels for ${plural(created.length, "new spool")} · [m] menu · [q] quit · ? help` : "[m] menu · [q] quit · ? help"}</Text>
       ) : null}
     </Box>
   );

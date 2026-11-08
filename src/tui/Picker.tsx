@@ -139,7 +139,7 @@ export function Picker({ catalogSize, matches, state, warnings, height }: Props)
       {matches.length === 0 ? <Text dimColor>No matches. Bambu Lab filaments are never included: BambuStudio ships its own presets.</Text> : null}
       {matches.length > end ? <Text dimColor>… {matches.length - end} more</Text> : null}
       {state.error ? <Text color="red">{state.error}</Text> : null}
-      <Text dimColor>type to search · ↑/↓ move · tab select · ctrl+a select all matches · enter continue · esc back</Text>
+      <Text dimColor>type to search · ↑/↓ move · tab select · enter continue · esc back · ? help</Text>
     </Box>
   );
 }

@@ -113,7 +113,7 @@ export function ChoiceList({ title, items, state, multi, height }: Props) {
       </Box>
       {state.error ? <Text color="red">{state.error}</Text> : null}
       <Text dimColor>
-        {multi ? "↑/↓ move · letter jumps · space tick · enter done · esc cancel" : "↑/↓ move · letter jumps · enter choose · esc cancel"}
+        {multi ? "↑/↓ move · space tick · enter done · esc cancel · ? help" : "↑/↓ move · enter choose · esc cancel · ? help"}
       </Text>
     </Box>
   );
