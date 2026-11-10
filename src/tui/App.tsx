@@ -1,7 +1,7 @@
 // ABOUTME: Root TUI component: start menu → (settings) → (SpoolmanDB browser or search) → plan → live apply → summary (→ labels).
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
 import { Box, Text, useInput } from "ink";
@@ -16,12 +16,13 @@ import { loadLabelSettings, saveLabelSettings } from "../labelSettings.js";
 import { type FilamentProfile, resultFailed, type SyncResult } from "../models.js";
 import { bambuBaseFilamentDir, bambuConfigDir, bambuUserRoot, tildePath } from "../paths.js";
 import { type ConsoleState, type ProfilePlan, previewPlan } from "../planPreview.js";
+import { applyEdits, type EditResult, type Edits, type EditValue, editChanges, nozzleRange, type Preset, presetFamily, rangeError, writePresetEdits } from "../presetEdit.js";
 import { fixPresetIds, type IdFix, type IdFixResult, idFixes } from "../presetIds.js";
 import { loadProfiles } from "../sources.js";
-import { type CustomFilament, SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite, type SpoolRecord } from "../spoolease.js";
+import { type CustomFilament, SpoolEaseClient, type SpoolEaseConnection, type SpoolEaseWrite, type SpoolRecord, withNozzleRange } from "../spoolease.js";
 import { addSpoolCopies, type CopyableFilament, copyableFilaments } from "../spoolCopies.js";
 import { inventoryRows } from "../spoolInventory.js";
-import { type CheckSection, checkLines, readCheck } from "../syncCheck.js";
+import { type CheckSection, checkLines, readCheck, readUserPresets, type UserPreset } from "../syncCheck.js";
 import { type Catalog, filterProfiles, loadSpoolmanDb, SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
 import { applyWeights, readSpoolWeights, type WeightChoice, type WeightGroup, weightGroups } from "../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent, type SyncStage } from "../sync.js";
@@ -36,7 +37,11 @@ import { PlanNotes, PlanTable, type RowProgress } from "./PlanTable.js";
 import { type ChoiceKey, connectionOpen, formTyping, SetupForm } from "./SetupForm.js";
 import { ColorForm, colorFormInput, colorFormProfile, type ColorFormState, colorFormTyping, initialColorForm } from "./ColorForm.js";
 import { Help, type HelpTopic } from "./Help.js";
+import { initialPresetForm, PresetForm, type PresetFormState, presetFormInput, presetFormRows, presetFormTyping } from "./PresetForm.js";
 import { PresetIds } from "./PresetIds.js";
+import { initialPresetList, PresetList, presetListInput, presetListRows, type PresetListState, presetMatches } from "./PresetList.js";
+import { PresetReview, type RangeChange } from "./PresetReview.js";
+import { initialRawSettings, rawInput, rawKeys, rawRows, RawSettings, type RawSettingsState, rawTyping } from "./RawSettings.js";
 import { SpoolCopies } from "./SpoolCopies.js";
 import { initialSpoolList, SpoolList, spoolListInput, spoolListRows, type SpoolListState } from "./SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
@@ -101,9 +106,31 @@ type Screen =
   | { name: "spools"; spools: SpoolRecord[]; names: ReadonlyMap<string, CustomFilament>; state: SpoolListState }
   /** Filament IDs for presets without one: results is null until written. */
   | { name: "ids"; fixes: IdFix[]; results: IdFixResult[] | null; running: boolean }
+  /** The preset folder's filament presets, to pick one to edit. */
+  | PresetsScreen
+  /** A preset being edited: original is the file as read, edits what isn't saved yet. */
+  | EditScreen
+  /** Every key of the preset being edited, as raw text. */
+  | { name: "raw"; edit: EditScreen; state: RawSettingsState }
+  /** The review of an edit, then its results: results is null until saved. */
+  | SaveScreen
   | { name: "error"; message: string; exitCode: number }
   /** The help page for back, which any key returns to. */
   | { name: "help"; topic: HelpTopic; multi: boolean; back: Screen };
+
+type PresetsScreen = { name: "presets"; presets: UserPreset[]; warnings: string[]; state: PresetListState };
+type EditScreen = { name: "edit"; list: PresetsScreen; preset: UserPreset; original: Preset; edits: Edits; form: PresetFormState };
+type SaveScreen = {
+  name: "save";
+  edit: EditScreen;
+  targets: UserPreset[];
+  /** SpoolEase's custom filament whose nozzle range changes too; null when it doesn't. */
+  spoolease: RangeChange | null;
+  warning: string;
+  results: EditResult[] | null;
+  spooleaseResult: { ok: boolean; line: string } | null;
+  running: boolean;
+};
 
 /** How many copies the count list offers. */
 const MAX_COPIES = 8;
@@ -190,6 +217,8 @@ export function App({ initial, onExit }: Props) {
     () => (catalog ? filterProfiles(catalog.profiles, { brand: "", material: "", match: picker.query }) : []),
     [catalog, picker.query],
   );
+  // Preset edits not saved yet, by preset file; kept while going back to the list and opening others.
+  const [drafts, setDrafts] = useState<ReadonlyMap<string, Edits>>(new Map());
   // A failed run keeps the exit code at 1 even when quitting later from the menu.
   const [runFailed, setRunFailed] = useState(false);
   // Lists grow and shrink with the terminal.
@@ -636,6 +665,138 @@ export function App({ initial, onExit }: Props) {
     setScreen({ name: "ids", fixes, results, running: false });
   }
 
+  /** The preset folder's own filament presets, to edit one; reads only. */
+  async function openPresets(): Promise<void> {
+    setOutcome(null);
+    setScreen({ name: "loading", message: "Reading BambuStudio presets…" });
+    const folder = values.presetFolder.trim();
+    const { presets, warnings } = await readUserPresets(folder);
+    if (presets.length === 0) {
+      setOutcome({ ok: false, lines: [`BambuStudio folder ${folder} has no filament presets of your own`, ...warnings] });
+      home();
+      return;
+    }
+    setScreen({ name: "presets", presets, warnings, state: initialPresetList() });
+  }
+
+  async function openPreset(list: PresetsScreen, preset: UserPreset): Promise<void> {
+    try {
+      const original: unknown = JSON.parse(await readFile(preset.path, "utf-8"));
+      if (typeof original !== "object" || original === null || Array.isArray(original)) throw new Error("it isn't a preset");
+      setScreen({ name: "edit", list, preset, original: original as Preset, edits: drafts.get(preset.path) ?? new Map(), form: initialPresetForm() });
+    } catch (err) {
+      setScreen({ ...list, state: { ...list.state, error: `Couldn't read ${basename(preset.path)}: ${errorMessage(err)}` } });
+    }
+  }
+
+  /** The edit with `edit` for `key`, or without one when `edit` is null or leaves the value as it is on disk. */
+  function withEdit(edit: EditScreen, key: string, value: EditValue | null): EditScreen {
+    const edits = new Map(edit.edits);
+    edits.delete(key);
+    if (value && editChanges(edit.original, new Map([[key, value]])).length > 0) edits.set(key, value);
+    return { ...edit, edits };
+  }
+
+  /** Back to the list, keeping the edits for when the preset is opened again. */
+  function leaveEdit(edit: EditScreen): void {
+    const next = new Map(drafts);
+    if (edit.edits.size > 0) next.set(edit.preset.path, edit.edits);
+    else next.delete(edit.preset.path);
+    setDrafts(next);
+    setScreen(edit.list);
+  }
+
+  /** Which presets of the filament the edit goes into (when it has several), then the review. */
+  function reviewEdit(edit: EditScreen): void {
+    const fail = (error: string): void => setScreen({ ...edit, form: { ...edit.form, error } });
+    if (editChanges(edit.original, edit.edits).length === 0) {
+      fail("Nothing changed yet");
+      return;
+    }
+    const range = rangeError(applyEdits(edit.original, edit.edits).preset);
+    if (range) {
+      fail(range);
+      return;
+    }
+    const family = presetFamily(edit.list.presets, edit.preset);
+    if (family.length === 1) {
+      void openSave(edit, family);
+      return;
+    }
+    const items = family.map((p) => ({
+      value: p.path,
+      label: p.printer.replace(/^Bambu Lab /, "") || basename(p.path),
+      detail: p.path === edit.preset.path ? "the one you edited" : "same filament ID",
+    }));
+    setScreen({
+      name: "choose",
+      title: `Save to which presets of ${edit.preset.name}?`,
+      items,
+      multi: true,
+      state: initialChoiceState(items, family.map((p) => p.path)),
+      onDone: (paths) => void openSave(edit, family.filter((p) => paths.includes(p.path))),
+      onCancel: () => setScreen(edit),
+    });
+  }
+
+  /** The review; reads SpoolEase's custom filament when the edit changes the nozzle range it also holds. */
+  async function openSave(edit: EditScreen, targets: UserPreset[]): Promise<void> {
+    const save: SaveScreen = { name: "save", edit, targets, spoolease: null, warning: "", results: null, spooleaseResult: null, running: false };
+    const changed = editChanges(edit.original, edit.edits).some((c) => c.key.startsWith("nozzle_temperature_range_"));
+    const range = nozzleRange(applyEdits(edit.original, edit.edits).preset);
+    const code = edit.preset.filamentId;
+    const target = connection(values);
+    if (!changed || !range || !code || !target) {
+      setScreen(save);
+      return;
+    }
+    setScreen({ name: "loading", message: "Reading SpoolEase's custom filaments…" });
+    try {
+      const client = new SpoolEaseClient(target);
+      await checkKey(client);
+      const listed = (await client.getCustomFilaments()).get(code);
+      const same = listed?.nozzleTempMin === range.low && listed?.nozzleTempMax === range.high;
+      const spoolease = listed && !same ? { code, from: `${listed.nozzleTempMin ?? "?"}-${listed.nozzleTempMax ?? "?"} °C`, to: `${range.low}-${range.high} °C`, ...range } : null;
+      setScreen({ ...save, spoolease });
+    } catch (err) {
+      setScreen({ ...save, warning: `Couldn't read SpoolEase, so its nozzle range for ${code} stays as it is: ${errorMessage(err)}` });
+    }
+  }
+
+  /** Writes the presets, then SpoolEase's nozzle range when the review showed it changing. */
+  async function saveEdit(save: SaveScreen): Promise<void> {
+    setScreen({ ...save, running: true });
+    const results = await writePresetEdits(
+      save.targets.map((t) => t.path),
+      save.edit.edits,
+    );
+    let spooleaseResult: SaveScreen["spooleaseResult"] = null;
+    const target = connection(values);
+    const range = save.spoolease;
+    if (range && target && results.some((r) => r.ok)) {
+      try {
+        const client = new SpoolEaseClient(target);
+        await checkKey(client);
+        // Read again just before writing: SpoolEase replaces the whole CSV on every write.
+        const csv = withNozzleRange(await client.getCustomFilamentsCsv(), range.code, range.low, range.high);
+        if (csv === null) spooleaseResult = { ok: false, line: `SpoolEase no longer lists ${range.code}; nothing changed there` };
+        else {
+          const written = await client.setCustomFilamentsCsv(csv);
+          spooleaseResult = written.ok
+            ? { ok: true, line: `SpoolEase's nozzle range for ${range.code} is ${range.to}` }
+            : { ok: false, line: `SpoolEase didn't take the nozzle range: ${written.error}` };
+        }
+      } catch (err) {
+        spooleaseResult = { ok: false, line: `Couldn't change SpoolEase's nozzle range: ${errorMessage(err)}` };
+      }
+    }
+    if (results.some((r) => !r.ok) || spooleaseResult?.ok === false) setRunFailed(true);
+    const next = new Map(drafts);
+    next.delete(save.edit.preset.path);
+    setDrafts(next);
+    setScreen({ ...save, results, spooleaseResult, running: false });
+  }
+
   /** Back to the menu after a run, saying what it did; the next run starts with nothing selected. */
   function finishRun(profiles: FilamentProfile[], results: SyncResult[]): void {
     const failed = results.filter(resultFailed).length;
@@ -689,8 +850,13 @@ export function App({ initial, onExit }: Props) {
         return colorFormTyping(s.form) ? null : page("color");
       case "labels":
         return labelFormTyping(s.form) ? null : page("labels");
+      case "edit":
+        return presetFormTyping(s.form) ? null : page("edit");
+      case "raw":
+        return rawTyping(s.state) ? null : page("raw");
       case "copies":
       case "ids":
+      case "save":
         return s.running ? null : page(s.name);
       case "loading":
       case "running":
@@ -724,6 +890,7 @@ export function App({ initial, onExit }: Props) {
         else if (action.id === "barcode") void openScan();
         else if (action.id === "labels") void openSpoolLabels();
         else if (action.id === "spools") void openSpools();
+        else if (action.id === "edit") void openPresets();
         else if (action.id === "check") void openCheck();
         else if (action.id === "settings") setScreen({ name: "form", error: "" });
         else onExit(runFailed ? 1 : 0);
@@ -885,6 +1052,42 @@ export function App({ initial, onExit }: Props) {
         setOutcome({ ok: failed === 0, lines: [`${plural(written, "BambuStudio preset")} given a filament ID${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load`] });
         home();
       }
+    } else if (screen.name === "presets") {
+      const matches = presetMatches(screen.presets, screen.state.filter);
+      const action = presetListInput(screen.state, input, key, matches.length, presetListRows(height, screen.warnings.length));
+      if (action.type === "update") setScreen({ ...screen, state: action.state });
+      else if (action.type === "back") home();
+      else if (action.type === "choose") void openPreset(screen, matches[action.index]!);
+    } else if (screen.name === "edit") {
+      const action = presetFormInput(screen.form, input, key, applyEdits(screen.original, screen.edits).preset, presetFormRows(height));
+      if (action.type === "update") setScreen({ ...screen, form: action.state });
+      else if (action.type === "set") setScreen({ ...withEdit(screen, action.key, action.edit), form: action.state });
+      else if (action.type === "undo") setScreen({ ...withEdit(screen, action.key, null), form: { ...screen.form, error: "" } });
+      else if (action.type === "raw") setScreen({ name: "raw", edit: screen, state: initialRawSettings() });
+      else if (action.type === "review") reviewEdit(screen);
+      else if (action.type === "back") leaveEdit(screen);
+    } else if (screen.name === "raw") {
+      const edited = applyEdits(screen.edit.original, screen.edit.edits).preset;
+      const action = rawInput(screen.state, input, key, rawKeys(edited, screen.state.filter), edited, rawRows(height));
+      if (action.type === "update") setScreen({ ...screen, state: action.state });
+      else if (action.type === "set") setScreen({ ...screen, edit: withEdit(screen.edit, action.key, action.edit), state: action.state });
+      else if (action.type === "undo") setScreen({ ...screen, edit: withEdit(screen.edit, action.key, null), state: { ...screen.state, error: "" } });
+      else if (action.type === "back") setScreen(screen.edit);
+    } else if (screen.name === "save") {
+      if (screen.running) return;
+      if (input === "q") onExit(runFailed ? 1 : 0);
+      else if (screen.results === null) {
+        if (input === "a") void saveEdit(screen);
+        else if (input === "b") setScreen(screen.edit);
+      } else if (input === "e") void openPresets();
+      else if (input === "m") {
+        const saved = screen.results.filter((r) => r.ok).length;
+        const failed = screen.results.length - saved;
+        const lines = [`${plural(saved, "BambuStudio preset")} of ${screen.edit.preset.name} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load`];
+        if (screen.spooleaseResult) lines.push(screen.spooleaseResult.line);
+        setOutcome({ ok: failed === 0 && screen.spooleaseResult?.ok !== false, lines });
+        home();
+      }
     } else if (screen.name === "error") {
       if (input === "b") setScreen({ name: "form", error: "" });
       else if (input === "q") onExit(screen.exitCode);
@@ -984,6 +1187,46 @@ export function App({ initial, onExit }: Props) {
 
   if (screen.name === "ids") {
     return <PresetIds fixes={screen.fixes} results={screen.results} running={screen.running} />;
+  }
+
+  if (screen.name === "presets") {
+    const matches = presetMatches(screen.presets, screen.state.filter);
+    return (
+      <PresetList
+        matches={matches}
+        total={screen.presets.length}
+        folder={`BambuStudio folder ${values.presetFolder.trim()}`}
+        drafts={new Set(drafts.keys())}
+        state={screen.state}
+        warnings={screen.warnings}
+        height={height}
+      />
+    );
+  }
+
+  if (screen.name === "edit") {
+    const edited = applyEdits(screen.original, screen.edits).preset;
+    return <PresetForm preset={screen.preset} original={screen.original} edited={edited} edits={screen.edits} state={screen.form} height={height} />;
+  }
+
+  if (screen.name === "raw") {
+    const edited = applyEdits(screen.edit.original, screen.edit.edits).preset;
+    return <RawSettings preset={screen.edit.preset} edited={edited} edits={screen.edit.edits} state={screen.state} height={height} />;
+  }
+
+  if (screen.name === "save") {
+    return (
+      <PresetReview
+        preset={screen.edit.preset}
+        changes={editChanges(screen.edit.original, screen.edit.edits)}
+        targets={screen.targets}
+        spoolease={screen.spoolease}
+        warning={screen.warning}
+        results={screen.results}
+        spooleaseResult={screen.spooleaseResult}
+        running={screen.running}
+      />
+    );
   }
 
   if (screen.name === "labels") {

@@ -14,6 +14,10 @@ import { initialPickerState, Picker, pickerInput } from "../src/tui/Picker.js";
 import { inventoryRows } from "../src/spoolInventory.js";
 import { initialSpoolList, SpoolList, spoolListInput } from "../src/tui/SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "../src/tui/SyncCheck.js";
+import { EDIT_FIELDS } from "../src/presetEdit.js";
+import { initialPresetForm, PresetForm, presetFormInput, presetFormRows } from "../src/tui/PresetForm.js";
+import { initialPresetList, PresetList, presetListInput } from "../src/tui/PresetList.js";
+import { initialRawSettings, rawInput, rawKeys, RawSettings } from "../src/tui/RawSettings.js";
 import { WeightMenu, weightItems } from "../src/tui/WeightMenu.js";
 
 function key(overrides: Partial<Key> = {}): Key {
@@ -118,6 +122,38 @@ describe("lists sized to the terminal", () => {
     expectFits(lastFrame());
     const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
     expect(spoolListInput(initialSpoolList(), "", key({ pageDown: true }), 40, shown)).toMatchObject({ state: { cursor: shown } });
+  });
+
+  it("PresetList fills the height below its warnings and filter", () => {
+    const presets = PROFILES.map((p) => ({ name: p.name, filamentId: p.filamentId, printer: "Bambu Lab X1 Carbon 0.4 nozzle", path: `/p/${p.name}.json` }));
+    const warnings = ["Couldn't read BambuStudio preset broken.json"];
+    const { lastFrame } = render(
+      <PresetList matches={presets} total={40} folder="BambuStudio folder default" drafts={new Set()} state={initialPresetList()} warnings={warnings} height={HEIGHT} />,
+    );
+    expectFits(lastFrame());
+    const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
+    expect(presetListInput(initialPresetList(), "", key({ pageDown: true }), 40, shown)).toMatchObject({ state: { cursor: shown } });
+  });
+
+  const PRESET = { name: "Acme PLA Red @Bambu Lab X1 Carbon 0.4 nozzle", ...Object.fromEntries(PROFILES.map((p) => [`setting_${p.filamentId}`, ["1"]])) };
+  const OPENED = { name: "Acme PLA Red", filamentId: "PA000001", printer: "Bambu Lab X1 Carbon 0.4 nozzle", path: "/p/Acme PLA Red.json" };
+
+  it("PresetForm fills the height and pages by as many fields as it shows", () => {
+    const { lastFrame } = render(<PresetForm preset={OPENED} original={PRESET} edited={PRESET} edits={new Map()} state={initialPresetForm()} height={HEIGHT} />);
+    expectFits(lastFrame());
+    // The curated fields, then All settings and Review and save.
+    const shown = presetFormRows(HEIGHT);
+    expect(lastFrame()).toContain(`… ${EDIT_FIELDS.length + 2 - shown} more`);
+    const paged = presetFormInput(initialPresetForm(), "", key({ pageDown: true }), PRESET, shown);
+    expect(paged).toMatchObject({ state: { cursor: shown } });
+  });
+
+  it("RawSettings fills the height below its filter", () => {
+    const { lastFrame } = render(<RawSettings preset={OPENED} edited={PRESET} edits={new Map()} state={initialRawSettings()} height={HEIGHT} />);
+    expectFits(lastFrame());
+    const shown = lines(lastFrame()).filter((line) => line.includes("setting_")).length;
+    const keys = rawKeys(PRESET, "");
+    expect(rawInput(initialRawSettings(), "", key({ pageDown: true }), keys, PRESET, shown)).toMatchObject({ state: { cursor: shown } });
   });
 
   it("SyncCheck fills the height, scrolled into the middle", () => {

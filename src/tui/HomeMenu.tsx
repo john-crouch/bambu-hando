@@ -1,4 +1,4 @@
-// ABOUTME: TUI start menu: add spools from SpoolmanDB, import the --source file, more spools, labels, sync check, settings, quit.
+// ABOUTME: TUI start menu: add spools from SpoolmanDB, import the --source file, more spools, labels, presets, sync check, settings.
 // ABOUTME: Key handling is a pure function so App's always-on useInput can drive it without a listener of its own.
 
 import { basename } from "node:path";
@@ -10,7 +10,7 @@ import { listMove, typeAhead, typedLetter } from "./menu.js";
 
 const LABEL_WIDTH = 46;
 
-export type HomeId = "spoolmandb" | "import" | "more" | "barcode" | "labels" | "spools" | "check" | "settings" | "quit";
+export type HomeId = "spoolmandb" | "import" | "more" | "barcode" | "labels" | "spools" | "edit" | "check" | "settings" | "quit";
 
 export interface HomeItem {
   id: HomeId;
@@ -20,7 +20,7 @@ export interface HomeItem {
 
 export type HomeAction = { type: "move"; cursor: number } | { type: "choose"; id: HomeId } | { type: "none" };
 
-/** SpoolmanDB, settings and quit, plus import for a file or URL source, and more spools, labels and the sync check when SpoolEase is set up. */
+/** SpoolmanDB, preset editing, settings and quit, plus import for a file or URL source, and more spools, labels and the sync check when SpoolEase is set up. */
 export function homeItems(source: string, spoolease: boolean): HomeItem[] {
   const file = source.trim();
   return [
@@ -30,6 +30,7 @@ export function homeItems(source: string, spoolease: boolean): HomeItem[] {
     ...(spoolease ? [{ id: "barcode" as const, label: "Barcode: more spools of what you scan", detail: "learns each barcode once" }] : []),
     ...(spoolease ? [{ id: "labels" as const, label: "Print labels for existing spools", detail: "pick spools on your SpoolEase console" }] : []),
     ...(spoolease ? [{ id: "spools" as const, label: "Your spools on the console", detail: "what's left on each and where it is" }] : []),
+    { id: "edit", label: "Edit a filament preset", detail: "temperatures, flow, cooling, any setting" },
     ...(spoolease ? [{ id: "check" as const, label: "Check sync", detail: "compare presets, custom filaments and spools; changes nothing" }] : []),
     { id: "settings", label: "Settings", detail: "BambuStudio folder and printers, SpoolEase" },
     { id: "quit", label: "Quit", detail: "" },

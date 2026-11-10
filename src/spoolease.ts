@@ -313,6 +313,20 @@ function csvCode(line: string): string {
   return line.split(",", 1)[0] ?? "";
 }
 
+/** The CSV with the nozzle temperature range of the row for `code` changed, every other field and row kept; null when no row has the code. */
+export function withNozzleRange(csv: string, code: string, low: number, high: number): string | null {
+  let found = false;
+  const lines = csv.split(/\r?\n/).map((line) => {
+    if (!line.trim() || csvCode(line) !== code) return line;
+    found = true;
+    const fields = line.split(",");
+    fields[2] = String(low);
+    fields[3] = String(high);
+    return fields.join(",");
+  });
+  return found ? lines.join("\r\n") : null;
+}
+
 /**
  * SpoolEase stores one CSV and replaces it wholesale on every write, so merge ours into what's there:
  * rows with a matching code are replaced in place, other rows are kept, new rows are appended.

@@ -34,7 +34,7 @@ function hasNoId(value: unknown): boolean {
 // BambuStudio's cloud sync (Preset.cpp, PresetCollection) keeps a local preset whose .info updated_time is newer
 // than the cloud's copy and marks it to upload; an older or equal one is left alone, or replaced by a newer
 // cloud copy. So the edit has to move updated_time forward to reach the account.
-async function touchInfo(presetPath: string, nowMs: number): Promise<void> {
+export async function touchInfo(presetPath: string, nowMs: number): Promise<void> {
   const infoPath = `${presetPath.slice(0, -".json".length)}.info`;
   let info: string;
   try {

@@ -894,6 +894,147 @@ describe("TUI", () => {
     expect(lastFrame()).toContain(`Rock PLA (${derivedFilamentId("Rock PLA")})`);
   });
 
+  describe("editing presets", () => {
+    const PAGE_DOWN = "\u001B[6~";
+    const PAGE_UP = "\u001B[5~";
+    const SPACE = " ";
+
+    // Two presets of one filament, one per printer, as BambuStudio writes them.
+    async function redPresets(): Promise<string[]> {
+      const base = baseFilamentDir(home);
+      await mkdir(base, { recursive: true });
+      const paths: string[] = [];
+      for (const printer of [X1C_04, X1C_06]) {
+        const path = join(base, `Red @${printer}.json`);
+        const preset = {
+          name: `Red @${printer}`,
+          inherits: "",
+          filament_id: "PA000001",
+          nozzle_temperature: ["220"],
+          nozzle_temperature_initial_layer: ["220"],
+          nozzle_temperature_range_low: ["190"],
+          nozzle_temperature_range_high: ["230"],
+          filament_start_gcode: ["; start"],
+        };
+        await writeFile(path, `${JSON.stringify(preset, null, 4)}\n`);
+        await writeFile(join(base, `Red @${printer}.info`), "sync_info = \nupdated_time = 1700000000\n");
+        paths.push(path);
+      }
+      return paths;
+    }
+
+    async function retype(stdin: { write: (data: string) => void }, value: string): Promise<void> {
+      await press(stdin, ENTER, BACKSPACE, BACKSPACE, BACKSPACE, ...value.split(""), ENTER);
+    }
+
+    it("edits fields, keeps edits not saved yet, and saves them into the filament's presets and SpoolEase's range", async () => {
+      const [first, second] = await redPresets();
+      server.customFilaments = "PA000001,Acme PLA Red,190,230,PLA\r\nPB000002,Acme PLA Blue,200,220,PLA";
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, "e", ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Edit a filament preset: 2 in BambuStudio folder default"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Edit Red @ X1 Carbon 0.4 nozzle"));
+      expect(lastFrame()).toMatch(/Temperature +Nozzle +220 °C/);
+
+      await retype(stdin, "215");
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Nozzle +215 °C +was 220 °C/));
+      await press(stdin, DOWN, DOWN);
+      await retype(stdin, "200");
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Nozzle range, low +200 °C +was 190 °C/));
+
+      // Back to the list and in again: the edits are still there, not saved.
+      await press(stdin, ESC);
+      await vi.waitFor(() => expect(lastFrame()).toContain("• not saved"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Nozzle +215 °C/));
+      expect(JSON.parse(await readFile(first!, "utf-8")).nozzle_temperature).toEqual(["220"]);
+
+      await press(stdin, PAGE_DOWN, PAGE_DOWN, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Save to which presets of Red?"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Save 2 changes to Red @ X1 Carbon 0.4 nozzle"));
+      expect(lastFrame()).toMatch(/Nozzle +220 °C → 215 °C/);
+      expect(lastFrame()).toContain("Into 2 presets:");
+      expect(lastFrame()).toContain("SpoolEase: custom filament PA000001's nozzle range 190-230 °C → 200-230 °C");
+      expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+
+      await press(stdin, "a");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 presets saved, 0 failed"));
+      expect(lastFrame()).toContain("✓ SpoolEase's nozzle range for PA000001 is 200-230 °C");
+      for (const path of [first!, second!]) {
+        const saved = JSON.parse(await readFile(path, "utf-8"));
+        expect(saved).toMatchObject({ nozzle_temperature: ["215"], nozzle_temperature_initial_layer: ["220"], nozzle_temperature_range_low: ["200"], filament_id: "PA000001" });
+        expect(await readFile(path.replace(/\.json$/, ".info"), "utf-8")).not.toContain("updated_time = 1700000000");
+      }
+      expect(server.customFilaments).toBe("PA000001,Acme PLA Red,200,230,PLA\r\nPB000002,Acme PLA Blue,200,220,PLA");
+
+      await press(stdin, "m");
+      await vi.waitFor(() => expect(lastFrame()).toContain("✓ 2 BambuStudio presets of Red saved: restart BambuStudio to load"));
+    });
+
+    it("edits any setting as raw text under All settings, and saves only into the presets ticked", async () => {
+      const [first, second] = await redPresets();
+      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />);
+      await settle();
+
+      await press(stdin, "e", ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Edit a filament preset"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Edit Red @"));
+      await press(stdin, PAGE_DOWN, PAGE_DOWN, UP, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("All settings: Red @ X1 Carbon 0.4 nozzle"));
+
+      await press(stdin, ..."start".split(""));
+      await vi.waitFor(() => expect(lastFrame()).toContain("1 of 8"));
+      await press(stdin, ENTER, ..."\\nG28".split(""), ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("; start\\nG28"));
+      // name identifies the preset; it isn't edited here.
+      await press(stdin, ESC);
+      await vi.waitFor(() => expect(lastFrame()).not.toContain("1 of 8"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("name can't be changed here: it comes from the file name"));
+
+      await press(stdin, ESC);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Review and save"));
+      await press(stdin, DOWN, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Save to which presets of Red?"));
+      await press(stdin, DOWN, SPACE, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Into 1 preset:"));
+      expect(lastFrame()).toMatch(/filament_start_gcode +; start → ; start\\nG28/);
+
+      await press(stdin, "a");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 preset saved, 0 failed"));
+      expect(JSON.parse(await readFile(first!, "utf-8")).filament_start_gcode).toEqual(["; start\nG28"]);
+      expect(JSON.parse(await readFile(second!, "utf-8")).filament_start_gcode).toEqual(["; start"]);
+    });
+
+    it("won't review nothing, or a nozzle range that runs high to low, and says when there are no presets", async () => {
+      const { lastFrame, stdin, unmount } = render(<App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />);
+      await settle();
+      await press(stdin, "e", ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("✗ BambuStudio folder default has no filament presets of your own"));
+      unmount();
+
+      await redPresets();
+      const again = render(<App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />);
+      await settle();
+      await press(again.stdin, "e", ENTER);
+      await vi.waitFor(() => expect(again.lastFrame()).toContain("Edit a filament preset"));
+      await press(again.stdin, ENTER);
+      await vi.waitFor(() => expect(again.lastFrame()).toContain("Edit Red @"));
+      await press(again.stdin, PAGE_DOWN, PAGE_DOWN, ENTER);
+      await vi.waitFor(() => expect(again.lastFrame()).toContain("Nothing changed yet"));
+
+      await press(again.stdin, PAGE_UP, PAGE_UP, DOWN, DOWN);
+      await retype(again.stdin, "240");
+      await press(again.stdin, PAGE_DOWN, PAGE_DOWN, ENTER);
+      await vi.waitFor(() => expect(again.lastFrame()).toContain("Nozzle range: low (240 °C) is above high (230 °C)"));
+    });
+  });
+
   it("shows SpoolmanDB download errors on the form", async () => {
     spoolmanDb.failWith = 503;
     const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);

@@ -3,7 +3,7 @@
 
 import { Box, Text } from "ink";
 
-export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "spools", "scan", "error"] as const;
+export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "spools", "scan", "presets", "edit", "raw", "save", "error"] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
 
@@ -129,6 +129,40 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
         title: "filament IDs",
         about: "Presets without a filament ID get the one BambuStudio would give them.",
         keys: [["[a]", "write the IDs into the presets"], ["[b]", "back to the check, which looks again"], ["[m]", "back to the menu, once written"], ["[q]", "quit"], QUIT],
+      };
+    case "presets":
+      return {
+        title: "filament presets",
+        about: "BambuStudio filament presets, one per printer; copies of others are left out.",
+        keys: [["typing", "filter: every word in the name, printer or filament ID"], ["backspace", "delete a letter"], MOVE, PAGE, ["enter", "edit the preset"], ["esc", "clear the filter, then back to the menu"], QUIT],
+      };
+    case "edit":
+      return {
+        title: "editing a preset",
+        about: "Nothing is saved until the review's [a]; changes stay while you edit others.",
+        keys: [
+          MOVE,
+          PAGE,
+          ["enter", "edit the value (a switch flips); enter sets it"],
+          ["esc", "while typing: leave the value as it was"],
+          ["u", "undo the change to the field"],
+          ["All settings…", "every key in the preset, as text"],
+          ["Review and save", "which presets change, then [a] saves"],
+          ["esc, not typing", "back to the presets, changes kept"],
+          QUIT,
+        ],
+      };
+    case "raw":
+      return {
+        title: "all settings",
+        about: "Each value on one line, \\n for a new line; differing variants as a JSON list.",
+        keys: [["typing", "filter the keys"], MOVE, PAGE, ["enter", "edit the value, then enter sets it"], ["ctrl+u", "undo the change to the key"], ["esc", "clear the filter, then back to the form"], QUIT],
+      };
+    case "save":
+      return {
+        title: "saving a preset",
+        about: "Each preset is read again and only the changed keys are written.",
+        keys: [["[a]", "save, and the nozzle range on SpoolEase when it changed"], ["[b]", "back to editing"], ["[e]", "edit another preset, once saved"], ["[m]", "back to the menu, once saved"], ["[q]", "quit"], QUIT],
       };
     case "error":
       return {

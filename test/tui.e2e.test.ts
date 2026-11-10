@@ -242,6 +242,32 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     expect(await terminal.exited).toBe(130);
   });
 
+  it("edits a preset's field, typed in one burst with its enter like a paste, and saves it", async () => {
+    const base = baseFilamentDir(home);
+    await mkdir(base, { recursive: true });
+    const path = join(base, `Red @${X1C_04}.json`);
+    const preset = { name: `Red @${X1C_04}`, inherits: "", filament_id: "PA000001", nozzle_temperature: ["220"], filament_flow_ratio: ["0.98"] };
+    await writeFile(path, `${JSON.stringify(preset, null, 4)}\n`);
+    terminal = new Terminal(["--skip-spoolease"], { HOME: home });
+
+    await terminal.waitFor("Edit a filament preset");
+    await terminal.pressEach("e", ENTER);
+    await terminal.waitFor("1 in BambuStudio folder default");
+    terminal.press(ENTER);
+    await terminal.waitFor("Edit Red @ X1 Carbon 0.4 nozzle");
+    await terminal.pressEach(ENTER, "\u007F", "\u007F", "\u007F");
+    terminal.press("215\r");
+    await terminal.waitFor("was 220 °C");
+    await terminal.pressEach("\u001B[6~", "\u001B[6~", ENTER);
+    await terminal.waitFor("[a] save");
+    terminal.press("a");
+    await terminal.waitFor("Done: 1 preset saved, 0 failed");
+    terminal.press("q");
+
+    expect(await terminal.exited).toBe(0);
+    expect(await readFile(path, "utf-8")).toBe(`${JSON.stringify({ ...preset, nozzle_temperature: ["215"] }, null, 4)}\n`);
+  });
+
   it("accepts typed input and never echoes the security key from the environment", async () => {
     terminal = new Terminal(["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)], {
       HOME: home,
