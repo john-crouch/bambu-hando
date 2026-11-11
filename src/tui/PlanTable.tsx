@@ -6,6 +6,7 @@ import Spinner from "ink-spinner";
 
 import type { FilamentProfile, Status } from "../models.js";
 import type { ProfilePlan } from "../planPreview.js";
+import type { Edits } from "../presetEdit.js";
 
 // The swatch shows the color, so the table leaves its RGBA out and keeps the width for what the run does.
 const COLUMNS = { swatch: 3, name: 22, brand: 12, material: 10, temps: 10, code: 9, empty: 7, preset: 12, spool: 14 } as const;
@@ -78,7 +79,7 @@ function Cell({ width, children, dim }: { width: number; children: string; dim?:
 interface Props {
   profiles: FilamentProfile[];
   progress: RowProgress[];
-  /** What the run would do, shown until it reports; null or absent when it couldn't be worked out. */
+  /** What the run would do, shown until it reports (its nozzle ranges all along); null or absent when it couldn't be worked out. */
   plans?: ProfilePlan[] | null;
   overwrite?: boolean;
   activePresets: boolean;
@@ -122,6 +123,7 @@ export function PlanTable({ profiles, progress, plans, overwrite = false, active
       {profiles.map((profile, index) => {
         const row = progress[index] ?? {};
         const plan = started ? undefined : plans?.[index];
+        const range = plans?.[index]?.nozzleRange ?? { low: profile.nozzleTempMin, high: profile.nozzleTempMax };
         return (
           <Box key={`${index}-${profile.name}`}>
             <Box width={COLUMNS.swatch}>
@@ -130,7 +132,7 @@ export function PlanTable({ profiles, progress, plans, overwrite = false, active
             <Cell width={COLUMNS.name}>{profile.name}</Cell>
             <Cell width={COLUMNS.brand}>{profile.brand}</Cell>
             <Cell width={COLUMNS.material}>{profile.material}</Cell>
-            <Cell width={COLUMNS.temps}>{`${profile.nozzleTempMin}-${profile.nozzleTempMax}`}</Cell>
+            <Cell width={COLUMNS.temps}>{`${range.low}-${range.high}`}</Cell>
             <Cell width={COLUMNS.code}>{profile.filamentId}</Cell>
             <Cell width={COLUMNS.empty}>{profile.coreWeight ? `${profile.coreWeight} g` : "–"}</Cell>
             <Box width={COLUMNS.preset} paddingRight={1}>
@@ -150,17 +152,43 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** What the plan's words mean where it matters: each update, and counts of kept presets and existing spools. */
-export function PlanNotes({ profiles, plans, overwrite }: { profiles: FilamentProfile[]; plans: ProfilePlan[]; overwrite: boolean }) {
+/** Where a filament's plan edits go: the presets the run writes for it, or nowhere when it keeps them all. */
+function editNote(profile: FilamentProfile, plan: ProfilePlan, overwrite: boolean, count: number): { text: string; tone: "yellow" | "red" } {
+  const written = overwrite ? plan.presets : plan.presets - plan.existingPresets;
+  const changes = plural(count, "change");
+  if (written === 0) return { text: `✎ ${profile.filamentId}: the run keeps its presets, so its ${changes} ${count === 1 ? "goes" : "go"} nowhere`, tone: "red" };
+  return { text: `✎ ${profile.filamentId}: ${changes} ${count === 1 ? "goes" : "go"} into the ${plural(written, "preset")} the run writes`, tone: "yellow" };
+}
+
+interface NotesProps {
+  profiles: FilamentProfile[];
+  plans: ProfilePlan[];
+  overwrite: boolean;
+  /** Edits made on the plan, by filament ID. */
+  edits?: ReadonlyMap<string, Edits>;
+}
+
+/** What the plan's words mean where it matters: each update and edit, and counts of kept presets and existing spools. */
+export function PlanNotes({ profiles, plans, overwrite, edits = new Map() }: NotesProps) {
   const updates = plans.flatMap((plan, index) => {
     const profile = profiles[index];
     return plan.filament?.state === "update" && profile ? [{ profile, filament: plan.filament }] : [];
   });
+  const edited = plans.flatMap((plan, index) => {
+    const profile = profiles[index];
+    const count = profile ? (edits.get(profile.filamentId)?.size ?? 0) : 0;
+    return profile && count > 0 ? [{ key: profile.filamentId, ...editNote(profile, plan, overwrite, count) }] : [];
+  });
   const kept = overwrite ? 0 : plans.reduce((sum, plan) => sum + plan.existingPresets, 0);
   const spooled = plans.filter((plan) => plan.spool === "exists").length;
-  if (updates.length === 0 && kept === 0 && spooled === 0) return null;
+  if (updates.length === 0 && edited.length === 0 && kept === 0 && spooled === 0) return null;
   return (
     <Box flexDirection="column">
+      {edited.map((note) => (
+        <Text key={note.key} color={note.tone} wrap="truncate-end">
+          {note.text}
+        </Text>
+      ))}
       {updates.map(({ profile, filament }) => (
         <Text key={profile.filamentId} color="yellow" wrap="truncate-end">
           ↻ {profile.filamentId} is {filament.listed} on SpoolEase; the run changes it to {filament.becomes}

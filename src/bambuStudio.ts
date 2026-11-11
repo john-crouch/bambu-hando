@@ -106,6 +106,8 @@ export interface WriteOptions {
   dryRun?: boolean;
   /** Replace presets that already exist. Off by default, so tuning done in BambuStudio survives re-runs. */
   overwrite?: boolean;
+  /** Changes a preset about to be written (not a kept one), e.g. with edits made on the plan. */
+  adjust?: (profile: FilamentProfile, printer: string, preset: PresetConfig) => PresetConfig;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -127,7 +129,7 @@ export async function writeAtomic(path: string, content: string): Promise<void> 
 export async function writeMany(
   profiles: FilamentProfile[],
   target: PresetTarget,
-  { dryRun = false, overwrite = false }: WriteOptions = {},
+  { dryRun = false, overwrite = false, adjust }: WriteOptions = {},
   onOutcome: (index: number, outcome: PresetOutcome) => void = () => {},
 ): Promise<PresetOutcome[]> {
   const outcomes: PresetOutcome[] = [];
@@ -143,8 +145,12 @@ export async function writeMany(
       });
       for (const [i, preset] of presets.entries()) {
         const path = paths[i] ?? "";
+        const printer = target.printers[i] ?? "";
         if (!overwrite && (await exists(path))) kept.push(path);
-        else if (!dryRun) await writeAtomic(path, presetJson(preset));
+        else {
+          const adjusted = adjust ? adjust(profile, printer, preset) : preset;
+          if (!dryRun) await writeAtomic(path, presetJson(adjusted));
+        }
       }
     } catch (err) {
       error = errorMessage(err);

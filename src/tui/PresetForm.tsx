@@ -134,11 +134,13 @@ interface Props {
   edited: Preset;
   edits: Edits;
   state: PresetFormState;
+  /** Opened from the plan: the preset is the one the run writes, and the form goes back to the plan. */
+  planned?: boolean;
   /** The terminal's height in rows, when known. */
   height?: number;
 }
 
-export function PresetForm({ preset, original, edited, edits, state, height }: Props) {
+export function PresetForm({ preset, original, edited, edits, state, planned = false, height }: Props) {
   const rows = presetFormRows(height);
   const [start, end] = visibleRange(state.cursor, SAVE_ROW + 1, rows);
   const unsaved = edits.size;
@@ -149,7 +151,7 @@ export function PresetForm({ preset, original, edited, edits, state, height }: P
     const active = index === state.cursor;
     const marker = <Cell width={COLUMNS.cursor}>{active ? "›" : ""}</Cell>;
     if (index >= ALL_ROW) {
-      const label = index === ALL_ROW ? "All settings…" : "Review and save";
+      const label = index === ALL_ROW ? "All settings…" : planned ? "Back to the plan" : "Review and save";
       const detail = index === ALL_ROW ? "every key in the preset, as text" : unsaved ? `${unsaved} change${unsaved === 1 ? "" : "s"}` : "nothing changed yet";
       return (
         <Box key={label} marginTop={index === ALL_ROW ? 1 : 0}>
@@ -201,6 +203,7 @@ export function PresetForm({ preset, original, edited, edits, state, height }: P
       <Text bold>Edit {presetTitle(preset)}</Text>
       <Text dimColor wrap="truncate-start">
         {tildePath(preset.path)}
+        {planned ? " · the run writes it" : ""}
       </Text>
       <Box flexDirection="column" marginY={1}>
         {lines}
@@ -208,7 +211,9 @@ export function PresetForm({ preset, original, edited, edits, state, height }: P
       </Box>
       {state.error ? <Text color="red">{state.error}</Text> : null}
       <Text dimColor>
-        {typing ? `${hint(typing) || "type the value"} · enter set · esc leave as it was` : "↑/↓ move · enter edit · u undo · esc back to presets · ? help"}
+        {typing
+          ? `${hint(typing) || "type the value"} · enter set · esc leave as it was`
+          : `↑/↓ move · enter edit · u undo · esc back to ${planned ? "the plan" : "presets"} · ? help`}
       </Text>
     </Box>
   );

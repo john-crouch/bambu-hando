@@ -35,7 +35,14 @@ describe("PlanTable", () => {
 });
 
 describe("the plan, before a run", () => {
-  const plan = (changes: Partial<ProfilePlan>): ProfilePlan => ({ presets: 1, existingPresets: 0, filament: null, spool: null, ...changes });
+  const plan = (changes: Partial<ProfilePlan>): ProfilePlan => ({
+    presets: 1,
+    existingPresets: 0,
+    nozzleRange: { low: LONG.nozzleTempMin, high: LONG.nozzleTempMax },
+    filament: null,
+    spool: null,
+    ...changes,
+  });
 
   it("says whether each profile's presets are new, kept or replaced", () => {
     expect(presetPlanText(plan({}), false).text).toBe("+ new");
@@ -64,6 +71,28 @@ describe("the plan, before a run", () => {
     const running = render(<PlanTable profiles={[LONG]} progress={[{ preset: "skipped" }]} plans={plans} overwrite={false} activePresets={false} activeSpools />);
     expect(running.lastFrame()).toContain("– skipped");
     expect(running.lastFrame()).not.toContain("add + spool");
+  });
+
+  it("shows the nozzle range the run gives SpoolEase, while it runs too", () => {
+    const plans = [plan({ nozzleRange: { low: 235, high: 250 } })];
+    const { lastFrame } = render(<PlanTable profiles={[LONG]} progress={[]} plans={plans} activePresets={false} activeSpools={false} />);
+    expect(lastFrame()).toMatch(/PETG +235-250/);
+
+    const running = render(<PlanTable profiles={[LONG]} progress={[{ preset: "written" }]} plans={plans} activePresets={false} activeSpools />);
+    expect(running.lastFrame()).toMatch(/PETG +235-250/);
+  });
+
+  it("says which presets the plan's edits go into", () => {
+    const edits = new Map([["P1234567", new Map([["filament_flow_ratio", { every: "0.95" }]])]]);
+
+    const written = render(<PlanNotes profiles={[LONG]} plans={[plan({ presets: 2, existingPresets: 1 })]} overwrite={false} edits={edits} />);
+    expect(written.lastFrame()).toContain("✎ P1234567: 1 change goes into the 1 preset the run writes");
+
+    const replaced = render(<PlanNotes profiles={[LONG]} plans={[plan({ presets: 2, existingPresets: 1 })]} overwrite edits={edits} />);
+    expect(replaced.lastFrame()).toContain("✎ P1234567: 1 change goes into the 2 presets the run writes");
+
+    const kept = render(<PlanNotes profiles={[LONG]} plans={[plan({ existingPresets: 1 })]} overwrite={false} edits={edits} />);
+    expect(kept.lastFrame()).toContain("✎ P1234567: the run keeps its presets, so its 1 change goes nowhere");
   });
 
   it("explains updates, kept presets and existing spools under the table", () => {

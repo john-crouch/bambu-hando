@@ -55,10 +55,10 @@ describe("previewPlan", () => {
     vi.stubEnv("HOME", home);
   });
 
-  async function existing(p: FilamentProfile, printer: string): Promise<void> {
+  async function existing(p: FilamentProfile, printer: string, preset: object = {}): Promise<void> {
     const path = presetPath(p, "default", printer);
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, "{}");
+    await writeFile(path, JSON.stringify(preset));
   }
 
   it("counts each profile's presets that exist, and checks its row and spool", async () => {
@@ -70,16 +70,35 @@ describe("previewPlan", () => {
     const plans = await previewPlan([RED, BLUE], { presetFolder: "default", printers }, spoolease, true);
 
     expect(plans).toEqual([
-      { presets: 2, existingPresets: 1, filament: { state: "same", listed: "", becomes: "" }, spool: "exists" },
-      { presets: 2, existingPresets: 2, filament: { state: "new", listed: "", becomes: "" }, spool: "create" },
+      { presets: 2, existingPresets: 1, nozzleRange: { low: 200, high: 220 }, filament: { state: "same", listed: "", becomes: "" }, spool: "exists" },
+      { presets: 2, existingPresets: 2, nozzleRange: { low: 200, high: 220 }, filament: { state: "new", listed: "", becomes: "" }, spool: "create" },
     ]);
   });
 
   it("leaves SpoolEase out when it wasn't read, and spools out when none are created", async () => {
     const [unread] = await previewPlan([RED], { presetFolder: "default", printers }, null, true);
-    expect(unread).toEqual({ presets: 2, existingPresets: 0, filament: null, spool: null });
+    expect(unread).toEqual({ presets: 2, existingPresets: 0, nozzleRange: { low: 200, high: 220 }, filament: null, spool: null });
 
     const [noSpools] = await previewPlan([RED], { presetFolder: "default", printers }, { csv: "", spooledIds: new Set() }, false);
     expect(noSpools).toMatchObject({ filament: { state: "new" }, spool: null });
+  });
+
+  it("shows the range a kept preset gives SpoolEase, unless overwriting replaces it", async () => {
+    await existing(RED, "Printer B", { nozzle_temperature_range_low: ["210"], nozzle_temperature_range_high: ["235"] });
+    const spoolease = { csv: "P1111111,Acme PLA Red,200,220,PLA", spooledIds: new Set<string>() };
+
+    const [kept] = await previewPlan([RED], { presetFolder: "default", printers }, spoolease, false);
+    expect(kept).toMatchObject({ nozzleRange: { low: 210, high: 235 }, filament: { state: "update", becomes: "Acme PLA Red 210-235 °C" } });
+
+    const [replaced] = await previewPlan([RED], { presetFolder: "default", printers }, spoolease, false, { overwrite: true });
+    expect(replaced).toMatchObject({ nozzleRange: { low: 200, high: 220 }, filament: { state: "same" } });
+  });
+
+  it("shows the range the plan's edits give the presets the run writes", async () => {
+    const edits = new Map([["P1111111", new Map([["nozzle_temperature_range_low", { every: "195" }]])]]);
+
+    const [edited] = await previewPlan([RED], { presetFolder: "default", printers }, { csv: "", spooledIds: new Set() }, false, { edits });
+
+    expect(edited).toMatchObject({ nozzleRange: { low: 195, high: 220 }, filament: { state: "new" } });
   });
 });

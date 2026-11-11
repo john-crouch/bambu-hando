@@ -2,10 +2,11 @@
 // ABOUTME: Writes presets, then pushes to SpoolEase, emitting per-profile progress events.
 
 import { SystemProfiles } from "./bambuProfiles.js";
-import { type PresetOutcome, writeMany } from "./bambuStudio.js";
+import { type PresetOutcome, presetName, writeMany } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
 import type { FilamentProfile, Status, SyncResult } from "./models.js";
 import { bambuConfigDir } from "./paths.js";
+import { applyEdits, type Edits, readPreset, skippedDetail, syncedRange } from "./presetEdit.js";
 import { buildCustomFilamentsCsv, mergeCustomFilamentsCsv, SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 
 const DETAIL_LIMIT = 120;
@@ -22,6 +23,8 @@ export interface SyncOptions {
   createSpools: boolean;
   /** Replace BambuStudio presets that already exist instead of keeping them. */
   overwritePresets?: boolean;
+  /** Edits made on the plan, by filament ID: they go into each preset the run writes for it, not kept ones. */
+  presetEdits?: ReadonlyMap<string, Edits>;
 }
 
 export type SyncStage = "presets" | "key-check" | "custom-filaments" | "spools";
@@ -86,11 +89,31 @@ export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) 
 
   onEvent({ type: "stage", stage: "presets" });
   const target = { presetFolder: options.presetFolder, printers: options.printers, system };
-  const presets = await writeMany(profiles, target, { dryRun, overwrite: options.overwritePresets ?? false }, (index, outcome) =>
+  const edits = options.presetEdits ?? new Map<string, Edits>();
+  const adjust = (profile: FilamentProfile, printer: string, built: Record<string, unknown>): Record<string, unknown> => {
+    const profileEdits = edits.get(profile.filamentId);
+    if (!profileEdits) return built;
+    const { preset, skipped } = applyEdits(built, profileEdits);
+    if (skipped.length > 0) onEvent({ type: "warning", message: `${presetName(profile, printer)}: ${skippedDetail(built, profileEdits, skipped)}` });
+    return preset;
+  };
+  const presets = await writeMany(profiles, target, { dryRun, overwrite: options.overwritePresets ?? false, adjust }, (index, outcome) =>
     onEvent({ type: "preset", index, status: presetStatus(outcome, dryRun), ...outcome }),
   );
 
-  const spools = await syncSpoolEase(options, onEvent);
+  // SpoolEase's range follows the presets as the run leaves them: a kept one's tuning, or the edits.
+  const synced = await Promise.all(
+    profiles.map(async (profile, index) => {
+      const kept = await Promise.all((presets[index]?.kept ?? []).map(readPreset));
+      const range = syncedRange(
+        profile,
+        kept.filter((p) => p !== null),
+        edits.get(profile.filamentId),
+      );
+      return { ...profile, nozzleTempMin: range.low, nozzleTempMax: range.high };
+    }),
+  );
+  const spools = await syncSpoolEase({ ...options, profiles: synced }, onEvent);
 
   const results = profiles.map((profile, index): SyncResult => {
     const bambuError = presets[index]?.error ?? "";

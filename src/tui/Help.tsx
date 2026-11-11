@@ -3,7 +3,7 @@
 
 import { Box, Text } from "ink";
 
-export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "spools", "scan", "presets", "edit", "raw", "save", "error"] as const;
+export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "spools", "scan", "presets", "edit", "planned", "raw", "save", "error"] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
 
@@ -77,7 +77,13 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
       return {
         title: "the plan",
         about: "What a run would write, and where; nothing is written until [a].",
-        keys: [["[a]", "write the presets and SpoolEase filaments and spools"], ["[b]", "back to the filaments or the menu"], ["[q]", "quit without writing"], QUIT],
+        keys: [
+          ["[a]", "write the presets and SpoolEase filaments and spools"],
+          ["[e]", "change a filament's new presets before they're written"],
+          ["[b]", "back to the filaments or the menu"],
+          ["[q]", "quit without writing"],
+          QUIT,
+        ],
       };
     case "done":
       return {
@@ -149,6 +155,21 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
           ["All settings…", "every key in the preset, as text"],
           ["Review and save", "which presets change, then [a] saves"],
           ["esc, not typing", "back to the presets, changes kept"],
+          QUIT,
+        ],
+      };
+    case "planned":
+      return {
+        title: "a preset the run writes",
+        about: "Changes go into each new preset of the filament; the plan's [a] writes them.",
+        keys: [
+          MOVE,
+          PAGE,
+          ["enter", "edit the value (a switch flips); enter sets it"],
+          ["esc", "while typing: leave the value as it was"],
+          ["u", "undo the change to the field"],
+          ["All settings…", "every key in the preset, as text"],
+          ["esc, not typing", "back to the plan, changes kept"],
           QUIT,
         ],
       };

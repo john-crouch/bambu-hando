@@ -20,9 +20,12 @@ import {
   presetFamily,
   rangeError,
   rawText,
+  readPreset,
   shownValue,
+  syncedRange,
   writePresetEdits,
 } from "../src/presetEdit.js";
+import type { FilamentProfile } from "../src/models.js";
 import { withNozzleRange } from "../src/spoolease.js";
 
 const field = (key: string) => editField(key)!;
@@ -172,6 +175,44 @@ describe("applyEdits", () => {
   it("reads the nozzle range, when both ends are numbers", () => {
     expect(nozzleRange(PRESET)).toEqual({ low: 190, high: 230 });
     expect(nozzleRange({ nozzle_temperature_range_low: ["190"] })).toBeNull();
+  });
+});
+
+describe("syncedRange", () => {
+  const profile = { nozzleTempMin: 200, nozzleTempMax: 220 } as FilamentProfile;
+  const range = (low: string, high: string) => ({ nozzle_temperature_range_low: [low], nozzle_temperature_range_high: [high] });
+
+  it("is the profile's range when every preset is written as built", () => {
+    expect(syncedRange(profile, [])).toEqual({ low: 200, high: 220 });
+  });
+
+  it("takes the edits' range, as the written presets get it", () => {
+    const edits = new Map([["nozzle_temperature_range_high", { every: "235" }]]);
+    expect(syncedRange(profile, [], edits)).toEqual({ low: 200, high: 235 });
+  });
+
+  it("prefers a kept preset's range over the profile and the edits, which don't reach it", () => {
+    const edits = new Map([["nozzle_temperature_range_high", { every: "235" }]]);
+    expect(syncedRange(profile, [range("230", "255")], edits)).toEqual({ low: 230, high: 255 });
+  });
+
+  it("goes past kept presets without a range", () => {
+    expect(syncedRange(profile, [{}, range("210", "240")])).toEqual({ low: 210, high: 240 });
+    expect(syncedRange(profile, [{}])).toEqual({ low: 200, high: 220 });
+  });
+});
+
+describe("readPreset", () => {
+  it("reads a preset file, and is null for one that's missing or isn't a preset", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bambu-hando-read-"));
+    await writeFile(join(dir, "ok.json"), '{"name": "Red"}');
+    await writeFile(join(dir, "list.json"), "[1]");
+    await writeFile(join(dir, "bad.json"), "{");
+
+    expect(await readPreset(join(dir, "ok.json"))).toEqual({ name: "Red" });
+    expect(await readPreset(join(dir, "list.json"))).toBeNull();
+    expect(await readPreset(join(dir, "bad.json"))).toBeNull();
+    expect(await readPreset(join(dir, "missing.json"))).toBeNull();
   });
 });
 

@@ -397,7 +397,7 @@ describe("TUI", () => {
 
     await press(stdin, ENTER);
     await keepSourceWeights(stdin, lastFrame);
-    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply · [b] back to menu"));
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply · [e] edit presets · [b] back to menu"));
     await press(stdin, "b");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
@@ -1032,6 +1032,75 @@ describe("TUI", () => {
       await retype(again.stdin, "240");
       await press(again.stdin, PAGE_DOWN, PAGE_DOWN, ENTER);
       await vi.waitFor(() => expect(again.lastFrame()).toContain("Nozzle range: low (240 °C) is above high (230 °C)"));
+    });
+  });
+
+  describe("editing on the plan", () => {
+    async function retype(stdin: { write: (data: string) => void }, value: string): Promise<void> {
+      await press(stdin, ENTER, BACKSPACE, BACKSPACE, BACKSPACE, ...value.split(""), ENTER);
+    }
+
+    it("edits a filament's new preset before the run writes it, and the run writes it with SpoolEase's range", async () => {
+      const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
+      await settle();
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply · [e] edit presets"));
+
+      await press(stdin, "e");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Edit the new presets of which filament?"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain(`Edit PETG Red @ X1 Carbon 0.4 nozzle`));
+      expect(lastFrame()).toContain("the run writes it");
+      expect(lastFrame()).toMatch(/Nozzle range, high +255 °C/);
+
+      // A range that runs high to low doesn't go back to the plan.
+      await press(stdin, DOWN, DOWN);
+      await retype(stdin, "260");
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Nozzle range, low +260 °C/));
+      await press(stdin, ESC);
+      await vi.waitFor(() => expect(lastFrame()).toContain("Nozzle range: low (260 °C) is above high (255 °C)"));
+      await press(stdin, "u", DOWN);
+      await retype(stdin, "245");
+      await vi.waitFor(() => expect(lastFrame()).toMatch(/Nozzle range, high +245 °C +was 255 °C/));
+
+      await press(stdin, ESC);
+      await vi.waitFor(() => expect(lastFrame()).toContain("✎ PABC1234: 1 change goes into the 1 preset the run writes"));
+      expect(lastFrame()).toMatch(/PETG +230-245/);
+      expect(await readdir(baseFilamentDir(home)).catch(() => [])).toEqual([]);
+
+      await press(stdin, "a");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
+      const written = JSON.parse(await readFile(join(baseFilamentDir(home), `PETG Red @${X1C_04}.json`), "utf-8"));
+      expect(written).toMatchObject({ nozzle_temperature_range_low: ["230"], nozzle_temperature_range_high: ["245"] });
+      expect(server.customFilaments?.split("\r\n")[0]).toBe("PABC1234,Polymaker PETG Red,230,245,PETG");
+
+      // The next run starts without the edits.
+      await press(stdin, "m");
+      await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      expect(lastFrame()).not.toContain("✎");
+    });
+
+    it("sends SpoolEase a kept preset's range, and points to the preset editor for kept presets", async () => {
+      const base = baseFilamentDir(home);
+      await mkdir(base, { recursive: true });
+      const tuned = { name: `PETG Red @${X1C_04}`, filament_id: "PABC1234", nozzle_temperature_range_low: ["235"], nozzle_temperature_range_high: ["250"] };
+      await writeFile(join(base, `PETG Red @${X1C_04}.json`), JSON.stringify(tuned));
+      const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
+      await settle();
+      await press(stdin, ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+      expect(lastFrame()).toMatch(/PETG +235-250/);
+
+      await press(stdin, "e", ENTER);
+      await vi.waitFor(() => expect(lastFrame()).toContain("PETG Red's presets are there already and the run keeps them"));
+      expect(lastFrame()).toContain("[a] apply");
+
+      await press(stdin, "a");
+      await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
+      expect(server.customFilaments?.split("\r\n")[0]).toBe("PABC1234,Polymaker PETG Red,235,250,PETG");
+      expect(JSON.parse(await readFile(join(base, `PETG Red @${X1C_04}.json`), "utf-8"))).toEqual(tuned);
     });
   });
 

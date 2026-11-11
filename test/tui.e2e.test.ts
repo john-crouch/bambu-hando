@@ -268,6 +268,30 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     expect(await readFile(path, "utf-8")).toBe(`${JSON.stringify({ ...preset, nozzle_temperature: ["215"] }, null, 4)}\n`);
   });
 
+  it("edits a filament's new preset on the plan and writes it with the run", async () => {
+    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease"], { HOME: home });
+
+    await terminal.waitFor("Add spools from SpoolmanDB");
+    terminal.press(ENTER);
+    await terminal.waitFor("[e] edit presets");
+    terminal.press("e");
+    await terminal.waitFor("Edit the new presets of which filament?");
+    terminal.press(ENTER);
+    await terminal.waitFor("the run writes it");
+    await terminal.pressEach(DOWN, DOWN, DOWN, ENTER, "\u007F", "\u007F", "\u007F");
+    terminal.press("245\r");
+    await terminal.waitFor("was 255 °C");
+    terminal.press(ESC);
+    await terminal.waitFor("✎ PABC1234: 1 change goes into the 1 preset the run writes");
+    terminal.press("a");
+    await terminal.waitFor("Done: 3 written, 0 failed");
+    terminal.press("q");
+
+    expect(await terminal.exited).toBe(0);
+    const written = JSON.parse(await readFile(join(baseFilamentDir(home), `PETG Red @${X1C_04}.json`), "utf-8"));
+    expect(written.nozzle_temperature_range_high).toEqual(["245"]);
+  });
+
   it("accepts typed input and never echoes the security key from the environment", async () => {
     terminal = new Terminal(["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)], {
       HOME: home,

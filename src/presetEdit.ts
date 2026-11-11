@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 
 import { writeAtomic } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
+import type { FilamentProfile } from "./models.js";
 import { touchInfo } from "./presetIds.js";
 import type { UserPreset } from "./syncCheck.js";
 
@@ -249,6 +250,30 @@ export function nozzleRange(preset: Preset): { low: number; high: number } | nul
   return low !== null && high !== null ? { low, high } : null;
 }
 
+/**
+ * The nozzle range a sync gives SpoolEase for a filament: a kept preset's (the run leaves it as it is,
+ * tuned or not), else the profile's with the plan's edits, as the presets it writes get them.
+ */
+export function syncedRange(profile: FilamentProfile, kept: Preset[], edits?: Edits): { low: number; high: number } {
+  for (const preset of kept) {
+    const range = nozzleRange(preset);
+    if (range) return range;
+  }
+  // buildPreset writes the profile's range as one value each, so the edits apply to it as they do there.
+  const built: Preset = { nozzle_temperature_range_low: [String(profile.nozzleTempMin)], nozzle_temperature_range_high: [String(profile.nozzleTempMax)] };
+  return nozzleRange(edits ? applyEdits(built, edits).preset : built) ?? { low: profile.nozzleTempMin, high: profile.nozzleTempMax };
+}
+
+/** A preset file's settings; null when it can't be read or isn't a preset. */
+export async function readPreset(path: string): Promise<Preset | null> {
+  try {
+    const preset: unknown = JSON.parse(await readFile(path, "utf-8"));
+    return typeof preset === "object" && preset !== null && !Array.isArray(preset) ? (preset as Preset) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** BambuStudio's nozzle range must run low to high; "" when it does. */
 export function rangeError(preset: Preset): string {
   const range = nozzleRange(preset);
@@ -268,7 +293,8 @@ export interface EditResult {
   detail: string;
 }
 
-function skippedDetail(preset: Preset, edits: Edits, skipped: string[]): string {
+/** Which of the edits didn't fit the preset (applyEdits' skipped), and why. */
+export function skippedDetail(preset: Preset, edits: Edits, skipped: string[]): string {
   return skipped
     .map((key) => {
       const edit = edits.get(key)!;

@@ -1,14 +1,15 @@
 // ABOUTME: Root TUI component: start menu → (settings) → (SpoolmanDB browser or search) → plan → live apply → summary (→ labels).
 // ABOUTME: Runs the shared sync orchestration and reports the process exit code via onExit.
 
-import { readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
 import { Box, Text, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { type BarcodeFilament, loadBarcodes, normalizeBarcode, rememberBarcode } from "../barcodes.js";
 import { SystemProfiles } from "../bambuProfiles.js";
+import { buildPreset, presetPath } from "../bambuStudio.js";
 import { errorMessage } from "../errors.js";
 import { type LabelTarget, makeLabels } from "../labelJob.js";
 import { listPrinters } from "../labelPdf.js";
@@ -90,10 +91,9 @@ type Screen =
   | { name: "color"; form: ColorFormState }
   /** One menu per brand in prompts; groups covers every brand, including those decided without asking. */
   | { name: "weights"; profiles: FilamentProfile[]; groups: WeightGroup[]; prompts: WeightGroup[]; step: number; cursor: number }
-  /** plans: what the run would do to each profile, null when it couldn't be worked out; warning says why. */
-  | { name: "plan"; profiles: FilamentProfile[]; plans: ProfilePlan[] | null; warning: string }
-  | { name: "running"; profiles: FilamentProfile[] }
-  | { name: "done"; profiles: FilamentProfile[]; results: SyncResult[] }
+  | PlanScreen
+  | { name: "running"; profiles: FilamentProfile[]; plans: ProfilePlan[] | null }
+  | { name: "done"; profiles: FilamentProfile[]; plans: ProfilePlan[] | null; results: SyncResult[] }
   /** More spools of a filament the console has: results is null until applied, then fills in one copy at a time. */
   | { name: "copies"; filaments: CopyableFilament[]; filament: CopyableFilament; count: number; results: SpoolEaseWrite[] | null; running: boolean }
   /** Labels for spoolIds; back is the screen esc and making the labels return to (the summary or the menu). */
@@ -108,7 +108,6 @@ type Screen =
   | { name: "ids"; fixes: IdFix[]; results: IdFixResult[] | null; running: boolean }
   /** The preset folder's filament presets, to pick one to edit. */
   | PresetsScreen
-  /** A preset being edited: original is the file as read, edits what isn't saved yet. */
   | EditScreen
   /** Every key of the preset being edited, as raw text. */
   | { name: "raw"; edit: EditScreen; state: RawSettingsState }
@@ -118,8 +117,17 @@ type Screen =
   /** The help page for back, which any key returns to. */
   | { name: "help"; topic: HelpTopic; multi: boolean; back: Screen };
 
+/**
+ * plans: what the run would do to each profile, null when it couldn't be worked out; warning says why.
+ * spoolease: the console as read for the plan, so edits made on it are shown without reading again.
+ */
+type PlanScreen = { name: "plan"; profiles: FilamentProfile[]; plans: ProfilePlan[] | null; warning: string; spoolease: ConsoleState | null; error: string };
 type PresetsScreen = { name: "presets"; presets: UserPreset[]; warnings: string[]; state: PresetListState };
-type EditScreen = { name: "edit"; list: PresetsScreen; preset: UserPreset; original: Preset; edits: Edits; form: PresetFormState };
+/**
+ * A preset being edited: original is the file as read, or the preset a run would write when opened from the
+ * plan; edits what isn't saved (or written) yet; from is where it was opened and goes back to.
+ */
+type EditScreen = { name: "edit"; from: PresetsScreen | PlanScreen; preset: UserPreset; original: Preset; edits: Edits; form: PresetFormState };
 type SaveScreen = {
   name: "save";
   edit: EditScreen;
@@ -219,6 +227,10 @@ export function App({ initial, onExit }: Props) {
   );
   // Preset edits not saved yet, by preset file; kept while going back to the list and opening others.
   const [drafts, setDrafts] = useState<ReadonlyMap<string, Edits>>(new Map());
+  // Edits made on the plan, by filament ID: the next run writes them into its new presets.
+  const [planEdits, setPlanEdits] = useState<ReadonlyMap<string, Edits>>(new Map());
+  // BambuStudio's system profiles, read the first time a preset is edited on the plan.
+  const system = useRef<SystemProfiles | null>(null);
   // A failed run keeps the exit code at 1 even when quitting later from the menu.
   const [runFailed, setRunFailed] = useState(false);
   // Lists grow and shrink with the terminal.
@@ -246,13 +258,73 @@ export function App({ initial, onExit }: Props) {
         warning = `Couldn't read SpoolEase to show what the run changes there: ${errorMessage(err)}`;
       }
     }
-    const plans = await previewPlan(profiles, { presetFolder: values.presetFolder.trim(), printers: printers(values) }, spoolease, values.createSpools).catch(
-      (err: unknown) => {
-        warning = `Couldn't look for existing presets: ${errorMessage(err)}`;
-        return null;
-      },
+    setScreen(await planScreen(profiles, spoolease, warning, planEdits));
+  }
+
+  /** The plan for spoolease as already read; looks again only for presets. */
+  async function planScreen(profiles: FilamentProfile[], spoolease: ConsoleState | null, warning: string, edits: ReadonlyMap<string, Edits>): Promise<PlanScreen> {
+    const target = { presetFolder: values.presetFolder.trim(), printers: printers(values) };
+    const plans = await previewPlan(profiles, target, spoolease, values.createSpools, { overwrite: values.overwritePresets, edits }).catch((err: unknown) => {
+      warning = `Couldn't look for existing presets: ${errorMessage(err)}`;
+      return null;
+    });
+    return { name: "plan", profiles, plans, warning, spoolease, error: "" };
+  }
+
+  /** Which filament's presets to edit before the run writes them; straight to the one when there's one. */
+  function choosePlanned(plan: PlanScreen): void {
+    const only = plan.profiles.length === 1 ? plan.profiles[0] : undefined;
+    if (only) {
+      void openPlanned(plan, only);
+      return;
+    }
+    const items = plan.profiles.map((p) => {
+      const count = planEdits.get(p.filamentId)?.size ?? 0;
+      return { value: p.filamentId, label: p.name, detail: count ? plural(count, "change") : "", swatch: `#${p.colorRgba.slice(0, 6)}` };
+    });
+    setScreen({
+      name: "choose",
+      title: "Edit the new presets of which filament?",
+      items,
+      multi: false,
+      state: initialChoiceState(items, []),
+      onDone: ([id]) => void openPlanned(plan, plan.profiles.find((p) => p.filamentId === id)!),
+      onCancel: () => setScreen(plan),
+    });
+  }
+
+  /** The form on the first preset the run writes for the profile, as it would write it. */
+  async function openPlanned(plan: PlanScreen, profile: FilamentProfile): Promise<void> {
+    const fail = (error: string): void => setScreen({ ...plan, error });
+    const folder = values.presetFolder.trim();
+    const all = printers(values);
+    const found = await Promise.all(
+      all.map((printer) =>
+        access(presetPath(profile, folder, printer)).then(
+          () => true,
+          () => false,
+        ),
+      ),
     );
-    setScreen({ name: "plan", profiles, plans, warning });
+    const printer = all.find((_, i) => values.overwritePresets || !found[i]);
+    if (printer === undefined) {
+      fail(`${profile.name}'s presets are there already and the run keeps them: edit them from the menu's Edit a filament preset`);
+      return;
+    }
+    try {
+      system.current ??= await SystemProfiles.load(bambuConfigDir());
+    } catch (err) {
+      fail(errorMessage(err));
+      return;
+    }
+    const template = system.current.template(profile.material, printer);
+    if (!template) {
+      fail(`no Generic ${profile.material} preset in BambuStudio for ${printer}`);
+      return;
+    }
+    const original = buildPreset(profile, printer, template, system.current.version);
+    const preset: UserPreset = { name: profile.name, filamentId: profile.filamentId, printer, path: presetPath(profile, folder, printer) };
+    setScreen({ name: "edit", from: plan, preset, original, edits: planEdits.get(profile.filamentId) ?? new Map(), form: initialPresetForm() });
   }
 
   function back(): void {
@@ -360,8 +432,8 @@ export function App({ initial, onExit }: Props) {
     }
   }
 
-  async function apply(profiles: FilamentProfile[]): Promise<void> {
-    setScreen({ name: "running", profiles });
+  async function apply({ profiles, plans }: PlanScreen): Promise<void> {
+    setScreen({ name: "running", profiles, plans });
     setOutcome(null);
     setProgress([]);
     setWarnings([]);
@@ -380,6 +452,7 @@ export function App({ initial, onExit }: Props) {
           dryRun: false,
           spoolease: connection(values),
           createSpools: values.createSpools,
+          presetEdits: planEdits,
         },
         (event) => {
           if (event.type === "stage") setStage(event.stage);
@@ -388,7 +461,7 @@ export function App({ initial, onExit }: Props) {
         },
       );
       if (results.some(resultFailed)) setRunFailed(true);
-      setScreen({ name: "done", profiles, results });
+      setScreen({ name: "done", profiles, plans, results });
     } catch (err) {
       setScreen({
         name: "error",
@@ -683,7 +756,7 @@ export function App({ initial, onExit }: Props) {
     try {
       const original: unknown = JSON.parse(await readFile(preset.path, "utf-8"));
       if (typeof original !== "object" || original === null || Array.isArray(original)) throw new Error("it isn't a preset");
-      setScreen({ name: "edit", list, preset, original: original as Preset, edits: drafts.get(preset.path) ?? new Map(), form: initialPresetForm() });
+      setScreen({ name: "edit", from: list, preset, original: original as Preset, edits: drafts.get(preset.path) ?? new Map(), form: initialPresetForm() });
     } catch (err) {
       setScreen({ ...list, state: { ...list.state, error: `Couldn't read ${basename(preset.path)}: ${errorMessage(err)}` } });
     }
@@ -697,17 +770,37 @@ export function App({ initial, onExit }: Props) {
     return { ...edit, edits };
   }
 
-  /** Back to the list, keeping the edits for when the preset is opened again. */
+  /** Back to the list, keeping the edits for when the preset is opened again; or to the plan, once the edits make a preset. */
   function leaveEdit(edit: EditScreen): void {
-    const next = new Map(drafts);
-    if (edit.edits.size > 0) next.set(edit.preset.path, edit.edits);
-    else next.delete(edit.preset.path);
-    setDrafts(next);
-    setScreen(edit.list);
+    const keep = (edits: ReadonlyMap<string, Edits>, id: string): Map<string, Edits> => {
+      const next = new Map(edits);
+      if (edit.edits.size > 0) next.set(id, edit.edits);
+      else next.delete(id);
+      return next;
+    };
+    const from = edit.from;
+    if (from.name === "presets") {
+      setDrafts(keep(drafts, edit.preset.path));
+      setScreen(from);
+      return;
+    }
+    // The run writes the edits as they are, so they must make a preset BambuStudio takes.
+    const range = rangeError(applyEdits(edit.original, edit.edits).preset);
+    if (range) {
+      setScreen({ ...edit, form: { ...edit.form, error: range } });
+      return;
+    }
+    const edits = keep(planEdits, edit.preset.filamentId);
+    setPlanEdits(edits);
+    void planScreen(from.profiles, from.spoolease, from.warning, edits).then(setScreen);
   }
 
   /** Which presets of the filament the edit goes into (when it has several), then the review. */
   function reviewEdit(edit: EditScreen): void {
+    if (edit.from.name === "plan") {
+      leaveEdit(edit);
+      return;
+    }
     const fail = (error: string): void => setScreen({ ...edit, form: { ...edit.form, error } });
     if (editChanges(edit.original, edit.edits).length === 0) {
       fail("Nothing changed yet");
@@ -718,7 +811,7 @@ export function App({ initial, onExit }: Props) {
       fail(range);
       return;
     }
-    const family = presetFamily(edit.list.presets, edit.preset);
+    const family = presetFamily(edit.from.presets, edit.preset);
     if (family.length === 1) {
       void openSave(edit, family);
       return;
@@ -806,6 +899,7 @@ export function App({ initial, onExit }: Props) {
     setOutcome({ ok: failed === 0, lines: [`${plural(profiles.length, "profile")} from ${source}: ${results.length - failed} written, ${failed} failed${spools}`] });
     setPicker({ ...picker, selected: new Set() });
     setWeightChoices(new Map());
+    setPlanEdits(new Map());
     setScreen({ name: "home", cursor: initialHomeCursor(menuItems()) });
   }
 
@@ -851,7 +945,7 @@ export function App({ initial, onExit }: Props) {
       case "labels":
         return labelFormTyping(s.form) ? null : page("labels");
       case "edit":
-        return presetFormTyping(s.form) ? null : page("edit");
+        return presetFormTyping(s.form) ? null : page(s.from.name === "plan" ? "planned" : "edit");
       case "raw":
         return rawTyping(s.state) ? null : page("raw");
       case "copies":
@@ -977,7 +1071,8 @@ export function App({ initial, onExit }: Props) {
         else void showPlan(applyWeights(profiles, groups, choices));
       }
     } else if (screen.name === "plan") {
-      if (input === "a") void apply(screen.profiles);
+      if (input === "a") void apply(screen);
+      else if (input === "e") choosePlanned(screen);
       else if (input === "b") back();
       else if (input === "q") onExit(0);
     } else if (screen.name === "done") {
@@ -1206,7 +1301,17 @@ export function App({ initial, onExit }: Props) {
 
   if (screen.name === "edit") {
     const edited = applyEdits(screen.original, screen.edits).preset;
-    return <PresetForm preset={screen.preset} original={screen.original} edited={edited} edits={screen.edits} state={screen.form} height={height} />;
+    return (
+      <PresetForm
+        preset={screen.preset}
+        original={screen.original}
+        edited={edited}
+        edits={screen.edits}
+        state={screen.form}
+        planned={screen.from.name === "plan"}
+        height={height}
+      />
+    );
   }
 
   if (screen.name === "raw") {
@@ -1275,14 +1380,15 @@ export function App({ initial, onExit }: Props) {
         <PlanTable
           profiles={screen.profiles}
           progress={progress}
-          plans={screen.name === "plan" ? screen.plans : null}
+          plans={screen.plans}
           overwrite={values.overwritePresets}
           activePresets={stage === "presets"}
           activeSpools={stage === "spools"}
         />
       </Box>
-      {screen.name === "plan" && screen.plans ? <PlanNotes profiles={screen.profiles} plans={screen.plans} overwrite={values.overwritePresets} /> : null}
+      {screen.name === "plan" && screen.plans ? <PlanNotes profiles={screen.profiles} plans={screen.plans} overwrite={values.overwritePresets} edits={planEdits} /> : null}
       {screen.name === "plan" && screen.warning ? <Text color="yellow">! {screen.warning}</Text> : null}
+      {screen.name === "plan" && screen.error ? <Text color="red">{screen.error}</Text> : null}
       {stage ? <Busy color="cyan" message={`${STAGE_LABELS[stage]}…`} /> : null}
       {[...weightWarnings, ...warnings].map((w) => (
         <Text key={w} color="yellow">
@@ -1290,7 +1396,7 @@ export function App({ initial, onExit }: Props) {
         </Text>
       ))}
       {screen.name === "plan" ? (
-        <Text dimColor>[a] apply · [b] back to {fromSpoolmanDb && catalog ? "filaments" : "menu"} · [q] quit · ? help</Text>
+        <Text dimColor>[a] apply · [e] edit presets · [b] back to {fromSpoolmanDb && catalog ? "filaments" : "menu"} · [q] quit · ? help</Text>
       ) : null}
       {screen.name === "done" ? (
         <Box flexDirection="column">

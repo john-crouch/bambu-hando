@@ -5,6 +5,7 @@ import { access } from "node:fs/promises";
 
 import { presetPath } from "./bambuStudio.js";
 import type { FilamentProfile } from "./models.js";
+import { type Edits, readPreset, syncedRange } from "./presetEdit.js";
 import { buildCustomFilamentsCsv } from "./spoolease.js";
 
 export interface FilamentPlan {
@@ -21,6 +22,8 @@ export interface ProfilePlan {
   presets: number;
   /** Of those, the ones already on disk: kept, or replaced when overwriting. */
   existingPresets: number;
+  /** The nozzle range SpoolEase gets: a kept preset's, else the profile's with the plan's edits. */
+  nozzleRange: { low: number; high: number };
   /** null when SpoolEase wasn't read. */
   filament: FilamentPlan | null;
   /** null when SpoolEase wasn't read or the run creates no spools. */
@@ -56,19 +59,36 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
+export interface PlanOptions {
+  /** Existing presets are replaced, so none is kept. */
+  overwrite?: boolean;
+  /** Edits made on the plan, by filament ID (runSync's presetEdits). */
+  edits?: ReadonlyMap<string, Edits>;
+}
+
 export async function previewPlan(
   profiles: FilamentProfile[],
   target: { presetFolder: string; printers: string[] },
   spoolease: ConsoleState | null,
   createSpools: boolean,
+  { overwrite = false, edits }: PlanOptions = {},
 ): Promise<ProfilePlan[]> {
   return Promise.all(
     profiles.map(async (profile): Promise<ProfilePlan> => {
-      const found = await Promise.all(target.printers.map((printer) => exists(presetPath(profile, target.presetFolder, printer))));
+      const paths = target.printers.map((printer) => presetPath(profile, target.presetFolder, printer));
+      const found = await Promise.all(paths.map(exists));
+      const kept = overwrite ? [] : await Promise.all(paths.filter((_, i) => found[i]).map(readPreset));
+      const range = syncedRange(
+        profile,
+        kept.filter((p) => p !== null),
+        edits?.get(profile.filamentId),
+      );
+      const synced = { ...profile, nozzleTempMin: range.low, nozzleTempMax: range.high };
       return {
         presets: target.printers.length,
         existingPresets: found.filter(Boolean).length,
-        filament: spoolease ? filamentPlan(profile, spoolease.csv) : null,
+        nozzleRange: range,
+        filament: spoolease ? filamentPlan(synced, spoolease.csv) : null,
         spool: spoolease && createSpools ? (spoolease.spooledIds.has(profile.filamentId) ? "exists" : "create") : null,
       };
     }),
