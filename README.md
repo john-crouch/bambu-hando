@@ -211,6 +211,19 @@ In the TUI, `f` on Check sync gives presets without a filament ID (missing, or t
 
 A later sync of the same filament keeps that range: a preset it keeps (the default) gives SpoolEase its own nozzle range rather than the source's, and the plan's Nozzle°C column shows the range SpoolEase gets. With several printers, the first kept preset that has a range wins.
 
+## API keys
+
+`bambu-hando key` keeps API keys for online services in the system keyring: the macOS Keychain, or the Secret Service on Linux (GNOME Keyring, KWallet). They never go into a file bambu-hando writes, and on Linux they never fall back to the kernel keyring, which forgets them on reboot. The only key today is `3dfp`, a 3DFilamentProfiles API key; nothing uses it yet.
+
+```bash
+bambu-hando key set 3dfp            # hidden prompt: paste the key, press enter
+pass show 3dfp | bambu-hando key set 3dfp   # or pipe it in
+bambu-hando key status              # where each key comes from, never its value
+bambu-hando key remove 3dfp
+```
+
+A key is never taken as an argument, since it would end up in your shell history and in `ps`; `key set` refuses one. On a machine without a keyring (a headless box over SSH), set `FILAMENTPROFILES_API_KEY` instead: it overrides a stored key. `key` exits `0` on success, `1` when the keyring can't be used (locked or not running) and `2` for invalid arguments or an empty key; ctrl+c at the prompt exits `130` and stores nothing.
+
 ## Safety behavior
 
 - Uses dry-run mode for planning (no files written, nothing sent to SpoolEase beyond the key check and reading its spool weight lists)

@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { bambuDefaults } from "./bambuProfiles.js";
 import type { PresetOutcome } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
+import { keyCommand } from "./keyCommand.js";
 import { type LabelTarget, LabelSelectionError, makeLabels } from "./labelJob.js";
 import {
   DEFAULT_LABEL_FIELDS,
@@ -20,6 +21,7 @@ import {
   type SpoolFilters,
 } from "./labels.js";
 import { type FilamentProfile, resultFailed, type Status, type SyncResult } from "./models.js";
+import type { SecretInput } from "./secretPrompt.js";
 import { loadProfiles } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 import { readSpoolEaseConfig } from "./spooleaseConfig.js";
@@ -46,6 +48,7 @@ const USAGE = `Usage:
   bambu-hando tui [options]
   bambu-hando labels [options]
   bambu-hando check [options]
+  bambu-hando key <set|status|remove> [name]
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
 The tui command opens an interactive terminal UI; its options prefill the
@@ -53,7 +56,8 @@ setup form (--dry-run, --report and --max-filaments are headless only), and
 the SpoolmanDB filters prefill the filament search. The labels command makes
 QR spool labels for SpoolEase spools (bambu-hando labels --help). The check
 command reports what doesn't line up between BambuStudio and SpoolEase
-(bambu-hando check --help).
+(bambu-hando check --help). The key command keeps API keys in the system
+keyring (bambu-hando key --help).
 
 Options:
   --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
@@ -230,6 +234,8 @@ const CHECK_OPTIONS = {
 export interface Io {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
+  /** Where `key set` reads a key from; process.stdin when absent. */
+  stdin?: SecretInput;
 }
 
 const processIo: Io = {
@@ -694,6 +700,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
   if (argv[0] === "labels") return labelsCommand(argv.slice(1), io);
   if (argv[0] === "check") return checkCommand(argv.slice(1), io);
+  if (argv[0] === "key") return keyCommand(argv.slice(1), { ...io, stdin: io.stdin ?? process.stdin });
 
   let parsed;
   try {
