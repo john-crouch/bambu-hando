@@ -56,7 +56,7 @@ async function readKey(target: SecretSpec, io: KeyIo): Promise<string> {
 async function setKey(target: SecretSpec, io: KeyIo, env: Record<string, string | undefined>): Promise<number> {
   let key: string;
   try {
-    key = validateSecret(await readKey(target, io));
+    key = validateSecret(await readKey(target, io), target);
   } catch (err) {
     if (err instanceof PromptCancelled) {
       io.stderr("Cancelled: nothing was stored.\n");

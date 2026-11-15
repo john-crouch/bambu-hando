@@ -213,7 +213,7 @@ A later sync of the same filament keeps that range: a preset it keeps (the defau
 
 ## API keys
 
-`bambu-hando key` keeps API keys for online services in the system keyring: the macOS Keychain, or the Secret Service on Linux (GNOME Keyring, KWallet). They never go into a file bambu-hando writes, and on Linux they never fall back to the kernel keyring, which forgets them on reboot. The only key today is `3dfp`, a 3DFilamentProfiles API key; nothing uses it yet.
+`bambu-hando key` keeps API keys for online services in the system keyring: the macOS Keychain, or the Secret Service on Linux (GNOME Keyring, KWallet). They never go into a file bambu-hando writes, and on Linux they never fall back to the kernel keyring, which forgets them on reboot. The only key today is `3dfp`, a 3DFilamentProfiles API key (they start with `3dfp_`, which `key set` checks).
 
 ```bash
 bambu-hando key set 3dfp            # hidden prompt: paste the key, press enter
@@ -223,6 +223,24 @@ bambu-hando key remove 3dfp
 ```
 
 A key is never taken as an argument, since it would end up in your shell history and in `ps`; `key set` refuses one. On a machine without a keyring (a headless box over SSH), set `FILAMENTPROFILES_API_KEY` instead: it overrides a stored key. `key` exits `0` on success, `1` when the keyring can't be used (locked or not running) and `2` for invalid arguments or an empty key; ctrl+c at the prompt exits `130` and stores nothing.
+
+## 3DFilamentProfiles
+
+`bambu-hando 3dfp` reads your 3DFilamentProfiles account through its API, with the key from `bambu-hando key set 3dfp` (or `FILAMENTPROFILES_API_KEY`). The API allows a monthly number of calls (shown on its API access page), so bambu-hando spends as few as it can:
+
+```bash
+bambu-hando 3dfp usage              # calls left this month and when the quota resets; makes no call
+bambu-hando 3dfp spools             # your spools: one call, or none while the last list is under an hour old
+bambu-hando 3dfp spools --refresh   # fetch the list again anyway
+bambu-hando 3dfp spools --json      # snake_case JSON: fetched_at, from_cache, spools, quota
+```
+
+- Every response says how many calls are left, and bambu-hando keeps that in `3dfp-quota.json` in its config directory; once the server has said none are left, it refuses further calls itself until the quota resets (00:00 UTC on the 1st). A call that gets no answer is counted as spent.
+- The spool list is cached for an hour in its cache directory (the API asks integrations to poll no more than hourly), one cache per account: a fingerprint of the key tells them apart, never the key.
+- Requests the API would refuse (out-of-range weights, too long a location) are refused before they're sent, since a refused request still costs a call.
+- The key goes only to `https://3dfilamentprofiles.com`; no redirect is followed. `FILAMENTPROFILES_API_URL` can point at a server on this machine (for tests) and nowhere else.
+
+`3dfp` exits `0` on success, `1` when the API or network fails, and `2` for invalid arguments, a missing or rejected key, lapsed API access or a used-up quota.
 
 ## Safety behavior
 

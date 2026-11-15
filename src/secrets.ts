@@ -11,10 +11,12 @@ export interface SecretSpec {
   label: string;
   account: string;
   env: string;
+  /** What every key of this service starts with, to catch a wrong paste. */
+  prefix: string;
 }
 
 export const SECRETS = {
-  "3dfp": { name: "3dfp", label: "3DFilamentProfiles API key", account: "3dfilamentprofiles-api-key", env: "FILAMENTPROFILES_API_KEY" },
+  "3dfp": { name: "3dfp", label: "3DFilamentProfiles API key", account: "3dfilamentprofiles-api-key", env: "FILAMENTPROFILES_API_KEY", prefix: "3dfp_" },
 } as const satisfies Record<string, SecretSpec>;
 
 const SERVICE = "bambu-hando";
@@ -30,11 +32,12 @@ export function keyringName(platform: string = process.platform): string {
 }
 
 /** The key without the whitespace a paste or pipe adds; never quotes the value in its errors. */
-export function validateSecret(value: string): string {
+export function validateSecret(value: string, spec?: SecretSpec): string {
   const key = value.trim();
   if (key === "") throw new Error("the key is empty");
   // Spaces or control characters inside mean a mangled paste (or two lines), not a key.
   if (/[\s\p{Cc}]/u.test(key)) throw new Error("the key contains spaces or control characters: paste only the key");
+  if (spec && !key.startsWith(spec.prefix)) throw new Error(`${spec.label}s start with ${spec.prefix}: that doesn't look like one`);
   return key;
 }
 

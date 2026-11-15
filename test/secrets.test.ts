@@ -25,6 +25,16 @@ describe("validateSecret", () => {
   });
 });
 
+describe("validateSecret with a key's prefix", () => {
+  it("accepts a key with its documented prefix", () => {
+    expect(validateSecret(" 3dfp_abc123\n", TDFP)).toBe("3dfp_abc123");
+  });
+
+  it("rejects something else pasted by mistake, without echoing it", () => {
+    expect(() => validateSecret("sk_live_abc123", TDFP)).toThrow("3DFilamentProfiles API keys start with 3dfp_: that doesn't look like one");
+  });
+});
+
 describe("secretByName", () => {
   it("finds the 3DFilamentProfiles key and nothing else", () => {
     expect(secretByName("3dfp")).toBe(TDFP);

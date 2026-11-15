@@ -12,7 +12,7 @@ import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } fro
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const TDFP = SECRETS["3dfp"];
-const KEY = "tdfp-fake-key-for-tests";
+const KEY = "3dfp_fake_key_for_tests";
 const WAIT_MS = 8_000;
 
 function rawModeOn(ptsName: string): Promise<boolean> {
@@ -66,7 +66,7 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key set (binary)", () => 
     for (const char of `${KEY}\r`) pty.write(char);
     expect(await exited).toBe(0);
     expect(output()).toContain("Stored the 3DFilamentProfiles API key");
-    expect(output()).not.toContain("fake-key");
+    expect(output()).not.toContain("fake_key");
     expect(await storedSecret(TDFP)).toBe(KEY);
   });
 
@@ -108,7 +108,7 @@ describe("bambu-hando key without a reachable keyring (binary)", () => {
       const { code, stdout, stderr } = await cli(args, noKeyring, KEY);
       expect(code).toBe(1);
       expect(stderr).toContain("set FILAMENTPROFILES_API_KEY instead");
-      expect(stdout + stderr).not.toContain("fake-key");
+      expect(stdout + stderr).not.toContain("fake_key");
     }
   });
 
@@ -116,6 +116,6 @@ describe("bambu-hando key without a reachable keyring (binary)", () => {
     const { code, stdout } = await cli(["key", "status"], { ...noKeyring, [TDFP.env]: KEY });
     expect(code).toBe(0);
     expect(stdout).toMatch(/^3dfp {2}3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY \(can't check the system keyring \(Secret Service\)\)\n$/);
-    expect(stdout).not.toContain("fake-key");
+    expect(stdout).not.toContain("fake_key");
   });
 });

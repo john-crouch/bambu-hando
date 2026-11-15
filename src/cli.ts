@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import { bambuDefaults } from "./bambuProfiles.js";
 import type { PresetOutcome } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
+import { filamentProfilesCommand } from "./filamentProfilesCommand.js";
 import { keyCommand } from "./keyCommand.js";
 import { type LabelTarget, LabelSelectionError, makeLabels } from "./labelJob.js";
 import {
@@ -49,6 +50,7 @@ const USAGE = `Usage:
   bambu-hando labels [options]
   bambu-hando check [options]
   bambu-hando key <set|status|remove> [name]
+  bambu-hando 3dfp <usage|spools> [options]
 
 Sync filament profiles into BambuStudio custom presets and SpoolEase.
 The tui command opens an interactive terminal UI; its options prefill the
@@ -57,7 +59,8 @@ the SpoolmanDB filters prefill the filament search. The labels command makes
 QR spool labels for SpoolEase spools (bambu-hando labels --help). The check
 command reports what doesn't line up between BambuStudio and SpoolEase
 (bambu-hando check --help). The key command keeps API keys in the system
-keyring (bambu-hando key --help).
+keyring (bambu-hando key --help); the 3dfp command reads your 3DFilamentProfiles
+spools and API quota (bambu-hando 3dfp --help).
 
 Options:
   --source <file|url|spoolmandb>  JSON file or URL with filament profiles, or spoolmandb
@@ -700,6 +703,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
   if (argv[0] === "labels") return labelsCommand(argv.slice(1), io);
   if (argv[0] === "check") return checkCommand(argv.slice(1), io);
+  if (argv[0] === "3dfp") return filamentProfilesCommand(argv.slice(1), io);
   if (argv[0] === "key") return keyCommand(argv.slice(1), { ...io, stdin: io.stdin ?? process.stdin });
 
   let parsed;

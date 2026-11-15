@@ -10,13 +10,13 @@ import { removeSecret, SECRETS, storedSecret, storeSecret } from "../src/secrets
 import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
 
 const TDFP = SECRETS["3dfp"];
-const KEY = "tdfp-fake-key-for-tests";
+const KEY = "3dfp_fake_key_for_tests";
 
 async function run(argv: string[], stdin = ""): Promise<{ code: number; stdout: string; stderr: string }> {
   let stdout = "";
   let stderr = "";
   const code = await main(argv, { stdout: (s) => (stdout += s), stderr: (s) => (stderr += s), stdin: Readable.from(stdin ? [stdin] : []) });
-  expect(stdout + stderr).not.toContain("fake-key");
+  expect(stdout + stderr).not.toContain("fake_key");
   return { code, stdout, stderr };
 }
 
@@ -100,10 +100,10 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
   });
 
   it("refuses an empty or malformed key and stores nothing", async () => {
-    for (const input of ["", "\n", "two words"]) {
+    for (const input of ["", "\n", "3dfp_two words", "not-a-3dfp-key"]) {
       const { code, stderr } = await run(["key", "set", "3dfp"], input);
       expect(code).toBe(2);
-      expect(stderr).toMatch(/empty|spaces or control characters|no key was piped in/);
+      expect(stderr).toMatch(/empty|spaces or control characters|no key was piped in|start with 3dfp_/);
     }
     expect(await storedSecret(TDFP)).toBeNull();
   });
