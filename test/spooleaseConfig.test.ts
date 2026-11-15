@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { readSpoolEaseConfig } from "../src/spooleaseConfig.js";
+import { readSpoolEaseConfig, spooleaseConnectionFrom } from "../src/spooleaseConfig.js";
 import { bambuConfigDir, installSpoolEaseConfig } from "./bambuStudioSetup.js";
 
 describe("readSpoolEaseConfig", () => {
@@ -45,5 +45,26 @@ describe("readSpoolEaseConfig", () => {
     await mkdir(join(bambuConfigDir(home), "spoolease"), { recursive: true });
     await writeFile(join(bambuConfigDir(home), "spoolease", "config.json"), "{ not json", "utf-8");
     expect(await readSpoolEaseConfig(bambuConfigDir(home))).toEqual({ host: null, securityKey: null });
+  });
+});
+
+describe("spooleaseConnectionFrom", () => {
+  const saved = { host: "saved-host", securityKey: "saved-key" };
+  const flags = { "spoolease-https": false };
+
+  it("takes flags, then the environment, then BambuStudio's saved settings", () => {
+    expect(spooleaseConnectionFrom({ ...flags, "spoolease-host": "flag-host", "spoolease-security-key": "flag-key" }, 80, saved, { SPOOLEASE_HOST: "env-host" })).toEqual({
+      host: "flag-host",
+      securityKey: "flag-key",
+      port: 80,
+      https: false,
+    });
+    expect(spooleaseConnectionFrom(flags, 8080, saved, { SPOOLEASE_HOST: "env-host", SPOOLEASE_SECURITY_KEY: "env-key" })).toMatchObject({ host: "env-host", securityKey: "env-key", port: 8080 });
+    expect(spooleaseConnectionFrom({ "spoolease-https": true }, 443, saved, {})).toEqual({ host: "saved-host", securityKey: "saved-key", port: 443, https: true });
+  });
+
+  it("is null without both a host and a key", () => {
+    expect(spooleaseConnectionFrom(flags, 80, { host: "saved-host", securityKey: null }, {})).toBeNull();
+    expect(spooleaseConnectionFrom(flags, 80, { host: null, securityKey: null }, { SPOOLEASE_SECURITY_KEY: "env-key" })).toBeNull();
   });
 });

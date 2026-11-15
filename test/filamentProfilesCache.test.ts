@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { QuotaLedger } from "../src/apiQuota.js";
 import { FilamentProfilesClient } from "../src/filamentProfiles.js";
-import { accountId, mySpools } from "../src/filamentProfilesCache.js";
+import { accountId, forgetSpools, mySpools } from "../src/filamentProfilesCache.js";
 import { type FilamentProfilesServer, serverSpool, startFilamentProfilesServer, TEST_API_KEY } from "./filamentProfilesServer.js";
 
 const T0 = new Date("2026-11-15T13:00:00Z");
@@ -63,6 +63,14 @@ describe("mySpools", () => {
     expect(await mySpools(client, { account, path, now: () => minutes(60) })).toMatchObject({ fromCache: false });
     expect(await mySpools(client, { account, path, refresh: true, now: () => minutes(61) })).toMatchObject({ fromCache: false });
     expect(server.requests).toHaveLength(3);
+  });
+
+  it("fetches again after the cache is forgotten, which a write to the spools does", async () => {
+    await mySpools(client, { account, path, now: () => T0 });
+    await forgetSpools(path);
+    expect(await mySpools(client, { account, path, now: () => minutes(1) })).toMatchObject({ fromCache: false });
+    await forgetSpools(path);
+    await forgetSpools(path);
   });
 
   it("takes a shorter or longer reuse window", async () => {

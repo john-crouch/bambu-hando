@@ -48,12 +48,12 @@ describe("bambu-hando 3dfp", () => {
     for (const argv of [["3dfp"], ["3dfp", "--help"]]) {
       const { code, stdout } = await run(argv);
       expect(code).toBe(0);
-      expect(stdout).toContain("Usage: bambu-hando 3dfp <usage|spools|filament|search|fill|catalog> [options]");
+      expect(stdout).toContain("Usage: bambu-hando 3dfp <usage|spools|sync|filament|search|fill|catalog> [options]");
     }
   });
 
   it("rejects an unknown action or option", async () => {
-    expect(await run(["3dfp", "sync"])).toMatchObject({ code: 2 });
+    expect(await run(["3dfp", "frobnicate"])).toMatchObject({ code: 2 });
     expect((await run(["3dfp", "spools", "--fast"])).code).toBe(2);
   });
 

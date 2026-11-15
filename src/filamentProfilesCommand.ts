@@ -3,21 +3,24 @@
 
 import { parseArgs } from "node:util";
 
-import { QuotaError, QuotaLedger, quotaPath, quotaReset, type QuotaState, utcMinute } from "./apiQuota.js";
+import { QuotaError, quotaReset, type QuotaState, utcMinute } from "./apiQuota.js";
 import { errorMessage } from "./errors.js";
 import { catalogPath, FilamentCatalog } from "./filamentCatalog.js";
 import { type CatalogApi, FILL_FROM_DAY, FILL_RESERVE, filamentName, filamentRecord, monthEndFill, type RecordResult, searchOnline } from "./filamentCatalogSync.js";
-import { FilamentProfilesClient, FilamentProfilesError, type TdfpFilament, type TdfpFilamentDetail, type TdfpSpool } from "./filamentProfiles.js";
-import { accountId, mySpools } from "./filamentProfilesCache.js";
+import { FilamentProfilesError, type TdfpFilament, type TdfpFilamentDetail, type TdfpSpool } from "./filamentProfiles.js";
+import { mySpools } from "./filamentProfilesCache.js";
+import { connectFilamentProfiles, type FilamentProfilesConnection, MissingKeyError } from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
-import { loadSecret, SECRETS } from "./secrets.js";
+import { spoolSyncCommand } from "./spoolSyncCommand.js";
 
 interface Io {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
+  /** For `sync`: asks a yes/no question, null when there's no terminal to ask on. */
+  confirm?: (question: string) => Promise<boolean | null>;
 }
 
-export const TDFP_USAGE = `Usage: bambu-hando 3dfp <usage|spools|filament|search|fill|catalog> [options]
+export const TDFP_USAGE = `Usage: bambu-hando 3dfp <usage|spools|sync|filament|search|fill|catalog> [options]
 
 Reads your 3DFilamentProfiles account with the API key from \`bambu-hando key set 3dfp\`
 (or FILAMENTPROFILES_API_KEY). The API allows a monthly number of calls, so bambu-hando
@@ -25,6 +28,8 @@ counts them and keeps what it read in a local catalog.
 
   usage            How many API calls are left this month (no call)
   spools           Your spools: one call, or none while the last list is under an hour old
+  sync             Link your SpoolEase spools to them and keep their weights current
+                   (bambu-hando 3dfp sync --help)
   filament <id>    A filament's full record: one call the first time, then from the catalog
   search <words>   Filaments in the catalog (no call); --online searches 3DFilamentProfiles (one call)
   fill             From the ${FILL_FROM_DAY}th (UTC), spend the month's leftover calls filling the catalog
@@ -83,13 +88,12 @@ function spoolLines(spools: TdfpSpool[]): string[] {
 const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 const snakeKeys = (record: object): Record<string, unknown> => Object.fromEntries(Object.entries(record).map(([key, value]) => [snakeCase(key), value]));
 
-async function connect(): Promise<{ client: FilamentProfilesClient; ledger: QuotaLedger; account: string }> {
-  const spec = SECRETS["3dfp"];
-  const key = await loadSecret(spec);
-  if (!key) throw new TdfpUsageError(`no ${spec.label}: run \`bambu-hando key set 3dfp\`, or set ${spec.env}`);
-  const account = accountId(key.value);
-  const ledger = new QuotaLedger(quotaPath(), account);
-  return { client: new FilamentProfilesClient({ key: key.value, ledger }), ledger, account };
+async function connect(): Promise<FilamentProfilesConnection> {
+  try {
+    return await connectFilamentProfiles();
+  } catch (err) {
+    throw err instanceof MissingKeyError ? new TdfpUsageError(err.message) : err;
+  }
 }
 
 function plural(count: number, noun: string, many = `${noun}s`): string {
@@ -296,6 +300,7 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
 }
 
 export async function filamentProfilesCommand(argv: string[], io: Io): Promise<number> {
+  if (argv[0] === "sync") return spoolSyncCommand(argv.slice(1), io);
   try {
     const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
     const [action, ...extra] = positionals;
@@ -317,7 +322,7 @@ export async function filamentProfilesCommand(argv: string[], io: Io): Promise<n
       io.stdout(`${quotaLine(await ledger.current(), new Date())}\n`);
       return 0;
     }
-    throw new TdfpUsageError(`unknown action '${action}' (usage, spools, filament, search, fill or catalog)`);
+    throw new TdfpUsageError(`unknown action '${action}' (usage, spools, sync, filament, search, fill or catalog)`);
   } catch (err) {
     if (err instanceof TdfpUsageError || (err instanceof TypeError && "code" in err && String(err.code).startsWith("ERR_PARSE_ARGS"))) {
       io.stderr(`bambu-hando: error: ${err.message}\n\n${TDFP_USAGE}`);

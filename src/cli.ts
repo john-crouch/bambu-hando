@@ -6,6 +6,7 @@ import { parseArgs } from "node:util";
 
 import { bambuDefaults } from "./bambuProfiles.js";
 import type { PresetOutcome } from "./bambuStudio.js";
+import { askYesNo } from "./confirm.js";
 import { errorMessage } from "./errors.js";
 import { filamentProfilesCommand } from "./filamentProfilesCommand.js";
 import { keyCommand } from "./keyCommand.js";
@@ -25,7 +26,7 @@ import { type FilamentProfile, resultFailed, type Status, type SyncResult } from
 import type { SecretInput } from "./secretPrompt.js";
 import { loadProfiles } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
-import { readSpoolEaseConfig } from "./spooleaseConfig.js";
+import { readSpoolEaseConfig, SPOOLEASE_SETTINGS_HINT, type SpoolEaseFlags, spooleaseConnectionFrom } from "./spooleaseConfig.js";
 import {
   applyWeights,
   defaultChoice,
@@ -239,6 +240,8 @@ export interface Io {
   stderr: (text: string) => void;
   /** Where `key set` reads a key from; process.stdin when absent. */
   stdin?: SecretInput;
+  /** Asks `3dfp sync`'s yes/no question; a terminal prompt on stdin when absent. */
+  confirm?: (question: string) => Promise<boolean | null>;
 }
 
 const processIo: Io = {
@@ -281,23 +284,11 @@ function parsePort(value: string): number {
   return port;
 }
 
-interface SpoolEaseFlags {
-  "spoolease-host"?: string;
-  "spoolease-security-key"?: string;
-  "spoolease-https": boolean;
-}
-
 /** Flags, then environment, then the SpoolEase settings saved in BambuStudio. */
 async function spooleaseConnection(values: SpoolEaseFlags, port: number, unless = ""): Promise<SpoolEaseConnection> {
-  const saved = await readSpoolEaseConfig();
-  const host = values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "";
-  const securityKey = values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "";
-  if (!host || !securityKey) {
-    throw new UsageError(
-      `SpoolEase host and security key are required${unless}: pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, or configure SpoolEase in BambuStudio`,
-    );
-  }
-  return { host, securityKey, port, https: values["spoolease-https"] };
+  const connection = spooleaseConnectionFrom(values, port, await readSpoolEaseConfig());
+  if (!connection) throw new UsageError(`SpoolEase host and security key are required${unless}: ${SPOOLEASE_SETTINGS_HINT}`);
+  return connection;
 }
 
 export interface SpoolmanDbSelection extends ProfileFilters {
@@ -703,7 +694,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
   if (argv[0] === "labels") return labelsCommand(argv.slice(1), io);
   if (argv[0] === "check") return checkCommand(argv.slice(1), io);
-  if (argv[0] === "3dfp") return filamentProfilesCommand(argv.slice(1), io);
+  if (argv[0] === "3dfp") return filamentProfilesCommand(argv.slice(1), { ...io, confirm: io.confirm ?? ((question) => askYesNo(question)) });
   if (argv[0] === "key") return keyCommand(argv.slice(1), { ...io, stdin: io.stdin ?? process.stdin });
 
   let parsed;

@@ -2,7 +2,7 @@
 // ABOUTME: One cache per account, told apart by a fingerprint of the key that never contains it.
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { FilamentProfilesClient, TdfpSpool } from "./filamentProfiles.js";
@@ -61,4 +61,9 @@ export async function mySpools(client: FilamentProfilesClient, options: SpoolsCa
   await writeFile(`${path}.tmp`, `${JSON.stringify(saved, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
   await rename(`${path}.tmp`, path);
   return { spools, fetchedAt: now, fromCache: false };
+}
+
+/** Drops the cached list, so the next read fetches what a write just changed. */
+export async function forgetSpools(path: string = spoolsCachePath()): Promise<void> {
+  await rm(path, { force: true });
 }

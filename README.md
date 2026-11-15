@@ -258,7 +258,26 @@ bambu-hando 3dfp catalog                       # what it holds
 - A full record is used as long as it's in the catalog. Past 30 days bambu-hando says how old it is, but only `--refresh-stale` fetches it again: community values such as flow ratio and K change slowly, and each check costs a call. Store prices aren't kept, since they change daily. If a refresh fails, the old copy is used with a warning. A filament merged into another is followed to the surviving one.
 - `fill` uses the calls a month would otherwise lose: from the 28th (UTC; `--now` starts earlier) it fetches the full records of your spools' filaments, then lists their brands, then other brands it knows, then searches that turn up new brands, 50 filaments a call, down to the reserve (`--reserve`, default 100). A search stops at 20 pages, so a bigger brand is split by material. It picks up where it stopped, skips anything filled in the last 30 days, and pauses briefly between calls. Run it daily near the end of the month; from a scheduler it needs the user session (a systemd user timer, not cron), because the key is in the keyring.
 
-`3dfp` exits `0` on success, `1` when the API or network fails, and `2` for invalid arguments, a missing or rejected key, lapsed API access or a used-up quota.
+### Syncing spools with SpoolEase
+
+`bambu-hando 3dfp sync` links your SpoolEase spools to your 3DFilamentProfiles spools and keeps 3DFP's weights current. It prints what it would do and asks before writing anything:
+
+```bash
+bambu-hando 3dfp sync --dry-run              # the plan; changes nothing
+bambu-hando 3dfp sync                        # the plan, then "Apply? [y/N]"
+bambu-hando 3dfp sync --yes                  # apply without asking (scripts, timers)
+bambu-hando 3dfp sync --link 3=ABC123        # pair SpoolEase spool #3 with 3DFP spool ABC123
+bambu-hando 3dfp sync --add 1=10512          # add SpoolEase spool #1 to 3DFP as filament 10512
+bambu-hando 3dfp sync --unlink 3             # forget #3's link
+```
+
+- **Links** live in `3dfp-links.json` in the config directory (one set per 3DFP account and SpoolEase console), the source of truth. A SpoolEase spool and a 3DFP spool with the same brand, material and color are linked by themselves when no other spool fits either of them; otherwise the plan lists the candidates for `--link`. A linked spool's SpoolEase tag UID is also written to its 3DFP spool (`bambu_tag_id`), so the links could be rebuilt from 3DFP.
+- **Weights**: the link file remembers the weights both sides last agreed on. The side that changed since then wins; when both changed, the lower weight wins, since filament only gets used up. Differences under 5 g are ignored. 3DFP gets SpoolEase's weight; SpoolEase's own weight can only be set by its scale (its API doesn't take one), so when 3DFP's weight should win, the plan says to weigh the spool.
+- **New 3DFP spools**: a SpoolEase spool with no 3DFP spool is offered as a new one when exactly one filament in the local catalog fits it; with none or several, the plan says how to find it (`3dfp search --online`) and pick one (`--add`). It's created at SpoolEase's weight, then given its tag.
+- **Cost**: one call for the spool list (none while the last one is under an hour old), one per weight or tag sent, two per new spool (one without a tag). It checks the quota covers the whole plan before sending anything.
+- Not done: adding 3DFP-only spools to SpoolEase (that needs a preset and a custom-filament row), and copying 3DFP's location or notes to SpoolEase (an edit there replaces the whole record, pressure-advance values included). Unlinking leaves the tag on the 3DFP spool.
+
+`3dfp` exits `0` on success, `1` when the API or network fails (for `sync`: when any write failed), and `2` for invalid arguments, a missing or rejected key, lapsed API access or a used-up quota.
 
 ## Safety behavior
 
