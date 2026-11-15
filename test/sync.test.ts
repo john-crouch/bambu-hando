@@ -1,7 +1,7 @@
 // ABOUTME: Integration tests for sync orchestration against a local SpoolEase server.
 // ABOUTME: Covers statuses, progress events, and failure handling for both integrations.
 
-import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -127,7 +127,16 @@ describe("runSync", () => {
       spooleaseStatus: "skipped",
       detail: "SpoolEase skipped",
       coreWeight: null,
+      spoolId: null,
     });
+  });
+
+  it("reports the ID of each spool it created, and none for spools that already existed", async () => {
+    server.spools.push({ id: "1", slicer_filament: "PABC1234" });
+
+    const { results } = await runSync(options({ createSpools: true }), record);
+
+    expect(results.map((r) => r.spoolId)).toEqual([null, "2"]);
   });
 
   it("reports the empty spool weight only when spools are created, 0 meaning unspecified", async () => {
@@ -179,6 +188,40 @@ describe("runSync", () => {
       "PABC1234,Polymaker PETG Red,230,255,PETG",
       "Pd73077d,Generic Mystery Spool,200,220,PLA",
     ]);
+  });
+
+  it("keeps the nozzle range of a preset it keeps on SpoolEase, instead of the source's", async () => {
+    await runSync(options({ profiles: [profileAt(0)], spoolease: null }), record);
+    const path = join(filamentDir, `PETG Red @${X1C_04}.json`);
+    const preset = JSON.parse(await readFile(path, "utf-8"));
+    await writeFile(path, JSON.stringify({ ...preset, nozzle_temperature_range_low: ["235"], nozzle_temperature_range_high: ["250"] }));
+
+    await runSync(options({ profiles: [profileAt(0)] }), record);
+
+    expect(server.customFilaments).toBe("PABC1234,Polymaker PETG Red,235,250,PETG");
+  });
+
+  it("writes the plan's edits into the presets it writes, and their range onto SpoolEase", async () => {
+    const edits = new Map([
+      ["nozzle_temperature_range_high", { every: "245" }],
+      ["filament_flow_ratio", { every: "0.95" }],
+    ]);
+
+    await runSync(options({ profiles: [profileAt(0), profileAt(2)], presetEdits: new Map([["PABC1234", edits]]) }), record);
+
+    const edited = JSON.parse(await readFile(join(filamentDir, `PETG Red @${X1C_04}.json`), "utf-8"));
+    expect(edited).toMatchObject({ nozzle_temperature_range_high: ["245"], filament_flow_ratio: ["0.95"] });
+    const other = JSON.parse(await readFile(join(filamentDir, `Mystery Spool @${X1C_04}.json`), "utf-8"));
+    expect(other.filament_flow_ratio).not.toEqual(["0.95"]);
+    expect(server.customFilaments?.split("\r\n")).toEqual(["PABC1234,Polymaker PETG Red,230,245,PETG", "Pd73077d,Generic Mystery Spool,200,220,PLA"]);
+  });
+
+  it("warns about an edit that doesn't fit a preset it writes", async () => {
+    const edits = new Map([["filament_flow_ratio", { each: ["0.9", "0.95", "1"] }]]);
+
+    await runSync(options({ profiles: [profileAt(0)], spoolease: null, presetEdits: new Map([["PABC1234", edits]]) }), record);
+
+    expect(events).toContainEqual({ type: "warning", message: `PETG Red @${X1C_04}: filament_flow_ratio left as it is: it has 1 variant, not 3` });
   });
 
   it("leaves the custom filaments untouched when the current list can't be read", async () => {

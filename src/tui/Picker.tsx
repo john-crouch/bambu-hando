@@ -4,8 +4,17 @@
 import { Box, type Key, Text } from "ink";
 
 import type { FilamentProfile } from "../models.js";
+import { listRows } from "./screenSize.js";
 
 const ROWS = 12;
+// Title, the search line with its margins, "… more" (or no matches), an error and the hint line, plus a
+// spare line; warnings come on top.
+const CHROME = 8;
+
+/** Matches on screen at once in a terminal `height` rows tall, below `warnings` warning lines. */
+export function pickerRows(height: number | undefined, warnings: number): number {
+  return listRows(height, CHROME + warnings, ROWS);
+}
 const COLUMNS = { cursor: 2, mark: 4, swatch: 3, name: 46, material: 8, temps: 9, code: 10 } as const;
 
 export interface PickerState {
@@ -27,7 +36,7 @@ function clamp(value: number, max: number): number {
   return Math.max(0, Math.min(value, max));
 }
 
-export function pickerInput(state: PickerState, input: string, key: Key, matches: FilamentProfile[]): PickerAction {
+export function pickerInput(state: PickerState, input: string, key: Key, matches: FilamentProfile[], rows: number = ROWS): PickerAction {
   const last = matches.length - 1;
   const next = (changes: Partial<PickerState>): PickerAction => ({ type: "update", state: { ...state, error: "", ...changes } });
 
@@ -38,8 +47,8 @@ export function pickerInput(state: PickerState, input: string, key: Key, matches
   }
   if (key.upArrow) return next({ cursor: clamp(state.cursor - 1, last) });
   if (key.downArrow) return next({ cursor: clamp(state.cursor + 1, last) });
-  if (key.pageUp) return next({ cursor: clamp(state.cursor - ROWS, last) });
-  if (key.pageDown) return next({ cursor: clamp(state.cursor + ROWS, last) });
+  if (key.pageUp) return next({ cursor: clamp(state.cursor - rows, last) });
+  if (key.pageDown) return next({ cursor: clamp(state.cursor + rows, last) });
   if (key.tab) {
     const current = matches[state.cursor];
     if (!current) return next({});
@@ -82,10 +91,12 @@ interface Props {
   matches: FilamentProfile[];
   state: PickerState;
   warnings: string[];
+  /** The terminal's height in rows, when known. */
+  height?: number;
 }
 
-export function Picker({ catalogSize, matches, state, warnings }: Props) {
-  const [start, end] = visibleRange(state.cursor, matches.length, ROWS);
+export function Picker({ catalogSize, matches, state, warnings, height }: Props) {
+  const [start, end] = visibleRange(state.cursor, matches.length, pickerRows(height, warnings.length));
 
   return (
     <Box flexDirection="column">
@@ -128,7 +139,7 @@ export function Picker({ catalogSize, matches, state, warnings }: Props) {
       {matches.length === 0 ? <Text dimColor>No matches. Bambu Lab filaments are never included: BambuStudio ships its own presets.</Text> : null}
       {matches.length > end ? <Text dimColor>… {matches.length - end} more</Text> : null}
       {state.error ? <Text color="red">{state.error}</Text> : null}
-      <Text dimColor>type to search · ↑/↓ move · tab select · ctrl+a select all matches · enter continue · esc back</Text>
+      <Text dimColor>type to search · ↑/↓ move · tab select · enter continue · esc back · ? help</Text>
     </Box>
   );
 }

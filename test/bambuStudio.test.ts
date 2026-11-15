@@ -163,6 +163,20 @@ describe("writeMany", () => {
       expect(JSON.parse(await readFile(missing, "utf-8")).filament_id).toBe("PABC1234");
     });
 
+    it("adjusts the presets it writes and leaves kept ones alone", async () => {
+      const seen: string[] = [];
+      const adjust = (profile: FilamentProfile, printer: string, built: Record<string, unknown>) => {
+        seen.push(`${profile.filamentId} ${printer}`);
+        return { ...built, filament_notes: "tuned in the plan" };
+      };
+
+      await writeMany([profileAt(0)], target([X1C_04, X1C_06]), { adjust });
+
+      expect(seen).toEqual([`PABC1234 ${X1C_06}`]);
+      expect(await readFile(existing, "utf-8")).toBe(tuned);
+      expect(JSON.parse(await readFile(missing, "utf-8")).filament_notes).toBe("tuned in the plan");
+    });
+
     it("replaces them when asked to overwrite", async () => {
       const outcomes = await writeMany([profileAt(0)], target([X1C_04, X1C_06]), { overwrite: true });
 

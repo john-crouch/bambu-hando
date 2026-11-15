@@ -1,4 +1,4 @@
-// ABOUTME: Per-brand empty spool weight menu: SpoolEase catalog rows, or the source's weight vs unspecified.
+// ABOUTME: Per-brand empty spool weight menu: SpoolEase catalog rows, then the source's weight and unspecified.
 // ABOUTME: Key handling is a pure function so App's always-on useInput can drive it without a listener of its own.
 
 import { Box, type Key, Text } from "ink";
@@ -6,8 +6,12 @@ import { Box, type Key, Text } from "ink";
 import type { FilamentProfile } from "../models.js";
 import { describeSourceWeights, type WeightChoice, type WeightGroup } from "../spoolWeights.js";
 import { visibleRange } from "./Picker.js";
+import { listRows } from "./screenSize.js";
 
 const ROWS = 12;
+// Title, the filaments, the catalog line, the list's margins, "… more" and the hint line, plus a spare
+// line; warnings come on top.
+const CHROME = 8;
 const LABEL_WIDTH = 52;
 
 export interface WeightItem {
@@ -18,18 +22,20 @@ export interface WeightItem {
 
 export type WeightAction = { type: "move"; cursor: number } | { type: "choose" } | { type: "back" } | { type: "none" };
 
-/** The brand's catalog rows; a brand the catalog doesn't list chooses between the source's weight and unspecified. */
+/**
+ * The brand's catalog rows, then the source's weight and unspecified, which are always offered: when the
+ * spool in hand matches no catalog row, SpoolEase can still work its weight out on the first full weigh.
+ */
 export function weightItems(group: WeightGroup, profiles: FilamentProfile[], sourceName: string): WeightItem[] {
-  if (group.options.length > 0) {
-    return group.options.map((option) => ({
-      label: option.label,
-      detail: `${option.grams} g${option.mine ? " · My Spools List" : ""}`,
-      choice: { kind: "grams", grams: option.grams },
-    }));
-  }
+  const rows: WeightItem[] = group.options.map((option) => ({
+    label: option.label,
+    detail: `${option.grams} g${option.mine ? " · My Spools List" : ""}`,
+    choice: { kind: "grams", grams: option.grams },
+  }));
   return [
+    ...rows,
     { label: sourceName, detail: describeSourceWeights(profiles, group), choice: { kind: "source" } },
-    { label: "Unspecified", detail: "SpoolEase works it out when the full spool is first weighed", choice: { kind: "unspecified" } },
+    { label: "Unspecified", detail: "SpoolEase works it out on the first full weigh", choice: { kind: "unspecified" } },
   ];
 }
 
@@ -58,10 +64,12 @@ interface Props {
   steps: number;
   sourceName: string;
   warnings: string[];
+  /** The terminal's height in rows, when known. */
+  height?: number;
 }
 
-export function WeightMenu({ group, profiles, items, cursor, step, steps, sourceName, warnings }: Props) {
-  const [start, end] = visibleRange(cursor, items.length, ROWS);
+export function WeightMenu({ group, profiles, items, cursor, step, steps, sourceName, warnings, height }: Props) {
+  const [start, end] = visibleRange(cursor, items.length, listRows(height, CHROME + warnings.length, ROWS));
   const names = group.profiles.map((i) => profiles[i]?.name ?? "");
   const count = names.length;
 
@@ -90,21 +98,23 @@ export function WeightMenu({ group, profiles, items, cursor, step, steps, source
           const active = start + offset === cursor;
           return (
             <Box key={item.label}>
-              <Box width={2}>
+              <Box width={2} flexShrink={0}>
                 <Text>{active ? "›" : ""}</Text>
               </Box>
-              <Box width={LABEL_WIDTH}>
+              <Box width={LABEL_WIDTH} flexShrink={0} paddingRight={1}>
                 <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
                   {item.label}
                 </Text>
               </Box>
-              <Text dimColor>{item.detail}</Text>
+              <Text dimColor wrap="truncate-end">
+                {item.detail}
+              </Text>
             </Box>
           );
         })}
         {items.length > end ? <Text dimColor>… {items.length - end} more</Text> : null}
       </Box>
-      <Text dimColor>↑/↓ move · enter choose · esc back</Text>
+      <Text dimColor>↑/↓ move · enter choose · esc back · ? help</Text>
     </Box>
   );
 }

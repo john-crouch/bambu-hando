@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { bambuFilamentDir, bambuUserRoot, cacheDir } from "../src/paths.js";
+import { bambuFilamentDir, bambuUserRoot, cacheDir, configDir, tildePath } from "../src/paths.js";
 
 describe("bambuUserRoot", () => {
   it("uses ~/.config on Linux", () => {
@@ -36,5 +36,28 @@ describe("cacheDir", () => {
 
   it("uses Library/Caches on macOS", () => {
     expect(cacheDir("darwin", "/Users/max", { XDG_CACHE_HOME: "/ignored" })).toBe("/Users/max/Library/Caches/bambu-hando");
+  });
+});
+
+describe("configDir", () => {
+  it("uses ~/.config on Linux", () => {
+    expect(configDir("linux", "/home/max", {})).toBe("/home/max/.config/bambu-hando");
+  });
+
+  it("honors XDG_CONFIG_HOME on Linux", () => {
+    expect(configDir("linux", "/home/max", { XDG_CONFIG_HOME: "/etc/max" })).toBe("/etc/max/bambu-hando");
+  });
+
+  it("uses Application Support on macOS", () => {
+    expect(configDir("darwin", "/Users/max", { XDG_CONFIG_HOME: "/ignored" })).toBe("/Users/max/Library/Application Support/bambu-hando");
+  });
+});
+
+describe("tildePath", () => {
+  it("writes the home folder as ~, and leaves other paths alone", () => {
+    expect(tildePath("/home/max/.config/BambuStudio", "/home/max")).toBe("~/.config/BambuStudio");
+    expect(tildePath("/home/max", "/home/max")).toBe("~");
+    expect(tildePath("/home/maxine/x", "/home/max")).toBe("/home/maxine/x");
+    expect(tildePath("/etc/x", "/home/max")).toBe("/etc/x");
   });
 });

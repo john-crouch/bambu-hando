@@ -1,4 +1,4 @@
-// ABOUTME: OS-aware path resolution for BambuStudio user preset directories and our download cache.
+// ABOUTME: OS-aware path resolution for BambuStudio user preset directories and our cache and settings.
 // ABOUTME: Keeps platform logic isolated and easy to test.
 
 import { homedir } from "node:os";
@@ -34,4 +34,21 @@ export function cacheDir(
   if (platform === "linux") return posix.join(env.XDG_CACHE_HOME || posix.join(home, ".cache"), "bambu-hando");
   if (platform === "darwin") return posix.join(home, "Library", "Caches", "bambu-hando");
   throw new Error(`Unsupported OS for this tool: ${platform}`);
+}
+
+/** Per-user settings directory: $XDG_CONFIG_HOME or ~/.config on Linux, ~/Library/Application Support on macOS. */
+export function configDir(
+  platform: string = process.platform,
+  home: string = homedir(),
+  env: Record<string, string | undefined> = process.env,
+): string {
+  if (platform === "linux") return posix.join(env.XDG_CONFIG_HOME || posix.join(home, ".config"), "bambu-hando");
+  if (platform === "darwin") return posix.join(home, "Library", "Application Support", "bambu-hando");
+  throw new Error(`Unsupported OS for this tool: ${platform}`);
+}
+
+/** `path` with the home folder written as "~", for display. */
+export function tildePath(path: string, home: string = homedir()): string {
+  if (path === home) return "~";
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }

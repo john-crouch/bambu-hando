@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { baseFilamentDir, installBambuStudio, X1C_06 } from "./bambuStudioSetup.js";
 import { expectedSpoolPayload, SOURCE_FIXTURE } from "./parity.js";
 import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { decodeQr, readPdf } from "./pdf.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
@@ -38,6 +39,8 @@ describe("bambu-hando binary", () => {
     await server.close();
   });
 
+  const spooleaseArgs = (): string[] => ["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port), "--spoolease-security-key", TEST_SECURITY_KEY];
+
   it("syncs presets to disk and spools to SpoolEase", async () => {
     const { code, stdout, stderr } = await spawnCli(
       [
@@ -62,6 +65,18 @@ describe("bambu-hando binary", () => {
     const preset = JSON.parse(await readFile(report.bambu_preset_paths[0], "utf-8"));
     expect(preset).toMatchObject({ filament_id: "PABC1234", inherits: "", compatible_printers: [X1C_06], filament_type: ["PETG"] });
     expect(server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body)).toEqual([0, 1, 2].map(expectedSpoolPayload));
+  });
+
+  it("checks a sync without loading the TUI, exiting 1 on a problem", async () => {
+    expect((await spawnCli(["--source", SOURCE_FIXTURE, ...spooleaseArgs()], home)).code).toBe(0);
+    const clean = await spawnCli(["check", ...spooleaseArgs()], home);
+    expect(clean).toMatchObject({ code: 0, stderr: "" });
+    expect(clean.stdout).toContain("Everything lines up");
+
+    server.customFilaments += "\nPNOPRESET,Acme PLA Ghost,200,220,PLA";
+    const { code, stdout } = await spawnCli(["check", "--json", ...spooleaseArgs()], home);
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout).sections[0]).toMatchObject({ key: "csv_only", items: ["Acme PLA Ghost (PNOPRESET)"] });
   });
 
   it("downloads SpoolmanDB filaments and writes linked presets", async () => {
@@ -101,6 +116,24 @@ describe("bambu-hando binary", () => {
     } finally {
       await spoolmanDb.close();
     }
+  });
+
+  it("makes QR labels for the spools it created", async () => {
+    const sync = await spawnCli(["--source", SOURCE_FIXTURE, "--printer-preset", X1C_06, ...spooleaseArgs()], home);
+    expect(sync.code).toBe(0);
+
+    const output = join(home, "labels.pdf");
+    const { code, stdout, stderr } = await spawnCli(["labels", "--all", "--output", output, ...spooleaseArgs()], home);
+
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout).toContain(`Wrote 3 labels to ${output}`);
+    const pages = readPdf(await readFile(output));
+    expect(pages).toHaveLength(3);
+    const link = new URL(decodeQr(pages[0]!)!);
+    expect(link.origin + link.pathname).toBe("https://tag.spoolease.io/S1/");
+    expect(link.searchParams.get("ID")).toBe(server.spools[0]!.id);
+    expect(link.searchParams.get("SC")).toBe("PABC1234");
   });
 
   it("exits 2 for invalid arguments", async () => {
