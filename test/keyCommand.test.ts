@@ -47,6 +47,12 @@ describe("bambu-hando key usage", () => {
     expect((await run(["key", "remove"])).code).toBe(2);
   });
 
+  it("explains that nothing was piped in when stdin is neither a terminal nor has a key", async () => {
+    const { code, stderr } = await run(["key", "set", "3dfp"], "");
+    expect(code).toBe(2);
+    expect(stderr).toContain("no key was piped in, and stdin isn't a terminal to prompt on: run this in a terminal, or pipe the key in");
+  });
+
   it("refuses a key given as an argument, without repeating it", async () => {
     for (const argv of [["key", "set", "3dfp", KEY], ["key", "set", "3dfp", `--key=${KEY}`]]) {
       const { code, stderr } = await run(argv);
@@ -97,7 +103,7 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
     for (const input of ["", "\n", "two words"]) {
       const { code, stderr } = await run(["key", "set", "3dfp"], input);
       expect(code).toBe(2);
-      expect(stderr).toMatch(/empty|spaces or control characters/);
+      expect(stderr).toMatch(/empty|spaces or control characters|no key was piped in/);
     }
     expect(await storedSecret(TDFP)).toBeNull();
   });

@@ -47,7 +47,10 @@ function hasRawMode(stdin: SecretInput): stdin is SecretInput & { setRawMode: (m
 async function readKey(target: SecretSpec, io: KeyIo): Promise<string> {
   const { stdin } = io;
   if (stdin.isTTY && hasRawMode(stdin)) return promptHidden(stdin, io.stderr, `${target.label} (input hidden): `);
-  return readPiped(stdin);
+  const piped = await readPiped(stdin);
+  // Nothing at all, rather than a blank line, means stdin was closed: run where there's no terminal.
+  if (piped === "") throw new Error("no key was piped in, and stdin isn't a terminal to prompt on: run this in a terminal, or pipe the key in");
+  return piped;
 }
 
 async function setKey(target: SecretSpec, io: KeyIo, env: Record<string, string | undefined>): Promise<number> {
