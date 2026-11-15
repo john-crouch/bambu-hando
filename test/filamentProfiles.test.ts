@@ -143,9 +143,15 @@ describe("FilamentProfilesClient", () => {
 
   it("gets a filament's full record, keeping the id the server returns", async () => {
     server.filaments = [serverFilament({ id: 205 })];
-    server.replies["/api/v1/filaments/101"] = { status: 200, body: { ...serverFilament({ id: 205 }), chamber_temp: null, stores: [] } };
+    server.replies["/api/v1/filaments/101"] = { status: 200, body: { ...serverFilament({ id: 205 }), stores: [] } };
     const filament = await client.getFilament(101);
     expect(filament).toMatchObject({ id: 205, tempMin: 230, tempMax: 250, bedTempMin: 70, bedTempMax: 80, density: 1270, diameter: 1750, nominalWeight: 1000, spoolWeight: 189 });
+    expect(filament).toMatchObject({ chamberTemp: null, dryTempMax: 65, dryTime: 6, flowRatio: 0.95, kValue: 0.04, maxVolumetricSpeed: 16, softeningTemp: 78 });
+  });
+
+  it("leaves store prices out of a filament's record, since they change daily", async () => {
+    server.filaments = [serverFilament()];
+    expect(await client.getFilament(101)).not.toHaveProperty("stores");
   });
 
   it("records the server's quota numbers after every call", async () => {

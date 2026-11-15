@@ -110,7 +110,7 @@ export interface TdfpFilament {
   url: string;
 }
 
-/** Units as the API sends them: °C, density in mg/cm³, diameter in µm, weights in grams. */
+/** Units as the API sends them: °C, density in mg/cm³, diameter in µm, weights in grams. Store prices are left out: they change daily. */
 export interface TdfpFilamentDetail extends TdfpFilament {
   tempMin: number | null;
   tempMax: number | null;
@@ -120,6 +120,16 @@ export interface TdfpFilamentDetail extends TdfpFilament {
   diameter: number | null;
   nominalWeight: number | null;
   spoolWeight: number | null;
+  chamberTemp: number | null;
+  dryTempMax: number | null;
+  /** Hours. */
+  dryTime: number | null;
+  /** Community values. */
+  flowRatio: number | null;
+  kValue: number | null;
+  /** mm³/s. */
+  maxVolumetricSpeed: number | null;
+  softeningTemp: number | null;
 }
 
 export interface FilamentPage {
@@ -341,6 +351,13 @@ export class FilamentProfilesClient {
       diameter: optNum(raw.diameter),
       nominalWeight: optNum(raw.nominal_weight),
       spoolWeight: optNum(raw.spool_weight),
+      chamberTemp: optNum(raw.chamber_temp),
+      dryTempMax: optNum(raw.dry_temp_max),
+      dryTime: optNum(raw.dry_time),
+      flowRatio: optNum(raw.flow_ratio),
+      kValue: optNum(raw.k_value),
+      maxVolumetricSpeed: optNum(raw.max_volumetric_speed),
+      softeningTemp: optNum(raw.softening_temp),
     };
   }
 }

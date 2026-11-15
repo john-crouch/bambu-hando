@@ -76,7 +76,7 @@ export function quotaBlocks(state: QuotaState, calls: number, now: Date, reserve
   const until = utcMinute(quotaReset(now));
   if (state.remaining === 0) return `the monthly 3DFilamentProfiles API quota is used up until ${until}`;
   const kept = reserve > 0 ? ` and ${reserve} are kept in reserve` : "";
-  return `this needs ${calls} 3DFilamentProfiles API calls, but only ${state.remaining} are left until ${until}${kept}`;
+  return `this needs ${calls} 3DFilamentProfiles API call${calls === 1 ? "" : "s"}, but only ${state.remaining} are left until ${until}${kept}`;
 }
 
 function parseState(text: string): QuotaState | null {

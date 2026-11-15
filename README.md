@@ -235,10 +235,28 @@ bambu-hando 3dfp spools --refresh   # fetch the list again anyway
 bambu-hando 3dfp spools --json      # snake_case JSON: fetched_at, from_cache, spools, quota
 ```
 
+It needs Node 24 or later (the catalog uses Node's built-in SQLite).
+
 - Every response says how many calls are left, and bambu-hando keeps that in `3dfp-quota.json` in its config directory; once the server has said none are left, it refuses further calls itself until the quota resets (00:00 UTC on the 1st). A call that gets no answer is counted as spent.
 - The spool list is cached for an hour in its cache directory (the API asks integrations to poll no more than hourly), one cache per account: a fingerprint of the key tells them apart, never the key.
 - Requests the API would refuse (out-of-range weights, too long a location) are refused before they're sent, since a refused request still costs a call.
 - The key goes only to `https://3dfilamentprofiles.com`; no redirect is followed. `FILAMENTPROFILES_API_URL` can point at a server on this machine (for tests) and nowhere else.
+
+### The local catalog
+
+Everything bambu-hando reads about filaments goes into a local catalog (`3dfp-catalog.sqlite` in `~/.local/share/bambu-hando`, or Application Support on macOS), so it's never paid for twice. Copying the whole database through the API isn't possible within a month's quota (a full record is one call per filament, and there are tens of thousands), so the catalog fills cheapest first:
+
+```bash
+bambu-hando 3dfp filament 101                  # full record (temperatures, density, spool weight, flow, K, drying): one call the first time
+bambu-hando 3dfp filament 101 --refresh-stale  # fetch it again if it's 30 days old or more
+bambu-hando 3dfp search sunlu petg             # the catalog, no call
+bambu-hando 3dfp search --online --brand sunlu # one call; the results are kept
+bambu-hando 3dfp fill                          # from the 28th: spend what's left of the month, keeping 100 calls
+bambu-hando 3dfp catalog                       # what it holds
+```
+
+- A full record is used as long as it's in the catalog. Past 30 days bambu-hando says how old it is, but only `--refresh-stale` fetches it again: community values such as flow ratio and K change slowly, and each check costs a call. Store prices aren't kept, since they change daily. If a refresh fails, the old copy is used with a warning. A filament merged into another is followed to the surviving one.
+- `fill` uses the calls a month would otherwise lose: from the 28th (UTC; `--now` starts earlier) it fetches the full records of your spools' filaments, then lists their brands, then other brands it knows, then searches that turn up new brands, 50 filaments a call, down to the reserve (`--reserve`, default 100). A search stops at 20 pages, so a bigger brand is split by material. It picks up where it stopped, skips anything filled in the last 30 days, and pauses briefly between calls. Run it daily near the end of the month; from a scheduler it needs the user session (a systemd user timer, not cron), because the key is in the keyring.
 
 `3dfp` exits `0` on success, `1` when the API or network fails, and `2` for invalid arguments, a missing or rejected key, lapsed API access or a used-up quota.
 

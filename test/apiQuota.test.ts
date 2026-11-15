@@ -99,6 +99,12 @@ describe("quotaBlocks", () => {
     expect(quotaBlocks({ ...known, remaining: 0, exact: false }, 1, NOV)).toBeNull();
   });
 
+  it("says call for one call", () => {
+    expect(quotaBlocks({ ...known, remaining: 100 }, 1, NOV, 100)).toBe(
+      "this needs 1 3DFilamentProfiles API call, but only 100 are left until 2026-12-01 00:00 UTC and 100 are kept in reserve",
+    );
+  });
+
   it("keeps a reserve when asked", () => {
     expect(quotaBlocks({ ...known, remaining: 30 }, 5, NOV, 25)).toBeNull();
     expect(quotaBlocks({ ...known, remaining: 30 }, 6, NOV, 25)).toBe(

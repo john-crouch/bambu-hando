@@ -1,12 +1,15 @@
-// ABOUTME: `bambu-hando 3dfp usage|spools`: the account's 3DFilamentProfiles spools and how many API calls are left.
-// ABOUTME: usage never makes a call; spools makes at most one, reusing an hour-old list. Exit 2 for key or quota trouble.
+// ABOUTME: `bambu-hando 3dfp`: the account's 3DFilamentProfiles spools, API calls left, and the local filament catalog.
+// ABOUTME: Every action says what it cost; nothing refreshes a stale record unasked. Exit 2 for usage, key or quota trouble.
 
 import { parseArgs } from "node:util";
 
 import { QuotaError, QuotaLedger, quotaPath, quotaReset, type QuotaState, utcMinute } from "./apiQuota.js";
 import { errorMessage } from "./errors.js";
-import { FilamentProfilesClient, FilamentProfilesError, type TdfpSpool } from "./filamentProfiles.js";
+import { catalogPath, FilamentCatalog } from "./filamentCatalog.js";
+import { type CatalogApi, FILL_FROM_DAY, FILL_RESERVE, filamentName, filamentRecord, monthEndFill, type RecordResult, searchOnline } from "./filamentCatalogSync.js";
+import { FilamentProfilesClient, FilamentProfilesError, type TdfpFilament, type TdfpFilamentDetail, type TdfpSpool } from "./filamentProfiles.js";
 import { accountId, mySpools } from "./filamentProfilesCache.js";
+import { tildePath } from "./paths.js";
 import { loadSecret, SECRETS } from "./secrets.js";
 
 interface Io {
@@ -14,26 +17,45 @@ interface Io {
   stderr: (text: string) => void;
 }
 
-export const TDFP_USAGE = `Usage: bambu-hando 3dfp <usage|spools> [options]
+export const TDFP_USAGE = `Usage: bambu-hando 3dfp <usage|spools|filament|search|fill|catalog> [options]
 
 Reads your 3DFilamentProfiles account with the API key from \`bambu-hando key set 3dfp\`
 (or FILAMENTPROFILES_API_KEY). The API allows a monthly number of calls, so bambu-hando
-counts them and reuses what it read.
+counts them and keeps what it read in a local catalog.
 
-  usage           How many API calls are left this month (makes no call)
-  spools          Your spools: one call, or none while the last list is under an hour old
+  usage            How many API calls are left this month (no call)
+  spools           Your spools: one call, or none while the last list is under an hour old
+  filament <id>    A filament's full record: one call the first time, then from the catalog
+  search <words>   Filaments in the catalog (no call); --online searches 3DFilamentProfiles (one call)
+  fill             From the ${FILL_FROM_DAY}th (UTC), spend the month's leftover calls filling the catalog
+  catalog          What the catalog holds (no call)
 
 Options:
-  --refresh       spools: fetch the list again even when it's fresh
-  --json          spools: print snake_case JSON
-  -h, --help      Show this help
+  --refresh          spools: fetch the list again even when it's fresh
+  --refresh-stale    filament: fetch a record again when it's 30 days old or more
+  --online           search: ask 3DFilamentProfiles (one call) and keep the results
+  --brand <key>      search: only this brand key (e.g. sunlu)
+  --material <key>   search: only this material key (e.g. petg)
+  --now              fill: start before the ${FILL_FROM_DAY}th
+  --reserve <n>      fill: calls to leave unspent (default ${FILL_RESERVE})
+  --json             spools, filament: print snake_case JSON
+  -h, --help         Show this help
 `;
 
 const OPTIONS = {
   refresh: { type: "boolean", default: false },
+  "refresh-stale": { type: "boolean", default: false },
+  online: { type: "boolean", default: false },
+  brand: { type: "string" },
+  material: { type: "string" },
+  now: { type: "boolean", default: false },
+  reserve: { type: "string" },
   json: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false },
 } as const;
+
+/** Between calls of a fill, so hundreds of calls don't arrive at once. */
+const FILL_PAUSE_MS = 300;
 
 class TdfpUsageError extends Error {}
 
@@ -70,6 +92,185 @@ async function connect(): Promise<{ client: FilamentProfilesClient; ledger: Quot
   return { client: new FilamentProfilesClient({ key: key.value, ledger }), ledger, account };
 }
 
+function plural(count: number, noun: string, many = `${noun}s`): string {
+  return `${count} ${count === 1 ? noun : many}`;
+}
+
+function quotaLeft(quota: QuotaState): string {
+  return quota.remaining === null || quota.limit === null ? "" : `; ${quota.exact ? "" : "about "}${quota.remaining} of ${quota.limit} left this month`;
+}
+
+async function catalogApi(): Promise<CatalogApi> {
+  const { client, ledger } = await connect();
+  return { client, ledger, catalog: FilamentCatalog.open() };
+}
+
+function range(low: number | null, high: number | null): string | null {
+  if (low === null && high === null) return null;
+  if (low === null || high === null || low === high) return String(low ?? high);
+  return `${low}-${high}`;
+}
+
+function line(parts: (string | null)[]): string | null {
+  const text = parts.filter((part): part is string => part !== null).join(" · ");
+  return text ? `  ${text[0]?.toUpperCase()}${text.slice(1)}` : null;
+}
+
+function recordLines(filament: TdfpFilamentDetail): string[] {
+  const at = (value: string | null, text: (value: string) => string) => (value === null ? null : text(value));
+  const nozzle = range(filament.tempMin, filament.tempMax);
+  const bed = range(filament.bedTempMin, filament.bedTempMax);
+  const weight =
+    filament.nominalWeight !== null && filament.spoolWeight !== null
+      ? `${filament.nominalWeight} g on a ${filament.spoolWeight} g spool`
+      : filament.nominalWeight !== null
+        ? `${filament.nominalWeight} g`
+        : filament.spoolWeight !== null
+          ? `${filament.spoolWeight} g spool`
+          : null;
+  const drying =
+    filament.dryTempMax !== null && filament.dryTime !== null
+      ? `drying ${filament.dryTempMax} °C for ${filament.dryTime} h`
+      : filament.dryTempMax !== null
+        ? `drying ${filament.dryTempMax} °C`
+        : filament.dryTime !== null
+          ? `drying for ${filament.dryTime} h`
+          : null;
+  const num = (value: number | null) => (value === null ? null : String(value));
+  return [
+    `${filamentName(filament)}${filament.discontinued ? " (discontinued)" : ""} (3DFilamentProfiles #${filament.id})`,
+    line([at(nozzle, (v) => `nozzle ${v} °C`), at(bed, (v) => `bed ${v} °C`), at(num(filament.chamberTemp), (v) => `chamber ${v} °C`)]),
+    line([
+      at(num(filament.density === null ? null : filament.density / 1000), (v) => `density ${v} g/cm³`),
+      at(num(filament.diameter === null ? null : filament.diameter / 1000), (v) => `diameter ${v} mm`),
+      weight,
+    ]),
+    line([
+      at(num(filament.flowRatio), (v) => `flow ratio ${v}`),
+      at(num(filament.kValue), (v) => `K ${v}`),
+      at(num(filament.maxVolumetricSpeed), (v) => `max volumetric speed ${v} mm³/s`),
+    ]),
+    line([drying, at(num(filament.softeningTemp), (v) => `softens at ${v} °C`)]),
+    filament.url ? `  ${filament.url}` : null,
+  ].filter((text): text is string => text !== null);
+}
+
+function recordFooter(result: RecordResult, quota: QuotaState): string {
+  if (result.fetched) return `Fetched just now (1 API call${quotaLeft(quota)}).`;
+  const fetched = result.entry.recordAt?.toISOString().slice(0, 10) ?? "?";
+  if (!result.stale) return `From the catalog, fetched ${fetched} (no API call).`;
+  return `From the catalog, fetched ${fetched} (${result.ageDays} days old; --refresh-stale fetches it again: 1 API call).`;
+}
+
+async function filamentAction(idText: string | undefined, refreshStale: boolean, json: boolean, io: Io): Promise<number> {
+  if (idText === undefined || !/^\d+$/.test(idText)) throw new TdfpUsageError("filament needs the filament's number, as in its 3DFilamentProfiles link");
+  const api = await catalogApi();
+  try {
+    const result = await filamentRecord(api, Number(idText), { refreshStale });
+    if (result.warning) io.stderr(`${result.warning}\n`);
+    const record = result.entry.record;
+    if (!record) throw new Error(`filament ${idText} has no full record`);
+    if (json) {
+      const report = { filament: snakeKeys(record), fetched: result.fetched, stale: result.stale, age_days: result.ageDays, record_at: result.entry.recordAt?.toISOString() ?? null };
+      io.stdout(`${JSON.stringify(report, null, 2)}\n`);
+      return 0;
+    }
+    io.stdout(`${[...recordLines(record), recordFooter(result, await api.ledger.current())].join("\n")}\n`);
+    return 0;
+  } finally {
+    api.catalog.close();
+  }
+}
+
+function filamentLines(filaments: TdfpFilament[]): string[] {
+  const width = Math.max(0, ...filaments.map((f) => String(f.id).length));
+  return filaments.map((f) => `#${String(f.id).padEnd(width)}  ${filamentName(f)}${f.discontinued ? " (discontinued)" : ""}`);
+}
+
+const SEARCH_LIMIT = 50;
+
+async function searchAction(words: string, brand: string | undefined, material: string | undefined, online: boolean, io: Io): Promise<number> {
+  if (!words && !brand && !material) throw new TdfpUsageError("search needs words, --brand or --material");
+  const api = await catalogApi();
+  try {
+    if (online) {
+      const page = await searchOnline(api, { q: words || undefined, brand, material, limit: SEARCH_LIMIT });
+      const total = `${page.totalIsEstimate ? "about " : ""}${page.total}`;
+      const footer = `${page.filaments.length} of ${total} match${page.total === 1 ? "" : "es"} from 3DFilamentProfiles (1 API call${quotaLeft(await api.ledger.current())}).`;
+      io.stdout(`${[...filamentLines(page.filaments), footer].join("\n")}\n`);
+      return 0;
+    }
+    const found = api.catalog.search({ words, brand, material }, SEARCH_LIMIT);
+    if (found.length === 0) {
+      io.stdout("No matches in the catalog (no API call; --online searches 3DFilamentProfiles: 1 call).\n");
+      return 0;
+    }
+    const shown = found.length === SEARCH_LIMIT ? `the first ${SEARCH_LIMIT} matches` : plural(found.length, "match", "matches");
+    io.stdout(`${[...filamentLines(found), `${shown[0]?.toUpperCase()}${shown.slice(1)} in the catalog (no API call).`].join("\n")}\n`);
+    return 0;
+  } finally {
+    api.catalog.close();
+  }
+}
+
+function parseReserve(value: string | undefined): number {
+  if (value === undefined) return FILL_RESERVE;
+  if (!/^\d+$/.test(value)) throw new TdfpUsageError("--reserve must be a whole number of calls");
+  return Number(value);
+}
+
+async function fillAction(now: boolean, reserveText: string | undefined, io: Io): Promise<number> {
+  const reserve = parseReserve(reserveText);
+  const today = new Date();
+  if (!now && today.getUTCDate() < FILL_FROM_DAY) {
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), FILL_FROM_DAY)).toISOString().slice(0, 10);
+    io.stdout(`Nothing to do: the month-end fill starts on ${start} (UTC); --now fills now.\n`);
+    return 0;
+  }
+  const { client, ledger, account } = await connect();
+  const api: CatalogApi = { client, ledger, catalog: FilamentCatalog.open() };
+  try {
+    // The spools' filaments come first; any saved spool list will do, however old.
+    let calls = 0;
+    let owned: number[] = [];
+    try {
+      const cached = await mySpools(client, { account, maxAgeMs: Number.POSITIVE_INFINITY });
+      if (!cached.fromCache) calls += 1;
+      owned = [...new Set(cached.spools.map((spool) => spool.filamentId))];
+    } catch (err) {
+      if (!(err instanceof QuotaError)) throw err;
+    }
+    const pause = () => new Promise<void>((resolve) => setTimeout(resolve, FILL_PAUSE_MS));
+    const report = await monthEndFill(api, {
+      force: true,
+      reserve,
+      ownedFilamentIds: owned,
+      pause,
+      onSearch: (search) => io.stderr(`${search.key}: ${plural(search.saved, "filament")}, ${plural(search.calls, "call")}\n`),
+    });
+    const stats = api.catalog.stats();
+    io.stdout(
+      `Filled the catalog: ${plural(calls + report.calls, "API call")}, ${plural(report.records, "full record")}; ${plural(stats.filaments, "filament")} from ${plural(stats.brands, "brand")}. Stopped: ${report.reason}\n`,
+    );
+    return 0;
+  } finally {
+    api.catalog.close();
+  }
+}
+
+async function catalogAction(io: Io): Promise<number> {
+  const catalog = FilamentCatalog.open();
+  try {
+    const stats = catalog.stats();
+    io.stdout(
+      `3DFilamentProfiles catalog: ${plural(stats.filaments, "filament")} (${plural(stats.records, "full record")}) from ${plural(stats.brands, "brand")}, ${plural(stats.completeBrands, "brand")} filled; ${tildePath(catalogPath())}\n`,
+    );
+    return 0;
+  } finally {
+    catalog.close();
+  }
+}
+
 async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<number> {
   const { client, ledger, account } = await connect();
   const result = await mySpools(client, { account, refresh });
@@ -102,14 +303,21 @@ export async function filamentProfilesCommand(argv: string[], io: Io): Promise<n
       io.stdout(TDFP_USAGE);
       return 0;
     }
+    if (action === "search") return await searchAction(extra.join(" ").trim(), values.brand, values.material, values.online, io);
+    if (action === "filament") {
+      if (extra.length > 1) throw new TdfpUsageError("filament takes one id");
+      return await filamentAction(extra[0], values["refresh-stale"], values.json, io);
+    }
     if (extra.length > 0) throw new TdfpUsageError(`unexpected argument after ${action}`);
     if (action === "spools") return await spoolsAction(values.refresh, values.json, io);
+    if (action === "fill") return await fillAction(values.now, values.reserve, io);
+    if (action === "catalog") return await catalogAction(io);
     if (action === "usage") {
       const { ledger } = await connect();
       io.stdout(`${quotaLine(await ledger.current(), new Date())}\n`);
       return 0;
     }
-    throw new TdfpUsageError(`unknown action '${action}' (usage or spools)`);
+    throw new TdfpUsageError(`unknown action '${action}' (usage, spools, filament, search, fill or catalog)`);
   } catch (err) {
     if (err instanceof TdfpUsageError || (err instanceof TypeError && "code" in err && String(err.code).startsWith("ERR_PARSE_ARGS"))) {
       io.stderr(`bambu-hando: error: ${err.message}\n\n${TDFP_USAGE}`);

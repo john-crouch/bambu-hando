@@ -47,6 +47,17 @@ export function configDir(
   throw new Error(`Unsupported OS for this tool: ${platform}`);
 }
 
+/** Per-user data that costs something to rebuild: $XDG_DATA_HOME or ~/.local/share on Linux, ~/Library/Application Support on macOS. */
+export function dataDir(
+  platform: string = process.platform,
+  home: string = homedir(),
+  env: Record<string, string | undefined> = process.env,
+): string {
+  if (platform === "linux") return posix.join(env.XDG_DATA_HOME || posix.join(home, ".local", "share"), "bambu-hando");
+  if (platform === "darwin") return posix.join(home, "Library", "Application Support", "bambu-hando");
+  throw new Error(`Unsupported OS for this tool: ${platform}`);
+}
+
 /** `path` with the home folder written as "~", for display. */
 export function tildePath(path: string, home: string = homedir()): string {
   if (path === home) return "~";

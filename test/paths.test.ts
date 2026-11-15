@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { bambuFilamentDir, bambuUserRoot, cacheDir, configDir, tildePath } from "../src/paths.js";
+import { bambuFilamentDir, bambuUserRoot, cacheDir, configDir, dataDir, tildePath } from "../src/paths.js";
 
 describe("bambuUserRoot", () => {
   it("uses ~/.config on Linux", () => {
@@ -50,6 +50,20 @@ describe("configDir", () => {
 
   it("uses Application Support on macOS", () => {
     expect(configDir("darwin", "/Users/max", { XDG_CONFIG_HOME: "/ignored" })).toBe("/Users/max/Library/Application Support/bambu-hando");
+  });
+});
+
+describe("dataDir", () => {
+  it("uses ~/.local/share on Linux", () => {
+    expect(dataDir("linux", "/home/max", {})).toBe("/home/max/.local/share/bambu-hando");
+  });
+
+  it("honors XDG_DATA_HOME on Linux", () => {
+    expect(dataDir("linux", "/home/max", { XDG_DATA_HOME: "/data/max" })).toBe("/data/max/bambu-hando");
+  });
+
+  it("uses Application Support on macOS", () => {
+    expect(dataDir("darwin", "/Users/max", { XDG_DATA_HOME: "/ignored" })).toBe("/Users/max/Library/Application Support/bambu-hando");
   });
 });
 

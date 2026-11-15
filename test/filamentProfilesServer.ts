@@ -45,6 +45,13 @@ export interface ServerFilament {
   diameter: number | null;
   nominal_weight: number | null;
   spool_weight: number | null;
+  chamber_temp: number | null;
+  dry_temp_max: number | null;
+  dry_time: number | null;
+  flow_ratio: number | null;
+  k_value: number | null;
+  max_volumetric_speed: number | null;
+  softening_temp: number | null;
 }
 
 export interface RecordedApiRequest {
@@ -115,6 +122,13 @@ export function serverFilament(overrides: Partial<ServerFilament> = {}): ServerF
     diameter: 1750,
     nominal_weight: 1000,
     spool_weight: 189,
+    chamber_temp: null,
+    dry_temp_max: 65,
+    dry_time: 6,
+    flow_ratio: 0.95,
+    k_value: 0.04,
+    max_volumetric_speed: 16,
+    softening_temp: 78,
     ...overrides,
   };
 }
@@ -150,8 +164,20 @@ function detailed(spool: ServerSpool): Record<string, unknown> {
 }
 
 function summary(filament: ServerFilament): Record<string, unknown> {
-  const { temp_min, temp_max, bed_temp_min, bed_temp_max, density, diameter, nominal_weight, spool_weight, ...rest } = filament;
-  return { ...rest, url: `https://3dfilamentprofiles.com/filament/details/${filament.id}` };
+  return {
+    id: filament.id,
+    brand_key: filament.brand_key,
+    brand_name: filament.brand_name,
+    material_key: filament.material_key,
+    material: filament.material,
+    material_type_key: filament.material_type_key,
+    material_type: filament.material_type,
+    color: filament.color,
+    rgb: filament.rgb,
+    td_value: filament.td_value,
+    discontinued: filament.discontinued,
+    url: `https://3dfilamentprofiles.com/filament/details/${filament.id}`,
+  };
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -278,7 +304,7 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     if (method === "GET" && filamentMatch) {
       const filament = state.filaments.find((f) => f.id === Number(filamentMatch[1]));
       if (!filament) return error(404, "not_found", "No filament matches the identifier");
-      return { status: 200, body: { ...summary(filament), ...filament, chamber_temp: null, stores: [] } };
+      return { status: 200, body: { ...summary(filament), ...filament, stores: [{ region: "us", price: 19.99, currency: "USD", availability: "in_stock" }] } };
     }
     return error(404, "not_found", `No route for ${method} ${path}`);
   }
