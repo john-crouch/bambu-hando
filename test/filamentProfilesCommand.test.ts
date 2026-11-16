@@ -211,6 +211,20 @@ describe("bambu-hando 3dfp", () => {
       expect(server.requests).toHaveLength(1);
     });
 
+    it("reads the catalog without a key when no call is needed", async () => {
+      await run(["3dfp", "filament", "101"]);
+      await run(["3dfp", "search", "--online", "--brand", "sunlu"]);
+      vi.stubEnv("FILAMENTPROFILES_API_KEY", undefined);
+      vi.stubEnv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/bus");
+
+      expect(await run(["3dfp", "search", "black"])).toMatchObject({ code: 0, stdout: expect.stringContaining("1 match in the catalog (no API call).") });
+      expect(await run(["3dfp", "filament", "101"])).toMatchObject({ code: 0, stdout: expect.stringContaining("From the catalog, fetched 2026-11-15 (no API call).") });
+      // A record it would have to fetch still needs the key.
+      const fetching = await run(["3dfp", "filament", "102"]);
+      expect(fetching.code).not.toBe(0);
+      expect(fetching.stderr).toMatch(/bambu-hando key set 3dfp|FILAMENTPROFILES_API_KEY/);
+    });
+
     it("needs words or a filter to search", async () => {
       expect((await run(["3dfp", "search"])).code).toBe(2);
     });

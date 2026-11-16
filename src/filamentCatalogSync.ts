@@ -38,14 +38,20 @@ export interface RecordResult {
   warning: string | null;
 }
 
+/** The catalog's record when it will do without a call (present, and fresh or not to be refreshed); else null. */
+export function localRecord(catalog: FilamentCatalog, id: number, now: Date, options: { refreshStale?: boolean } = {}): RecordResult | null {
+  const cached = catalog.get(id);
+  if (!cached?.record) return null;
+  const stale = recordIsStale(cached, now);
+  return !stale || !options.refreshStale ? { entry: cached, fetched: false, ageDays: recordAgeDays(cached, now), stale, warning: null } : null;
+}
+
 /** A filament's full record: fetched when missing; when stale, refreshed only with refreshStale. */
 export async function filamentRecord(api: CatalogApi, id: number, options: { refreshStale?: boolean } = {}): Promise<RecordResult> {
   const now = clock(api);
+  const local = localRecord(api.catalog, id, now, options);
+  if (local) return local;
   const cached = api.catalog.get(id);
-  if (cached?.record) {
-    const stale = recordIsStale(cached, now);
-    if (!stale || !options.refreshStale) return { entry: cached, fetched: false, ageDays: recordAgeDays(cached, now), stale, warning: null };
-  }
   try {
     const record = await api.client.getFilament(id);
     api.catalog.saveRecord(id, record, now);

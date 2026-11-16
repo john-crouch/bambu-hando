@@ -6,7 +6,7 @@ import { parseArgs } from "node:util";
 import { QuotaError, quotaReset, type QuotaState, utcMinute } from "./apiQuota.js";
 import { errorMessage } from "./errors.js";
 import { catalogPath, FilamentCatalog } from "./filamentCatalog.js";
-import { type CatalogApi, FILL_FROM_DAY, FILL_RESERVE, filamentName, filamentRecord, monthEndFill, type RecordResult, searchOnline } from "./filamentCatalogSync.js";
+import { type CatalogApi, FILL_FROM_DAY, FILL_RESERVE, filamentName, filamentRecord, localRecord, monthEndFill, type RecordResult, searchOnline } from "./filamentCatalogSync.js";
 import { FilamentProfilesError, type TdfpFilament, type TdfpFilamentDetail, type TdfpSpool } from "./filamentProfiles.js";
 import { mySpools } from "./filamentProfilesCache.js";
 import { connectFilamentProfiles, type FilamentProfilesConnection, MissingKeyError } from "./filamentProfilesConnect.js";
@@ -104,6 +104,7 @@ function quotaLeft(quota: QuotaState): string {
   return quota.remaining === null || quota.limit === null ? "" : `; ${quota.exact ? "" : "about "}${quota.remaining} of ${quota.limit} left this month`;
 }
 
+/** The catalog with the API; connects first, so a missing key fails before the catalog is opened. */
 async function catalogApi(): Promise<CatalogApi> {
   const { client, ledger } = await connect();
   return { client, ledger, catalog: FilamentCatalog.open() };
@@ -159,8 +160,8 @@ function recordLines(filament: TdfpFilamentDetail): string[] {
   ].filter((text): text is string => text !== null);
 }
 
-function recordFooter(result: RecordResult, quota: QuotaState): string {
-  if (result.fetched) return `Fetched just now (1 API call${quotaLeft(quota)}).`;
+function recordFooter(result: RecordResult, quota: QuotaState | null): string {
+  if (result.fetched) return `Fetched just now (1 API call${quota ? quotaLeft(quota) : ""}).`;
   const fetched = result.entry.recordAt?.toISOString().slice(0, 10) ?? "?";
   if (!result.stale) return `From the catalog, fetched ${fetched} (no API call).`;
   return `From the catalog, fetched ${fetched} (${result.ageDays} days old; --refresh-stale fetches it again: 1 API call).`;
@@ -168,9 +169,17 @@ function recordFooter(result: RecordResult, quota: QuotaState): string {
 
 async function filamentAction(idText: string | undefined, refreshStale: boolean, json: boolean, io: Io): Promise<number> {
   if (idText === undefined || !/^\d+$/.test(idText)) throw new TdfpUsageError("filament needs the filament's number, as in its 3DFilamentProfiles link");
-  const api = await catalogApi();
+  // No key or keyring needed when the catalog's copy will do.
+  const catalog = FilamentCatalog.open();
+  let local: RecordResult | null;
   try {
-    const result = await filamentRecord(api, Number(idText), { refreshStale });
+    local = localRecord(catalog, Number(idText), new Date(), { refreshStale });
+  } finally {
+    catalog.close();
+  }
+  const api = local ? null : await catalogApi();
+  try {
+    const result = local ?? (await filamentRecord(api as CatalogApi, Number(idText), { refreshStale }));
     if (result.warning) io.stderr(`${result.warning}\n`);
     const record = result.entry.record;
     if (!record) throw new Error(`filament ${idText} has no full record`);
@@ -179,10 +188,10 @@ async function filamentAction(idText: string | undefined, refreshStale: boolean,
       io.stdout(`${JSON.stringify(report, null, 2)}\n`);
       return 0;
     }
-    io.stdout(`${[...recordLines(record), recordFooter(result, await api.ledger.current())].join("\n")}\n`);
+    io.stdout(`${[...recordLines(record), recordFooter(result, api ? await api.ledger.current() : null)].join("\n")}\n`);
     return 0;
   } finally {
-    api.catalog.close();
+    api?.catalog.close();
   }
 }
 
@@ -195,16 +204,22 @@ const SEARCH_LIMIT = 50;
 
 async function searchAction(words: string, brand: string | undefined, material: string | undefined, online: boolean, io: Io): Promise<number> {
   if (!words && !brand && !material) throw new TdfpUsageError("search needs words, --brand or --material");
-  const api = await catalogApi();
-  try {
-    if (online) {
+  if (online) {
+    const api = await catalogApi();
+    try {
       const page = await searchOnline(api, { q: words || undefined, brand, material, limit: SEARCH_LIMIT });
       const total = `${page.totalIsEstimate ? "about " : ""}${page.total}`;
       const footer = `${page.filaments.length} of ${total} match${page.total === 1 ? "" : "es"} from 3DFilamentProfiles (1 API call${quotaLeft(await api.ledger.current())}).`;
       io.stdout(`${[...filamentLines(page.filaments), footer].join("\n")}\n`);
       return 0;
+    } finally {
+      api.catalog.close();
     }
-    const found = api.catalog.search({ words, brand, material }, SEARCH_LIMIT);
+  }
+  // The local search needs no key or keyring.
+  const catalog = FilamentCatalog.open();
+  try {
+    const found = catalog.search({ words, brand, material }, SEARCH_LIMIT);
     if (found.length === 0) {
       io.stdout("No matches in the catalog (no API call; --online searches 3DFilamentProfiles: 1 call).\n");
       return 0;
@@ -213,7 +228,7 @@ async function searchAction(words: string, brand: string | undefined, material: 
     io.stdout(`${[...filamentLines(found), `${shown[0]?.toUpperCase()}${shown.slice(1)} in the catalog (no API call).`].join("\n")}\n`);
     return 0;
   } finally {
-    api.catalog.close();
+    catalog.close();
   }
 }
 
