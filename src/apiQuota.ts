@@ -71,9 +71,19 @@ export function afterResponse(state: QuotaState, response: QuotaResponse | null,
   return { ...state, remaining: state.remaining === null ? null : Math.max(0, state.remaining - 1), exact: false };
 }
 
-/** Why `calls` more calls can't be made, or null when they can; only the server's own numbers block. */
+/** How long a used-up quota blocks before one call may check again. */
+export const USED_UP_RECHECK_MS = 60 * 60 * 1000;
+
+/**
+ * Why `calls` more calls can't be made, or null when they can; only the server's own numbers block. A used-up quota
+ * (0, from a 429 or the headers) stops blocking after USED_UP_RECHECK_MS, since nothing else can bring fresh numbers:
+ * a burst limit or a mid-month plan upgrade would otherwise lock every command out until the 1st. If it's still used
+ * up, the server answers 429 again. Numbers above 0 never expire, so a fill's reserve holds.
+ */
 export function quotaBlocks(state: QuotaState, calls: number, now: Date, reserve = 0): string | null {
   if (!state.exact || state.remaining === null || state.remaining - calls >= reserve) return null;
+  const checkedAt = state.updatedAt === null ? Number.NaN : Date.parse(state.updatedAt);
+  if (state.remaining === 0 && now.getTime() - checkedAt >= USED_UP_RECHECK_MS) return null;
   const until = utcMinute(quotaReset(now));
   if (state.remaining === 0) return `the monthly 3DFilamentProfiles API quota is used up until ${until}`;
   const kept = reserve > 0 ? ` and ${reserve} are kept in reserve` : "";

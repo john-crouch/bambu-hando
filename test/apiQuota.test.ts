@@ -92,7 +92,18 @@ describe("quotaBlocks", () => {
     expect(quotaBlocks({ ...known, remaining: 3 }, 5, NOV)).toBe(
       "this needs 5 3DFilamentProfiles API calls, but only 3 are left until 2026-12-01 00:00 UTC",
     );
-    expect(quotaBlocks({ ...known, remaining: 0 }, 1, NOV)).toBe("the monthly 3DFilamentProfiles API quota is used up until 2026-12-01 00:00 UTC");
+    expect(quotaBlocks({ ...known, remaining: 0, updatedAt: NOV.toISOString() }, 1, NOV)).toBe(
+      "the monthly 3DFilamentProfiles API quota is used up until 2026-12-01 00:00 UTC",
+    );
+  });
+
+  it("lets one call through to check again once a used-up quota is an hour old", () => {
+    const usedUp = { ...known, remaining: 0, updatedAt: "2026-11-15T12:00:00.000Z" };
+    expect(quotaBlocks(usedUp, 1, new Date("2026-11-15T12:59:59Z"))).toMatch(/used up/);
+    // A burst limit or a plan upgrade would otherwise lock every command out until the 1st.
+    expect(quotaBlocks(usedUp, 1, new Date("2026-11-15T13:00:00Z"))).toBeNull();
+    // Numbers above 0 keep blocking, so the month-end fill's reserve holds however long ago they came.
+    expect(quotaBlocks({ ...known, remaining: 3, updatedAt: "2026-11-01T00:00:00.000Z" }, 5, NOV)).toMatch(/only 3 are left/);
   });
 
   it("never blocks on an estimate, which the server corrects on the next call", () => {
