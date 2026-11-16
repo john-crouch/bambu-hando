@@ -113,9 +113,10 @@ describe("weightVerdict", () => {
     expect(weightVerdict(agreed, 500, 450)).toEqual({ kind: "weigh" });
   });
 
-  it("treats a first comparison as both changed", () => {
+  it("trusts SpoolEase's scale on a first comparison, lower or higher", () => {
     expect(weightVerdict(null, 564, 1000)).toEqual({ kind: "push", grams: 564 });
-    expect(weightVerdict(null, 900, 700)).toEqual({ kind: "weigh" });
+    expect(weightVerdict(null, 900, 700)).toEqual({ kind: "push", grams: 900 });
+    expect(weightVerdict(null, 800, 0)).toEqual({ kind: "push", grams: 800 });
   });
 
   it("keeps asking while an unresolved difference stays", () => {

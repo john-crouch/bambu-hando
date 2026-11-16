@@ -24,16 +24,18 @@ export type WeightVerdict =
   | { kind: "unweighed" };
 
 /**
- * Compares against the weights both sides last agreed on: the side that changed since wins; when both
- * changed (or they never agreed), the lower weight wins, since filament only gets used up.
+ * Compares against the weights both sides last agreed on: the side that changed since wins; when both changed,
+ * the lower weight wins, since filament only gets used up. Before they ever agreed, SpoolEase's scale wins: lower
+ * wins would ask forever for a weigh that can't change a correct reading whenever 3DFP's number is lower.
  */
 export function weightVerdict(agreed: SpoolLink["agreed"], spoolease: number | null, tdfp: number): WeightVerdict {
   if (spoolease === null) return { kind: "unweighed" };
   const grams = Math.min(MAX_GRAMS, spoolease);
   if (Math.abs(grams - tdfp) < WEIGHT_TOLERANCE_G) return { kind: "agree" };
   const moved = (now: number, then: number) => Math.abs(now - then) >= WEIGHT_TOLERANCE_G;
-  const spooleaseMoved = agreed === null || moved(grams, agreed.spoolease);
-  const tdfpMoved = agreed === null || moved(tdfp, agreed.tdfp);
+  if (agreed === null) return { kind: "push", grams };
+  const spooleaseMoved = moved(grams, agreed.spoolease);
+  const tdfpMoved = moved(tdfp, agreed.tdfp);
   if (!spooleaseMoved) return { kind: "weigh" };
   if (!tdfpMoved || grams < tdfp) return { kind: "push", grams };
   return { kind: "weigh" };

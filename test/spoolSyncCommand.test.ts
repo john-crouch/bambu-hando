@@ -157,11 +157,20 @@ describe("bambu-hando 3dfp sync", () => {
     expect(writes()).toHaveLength(1);
   });
 
-  it("asks for a weigh when 3DFP's lower weight should win", async () => {
+  it("takes SpoolEase's weight on a first link, even when 3DFP's is lower", async () => {
     tdfp.spools = [serverSpool({ remaining_grams: 400 })];
     const { stdout } = await sync("--yes");
-    expect(stdout).toContain("          SpoolEase 564 g, 3DFP 400 g: put it on SpoolEase's scale (only the scale sets SpoolEase's weight); tag written to 3DFP");
-    expect(writes()).toEqual([["PATCH", "/api/v1/my/spools/ABC123", { bambu_tag_id: "04A1B2C3D4E5F6" }]]);
+    expect(stdout).toContain("          weight 400 → 564 g, from SpoolEase; tag written to 3DFP");
+    expect(writes()).toEqual([["PATCH", "/api/v1/my/spools/ABC123", { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }]]);
+  });
+
+  it("asks for a weigh when only 3DFP's weight moved since they agreed", async () => {
+    await sync("--yes");
+    tdfp.spools = [serverSpool({ remaining_grams: 400, bambu_tag_id: "04A1B2C3D4E5F6" })];
+    const before = writes().length;
+    const { stdout } = await sync("--yes", "--refresh");
+    expect(stdout).toContain("SpoolEase 564 g, 3DFP 400 g: put it on SpoolEase's scale (only the scale sets SpoolEase's weight)");
+    expect(writes()).toHaveLength(before);
   });
 
   it("offers to add a SpoolEase spool to 3DFP once the catalog knows its filament", async () => {

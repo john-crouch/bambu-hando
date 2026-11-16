@@ -34,9 +34,10 @@ A SpoolEase spool and a 3DFP spool with the same brand, material and color are
 linked by themselves; --link pairs others. The links live in a local file, and
 a linked spool's SpoolEase tag UID is also written to its 3DFP spool.
 
-Weights: the side that changed since the last sync wins; when both changed, the
-lower weight wins. Only SpoolEase's scale can set SpoolEase's weight, so when
-3DFP's should win, the plan says to weigh the spool.
+Weights: on a new link, SpoolEase's scale wins. After that, the side that
+changed since the last sync wins; when both changed, the lower weight wins.
+Only SpoolEase's scale can set SpoolEase's weight, so when 3DFP's should win,
+the plan says to weigh the spool.
 
 A SpoolEase spool not on 3DFP is offered as a new 3DFP spool when exactly one
 filament in the local catalog fits it (see \`bambu-hando 3dfp search --online\`).
