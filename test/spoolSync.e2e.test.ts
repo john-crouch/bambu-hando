@@ -46,6 +46,7 @@ describe("bambu-hando 3dfp sync (binary)", () => {
         tag_id: "04A1B2C3D4E5F6",
         material_type: "PETG",
         color_name: "2.0 Vivid Yellow",
+        color_code: "FFD700FF",
         brand: "Sunlu",
         weight_advertised: "1000",
         weight_core: "189",

@@ -142,6 +142,28 @@ describe("spoolsMatch", () => {
     expect(spoolsMatch(sePool({ colorName: "Wine Red" }), tdSpool())).toBe(false);
     expect(spoolsMatch(sePool(), tdSpool({ color: "" }))).toBe(false);
   });
+
+  it("takes extra words on SpoolEase's side, such as the product line, only when the colors agree", () => {
+    // SpoolmanDB product names carry the line; 3DFP's spool list often has no material type.
+    const bare = (rgb: string | null) => tdSpool({ materialType: null, color: "Vivid Yellow", rgb });
+    expect(spoolsMatch(sePool(), bare("#FFD700"))).toBe(true);
+    expect(spoolsMatch(sePool(), bare("#F0C810"))).toBe(true);
+    expect(spoolsMatch(sePool(), bare("#3050C0"))).toBe(false);
+    expect(spoolsMatch(sePool(), bare(null))).toBe(false);
+  });
+
+  it("doesn't take a plain color for a variant of it", () => {
+    const pair = (ours: string, code: string, theirs: string, rgb: string) =>
+      spoolsMatch(sePool({ colorName: ours, colorCodes: [code] }), tdSpool({ materialType: null, color: theirs, rgb }));
+    // The extra word is on 3DFP's side, whatever the colors.
+    expect(pair("Black", "000000FF", "Matte Black", "#000000")).toBe(false);
+    expect(pair("Red", "FF0000FF", "Dark Red", "#FF0000")).toBe(false);
+    // On SpoolEase's side, but the colors differ.
+    expect(pair("Light Blue", "ADD8E6FF", "Blue", "#0000FF")).toBe(false);
+    expect(pair("Matte Black", "2B2B2BFF", "Black", "#000000")).toBe(false);
+    // The extra word is the other side's material type, so it's the same color.
+    expect(spoolsMatch(sePool({ colorName: "Matte Black", colorCodes: ["000000FF"] }), tdSpool({ materialType: "Matte", color: "Black", rgb: null }))).toBe(true);
+  });
 });
 
 describe("addCandidates", () => {
@@ -149,6 +171,13 @@ describe("addCandidates", () => {
     const fits = filament();
     const found = addCandidates(sePool(), [filament({ id: 2, color: "Black" }), fits, filament({ id: 3, material: "PLA", materialKey: "pla" }), filament({ id: 4, brandName: "eSUN", brandKey: "esun" })]);
     expect(found).toEqual([fits]);
+  });
+
+  it("leaves out variants of the spool's color, and keeps the product line when the colors agree", () => {
+    const black = sePool({ colorName: "Black", colorCodes: ["000000FF"] });
+    expect(addCandidates(black, [filament({ color: "Matte Black", materialType: null, rgb: "#000000" })])).toEqual([]);
+    const bare = filament({ color: "Vivid Yellow", materialType: null, rgb: "#FFD700" });
+    expect(addCandidates(sePool(), [bare, filament({ id: 9, color: "Vivid Yellow", materialType: null, rgb: "#3050C0" })])).toEqual([bare]);
   });
 });
 

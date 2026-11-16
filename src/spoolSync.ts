@@ -44,23 +44,50 @@ export function weightVerdict(agreed: SpoolLink["agreed"], spoolease: number | n
 /** Letters and digits only, lower case: "Sunlu" = "SUNLU", "2.0 Vivid Yellow" = "20vividyellow". */
 const squash = (text: string | null | undefined): string => (text ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
-/** Either color name contains the other once squashed, so "2.0 Vivid Yellow" fits "Vivid Yellow" of type "2.0". */
-function colorsFit(spool: SpoolRecord, color: string, materialType: string | null): boolean {
+/** How far apart (per RGB channel, 0-255) two color codes may be and still be the same color. */
+export const COLOR_TOLERANCE = 24;
+
+function rgbOf(code: string | null | undefined): number[] | null {
+  const hex = (code ?? "").replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(hex)) return null;
+  return [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+}
+
+/** One of the spool's color codes is within COLOR_TOLERANCE of `rgb`; false when either side has none. */
+function codesAgree(spool: SpoolRecord, rgb: string | null): boolean {
+  const theirs = rgbOf(rgb);
+  if (!theirs) return false;
+  return spool.colorCodes.some((code) => {
+    const ours = rgbOf(code);
+    return ours !== null && ours.every((channel, i) => Math.abs(channel - (theirs[i] ?? 0)) <= COLOR_TOLERANCE);
+  });
+}
+
+/**
+ * The same color once squashed, with or without each side's type in front ("Vivid Yellow" of type "2.0" fits
+ * "2.0 Vivid Yellow"). SpoolEase's name may also have extra words of its own, as SpoolmanDB product names carry the
+ * line while 3DFP's spool list often has no type, but only when the color codes agree too: names alone can't tell
+ * "2.0 Vivid Yellow" from "Matte Black" vs "Black". Extra words on 3DFP's side never fit, so "Black" isn't "Matte Black".
+ */
+function colorsFit(spool: SpoolRecord, color: string, materialType: string | null, rgb: string | null): boolean {
   const theirs = squash(color);
   const ours = squash(spool.colorName);
   if (!theirs || !ours) return false;
-  return squash(`${spool.subtype} ${spool.colorName}`).includes(theirs) || squash(`${materialType ?? ""} ${color}`).includes(ours);
+  const oursNamed = [ours, squash(`${spool.subtype} ${spool.colorName}`)];
+  const theirsNamed = [theirs, squash(`${materialType ?? ""} ${color}`)];
+  if (theirsNamed.some((name) => oursNamed.includes(name))) return true;
+  return oursNamed.some((name) => theirsNamed.some((other) => name.includes(other))) && codesAgree(spool, rgb);
 }
 
 /** Same brand, material and color, by name. */
 export function spoolsMatch(spool: SpoolRecord, tdfp: TdfpSpool): boolean {
-  return squash(spool.brand) === squash(tdfp.brand) && squash(spool.material) === squash(tdfp.material) && colorsFit(spool, tdfp.color, tdfp.materialType);
+  return squash(spool.brand) === squash(tdfp.brand) && squash(spool.material) === squash(tdfp.material) && colorsFit(spool, tdfp.color, tdfp.materialType, tdfp.rgb);
 }
 
 /** The filaments a SpoolEase spool could be added to 3DFP as: same brand, material and color. */
 export function addCandidates(spool: SpoolRecord, filaments: TdfpFilament[]): TdfpFilament[] {
   return filaments.filter(
-    (f) => squash(spool.brand) === squash(f.brandName) && squash(spool.material) === squash(f.material) && colorsFit(spool, f.color, f.materialType),
+    (f) => squash(spool.brand) === squash(f.brandName) && squash(spool.material) === squash(f.material) && colorsFit(spool, f.color, f.materialType, f.rgb),
   );
 }
 
