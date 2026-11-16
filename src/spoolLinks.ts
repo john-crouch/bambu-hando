@@ -1,9 +1,10 @@
 // ABOUTME: The local file linking SpoolEase spools to 3DFilamentProfiles spools, the sync's source of truth.
 // ABOUTME: One book of links per 3DFP account and SpoolEase console, each with the weights both sides last agreed on.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile, rename } from "node:fs/promises";
+import { join } from "node:path";
 
+import { writeAtomic } from "./atomicWrite.js";
 import { configDir, tildePath } from "./paths.js";
 
 export interface SpoolLink {
@@ -91,8 +92,6 @@ export async function saveLinks(path: string, account: string, console: string, 
   }
   const others = (read ?? []).filter((book) => book.account !== account || book.console !== console);
   const books = [...others, { account, console, links }];
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(`${path}.tmp`, `${JSON.stringify({ version: 1, books }, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
-  await rename(`${path}.tmp`, path);
+  await writeAtomic(path, `${JSON.stringify({ version: 1, books }, null, 2)}\n`, { mode: 0o600 });
   return setAside;
 }

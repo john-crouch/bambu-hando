@@ -2,9 +2,10 @@
 // ABOUTME: One cache per account, told apart by a fingerprint of the key that never contains it.
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
 
+import { writeAtomic } from "./atomicWrite.js";
 import type { FilamentProfilesClient, TdfpSpool } from "./filamentProfiles.js";
 import { cacheDir } from "./paths.js";
 
@@ -56,10 +57,8 @@ export async function mySpools(client: FilamentProfilesClient, options: SpoolsCa
     if (cached && age >= 0 && age < (options.maxAgeMs ?? SPOOLS_MAX_AGE_MS)) return { ...cached, fromCache: true };
   }
   const spools = await client.listSpools();
-  await mkdir(dirname(path), { recursive: true });
   const saved = { account: options.account, fetchedAt: now.toISOString(), spools };
-  await writeFile(`${path}.tmp`, `${JSON.stringify(saved, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
-  await rename(`${path}.tmp`, path);
+  await writeAtomic(path, `${JSON.stringify(saved, null, 2)}\n`, { mode: 0o600 });
   return { spools, fetchedAt: now, fromCache: false };
 }
 

@@ -3,7 +3,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 
-import { writeAtomic } from "./bambuStudio.js";
+import { writeAtomic } from "./atomicWrite.js";
 import { errorMessage } from "./errors.js";
 import { derivedFilamentId } from "./sources.js";
 import type { UserPreset } from "./syncCheck.js";

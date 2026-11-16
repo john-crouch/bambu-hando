@@ -1,9 +1,10 @@
 // ABOUTME: BambuStudio custom filament preset writer for Linux and macOS.
 // ABOUTME: Clones a Generic system preset like BambuStudio's "Create filament"; keeps existing presets unless told to overwrite.
 
-import { access, mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 
+import { writeAtomic } from "./atomicWrite.js";
 import type { PresetConfig, SystemProfiles, Template } from "./bambuProfiles.js";
 import { rgbaToHashRgb } from "./colors.js";
 import { errorMessage } from "./errors.js";
@@ -115,14 +116,6 @@ async function exists(path: string): Promise<boolean> {
     () => true,
     () => false,
   );
-}
-
-/** Writes through a temporary file and a rename, so a reader never sees half a file. */
-export async function writeAtomic(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temp = `${path}.tmp`;
-  await writeFile(temp, content, "utf-8");
-  await rename(temp, path);
 }
 
 /** Write each profile's presets, one per printer, returning the paths, kept paths and error message (or "") per profile. */

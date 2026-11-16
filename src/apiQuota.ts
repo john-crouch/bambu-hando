@@ -1,10 +1,10 @@
 // ABOUTME: Keeps count of the 3DFilamentProfiles API's monthly quota, so a run never starts what it can't finish.
 // ABOUTME: Trusts the server's X-RateLimit headers when sent, estimates otherwise; the month rolls over at 00:00 UTC on the 1st.
 
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
+import { writeAtomic } from "./atomicWrite.js";
 import { configDir } from "./paths.js";
 
 export interface QuotaState {
@@ -127,11 +127,7 @@ export class QuotaLedger {
   record(response: QuotaResponse | null): Promise<QuotaState> {
     const next = this.queue.then(async () => {
       const state = afterResponse(await this.current(), response, this.now());
-      await mkdir(dirname(this.path), { recursive: true });
-      // Another bambu-hando process may be writing the same file: a shared temp name would be renamed away under it.
-      const tmp = `${this.path}.${process.pid}-${randomUUID()}.tmp`;
-      await writeFile(tmp, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
-      await rename(tmp, this.path);
+      await writeAtomic(this.path, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
       return state;
     });
     this.queue = next.catch(() => undefined);
