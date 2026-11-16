@@ -76,10 +76,10 @@ export interface LoadedSecret {
   from: "env" | "keyring";
 }
 
-/** Why the stored key isn't usable, or null when it is; never quotes it. */
-export function storedSecretProblem(spec: SecretSpec, stored: string): string | null {
+/** Why a key (from the keyring or the environment) isn't usable, or null when it is; never quotes it. */
+export function secretProblem(spec: SecretSpec, value: string): string | null {
   try {
-    validateSecret(stored, spec);
+    validateSecret(value, spec);
     return null;
   } catch (err) {
     return errorMessage(err);
@@ -99,7 +99,7 @@ export async function loadSecret(spec: SecretSpec, env: Record<string, string | 
   }
   const stored = await storedSecret(spec);
   if (stored === null) return null;
-  const problem = storedSecretProblem(spec, stored);
+  const problem = secretProblem(spec, stored);
   if (problem) throw new InvalidSecretError(`the ${spec.label} stored in ${keyringName()} isn't usable: ${problem}; store it again with \`bambu-hando key set ${spec.name}\``);
   return { value: stored.trim(), from: "keyring" };
 }

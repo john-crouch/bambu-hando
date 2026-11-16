@@ -3,7 +3,7 @@
 
 import { errorMessage } from "./errors.js";
 import { promptHidden, PromptCancelled, readPiped, type SecretInput } from "./secretPrompt.js";
-import { KeyringError, keyringName, removeSecret, SECRETS, type SecretSpec, secretByName, storedSecret, storedSecretProblem, storeSecret, validateSecret } from "./secrets.js";
+import { KeyringError, keyringName, removeSecret, SECRETS, type SecretSpec, secretByName, secretProblem, storedSecret, storeSecret, validateSecret } from "./secrets.js";
 
 export interface KeyIo {
   stdout: (text: string) => void;
@@ -74,19 +74,23 @@ async function setKey(target: SecretSpec, io: KeyIo, env: Record<string, string 
 
 async function statusLine(target: SecretSpec, env: Record<string, string | undefined>): Promise<string> {
   const head = `${target.name}  ${target.label}`;
-  if (env[target.env]?.trim()) {
+  const fromEnv = env[target.env]?.trim();
+  if (fromEnv) {
+    // Checked as every command checks it, so status never says a key is in use that they'd refuse.
+    const problem = secretProblem(target, fromEnv);
+    const source = problem ? `from ${target.env}, but not usable (${problem})` : `from ${target.env}`;
     let stored: string | null;
     try {
       stored = await storedSecret(target);
     } catch (err) {
       if (!(err instanceof KeyringError)) throw err;
-      return `${head}: from ${target.env} (can't check ${keyringName()})`;
+      return `${head}: ${source} (can't check ${keyringName()})`;
     }
-    return stored === null ? `${head}: from ${target.env}` : `${head}: from ${target.env} (overrides the one stored in ${keyringName()})`;
+    return stored === null ? `${head}: ${source}` : `${head}: ${source} (overrides the one stored in ${keyringName()})`;
   }
   const stored = await storedSecret(target);
   if (stored === null) return `${head}: not set (bambu-hando key set ${target.name})`;
-  const problem = storedSecretProblem(target, stored);
+  const problem = secretProblem(target, stored);
   return problem ? `${head}: stored in ${keyringName()}, but not usable (${problem})` : `${head}: stored in ${keyringName()}`;
 }
 

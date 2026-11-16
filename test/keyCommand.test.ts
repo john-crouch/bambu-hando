@@ -123,12 +123,19 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
     await storeSecret(TDFP, KEY);
     expect((await run(["key", "status", "3dfp"])).stdout).toBe("3dfp  3DFilamentProfiles API key: stored in the system keyring (Secret Service)\n");
 
-    vi.stubEnv(TDFP.env, "env-key");
+    vi.stubEnv(TDFP.env, "3dfp_env_key");
     expect((await run(["key", "status"])).stdout).toBe(
       "3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY (overrides the one stored in the system keyring (Secret Service))\n",
     );
     await removeSecret(TDFP);
     expect((await run(["key", "status"])).stdout).toBe("3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY\n");
+  });
+
+  it("says when the environment's key isn't usable, without printing it", async () => {
+    vi.stubEnv(TDFP.env, "3dfp_fake_key\nfor_tests");
+    expect((await run(["key", "status"])).stdout).toBe(
+      "3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY, but not usable (the key contains spaces or control characters: paste only the key)\n",
+    );
   });
 
   it("says when the stored key isn't usable, without printing it", async () => {
