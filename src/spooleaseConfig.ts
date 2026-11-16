@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { bambuConfigDir } from "./paths.js";
+import type { SpoolEaseConnection } from "./spoolease.js";
 
 export interface SpoolEaseSettings {
   host: string | null;
@@ -31,4 +32,27 @@ export async function readSpoolEaseConfig(configDir: string = bambuConfigDir()):
   } catch {
     return { host: null, securityKey: null };
   }
+}
+
+/** How to give bambu-hando the console's address and key, for "required" errors. */
+export const SPOOLEASE_SETTINGS_HINT =
+  "pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, or configure SpoolEase in BambuStudio";
+
+/** The SpoolEase connection flags shared by every command that talks to the console. */
+export interface SpoolEaseFlags {
+  "spoolease-host"?: string;
+  "spoolease-security-key"?: string;
+  "spoolease-https": boolean;
+}
+
+/** Flags, then environment, then the SpoolEase settings saved in BambuStudio; null without both a host and a key. */
+export function spooleaseConnectionFrom(
+  flags: SpoolEaseFlags,
+  port: number,
+  saved: SpoolEaseSettings,
+  env: Record<string, string | undefined> = process.env,
+): SpoolEaseConnection | null {
+  const host = flags["spoolease-host"] || env.SPOOLEASE_HOST || saved.host || "";
+  const securityKey = flags["spoolease-security-key"] || env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "";
+  return host && securityKey ? { host, securityKey, port, https: flags["spoolease-https"] } : null;
 }

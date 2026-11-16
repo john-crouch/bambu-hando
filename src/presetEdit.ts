@@ -3,7 +3,7 @@
 
 import { readFile } from "node:fs/promises";
 
-import { writeAtomic } from "./bambuStudio.js";
+import { writeAtomic } from "./atomicWrite.js";
 import { errorMessage } from "./errors.js";
 import type { FilamentProfile } from "./models.js";
 import { touchInfo } from "./presetIds.js";

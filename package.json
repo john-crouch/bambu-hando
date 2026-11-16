@@ -16,7 +16,7 @@
     "dist"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -26,6 +26,7 @@
     "tui:snap": "npm run build && node scripts/tui-snap.mjs"
   },
   "dependencies": {
+    "@napi-rs/keyring": "2.1.2",
     "ink": "7.1.1",
     "ink-spinner": "5.0.0",
     "ink-text-input": "6.0.0",

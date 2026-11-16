@@ -46,7 +46,7 @@ describe("tui-snap", () => {
   });
 
   it("shows the screen and exits 1 when the awaited text never appears", async () => {
-    const { code, stdout } = await snap(["--timeout", "500", "wait=no such text", "--", "--source", SOURCE_FIXTURE, "--skip-spoolease"], home);
+    const { code, stdout } = await snap(["--timeout", "2000", "wait=no such text", "--", "--source", SOURCE_FIXTURE, "--skip-spoolease"], home);
 
     expect(code).toBe(1);
     expect(stdout).toContain('timed out waiting for "no such text"');

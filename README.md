@@ -211,6 +211,74 @@ In the TUI, `f` on Check sync gives presets without a filament ID (missing, or t
 
 A later sync of the same filament keeps that range: a preset it keeps (the default) gives SpoolEase its own nozzle range rather than the source's, and the plan's Nozzle°C column shows the range SpoolEase gets. With several printers, the first kept preset that has a range wins.
 
+## API keys
+
+`bambu-hando key` keeps API keys for online services in the system keyring: the macOS Keychain, or the Secret Service on Linux (GNOME Keyring, KWallet). They never go into a file bambu-hando writes, and on Linux they never fall back to the kernel keyring, which forgets them on reboot. The only key today is `3dfp`, a 3DFilamentProfiles API key (they start with `3dfp_`, which `key set` checks).
+
+```bash
+bambu-hando key set 3dfp            # hidden prompt: paste the key, press enter
+pass show 3dfp | bambu-hando key set 3dfp   # or pipe it in
+bambu-hando key status              # where each key comes from, never its value
+bambu-hando key remove 3dfp
+```
+
+A key is never taken as an argument, since it would end up in your shell history and in `ps`; `key set` refuses one. On a machine without a keyring (a headless box over SSH), set `FILAMENTPROFILES_API_KEY` instead: it overrides a stored key. `key` exits `0` on success, `1` when the keyring can't be used (locked or not running) and `2` for invalid arguments or an empty key; ctrl+c at the prompt exits `130` and stores nothing.
+
+## 3DFilamentProfiles
+
+`bambu-hando 3dfp` reads your 3DFilamentProfiles account through its API, with the key from `bambu-hando key set 3dfp` (or `FILAMENTPROFILES_API_KEY`). The API allows a monthly number of calls (shown on its API access page), so bambu-hando spends as few as it can:
+
+```bash
+bambu-hando 3dfp usage              # calls left this month and when the quota resets; makes no call
+bambu-hando 3dfp spools             # your spools: one call, or none while the last list is under an hour old
+bambu-hando 3dfp spools --refresh   # fetch the list again anyway
+bambu-hando 3dfp spools --json      # snake_case JSON: fetched_at, from_cache, spools, quota
+```
+
+It needs Node 24 or later (the catalog uses Node's built-in SQLite).
+
+- Every response says how many calls are left, and bambu-hando keeps that in `3dfp-quota.json` in its config directory; once the server has said none are left, it refuses further calls itself until the quota resets (00:00 UTC on the 1st). A call that gets no answer is counted as spent.
+- The spool list is cached for an hour in its cache directory (the API asks integrations to poll no more than hourly), one cache per account: a fingerprint of the key tells them apart, never the key.
+- Requests the API would refuse (out-of-range weights, too long a location) are refused before they're sent, since a refused request still costs a call.
+- The key goes only to `https://3dfilamentprofiles.com`; no redirect is followed. `FILAMENTPROFILES_API_URL` can point at a server on this machine (for tests) and nowhere else.
+
+### The local catalog
+
+Everything bambu-hando reads about filaments goes into a local catalog (`3dfp-catalog.sqlite` in `~/.local/share/bambu-hando`, or Application Support on macOS), so it's never paid for twice. Copying the whole database through the API isn't possible within a month's quota (a full record is one call per filament, and there are tens of thousands), so the catalog fills cheapest first:
+
+```bash
+bambu-hando 3dfp filament 101                  # full record (temperatures, density, spool weight, flow, K, drying): one call the first time
+bambu-hando 3dfp filament 101 --refresh-stale  # fetch it again if it's 30 days old or more
+bambu-hando 3dfp search sunlu petg             # the catalog, no call
+bambu-hando 3dfp search --online --brand sunlu # one call; the results are kept
+bambu-hando 3dfp fill                          # from the 28th: spend what's left of the month, keeping 100 calls
+bambu-hando 3dfp catalog                       # what it holds
+```
+
+- A full record is used as long as it's in the catalog. Past 30 days bambu-hando says how old it is, but only `--refresh-stale` fetches it again: community values such as flow ratio and K change slowly, and each check costs a call. Store prices aren't kept, since they change daily. If a refresh fails, the old copy is used with a warning. A filament merged into another is followed to the surviving one.
+- `fill` uses the calls a month would otherwise lose: from the 28th (UTC; `--now` starts earlier) it fetches the full records of your spools' filaments, then lists their brands, then other brands it knows, then searches that turn up new brands, 50 filaments a call, down to the reserve (`--reserve`, default 100). A search stops at 20 pages, so a bigger brand is split by material. It picks up where it stopped, skips anything filled in the last 30 days, and pauses briefly between calls. Run it daily near the end of the month; from a scheduler it needs the user session (a systemd user timer, not cron), because the key is in the keyring.
+
+### Syncing spools with SpoolEase
+
+`bambu-hando 3dfp sync` links your SpoolEase spools to your 3DFilamentProfiles spools and keeps 3DFP's weights current. It prints what it would do and asks before writing anything:
+
+```bash
+bambu-hando 3dfp sync --dry-run              # the plan; changes nothing
+bambu-hando 3dfp sync                        # the plan, then "Apply? [y/N]"
+bambu-hando 3dfp sync --yes                  # apply without asking (scripts, timers)
+bambu-hando 3dfp sync --link 3=ABC123        # pair SpoolEase spool #3 with 3DFP spool ABC123
+bambu-hando 3dfp sync --add 1=10512          # add SpoolEase spool #1 to 3DFP as filament 10512
+bambu-hando 3dfp sync --unlink 3             # forget #3's link
+```
+
+- **Links** live in `3dfp-links.json` in the config directory (one set per 3DFP account and SpoolEase console), the source of truth. A SpoolEase spool and a 3DFP spool with the same brand, material and color are linked by themselves when no other spool fits either of them (a SpoolEase color with extra words, such as "2.0 Vivid Yellow" for "Vivid Yellow", fits only when the color codes agree too, so "Black" never fits "Matte Black"); otherwise the plan lists the candidates for `--link`. A linked spool's SpoolEase tag UID is also written to its 3DFP spool (`bambu_tag_id`), so the links could be rebuilt from 3DFP.
+- **Weights**: the link file remembers the weights both sides last agreed on. On a new link, SpoolEase's scale wins. After that, the side that changed since then wins; when both changed, the lower weight wins, since filament only gets used up. Differences under 5 g are ignored. 3DFP gets SpoolEase's weight; SpoolEase's own weight can only be set by its scale (its API doesn't take one), so when 3DFP's weight should win, the plan says to weigh the spool.
+- **New 3DFP spools**: a SpoolEase spool with no 3DFP spool is offered as a new one when exactly one filament in the local catalog fits it; with none or several, the plan says how to find it (`3dfp search --online`) and pick one (`--add`). It's created at SpoolEase's weight, then given its tag.
+- **Cost**: one call for the spool list (none while the last one is under an hour old), one per weight or tag sent, two per new spool (one without a tag). It checks the quota covers the whole plan before sending anything.
+- Not done: adding 3DFP-only spools to SpoolEase (that needs a preset and a custom-filament row), and copying 3DFP's location or notes to SpoolEase (an edit there replaces the whole record, pressure-advance values included). Unlinking leaves the tag on the 3DFP spool.
+
+`3dfp` exits `0` on success, `1` when the API or network fails (for `sync`: when any write failed), and `2` for invalid arguments, a missing or rejected key, lapsed API access or a used-up quota.
+
 ## Safety behavior
 
 - Uses dry-run mode for planning (no files written, nothing sent to SpoolEase beyond the key check and reading its spool weight lists)
