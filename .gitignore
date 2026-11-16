@@ -6,3 +6,6 @@ dist/
 
 # Project instructions for Claude Code are shared here, even where a global gitignore excludes them.
 !CLAUDE.md
+# Shared Claude Code agents, skills and settings live in .claude/; personal overrides stay local.
+!.claude/
+.claude/settings.local.json
