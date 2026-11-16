@@ -58,3 +58,10 @@ ESM with `module: nodenext`: relative imports must use `.js` extensions even fro
 ## Docs
 
 `docs/assumptions.md` separates documented facts from inferred behavior: read it before touching preset fields or SpoolEase payloads. `docs/testing.md` lists the manual live-validation sequence.
+
+## Multi-agent workflow
+
+- **Hooks** (`.claude/settings.json`): the `Stop` hook runs `npm run typecheck` at the end of every turn; a type error blocks stopping and comes back to you to fix. The `PostToolUse` lint step is a no-op here (no `lint:fix` script). Neither runs tests: run `npm test` (or a targeted `npx vitest run <file>`) before calling a task done.
+- **Discovery**: delegate broad, read-only searches and architecture mapping to `@scout` so the lead context stays small. It cites `file:line`; check its claims against `docs/assumptions.md` before acting on preset or SpoolEase details.
+- **Parallel workers**: for multi-part features, give each worker its own worktree (`git worktree add ../wt-<slug> -b feat/<slug>`) and start it with `hc run` (see the `hc` skill). Never run two editing agents in one working tree. A fresh worktree has no `node_modules` or `dist/`: run `npm ci` there first (`npm test` builds `dist/`). It also gets none of this checkout's Claude memory, and the npm-linked `bambu-hando` binary keeps pointing at this checkout's `dist/`, so workers test with `node dist/bin.js` from their own tree. TUI changes still follow the `tui-ux` skill.
+- **Before a PR**: delegate to `@verifier`, then run `/code-review` and `/security-review` on the branch diff.
