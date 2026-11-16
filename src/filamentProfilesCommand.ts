@@ -11,6 +11,7 @@ import { FilamentProfilesError, type TdfpFilament, type TdfpFilamentDetail, type
 import { mySpools } from "./filamentProfilesCache.js";
 import { connectFilamentProfiles, type FilamentProfilesConnection, MissingKeyError } from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
+import { holdsSecret, KEY_ARGUMENT_ERROR } from "./secrets.js";
 import { spoolSyncCommand } from "./spoolSyncCommand.js";
 
 interface Io {
@@ -317,6 +318,8 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
 export async function filamentProfilesCommand(argv: string[], io: Io): Promise<number> {
   if (argv[0] === "sync") return spoolSyncCommand(argv.slice(1), io);
   try {
+    // Before parsing: parseArgs quotes an unknown option, and a key typed there would be printed back.
+    if (argv.some(holdsSecret)) throw new TdfpUsageError(KEY_ARGUMENT_ERROR);
     const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
     const [action, ...extra] = positionals;
     if (values.help || action === undefined) {
@@ -337,7 +340,8 @@ export async function filamentProfilesCommand(argv: string[], io: Io): Promise<n
       io.stdout(`${quotaLine(await ledger.current(), new Date())}\n`);
       return 0;
     }
-    throw new TdfpUsageError(`unknown action '${action}' (usage, spools, sync, filament, search, fill or catalog)`);
+    // Not quoted: a pasted key without its prefix would be printed back.
+    throw new TdfpUsageError("unknown action (usage, spools, sync, filament, search, fill or catalog)");
   } catch (err) {
     if (err instanceof TdfpUsageError || (err instanceof TypeError && "code" in err && String(err.code).startsWith("ERR_PARSE_ARGS"))) {
       io.stderr(`bambu-hando: error: ${err.message}\n\n${TDFP_USAGE}`);

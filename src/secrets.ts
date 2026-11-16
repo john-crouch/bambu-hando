@@ -26,6 +26,15 @@ export class KeyringError extends Error {}
 /** A key from the environment or the keyring that `validateSecret` refuses; says where it came from, never its value. */
 export class InvalidSecretError extends Error {}
 
+/** What to say when a key turns up among the arguments; never repeats it. */
+export const KEY_ARGUMENT_ERROR =
+  "keys are never taken as arguments, so that one is now in your shell history (consider revoking it); run `bambu-hando key set <name>` and paste the key at the prompt";
+
+/** True when an argument holds what looks like one of the keys: its prefix anywhere, as in `--key=3dfp_...`. */
+export function holdsSecret(arg: string): boolean {
+  return Object.values(SECRETS).some((spec: SecretSpec) => arg.includes(spec.prefix));
+}
+
 export function secretByName(name: string): SecretSpec | undefined {
   return Object.hasOwn(SECRETS, name) ? SECRETS[name as keyof typeof SECRETS] : undefined;
 }

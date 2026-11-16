@@ -11,6 +11,7 @@ import { FilamentProfilesError, type TdfpSpool } from "./filamentProfiles.js";
 import { forgetSpools, mySpools } from "./filamentProfilesCache.js";
 import { connectFilamentProfiles, MissingKeyError } from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
+import { holdsSecret, KEY_ARGUMENT_ERROR } from "./secrets.js";
 import { SpoolEaseClient, type SpoolRecord } from "./spoolease.js";
 import { remainingGrams } from "./spoolInventory.js";
 import { readSpoolEaseConfig, SPOOLEASE_SETTINGS_HINT, spooleaseConnectionFrom } from "./spooleaseConfig.js";
@@ -179,12 +180,15 @@ function reportSetAside(setAside: string | null, io: SyncIo): void {
 }
 
 async function run(argv: string[], io: SyncIo): Promise<number> {
+  // Before parsing: parseArgs quotes an unknown option, and a key typed there would be printed back.
+  if (argv.some(holdsSecret)) throw new SyncUsageError(KEY_ARGUMENT_ERROR);
   const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
   if (values.help) {
     io.stdout(SYNC_USAGE);
     return 0;
   }
-  if (positionals.length > 0) throw new SyncUsageError(`unexpected argument "${positionals[0]}"`);
+  // Not quoted: a pasted key without its prefix would be printed back.
+  if (positionals.length > 0) throw new SyncUsageError("sync takes options only, no other arguments");
   const choices = parseChoices({ link: values.link ?? [], add: values.add ?? [], unlink: values.unlink ?? [] });
   const port = Number(values["spoolease-port"]);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new SyncUsageError("--spoolease-port must be a port number");

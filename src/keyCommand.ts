@@ -3,7 +3,7 @@
 
 import { errorMessage } from "./errors.js";
 import { promptHidden, PromptCancelled, readPiped, type SecretInput } from "./secretPrompt.js";
-import { KeyringError, keyringName, removeSecret, SECRETS, type SecretSpec, secretByName, secretProblem, storedSecret, storeSecret, validateSecret } from "./secrets.js";
+import { holdsSecret, KEY_ARGUMENT_ERROR, KeyringError, keyringName, removeSecret, SECRETS, type SecretSpec, secretByName, secretProblem, storedSecret, storeSecret, validateSecret } from "./secrets.js";
 
 export interface KeyIo {
   stdout: (text: string) => void;
@@ -108,12 +108,7 @@ export async function keyCommand(argv: string[], io: KeyIo, env: Record<string, 
   const [action, name, ...rest] = argv;
   try {
     // Anything past the name, or anything shaped like a key, is most likely the key itself: never repeat it back.
-    const looksLikeKey = (arg: string | undefined) => arg !== undefined && KNOWN.some((known) => arg.startsWith(known.prefix));
-    if (rest.length > 0 || name?.startsWith("-") || looksLikeKey(action) || looksLikeKey(name)) {
-      throw new KeyUsageError(
-        "keys are never taken as arguments, so that one is now in your shell history (consider revoking it); run `bambu-hando key set <name>` and paste the key at the prompt",
-      );
-    }
+    if (rest.length > 0 || name?.startsWith("-") || argv.some(holdsSecret)) throw new KeyUsageError(KEY_ARGUMENT_ERROR);
     if (action === "set") return await setKey(spec(name, "set"), io, env);
     if (action === "remove") return await removeKey(spec(name, "remove"), io);
     if (action === "status") {

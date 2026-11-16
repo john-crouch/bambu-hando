@@ -53,8 +53,20 @@ describe("bambu-hando 3dfp", () => {
   });
 
   it("rejects an unknown action or option", async () => {
-    expect(await run(["3dfp", "frobnicate"])).toMatchObject({ code: 2 });
+    const unknown = await run(["3dfp", "frobnicate"]);
+    expect(unknown).toMatchObject({ code: 2, stderr: expect.stringContaining("unknown action (usage, spools, sync, filament, search, fill or catalog)") });
+    expect(unknown.stderr).not.toContain("frobnicate");
     expect((await run(["3dfp", "spools", "--fast"])).code).toBe(2);
+  });
+
+  it("refuses a key typed as an argument, without repeating it", async () => {
+    for (const argv of [["3dfp", "3dfp_LEAKME"], ["3dfp", "search", "3dfp_LEAKME"], ["3dfp", "spools", "--3dfp_LEAKME"], ["3dfp", "spools", "--brand=3dfp_LEAKME"]]) {
+      const { code, stderr } = await run(argv);
+      expect(code).toBe(2);
+      expect(stderr).toContain("shell history");
+      expect(stderr).not.toContain("LEAKME");
+    }
+    expect(server.requests).toHaveLength(0);
   });
 
   it("lists the account's spools with one call, then from the cache", async () => {

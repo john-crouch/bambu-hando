@@ -220,6 +220,16 @@ describe("bambu-hando 3dfp sync", () => {
       expect(stderr).toContain("Usage: bambu-hando 3dfp sync");
     }
     expect(await sync("--dry-run", "--link", "9=ABC123")).toMatchObject({ code: 2, stderr: "bambu-hando: error: SpoolEase has no spool #9\n" });
+    expect((await sync("--dry-run", "extra")).stderr).not.toContain("extra");
+  });
+
+  it("refuses a key typed as an argument, without repeating it", async () => {
+    for (const args of [["3dfp_LEAKME"], ["--3dfp_LEAKME"]]) {
+      const { code, stderr } = await sync("--dry-run", ...args);
+      expect(code).toBe(2);
+      expect(stderr).toContain("shell history");
+      expect(stderr).not.toContain("LEAKME");
+    }
   });
 
   it("needs the SpoolEase console, and its key to work", async () => {
