@@ -173,6 +173,10 @@ function rowLines(row: SyncRow): string[] {
   return [labelled("3DFP only", `${row.tdfp.shortCode} ${tdName(row.tdfp)}: no SpoolEase spool fits`)];
 }
 
+function reportSetAside(setAside: string | null, io: SyncIo): void {
+  if (setAside) io.stderr(`The unreadable spool link file was kept as ${tildePath(setAside)}.\n`);
+}
+
 async function run(argv: string[], io: SyncIo): Promise<number> {
   const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
   if (values.help) {
@@ -223,7 +227,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
   if (lines.length) io.stdout(`${lines.join("\n")}\n\n`);
 
   if (plan.changes === 0) {
-    if (!values["dry-run"]) await saveLinks(linksPath(), api.account, connection.host, (await applySync(plan, api.client)).links);
+    if (!values["dry-run"]) reportSetAside(await saveLinks(linksPath(), api.account, connection.host, (await applySync(plan, api.client)).links), io);
     io.stdout("Nothing to change.\n");
     return 0;
   }
@@ -254,7 +258,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     const what = row.kind === "linked" ? `#${row.spool.id} ↔ ${row.tdfp.shortCode}` : row.kind === "add" ? `#${row.spool.id}` : "";
     failures.push(labelled("Failed", `${what}: ${outcome.error}`));
   });
-  await saveLinks(linksPath(), api.account, connection.host, applied.links);
+  reportSetAside(await saveLinks(linksPath(), api.account, connection.host, applied.links), io);
   if (applied.outcomes.some((outcome) => outcome.ok || outcome.created)) await forgetSpools();
 
   const calls = applied.outcomes.reduce((sum, outcome) => sum + (outcome.ok ? rowCalls(outcome.row) : 0), 0);

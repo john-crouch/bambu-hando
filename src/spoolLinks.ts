@@ -47,12 +47,13 @@ function parseLink(raw: unknown): SpoolLink | null {
   };
 }
 
+/** The file's books: none when there's no file; null when it can't be opened or parsed. */
 async function readBooks(path: string): Promise<LinkBook[] | null> {
   let text: string;
   try {
     text = await readFile(path, "utf-8");
-  } catch {
-    return [];
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? [] : null;
   }
   try {
     const saved = JSON.parse(text) as { books?: unknown };
@@ -73,15 +74,25 @@ async function readBooks(path: string): Promise<LinkBook[] | null> {
 /** The links of one 3DFP account and SpoolEase console; a damaged file reads as none, with a warning. */
 export async function loadLinks(path: string, account: string, console: string): Promise<{ links: SpoolLink[]; warning: string | null }> {
   const books = await readBooks(path);
-  if (books === null) return { links: [], warning: `the spool link file ${tildePath(path)} can't be read: starting with no links` };
+  if (books === null) return { links: [], warning: `the spool link file ${tildePath(path)} can't be read: starting with no links; it will be set aside, not overwritten` };
   return { links: books.find((book) => book.account === account && book.console === console)?.links ?? [], warning: null };
 }
 
-/** Replaces one account and console's links, keeping every other book in the file. */
-export async function saveLinks(path: string, account: string, console: string, links: SpoolLink[]): Promise<void> {
-  const others = ((await readBooks(path)) ?? []).filter((book) => book.account !== account || book.console !== console);
+/**
+ * Replaces one account and console's links, keeping every other book in the file.
+ * A file that can't be read is renamed aside first, since it may hold other books; returns that copy's path, else null.
+ */
+export async function saveLinks(path: string, account: string, console: string, links: SpoolLink[]): Promise<string | null> {
+  const read = await readBooks(path);
+  let setAside: string | null = null;
+  if (read === null) {
+    setAside = `${path}.damaged-${new Date().toISOString().replaceAll(":", "-")}`;
+    await rename(path, setAside);
+  }
+  const others = (read ?? []).filter((book) => book.account !== account || book.console !== console);
   const books = [...others, { account, console, links }];
   await mkdir(dirname(path), { recursive: true });
   await writeFile(`${path}.tmp`, `${JSON.stringify({ version: 1, books }, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
   await rename(`${path}.tmp`, path);
+  return setAside;
 }

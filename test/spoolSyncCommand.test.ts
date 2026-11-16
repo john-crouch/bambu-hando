@@ -1,9 +1,9 @@
 // ABOUTME: Integration tests for `bambu-hando 3dfp sync` against local SpoolEase and 3DFilamentProfiles stand-ins.
 // ABOUTME: Checks the plan it prints, that it asks before writing, what it sends, and the link file it keeps.
 
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -139,6 +139,16 @@ describe("bambu-hando 3dfp sync", () => {
     expect(again.stdout).toContain("In step   #1 Sunlu PETG 2.0 Vivid Yellow ↔ ABC123: 564 g");
     expect(again.stdout).toMatch(/\nNothing to change\.\n$/);
     expect(asked).toEqual([]);
+  });
+
+  it("keeps an unreadable link file aside, and says where", async () => {
+    await mkdir(dirname(linkFile()), { recursive: true });
+    await writeFile(linkFile(), "{not json", "utf-8");
+    const { code, stderr } = await sync("--yes");
+    expect(code).toBe(0);
+    expect(stderr).toMatch(/can't be read: starting with no links; it will be set aside, not overwritten\n/);
+    expect(stderr).toMatch(/The unreadable spool link file was kept as .*3dfp-links\.json\.damaged-/);
+    expect(await savedLinks()).toHaveLength(1);
   });
 
   it("applies without asking with --yes", async () => {
