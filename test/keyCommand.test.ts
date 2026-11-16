@@ -33,13 +33,15 @@ describe("bambu-hando key usage", () => {
   it("rejects an unknown action", async () => {
     const { code, stderr } = await run(["key", "show", "3dfp"]);
     expect(code).toBe(2);
-    expect(stderr).toContain("unknown action 'show'");
+    expect(stderr).toContain("unknown action (set, status or remove)");
+    expect(stderr).not.toContain("show");
   });
 
   it("rejects an unknown key name and lists the known ones", async () => {
     const { code, stderr } = await run(["key", "set", "github"], KEY);
     expect(code).toBe(2);
-    expect(stderr).toContain("unknown key 'github' (known: 3dfp)");
+    expect(stderr).toContain("unknown key (known: 3dfp)");
+    expect(stderr).not.toContain("github");
   });
 
   it("needs a key name to set or remove", async () => {
@@ -54,7 +56,7 @@ describe("bambu-hando key usage", () => {
   });
 
   it("refuses a key given as an argument, without repeating it", async () => {
-    for (const argv of [["key", "set", "3dfp", KEY], ["key", "set", "3dfp", `--key=${KEY}`]]) {
+    for (const argv of [["key", "set", "3dfp", KEY], ["key", "set", "3dfp", `--key=${KEY}`], ["key", "set", KEY], ["key", "status", KEY], ["key", KEY]]) {
       const { code, stderr } = await run(argv);
       expect(code).toBe(2);
       expect(stderr).toContain("never taken as arguments");

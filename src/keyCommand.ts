@@ -36,7 +36,8 @@ function knownNames(): string {
 function spec(name: string | undefined, action: string): SecretSpec {
   if (name === undefined) throw new KeyUsageError(`say which key to ${action} (known: ${knownNames()})`);
   const found = secretByName(name);
-  if (!found) throw new KeyUsageError(`unknown key '${name}' (known: ${knownNames()})`);
+  // Not quoted: a key pasted where its name goes would be printed back.
+  if (!found) throw new KeyUsageError(`unknown key (known: ${knownNames()})`);
   return found;
 }
 
@@ -100,8 +101,9 @@ export async function keyCommand(argv: string[], io: KeyIo, env: Record<string, 
   }
   const [action, name, ...rest] = argv;
   try {
-    // Anything past the name is most likely the key itself: never repeat it back.
-    if (rest.length > 0 || name?.startsWith("-")) {
+    // Anything past the name, or anything shaped like a key, is most likely the key itself: never repeat it back.
+    const looksLikeKey = (arg: string | undefined) => arg !== undefined && KNOWN.some((known) => arg.startsWith(known.prefix));
+    if (rest.length > 0 || name?.startsWith("-") || looksLikeKey(action) || looksLikeKey(name)) {
       throw new KeyUsageError(
         "keys are never taken as arguments, so that one is now in your shell history (consider revoking it); run `bambu-hando key set <name>` and paste the key at the prompt",
       );
@@ -115,7 +117,7 @@ export async function keyCommand(argv: string[], io: KeyIo, env: Record<string, 
       io.stdout(`${lines.join("\n")}\n`);
       return 0;
     }
-    throw new KeyUsageError(`unknown action '${action}' (set, status or remove)`);
+    throw new KeyUsageError("unknown action (set, status or remove)");
   } catch (err) {
     if (err instanceof KeyUsageError) {
       io.stderr(`bambu-hando: error: ${err.message}\n\n${KEY_USAGE}`);
