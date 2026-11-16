@@ -254,7 +254,7 @@ async function fillAction(now: boolean, reserveText: string | undefined, io: Io)
     let calls = 0;
     let owned: number[] = [];
     try {
-      const cached = await mySpools(client, { account, maxAgeMs: Number.POSITIVE_INFINITY });
+      const cached = await mySpools(client, { account, maxAgeMs: Number.POSITIVE_INFINITY, beforeFetch: () => ledger.ensure(1, reserve) });
       if (!cached.fromCache) calls += 1;
       owned = [...new Set(cached.spools.map((spool) => spool.filamentId))];
     } catch (err) {

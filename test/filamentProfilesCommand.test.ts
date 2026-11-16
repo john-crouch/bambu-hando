@@ -254,6 +254,17 @@ describe("bambu-hando 3dfp", () => {
       expect(server.quota.remaining).toBe(970);
     });
 
+    it("doesn't spend the reserve on the spool list either", async () => {
+      await run(["3dfp", "filament", "101"]);
+      const left = server.quota.remaining;
+      const before = server.requests.length;
+      const filled = await run(["3dfp", "fill", "--now", "--reserve", String(left)]);
+      expect(filled.code).toBe(0);
+      expect(filled.stdout).toMatch(/^Filled the catalog: 0 API calls, /);
+      expect(server.requests.slice(before).map((r) => r.path)).toEqual([]);
+      expect(server.quota.remaining).toBe(left);
+    });
+
     it("reports what the catalog holds without a call", async () => {
       await run(["3dfp", "filament", "101"]);
       const { stdout } = await run(["3dfp", "catalog"]);

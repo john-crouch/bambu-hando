@@ -33,6 +33,8 @@ export interface SpoolsCacheOptions {
   refresh?: boolean;
   maxAgeMs?: number;
   now?: () => Date;
+  /** Runs only when the list is about to be fetched (one call), so a caller can keep a reserve; throwing stops it. */
+  beforeFetch?: () => Promise<void>;
 }
 
 async function readCache(path: string, account: string): Promise<{ spools: TdfpSpool[]; fetchedAt: Date } | null> {
@@ -56,6 +58,7 @@ export async function mySpools(client: FilamentProfilesClient, options: SpoolsCa
     // A cache dated in the future (clock changed) is as good as none.
     if (cached && age >= 0 && age < (options.maxAgeMs ?? SPOOLS_MAX_AGE_MS)) return { ...cached, fromCache: true };
   }
+  await options.beforeFetch?.();
   const spools = await client.listSpools();
   const saved = { account: options.account, fetchedAt: now.toISOString(), spools };
   await writeAtomic(path, `${JSON.stringify(saved, null, 2)}\n`, { mode: 0o600 });
