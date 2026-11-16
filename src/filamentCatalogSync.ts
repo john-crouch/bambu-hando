@@ -94,6 +94,14 @@ export interface FillOptions {
   pause?: () => Promise<void>;
 }
 
+/**
+ * The API refused this request itself (an unknown brand, a filament it no longer has), so asking again won't help.
+ * Not a rejected key (401), lapsed access (402) or a timeout (408): those are about the account or the moment.
+ */
+function requestRefused(err: unknown): boolean {
+  return err instanceof FilamentProfilesError && err.status !== null && err.status >= 400 && err.status < 500 && ![401, 402, 408].includes(err.status);
+}
+
 const freshlyComplete = (progress: { complete: boolean; updatedAt: Date } | null, now: Date): boolean =>
   progress !== null && progress.complete && now.getTime() - progress.updatedAt.getTime() < STALE_AFTER_DAYS * DAY_MS;
 
@@ -115,7 +123,7 @@ export async function fillSearch(api: CatalogApi, key: string, options: FillOpti
       else if (page > MAX_PAGE) result.complete = result.truncated = true;
     } catch (err) {
       // A search the API refuses (an unknown key) won't work next time either: count it as done.
-      if (err instanceof FilamentProfilesError && err.status !== null && err.status >= 400 && err.status < 500) result.complete = true;
+      if (requestRefused(err)) result.complete = true;
       else result.stoppedBy = err instanceof QuotaError ? err.message : errorMessage(err);
     }
     api.catalog.saveFill({ key, nextPage: result.complete ? 1 : page, complete: result.complete, truncated: result.truncated, updatedAt: clock(api) });
@@ -183,8 +191,13 @@ export async function monthEndFill(api: CatalogApi, options: MonthEndOptions = {
       await api.ledger.ensure(1, reserve);
       if (report.calls > 0) await options.pause?.();
       report.calls += 1;
-      await filamentRecord(api, id);
-      report.records += 1;
+      try {
+        await filamentRecord(api, id);
+        report.records += 1;
+      } catch (err) {
+        // A filament the API no longer has shouldn't hold up the rest of the fill.
+        if (!requestRefused(err)) throw err;
+      }
     }
   } catch (err) {
     report.reason = errorMessage(err);

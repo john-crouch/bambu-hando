@@ -155,6 +155,28 @@ describe("catalog sync", () => {
       expect(server.requests.at(-1)?.query.page).toBe("3");
     });
 
+    it("counts a search the API refuses as done, since it won't work next time either", async () => {
+      server.replies["/api/v1/filaments"] = { status: 400, body: { error: { code: "invalid_parameter", message: "Unknown brand" } } };
+      expect(await fillSearch(api, "brand:nope")).toMatchObject({ calls: 1, complete: true, stoppedBy: null });
+    });
+
+    it("stops, without marking the search done, when the key is rejected or the account has no access", async () => {
+      server.filaments = brandOf("esun", 10, 1);
+      for (const [status, message] of [
+        [401, /rejected the API key/],
+        [402, /no active API access/],
+      ] as const) {
+        server.replies["/api/v1/filaments"] = { status, body: { error: { code: "x", message: "x" } } };
+        const stopped = await fillSearch(api, "brand:esun");
+        expect(stopped).toMatchObject({ calls: 1, complete: false });
+        expect(stopped.stoppedBy).toMatch(message);
+        expect(api.catalog.fill("brand:esun")).toMatchObject({ nextPage: 1, complete: false });
+      }
+      // Once the key works again, the search runs instead of being skipped for 30 days.
+      delete server.replies["/api/v1/filaments"];
+      expect(await fillSearch(api, "brand:esun")).toMatchObject({ calls: 1, saved: 10, complete: true });
+    });
+
     it("marks a search with more than 20 full pages as truncated", async () => {
       server.filaments = brandOf("big", 1001, 1);
       expect(await fillSearch(api, "brand:big")).toMatchObject({ calls: 20, saved: 1000, complete: true, truncated: true });
@@ -205,6 +227,29 @@ describe("catalog sync", () => {
           url: "",
         };
       }
+    });
+
+    it("skips an owned filament the API no longer has, and fills the rest", async () => {
+      now = new Date("2026-11-28T03:00:00Z");
+      server.filaments = brandOf("esun", 10, 1);
+      const report = await monthEndFill(api, { ownedFilamentIds: [999, 1] });
+      expect(report).toMatchObject({ ran: true, records: 1, reason: "nothing left to fill" });
+      expect(server.requests.slice(0, 2).map((r) => r.path)).toEqual(["/api/v1/filaments/999", "/api/v1/filaments/1"]);
+      expect(report.searches.map((s) => s.key)).toContain("brand:esun");
+    });
+
+    it("stops at the first call when the account has no access, marking nothing done", async () => {
+      now = new Date("2026-11-28T03:00:00Z");
+      server.filaments = brandOf("esun", 10, 1);
+      server.access = "no_access";
+      const owned = await monthEndFill(api, { ownedFilamentIds: [1] });
+      expect(owned).toMatchObject({ calls: 1, records: 0, searches: [] });
+      expect(owned.reason).toMatch(/no active API access/);
+
+      const searching = await monthEndFill(api, {});
+      expect(searching.searches).toHaveLength(1);
+      expect(searching.reason).toMatch(/no active API access/);
+      expect(api.catalog.fills().filter((fill) => fill.complete)).toEqual([]);
     });
 
     it("stops at the reserve of 100", async () => {
