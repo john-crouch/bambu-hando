@@ -235,7 +235,8 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
 
     await terminal.waitFor("Barcode: more spools of what you scan");
     await terminal.pressEach("b", ENTER);
-    await terminal.waitFor("Barcode: ");
+    // Not "Barcode: ": the menu's own "Barcode: more spools…" row redraws with it, before the scan screen is up.
+    await terminal.waitFor("Scan the spool's barcode, or type it and press enter.");
     terminal.press("00150603Z\r");
     await terminal.waitFor("Which filament is barcode 00150603Z?");
     terminal.press(CTRL_C);
