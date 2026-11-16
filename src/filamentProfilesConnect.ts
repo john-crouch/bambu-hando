@@ -4,7 +4,7 @@
 import { QuotaLedger, quotaPath } from "./apiQuota.js";
 import { FilamentProfilesClient } from "./filamentProfiles.js";
 import { accountId } from "./filamentProfilesCache.js";
-import { loadSecret, SECRETS } from "./secrets.js";
+import { InvalidSecretError, loadSecret, SECRETS } from "./secrets.js";
 
 export class MissingKeyError extends Error {}
 
@@ -17,7 +17,13 @@ export interface FilamentProfilesConnection {
 
 export async function connectFilamentProfiles(): Promise<FilamentProfilesConnection> {
   const spec = SECRETS["3dfp"];
-  const key = await loadSecret(spec);
+  let key;
+  try {
+    key = await loadSecret(spec);
+  } catch (err) {
+    // An unusable key is as much a setup problem as a missing one.
+    throw err instanceof InvalidSecretError ? new MissingKeyError(err.message) : err;
+  }
   if (!key) throw new MissingKeyError(`no ${spec.label}: run \`bambu-hando key set 3dfp\`, or set ${spec.env}`);
   const account = accountId(key.value);
   const ledger = new QuotaLedger(quotaPath(), account);

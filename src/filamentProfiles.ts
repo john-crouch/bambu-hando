@@ -261,7 +261,9 @@ export class FilamentProfilesClient {
       });
     } catch (err) {
       await this.options.ledger.record(null);
-      throw new FilamentProfilesError(`can't reach 3DFilamentProfiles: ${errorMessage(err)}`);
+      // fetch quotes a header value it refuses, and the key is one.
+      const reason = errorMessage(err).replaceAll(this.options.key, "<API key>");
+      throw new FilamentProfilesError(`can't reach 3DFilamentProfiles: ${reason}`);
     }
     await this.options.ledger.record({ status: resp.status, headers: resp.headers });
     const text = await resp.text();

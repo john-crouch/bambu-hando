@@ -205,6 +205,14 @@ describe("FilamentProfilesClient", () => {
     expect(await ledger.current()).toMatchObject({ remaining: 498, exact: false });
   });
 
+  it("never repeats the key in an error from sending the request", async () => {
+    // fetch refuses a header value with a newline and quotes it in its error.
+    const mangled = new FilamentProfilesClient({ key: "3dfp_LEAK\nME", base: server.url, ledger });
+    const err: unknown = await mangled.listSpools().catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(/can't reach 3DFilamentProfiles/);
+    expect((err as Error).message).not.toContain("LEAK");
+  });
+
   it("never follows a redirect, so the key can't be forwarded", async () => {
     const elsewhere: string[] = [];
     const other = createServer((req, res) => {

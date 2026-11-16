@@ -114,6 +114,15 @@ describe("bambu-hando 3dfp", () => {
     expect(server.requests).toHaveLength(0);
   });
 
+  it("exits 2 on a mangled key, without sending it or printing it", async () => {
+    vi.stubEnv("FILAMENTPROFILES_API_KEY", "3dfp_LEAK ME");
+    const { code, stderr } = await run(["3dfp", "spools"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("FILAMENTPROFILES_API_KEY doesn't hold a usable 3DFilamentProfiles API key");
+    expect(stderr).not.toContain("LEAK");
+    expect(server.requests).toHaveLength(0);
+  });
+
   it("exits 2 when the key is rejected or the quota is used up", async () => {
     vi.stubEnv("FILAMENTPROFILES_API_KEY", "3dfp_wrong");
     expect(await run(["3dfp", "spools"])).toMatchObject({ code: 2, stderr: expect.stringContaining("bambu-hando key set 3dfp") });

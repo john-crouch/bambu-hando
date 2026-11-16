@@ -3,7 +3,7 @@
 
 import { errorMessage } from "./errors.js";
 import { promptHidden, PromptCancelled, readPiped, type SecretInput } from "./secretPrompt.js";
-import { KeyringError, keyringName, loadSecret, removeSecret, SECRETS, type SecretSpec, secretByName, storedSecret, storeSecret, validateSecret } from "./secrets.js";
+import { KeyringError, keyringName, removeSecret, SECRETS, type SecretSpec, secretByName, storedSecret, storedSecretProblem, storeSecret, validateSecret } from "./secrets.js";
 
 export interface KeyIo {
   stdout: (text: string) => void;
@@ -84,8 +84,10 @@ async function statusLine(target: SecretSpec, env: Record<string, string | undef
     }
     return stored === null ? `${head}: from ${target.env}` : `${head}: from ${target.env} (overrides the one stored in ${keyringName()})`;
   }
-  const loaded = await loadSecret(target, env);
-  return loaded ? `${head}: stored in ${keyringName()}` : `${head}: not set (bambu-hando key set ${target.name})`;
+  const stored = await storedSecret(target);
+  if (stored === null) return `${head}: not set (bambu-hando key set ${target.name})`;
+  const problem = storedSecretProblem(target, stored);
+  return problem ? `${head}: stored in ${keyringName()}, but not usable (${problem})` : `${head}: stored in ${keyringName()}`;
 }
 
 async function removeKey(target: SecretSpec, io: KeyIo): Promise<number> {

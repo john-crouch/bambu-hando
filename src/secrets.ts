@@ -23,6 +23,9 @@ const SERVICE = "bambu-hando";
 
 export class KeyringError extends Error {}
 
+/** A key from the environment or the keyring that `validateSecret` refuses; says where it came from, never its value. */
+export class InvalidSecretError extends Error {}
+
 export function secretByName(name: string): SecretSpec | undefined {
   return Object.hasOwn(SECRETS, name) ? SECRETS[name as keyof typeof SECRETS] : undefined;
 }
@@ -73,10 +76,30 @@ export interface LoadedSecret {
   from: "env" | "keyring";
 }
 
+/** Why the stored key isn't usable, or null when it is; never quotes it. */
+export function storedSecretProblem(spec: SecretSpec, stored: string): string | null {
+  try {
+    validateSecret(stored, spec);
+    return null;
+  } catch (err) {
+    return errorMessage(err);
+  }
+}
+
 /** The key to use: the environment variable when set, else the keyring's; null when neither has one. */
 export async function loadSecret(spec: SecretSpec, env: Record<string, string | undefined> = process.env): Promise<LoadedSecret | null> {
+  // Checked like `key set` checks a paste: a mangled value would end up in a header, and in fetch's error about it.
   const fromEnv = env[spec.env]?.trim();
-  if (fromEnv) return { value: fromEnv, from: "env" };
+  if (fromEnv) {
+    try {
+      return { value: validateSecret(fromEnv, spec), from: "env" };
+    } catch (err) {
+      throw new InvalidSecretError(`${spec.env} doesn't hold a usable ${spec.label}: ${errorMessage(err)}`);
+    }
+  }
   const stored = await storedSecret(spec);
-  return stored === null ? null : { value: stored, from: "keyring" };
+  if (stored === null) return null;
+  const problem = storedSecretProblem(spec, stored);
+  if (problem) throw new InvalidSecretError(`the ${spec.label} stored in ${keyringName()} isn't usable: ${problem}; store it again with \`bambu-hando key set ${spec.name}\``);
+  return { value: stored.trim(), from: "keyring" };
 }

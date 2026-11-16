@@ -131,6 +131,15 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
     expect((await run(["key", "status"])).stdout).toBe("3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY\n");
   });
 
+  it("says when the stored key isn't usable, without printing it", async () => {
+    await storeSecret(TDFP, "3dfp_fake_key\nfor_tests");
+    const { code, stdout } = await run(["key", "status", "3dfp"]);
+    expect(code).toBe(0);
+    expect(stdout).toBe(
+      "3dfp  3DFilamentProfiles API key: stored in the system keyring (Secret Service), but not usable (the key contains spaces or control characters: paste only the key)\n",
+    );
+  });
+
   it("removes a stored key, and says so when there was none", async () => {
     await storeSecret(TDFP, KEY);
     expect(await run(["key", "remove", "3dfp"])).toMatchObject({ code: 0, stdout: "Removed the 3DFilamentProfiles API key from the system keyring (Secret Service).\n" });
