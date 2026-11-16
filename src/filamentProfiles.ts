@@ -1,7 +1,7 @@
 // ABOUTME: Client for the 3DFilamentProfiles v1 API (https://3dfilamentprofiles.com/api/v1): spools and filaments.
 // ABOUTME: Sends the key only to that origin (or loopback, for tests), never follows redirects, and counts every call.
 
-import { QuotaError, type QuotaLedger } from "./apiQuota.js";
+import { QuotaError, type QuotaLedger, type QuotaResponse } from "./apiQuota.js";
 import { errorMessage } from "./errors.js";
 
 export const FILAMENT_PROFILES_API = "https://3dfilamentprofiles.com/api/v1";
@@ -242,6 +242,18 @@ export class FilamentProfilesClient {
     this.base = options.base ?? apiBase();
   }
 
+  /**
+   * Notes a call in the quota file. A failed write mustn't replace the API's answer: the request already happened
+   * (a PATCH that went through would look failed), and the next reply's quota headers set the count right again.
+   */
+  private async recordQuota(response: QuotaResponse | null): Promise<void> {
+    try {
+      await this.options.ledger.record(response);
+    } catch {
+      // Not counted; see above.
+    }
+  }
+
   private async request(method: string, path: string, body?: Json): Promise<Json> {
     await this.options.ledger.ensure(1);
     let resp: Response;
@@ -260,12 +272,12 @@ export class FilamentProfilesClient {
         signal: AbortSignal.timeout(this.options.timeoutMs ?? REQUEST_TIMEOUT_MS),
       });
     } catch (err) {
-      await this.options.ledger.record(null);
+      await this.recordQuota(null);
       // fetch quotes a header value it refuses, and the key is one.
       const reason = errorMessage(err).replaceAll(this.options.key, "<API key>");
       throw new FilamentProfilesError(`can't reach 3DFilamentProfiles: ${reason}`);
     }
-    await this.options.ledger.record({ status: resp.status, headers: resp.headers });
+    await this.recordQuota({ status: resp.status, headers: resp.headers });
     const text = await resp.text();
     if (resp.status >= 300 && resp.status < 400) {
       throw new FilamentProfilesError(`3DFilamentProfiles answered with a redirect (HTTP ${resp.status}), which bambu-hando never follows`, resp.status);

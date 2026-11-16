@@ -134,6 +134,16 @@ describe("QuotaLedger", () => {
     expect(await ledger.current()).toMatchObject({ remaining: 95 });
   });
 
+  it("never fails a record when other processes write the same file at once", async () => {
+    const path = await ledgerPath();
+    await new QuotaLedger(path, ACCOUNT, () => NOV).record({ status: 200, headers: headers(1000, 500) });
+    // One ledger per process: their queues don't know about each other.
+    const ledgers = Array.from({ length: 50 }, () => new QuotaLedger(path, ACCOUNT, () => NOV));
+    const results = await Promise.allSettled(ledgers.map((ledger) => ledger.record({ status: 200, headers: headers(1000, 499) })));
+    expect(results.filter((result) => result.status === "rejected")).toEqual([]);
+    expect(await ledgers[0]?.current()).toMatchObject({ remaining: 499, exact: true });
+  });
+
   it("starts over from a damaged file", async () => {
     const path = await ledgerPath();
     const ledger = new QuotaLedger(path, ACCOUNT, () => NOV);

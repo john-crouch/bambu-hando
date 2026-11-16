@@ -3,7 +3,7 @@
 
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -203,6 +203,15 @@ describe("FilamentProfilesClient", () => {
     await server.close();
     await expect(client.listSpools()).rejects.toThrow(/can't reach 3DFilamentProfiles/);
     expect(await ledger.current()).toMatchObject({ remaining: 498, exact: false });
+  });
+
+  it("still returns the reply when the quota file can't be written", async () => {
+    const notADir = join(await mkdtemp(join(tmpdir(), "bh-3dfp-")), "file");
+    await writeFile(notADir, "", "utf-8");
+    const unwritable = new FilamentProfilesClient({ key: TEST_API_KEY, base: server.url, ledger: new QuotaLedger(join(notADir, "quota.json"), "acct1") });
+    expect(await unwritable.listSpools()).toHaveLength(server.spools.length);
+    await server.close();
+    await expect(unwritable.listSpools()).rejects.toThrow(/can't reach 3DFilamentProfiles/);
   });
 
   it("never repeats the key in an error from sending the request", async () => {
