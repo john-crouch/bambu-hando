@@ -487,7 +487,7 @@ describe("editing", () => {
     expect(opened.view).toBe("editor");
     expect(opened.editor?.preset.path).toBe(presets[3]?.path);
     expect(opened.editor?.model.mode).toBe("preset");
-    const edited = (await drive(opened, ctx, "enter", "backspace", "5", "enter")).model;
+    const edited = (await drive(opened, ctx, "enter", "225", "enter")).model;
     expect(capturesText(edited)).toBe(false);
     const left = (await drive(edited, ctx, "esc")).model;
     expect(left.view).toBe("list");
@@ -516,9 +516,9 @@ describe("editing", () => {
     const ctx = ctxWith();
     const typing = (await drive((await start(ctx)).model, ctx, "enter", "enter")).model;
     expect(capturesText(typing)).toBe(true);
-    expect(hints(typing, ctx).map((h) => h.keys)).toEqual(["enter", "esc"]);
+    expect(hints(typing, ctx).map((h) => h.keys)).toEqual(["←→", "shift+←→", "enter", "esc"]);
     const { model } = await drive(typing, ctx, "?q");
-    expect(model.editor?.model.text?.value).toBe("220?q");
+    expect(model.editor?.model.text?.value).toBe("?q");
   });
 
   it("takes a paste into the value being typed", async () => {
@@ -587,8 +587,8 @@ describe("review", () => {
       {
         key: "nozzle_temperature_range_high",
         label: "Nozzle range, high",
-        from: "240 °C",
-        to: "250 °C",
+        from: "240°C",
+        to: "250°C",
       },
     ]);
     expect(review?.targets.map((t) => t.path)).toEqual([presets[0]?.path, presets[2]?.path]);
@@ -837,7 +837,7 @@ describe("hints and modes", () => {
       await drive((await start(ctx)).model, ctx, "enter", ...Array(ALL_SETTINGS).fill("right"), "/")
     ).model;
     expect(capturesText(opened)).toBe(true);
-    expect(hints(opened, ctx).map((h) => h.keys)).toEqual(["enter", "esc", "↑↓"]);
+    expect(hints(opened, ctx).map((h) => h.keys)).toEqual(["↑↓", "enter", "esc"]);
   });
 });
 

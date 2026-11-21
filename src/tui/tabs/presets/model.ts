@@ -6,7 +6,6 @@ import {
   type EditChange,
   type EditResult,
   type Edits,
-  editChanges,
   nozzleRange,
   type Preset,
   presetFamily,
@@ -43,6 +42,7 @@ import { type PresetGroup, presetGroups, presetRows, presetTitle } from "./detai
 import {
   type EditorModel,
   editorCapturesText,
+  editorChanges,
   editorHints,
   initEditor,
   updateEditor,
@@ -241,7 +241,7 @@ function startReview(
   ctx: Ctx,
 ): Step<PresetsModel> {
   const edits = editor.edits;
-  const changes = editChanges(editor.original, edits);
+  const changes = editorChanges(editor);
   const targets = presetFamily(presetsIn(ctx.resources.presets), preset);
   const range = nozzleRange(applyEdits(editor.original, edits).preset);
   const connection = spooleaseConnection(ctx.values);

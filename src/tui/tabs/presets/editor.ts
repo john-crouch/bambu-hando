@@ -24,15 +24,18 @@
  *   editedPreset(model)                original with the edits applied.
  *   withEdit(original, edits, key, v)  edits with v for key (null removes it); drops edits that change nothing.
  *
- * Keys: ←/→ page · ↑↓ pgup pgdn home end move · enter edit (switches toggle; space too) · u / ctrl+u undo
- * the field · / filter (All settings) · a review (preset) or done (planned) · esc back. While typing:
- * enter sets (checked by parseField/parseRaw, an error keeps typing), esc cancels, a pasted burst ending
- * in a newline sets it; every printable key types.
+ * Keys: ←/→ page, 1-7 jump to a page · ↑↓ pgup pgdn home end move · enter edit (switches toggle; space
+ * too) · u / ctrl+u undo the field · / filter (All settings; enter keeps it, esc clears) · a review
+ * (preset) or done (planned) · esc back. While typing: the value opens selected (model.selected), so
+ * typing replaces it and backspace clears it, while home/end/← → (in text) start editing it; a number
+ * steps with ←→ or ↑↓ (shift: ×5, within its bounds); enter sets (checked by parseField/parseRaw, an
+ * error keeps typing), esc cancels, a pasted burst ending in a newline sets it; every printable key types.
  */
 
 import {
   applyEdits,
   EDIT_FIELDS,
+  type EditChange,
   type EditField,
   type Edits,
   type EditValue,
@@ -83,6 +86,8 @@ export interface EditorModel {
   readonly cursors: readonly number[];
   /** The value being typed for the row at the cursor; null when not typing. */
   readonly text: TextState | null;
+  /** The whole value being typed is selected (as it opens, and after a step): typing replaces it. */
+  readonly selected: boolean;
   /** All settings' filter; focused while typing into it. */
   readonly filter: { text: TextState; focused: boolean };
   readonly error: string;
@@ -136,9 +141,24 @@ export function initEditor(init: EditorInit): EditorModel {
     page: 0,
     cursors: Array.from({ length: ALL_SETTINGS + 1 }, () => 0),
     text: null,
+    selected: false,
     filter: { text: EMPTY_TEXT, focused: false },
     error: "",
   };
+}
+
+/** Values for people: "220°C" (no space before the degree sign), as everywhere in the TUI. */
+export function tidyUnits(text: string): string {
+  return text.replace(/ °C/g, "°C");
+}
+
+/** The changes so far, for the side panel and the review. */
+export function editorChanges(model: EditorModel): EditChange[] {
+  return editChanges(model.original, model.edits).map((change) => ({
+    ...change,
+    from: tidyUnits(change.from),
+    to: tidyUnits(change.to),
+  }));
 }
 
 /** `edits` with `value` for `key`, or without it when value is null or leaves the setting as it is in `original`. */
@@ -197,8 +217,8 @@ export function editorRows(model: EditorModel): EditorRow[] {
     return {
       key: field.key,
       label: field.label,
-      value: shownValue(field, edited[field.key]),
-      ...(changed ? { was: shownValue(field, model.original[field.key]) } : {}),
+      value: tidyUnits(shownValue(field, edited[field.key])),
+      ...(changed ? { was: tidyUnits(shownValue(field, model.original[field.key])) } : {}),
       changed,
       field,
     };
@@ -214,7 +234,8 @@ export function editorPages(model: EditorModel): EditorPage[] {
     ...badge(count(groupFields(page).map((f) => f.key))),
   }));
   const raw = [...model.edits.keys()].filter((key) => !editField(key)).length;
-  return [...groups, { id: "all", title: "All settings", ...badge(raw) }];
+  // "All", short, so every page fits the bar of a 120-column editor.
+  return [...groups, { id: "all", title: "All", ...badge(raw) }];
 }
 
 export function editorCapturesText(model: EditorModel): boolean {
@@ -250,7 +271,10 @@ export function editorTakes(model: EditorModel): string {
     const value = editedPreset(model)[row.key];
     if (row.locked || rawText(value) === null) return "";
     const variants = differingVariants(value);
-    return variants ? `a JSON list of ${variants} values` : "text; \\n starts a new line";
+    if (variants) return `a JSON list of ${variants} values`;
+    const text = rawText(value) ?? "";
+    if (/gcode|notes/.test(row.key) || text.includes("\\n")) return "text; \\n starts a new line";
+    return text !== "" && Number.isFinite(Number(text)) ? "a number" : "text";
   }
   const nil = field.nilable ? "; nothing: printer's" : "";
   switch (field.kind) {
@@ -275,17 +299,24 @@ export function editorTypingHint(model: EditorModel): string {
 export function editorHints(model: EditorModel): Hint[] {
   if (model.text !== null)
     return [
+      ...(stepOf(currentRow(model)?.field) !== null
+        ? [
+            { keys: "←→", label: "step", primary: true },
+            { keys: "shift+←→", label: "step ×5" },
+          ]
+        : []),
       { keys: "enter", label: "set", primary: true },
       { keys: "esc", label: "cancel", primary: true },
     ];
   if (model.filter.focused)
     return [
-      { keys: "enter", label: "edit", primary: true },
-      { keys: "esc", label: "clear", primary: true },
       { keys: "↑↓", label: "move" },
+      { keys: "enter", label: "done", primary: true },
+      { keys: "esc", label: "clear", primary: true },
     ];
   const row = currentRow(model);
   const hints: Hint[] = [
+    { keys: "↑↓", label: "move" },
     row?.field?.kind === "switch"
       ? { keys: "space", label: "toggle", primary: true }
       : { keys: "enter", label: "edit", primary: true },
@@ -293,12 +324,12 @@ export function editorHints(model: EditorModel): Hint[] {
   if (row?.changed) hints.push({ keys: "u", label: "undo", primary: true });
   if (model.page === ALL_SETTINGS) hints.push({ keys: "/", label: "filter", primary: true });
   hints.push(
-    { keys: "←→", label: "page", primary: true },
     model.mode === "preset"
       ? { keys: "a", label: "review", primary: true }
       : { keys: "a", label: "done", primary: true },
+    { keys: "←→", label: "page", primary: true },
+    { keys: `1-${ALL_SETTINGS + 1}`, label: "jump to a page" },
     { keys: "esc", label: "back", primary: true },
-    { keys: "↑↓", label: "move" },
   );
   return hints;
 }
@@ -328,20 +359,69 @@ function commit(model: EditorModel, text: TextState): EditorStep {
     model: {
       ...model,
       text: null,
+      selected: false,
       error: "",
       edits: withEdit(model.original, model.edits, row.key, parsed.edit),
     },
   };
 }
 
+/** How far ←→ step a curated number field; null for fields that aren't numbers. */
+const STEPS: Record<string, number> = {
+  filament_flow_ratio: 0.01,
+  filament_max_volumetric_speed: 0.5,
+  pressure_advance: 0.001,
+  filament_retraction_length: 0.1,
+  filament_density: 0.01,
+};
+
+function stepOf(field: EditField | undefined): number | null {
+  if (field?.kind === "int") return 1;
+  if (field?.kind === "decimal") return STEPS[field.key] ?? 1;
+  return null;
+}
+
+/** The typed number moved by delta steps, kept within the field's bounds, as text. */
+function stepped(model: EditorModel, field: EditField, text: string, delta: number): string {
+  const step = stepOf(field) ?? 1;
+  const from = (value: string) => (value.trim() === "" ? Number.NaN : Number(value));
+  let current = from(text);
+  if (!Number.isFinite(current)) current = from(fieldText(field, editedPreset(model)[field.key]));
+  const low = field.min ?? -Infinity;
+  const high = field.max ?? Infinity;
+  const next = Number.isFinite(current)
+    ? current + delta * step
+    : Number.isFinite(low)
+      ? low + Math.max(0, delta) * step
+      : 0;
+  const places = (String(step).split(".")[1] ?? "").length;
+  return String(Number(Math.min(high, Math.max(low, next)).toFixed(places)));
+}
+
 function typing(model: EditorModel, text: TextState, key: KeyPress): EditorStep {
-  if (key.name === "esc") return { model: { ...model, text: null, error: "" } };
+  if (key.name === "esc") return { model: { ...model, text: null, selected: false, error: "" } };
   if (key.name === "enter") return commit(model, text);
-  const edited = editText(text, key);
+  const field = currentRow(model)?.field;
+  const arrows: Record<string, number> = { right: 1, up: 1, left: -1, down: -1 };
+  const arrow = key.name ? arrows[key.name] : undefined;
+  if (arrow !== undefined && field && stepOf(field) !== null) {
+    const value = stepped(model, field, text.value, arrow * (key.shift ? 5 : 1));
+    return {
+      model: { ...model, text: { value, cursor: value.length }, selected: true, error: "" },
+    };
+  }
+  let from = text;
+  if (model.selected) {
+    // Typing (or a paste) replaces the selected value and backspace clears it; moving starts editing it.
+    if (key.name === "backspace" || key.name === "delete")
+      return { model: { ...model, text: EMPTY_TEXT, selected: false, error: "" } };
+    if ((!key.name && !key.ctrl && !key.meta) || key.name === "space") from = EMPTY_TEXT;
+  }
+  const edited = editText(from, key);
   if (!edited) return { model };
   const next = { value: edited.value, cursor: edited.cursor };
-  if (edited.submit) return commit(model, next);
-  return { model: { ...model, text: next, error: "" } };
+  if (edited.submit) return commit({ ...model, selected: false }, next);
+  return { model: { ...model, text: next, selected: false, error: "" } };
 }
 
 /** Starts typing the row at the cursor, toggles a switch, or says why the row can't be edited. */
@@ -369,13 +449,15 @@ function edit(model: EditorModel): EditorStep {
       return { model: { ...model, error: `${row.key} isn't text; change it in BambuStudio` } };
     value = raw;
   }
-  return { model: { ...model, text: { value, cursor: value.length }, error: "" } };
+  return { model: { ...model, text: { value, cursor: value.length }, selected: true, error: "" } };
 }
 
 function filtering(model: EditorModel, key: KeyPress, pageRows: number): EditorStep {
   if (key.name === "esc")
     return { model: withCursor({ ...model, filter: { text: EMPTY_TEXT, focused: false } }, 0) };
-  if (key.name === "enter") return edit({ ...model, filter: { ...model.filter, focused: false } });
+  // enter keeps the filter and leaves the field; enter again edits the highlighted key.
+  if (key.name === "enter")
+    return { model: { ...model, filter: { ...model.filter, focused: false } } };
   if (
     key.name === "up" ||
     key.name === "down" ||
@@ -392,7 +474,7 @@ function filtering(model: EditorModel, key: KeyPress, pageRows: number): EditorS
       {
         ...model,
         error: "",
-        filter: { text: { value: edited.value, cursor: edited.cursor }, focused: true },
+        filter: { text: { value: edited.value, cursor: edited.cursor }, focused: !edited.submit },
       },
       0,
     ),
@@ -442,6 +524,8 @@ export function updateEditor(
   if (text === "a") return finish(model, model.mode === "preset" ? "review" : "leave");
   if (text === "/" && model.page === ALL_SETTINGS)
     return { model: { ...clear, filter: { ...model.filter, focused: true } } };
+  const page = /^[1-9]$/.test(text) ? Number(text) - 1 : -1;
+  if (page >= 0 && page <= ALL_SETTINGS) return { model: { ...clear, page } };
   return { model };
 }
 

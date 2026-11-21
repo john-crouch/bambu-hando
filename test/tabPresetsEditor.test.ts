@@ -88,7 +88,7 @@ describe("pages", () => {
     expect(editorPages(model).map((p) => p.title)).toEqual([
       "Nozzle",
       ...EDITOR_GROUPS.slice(1),
-      "All settings",
+      "All",
     ]);
     expect(keys(model, "left").model.page).toBe(0);
     expect(keys(model, "right", "right").model.page).toBe(2);
@@ -104,7 +104,7 @@ describe("pages", () => {
       "Nozzle range, low",
       "Nozzle range, high",
     ]);
-    expect(row(model, "nozzle_temperature")).toMatchObject({ value: "220 °C", changed: false });
+    expect(row(model, "nozzle_temperature")).toMatchObject({ value: "220°C", changed: false });
     const moved = keys(model, "down", "down", "right", "left").model;
     expect(moved.cursors[0]).toBe(2);
     expect(keys(moved, "right").model.cursors[1]).toBe(0);
@@ -123,16 +123,17 @@ describe("pages", () => {
 });
 
 describe("editing a field", () => {
-  it("starts from the value, types, and sets it with enter, marking the change and what it was", () => {
+  it("starts from the value, all of it selected: typing replaces it, enter sets it", () => {
     const start = keys(open(), "enter").model;
     expect(start.text).toEqual({ value: "220", cursor: 3 });
+    expect(start.selected).toBe(true);
     expect(editorCapturesText(start)).toBe(true);
-    const { model } = keys(start, "backspace", "backspace", "45", "enter");
+    const { model } = keys(start, "245", "enter");
     expect(model.text).toBeNull();
     expect(model.edits.get("nozzle_temperature")).toEqual({ every: "245" });
     expect(row(model, "nozzle_temperature")).toMatchObject({
-      value: "245 °C",
-      was: "220 °C",
+      value: "245°C",
+      was: "220°C",
       changed: true,
     });
     expect(editedPreset(model).nozzle_temperature).toEqual(["245"]);
@@ -140,7 +141,7 @@ describe("editing a field", () => {
 
   it("keeps typing and says why when the value doesn't fit; esc leaves it as it was", () => {
     const bad = keys(open(), "enter", "x", "enter").model;
-    expect(bad.text?.value).toBe("220x");
+    expect(bad.text?.value).toBe("x");
     expect(bad.error).toBe("Nozzle: type a whole number from 0 to 500");
     const cancelled = keys(bad, "esc").model;
     expect(cancelled.text).toBeNull();
@@ -164,16 +165,32 @@ describe("editing a field", () => {
     expect(model.text?.value).toBe("?qua/");
   });
 
+  it("clears the selected value with backspace; home, end or a text field's arrows keep it to edit", () => {
+    expect(keys(open(), "enter", "backspace").model.text).toEqual({ value: "", cursor: 0 });
+    const kept = keys(open(), "enter", "home", "1").model;
+    expect(kept.text?.value).toBe("1220");
+    expect(kept.selected).toBe(false);
+    const vendor = keys(
+      open(),
+      ...Array(ALL_SETTINGS).fill("right"),
+      "/",
+      "vendor",
+      "enter",
+      "enter",
+    ).model;
+    expect(keys(vendor, "left", "x").model.text?.value).toBe("Acmxe");
+  });
+
   it("sets a pasted value that ends in a newline, as enter would", () => {
-    const { model } = keys(open(), "enter", "home", press("delete"), "delete", "delete", "235\r");
+    const { model } = keys(open(), "enter", "235\r");
     expect(model.text).toBeNull();
     expect(model.edits.get("nozzle_temperature")).toEqual({ every: "235" });
   });
 
   it("drops an edit that leaves the value as it is on disk", () => {
-    const changed = keys(open(), "enter", "backspace", "5", "enter").model;
+    const changed = keys(open(), "enter", "225", "enter").model;
     expect(changed.edits.size).toBe(1);
-    const back = keys(changed, "enter", "backspace", "0", "enter").model;
+    const back = keys(changed, "enter", "220", "enter").model;
     expect(back.edits.size).toBe(0);
   });
 
@@ -199,7 +216,7 @@ describe("editing a field", () => {
   });
 
   it("undoes the field at the cursor with u or ctrl+u", () => {
-    const changed = keys(open(), "enter", "backspace", "5", "enter", "down").model;
+    const changed = keys(open(), "enter", "225", "enter", "down").model;
     expect(keys(changed, "u").model.edits.size).toBe(1);
     expect(keys(changed, "up", "u").model.edits.size).toBe(0);
     expect(keys(changed, "up", press("u", { ctrl: true })).model.edits.size).toBe(0);
@@ -211,6 +228,44 @@ describe("editing a field", () => {
     const notes = keys(open(), ...Array(5).fill("right"), "end", "enter").model;
     expect(editorTypingHint(notes)).toBe("text; \\n starts a new line");
     expect(editorTypingHint(open())).toBe("");
+  });
+});
+
+describe("stepping a number", () => {
+  it("steps an open number field with left and right (or up and down), shift by five, within bounds", () => {
+    const at = keys(open(), "enter").model;
+    expect(keys(at, "right").model.text?.value).toBe("221");
+    expect(keys(at, "up", "up").model.text?.value).toBe("222");
+    expect(keys(at, "left").model.text?.value).toBe("219");
+    expect(keys(at, press("right", { shift: true })).model.text?.value).toBe("225");
+    expect(keys(at, "down", press("left", { shift: true })).model.text?.value).toBe("214");
+    expect(keys(at, "right", "enter").model.edits.get("nozzle_temperature")).toEqual({
+      every: "221",
+    });
+    // Stepped, the value stays selected: typing still replaces it.
+    expect(keys(at, "right", "9").model.text?.value).toBe("9");
+    const top = keys(open(), "enter", "500", "right").model;
+    expect(top.text?.value).toBe("500");
+  });
+
+  it("steps decimals by the setting's own step, and starts an empty field from its lowest value", () => {
+    const flow = keys(open(), "right", "right", "enter").model;
+    expect(keys(flow, "right").model.text?.value).toBe("0.99");
+    expect(keys(flow, press("left", { shift: true })).model.text?.value).toBe("0.93");
+    const retraction = keys(open(), "right", "right", "right", "enter").model;
+    expect(retraction.text?.value).toBe("");
+    expect(keys(retraction, "right").model.text?.value).toBe("0.1");
+    const typo = keys(open(), "enter", "x", "right").model;
+    expect(typo.text?.value).toBe("221");
+  });
+});
+
+describe("page keys", () => {
+  it("jumps to a page with its number, 1 to 7", () => {
+    expect(keys(open(), "3").model.page).toBe(2);
+    expect(keys(open(), "7").model.page).toBe(ALL_SETTINGS);
+    expect(keys(open(), "8").model.page).toBe(0);
+    expect(keys(open(), "enter", "3").model.page).toBe(0);
   });
 });
 
@@ -226,7 +281,9 @@ describe("editorTakes", () => {
     expect(editorTakes(all)).toBe("");
     expect(editorTakes(keys(all, "end").model)).toBe("");
     expect(editorTakes(keys(all, "/", "vendor", "esc").model)).toBe("");
-    expect(editorTakes(keys(all, "/", "vendor").model)).toBe("text; \\n starts a new line");
+    expect(editorTakes(keys(all, "/", "vendor").model)).toBe("text");
+    expect(editorTakes(keys(all, "/", "notes").model)).toBe("text; \\n starts a new line");
+    expect(editorTakes(keys(all, "/", "flow ratio").model)).toBe("a number");
     expect(editorTakes(keys(all, "/", "slow_down").model)).toBe("a JSON list of 2 values");
   });
 });
@@ -252,12 +309,14 @@ describe("All settings", () => {
     expect(editorRows(cleared)).toHaveLength(Object.keys(ORIGINAL).length);
   });
 
-  it("edits the highlighted key with enter, leaving the filter but keeping its words", () => {
-    const { model } = keys(all(), "/", "vendor", "enter");
-    expect(model.filter.focused).toBe(false);
-    expect(model.filter.text.value).toBe("vendor");
+  it("keeps the filter with enter, leaving the field; enter again edits the highlighted key", () => {
+    const kept = keys(all(), "/", "vendor", "enter").model;
+    expect(kept.filter.focused).toBe(false);
+    expect(kept.filter.text.value).toBe("vendor");
+    expect(kept.text).toBeNull();
+    const { model } = keys(kept, "enter");
     expect(model.text?.value).toBe("Acme");
-    const set = keys(model, " Co", "enter").model;
+    const set = keys(model, "end", " Co", "enter").model;
     expect(set.edits.get("filament_vendor")).toEqual({ every: "Acme Co" });
     expect(set.filter.text.value).toBe("vendor");
   });
@@ -271,7 +330,7 @@ describe("All settings", () => {
   });
 
   it("checks lists whose variants differ as JSON lists", () => {
-    const at = keys(all(), "/", "slow_down", "enter").model;
+    const at = keys(all(), "/", "slow_down", "enter", "enter").model;
     expect(at.text?.value).toBe('["4","6"]');
     const bad = keys(at, "end", "backspace", "enter").model;
     expect(bad.error).toMatch(/^Type 2 values as a JSON list/);
@@ -349,16 +408,30 @@ describe("outcomes", () => {
 describe("hints", () => {
   it("lists the keys that work at the cursor", () => {
     const labels = (model: EditorModel) => editorHints(model).map((h) => `${h.keys} ${h.label}`);
-    expect(labels(open())).toEqual(["enter edit", "←→ page", "a review", "esc back", "↑↓ move"]);
-    expect(labels(keys(open(), "enter").model)).toEqual(["enter set", "esc cancel"]);
-    const changed = keys(open(), "enter", "backspace", "5", "enter").model;
+    expect(labels(open())).toEqual([
+      "↑↓ move",
+      "enter edit",
+      "a review",
+      "←→ page",
+      "1-7 jump to a page",
+      "esc back",
+    ]);
+    expect(labels(keys(open(), "enter").model)).toEqual([
+      "←→ step",
+      "shift+←→ step ×5",
+      "enter set",
+      "esc cancel",
+    ]);
+    const notes = keys(open(), ...Array(5).fill("right"), "end", "enter").model;
+    expect(labels(notes)).toEqual(["enter set", "esc cancel"]);
+    const changed = keys(open(), "enter", "225", "enter").model;
     expect(labels(changed)).toContain("u undo");
     expect(labels(open("planned"))).toContain("a done");
     const flow = keys(open(), "right", "right", "down", "down").model;
-    expect(labels(flow)[0]).toBe("space toggle");
+    expect(labels(flow)[1]).toBe("space toggle");
     const all = keys(open(), ...Array(ALL_SETTINGS).fill("right")).model;
     expect(labels(all)).toContain("/ filter");
-    expect(labels(keys(all, "/").model)).toEqual(["enter edit", "esc clear", "↑↓ move"]);
+    expect(labels(keys(all, "/").model)).toEqual(["↑↓ move", "enter done", "esc clear"]);
   });
 });
 
