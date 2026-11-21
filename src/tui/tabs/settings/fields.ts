@@ -121,7 +121,12 @@ export const PAGE_FIELDS: Record<PageId, readonly FieldDef[]> = {
       kind: "multi",
       about: "The lines a spool label prints, always in this order.",
     },
-    { id: "labelSize", label: "Size", kind: "choice", about: "The label's size." },
+    {
+      id: "labelSize",
+      label: "Size",
+      kind: "choice",
+      about: "The label stock's size: the PDF's page size and the media the printer is sent.",
+    },
     {
       id: "labelPrinter",
       label: "Printer",
