@@ -1,5 +1,5 @@
-// ABOUTME: The full-screen frame: header line, body, footer line, exactly the terminal's size; overlays centered on the body.
-// ABOUTME: The shell passes the terminal's size; frameBody says how much of it the body gets.
+// ABOUTME: The full-screen frame: header line, body, footer line, exactly the terminal's size; dialogs centered on the body.
+// ABOUTME: A tab's dialog and the shell's overlay draw over a dimmed body (the dialog dimmed too under an overlay); frameBody sizes the body.
 
 import { Box } from "ink";
 import type { ReactNode } from "react";
@@ -20,18 +20,51 @@ export interface FrameProps {
   rows: number;
   header: ReactNode;
   footer: ReactNode;
-  /** Drawn centered over the body (a Dialog, which paints its own background). */
+  /** The active tab's own dialog, drawn centered over the body, which goes gray and dim behind it. */
+  dialog?: ReactNode;
+  /** The shell's overlay (help, palette, confirm, labels), drawn centered over the body and any tab dialog, both dimmed. */
   overlay?: ReactNode;
-  /** Drawn over the body's last line (usually a panel's bottom border), two columns in, over any overlay. */
+  /** Drawn as the body's whole last row, over everything else there. */
   toast?: Toast;
   children?: ReactNode;
 }
 
-/** Columns a toast starts in, and the columns it leaves free at the right (a panel's "3/14" note). */
-const TOAST_LEFT = 2;
-const TOAST_RIGHT = 12;
+/** A dialog centered over the body: the layer's own box, so the body's layout never moves for it. */
+function Centered({
+  columns,
+  rows,
+  children,
+}: {
+  columns: number;
+  rows: number;
+  children: ReactNode;
+}) {
+  return (
+    <Box
+      position="absolute"
+      top={1}
+      left={0}
+      width={columns}
+      height={rows}
+      justifyContent="center"
+      alignItems="center"
+      overflow="hidden"
+    >
+      {children}
+    </Box>
+  );
+}
 
-export function Frame({ columns, rows, header, footer, overlay, toast, children }: FrameProps) {
+export function Frame({
+  columns,
+  rows,
+  header,
+  footer,
+  dialog,
+  overlay,
+  toast,
+  children,
+}: FrameProps) {
   const body = frameBody(columns, rows);
   return (
     <Box flexDirection="column" width={body.columns} height={Math.max(0, rows)} overflow="hidden">
@@ -45,29 +78,25 @@ export function Frame({ columns, rows, header, footer, overlay, toast, children 
         flexDirection="row"
         overflow="hidden"
       >
-        {/* Behind an overlay the body is a backdrop: gray and dim, so the dialog stands out. */}
-        <Backdrop.Provider value={Boolean(overlay)}>{children}</Backdrop.Provider>
+        {/* Behind a dialog the body is a backdrop: gray and dim, so the dialog stands out. */}
+        <Backdrop.Provider value={Boolean(dialog || overlay)}>{children}</Backdrop.Provider>
       </Box>
       <Box height={1} width={body.columns} flexShrink={0} overflow="hidden">
         {footer}
       </Box>
+      {dialog ? (
+        <Centered columns={body.columns} rows={body.rows}>
+          <Backdrop.Provider value={Boolean(overlay)}>{dialog}</Backdrop.Provider>
+        </Centered>
+      ) : null}
       {overlay ? (
-        <Box
-          position="absolute"
-          top={1}
-          left={0}
-          width={body.columns}
-          height={body.rows}
-          justifyContent="center"
-          alignItems="center"
-          overflow="hidden"
-        >
+        <Centered columns={body.columns} rows={body.rows}>
           {overlay}
-        </Box>
+        </Centered>
       ) : null}
       {toast && body.rows > 0 ? (
-        <Box position="absolute" top={body.rows} left={TOAST_LEFT} height={1}>
-          <ToastLine toast={toast} room={Math.max(0, body.columns - TOAST_LEFT - TOAST_RIGHT)} />
+        <Box position="absolute" top={body.rows} left={0} height={1} width={body.columns}>
+          <ToastLine toast={toast} width={body.columns} />
         </Box>
       ) : null}
     </Box>

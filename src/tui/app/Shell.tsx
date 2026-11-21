@@ -71,6 +71,7 @@ export function ShellView({ shell, model }: { shell: ShellApi; model: ShellModel
   const TabView = shell.tabModule(model.active).View;
   const overlay = model.overlay ? shell.overlayModule(model.overlay.id) : null;
   const OverlayView = overlay?.View;
+  const dialog = shell.tabModule(model.active).dialog?.(model.tabs[model.active], ctx) ?? null;
   return (
     <Frame
       columns={model.columns}
@@ -85,6 +86,7 @@ export function ShellView({ shell, model }: { shell: ShellApi; model: ShellModel
       }
       footer={<Footer {...shell.footer(model)} columns={model.columns} />}
       {...(model.toast ? { toast: model.toast } : {})}
+      dialog={dialog}
       overlay={
         OverlayView && model.overlay ? <OverlayView model={model.overlay.model} ctx={ctx} /> : null
       }

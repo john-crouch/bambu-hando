@@ -372,18 +372,18 @@ describe("global keys", () => {
     expect((model.overlay?.model as { seen: string[] } | undefined)?.seen).toEqual(["paste"]);
   });
 
-  it("shows the footer hints of the tab plus the global keys", () => {
+  it("shows the footer hints of the tab plus the global keys, in the order they give way", () => {
     const { shell, model } = start();
-    expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "tab", "ctrl+k", "?", "q"]);
+    expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "ctrl+k", "tab", "?", "q"]);
     const footer = shell.footer(model);
     expect(footer.hints.map((h) => h.keys)).toEqual(["x"]);
-    expect(footer.global.map((h) => h.keys)).toEqual(["tab", "ctrl+k", "?", "q"]);
+    expect(footer.global.map((h) => h.keys)).toEqual(["ctrl+k", "tab", "?", "q"]);
   });
 
   it("drops q and ? from the footer while the tab takes text, and shows only an open overlay's keys", async () => {
     let { shell, model } = start();
     model = await drive(shell, model, key("t"));
-    expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "tab", "ctrl+k"]);
+    expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "ctrl+k", "tab"]);
     model = await drive(shell, model, key("k", { ctrl: true }));
     expect(shell.footer(model)).toEqual({
       hints: [

@@ -1,15 +1,25 @@
 // ABOUTME: Render tests of the whole shell at 80x24 and 120x36: frame, header status, footer, overlays, banner, toast.
 // ABOUTME: Uses ink-testing-library with the terminal size set on its stdout, and injected loaders instead of a console.
 
+import { Text } from "ink";
 import { render } from "ink-testing-library";
 import stringWidth from "string-width";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { placeholder } from "../src/tui/app/registry.js";
+
+vi.hoisted(() => {
+  // Colors on, so the toast's bar and the backdrop's dimming are in the frames.
+  process.env.FORCE_COLOR = "3";
+});
+
+import { type AnyTab, placeholder } from "../src/tui/app/registry.js";
 import type { Loaders } from "../src/tui/app/resources.js";
 import { Shell } from "../src/tui/app/Shell.js";
 import type { KeyPress } from "../src/tui/core/keys.js";
-import type { AppMsg, Step, TabMsg } from "../src/tui/core/types.js";
+import type { AppMsg, Step, TabId, TabModule, TabMsg } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
+import { Dialog } from "../src/tui/ui/Dialog.js";
+import { Line } from "../src/tui/ui/Line.js";
+import { COLORS } from "../src/tui/ui/theme.js";
 import { values } from "./shellFixtures.js";
 
 const ESC = "\u001B";
@@ -37,6 +47,38 @@ const PLACEHOLDER_TABS = {
   settings: placeholder("settings", "Settings"),
 };
 
+interface DialogModel {
+  open: boolean;
+}
+
+function BodyText() {
+  return <Line segments={[{ text: "Body text", color: COLORS.ok }]} width={80} />;
+}
+
+/** A tab with a dialog of its own: d opens it, esc closes it. */
+const DIALOG_TAB: TabModule<DialogModel> = {
+  id: "spools",
+  title: "Spools",
+  init: () => [{ open: false }, []],
+  update(model, msg) {
+    const key = msg.type === "key" ? (msg.key as KeyPress) : null;
+    if (key?.input === "d") return [{ open: true }, []];
+    if (key?.name === "esc") return [{ open: false }, []];
+    return [model, []];
+  },
+  View: BodyText,
+  capturesText: () => false,
+  modal: (model) => model.open,
+  dialog: (model) =>
+    model.open ? (
+      <Dialog title="Scan a barcode" width={40}>
+        <Text>Barcode</Text>
+      </Dialog>
+    ) : null,
+  hints: (model) =>
+    model.open ? [{ keys: "esc", label: "close" }] : [{ keys: "d", label: "dialog" }],
+};
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
 async function shellAt(
@@ -45,7 +87,7 @@ async function shellAt(
   options: {
     values?: Partial<FormValues>;
     loaders?: Partial<Loaders>;
-    tabs?: Partial<typeof PLACEHOLDER_TABS>;
+    tabs?: Partial<Record<TabId, AnyTab>>;
   } = {},
 ) {
   const onExit = vi.fn();
@@ -184,9 +226,30 @@ describe("shell", () => {
     const footer = () => screen().split("\n")[23] ?? "";
     const before = footer();
     await press("!");
-    await vi.waitFor(() => expect(screen().split("\n")[22]).toMatch(/^ {2} ✓ 3 saved/));
+    // The toast's row is only the toast: nothing of the body's last line shows beside it.
+    await vi.waitFor(() => expect(screen().split("\n")[22]).toMatch(/^ ✓ 3 saved {60,}$/));
     expect(footer()).toBe(before);
     expect(footer()).toContain("space tick  s sort");
+    app.unmount();
+  });
+
+  it("draws a tab's dialog centered over its dimmed body, and nothing of it once closed", async () => {
+    const { screen, press, app } = await shellAt(80, 24, { tabs: { spools: DIALOG_TAB } });
+    const bodyLine = () =>
+      (app.lastFrame() ?? "").split("\n").find((line) => line.includes("Body text")) ?? "";
+    await vi.waitFor(() => expect(screen()).toContain("Body text"));
+    expect(bodyLine()).not.toContain("\u001B[2m");
+    await press("d");
+    await vi.waitFor(() => expect(screen()).toContain("╭ Scan a barcode"));
+    const top = screen()
+      .split("\n")
+      .findIndex((line) => line.includes("╭ Scan a barcode"));
+    expect(screen().split("\n")[top]?.indexOf("╭")).toBe(20);
+    expect(bodyLine()).toContain("\u001B[2m");
+    expect(screen().split("\n")[23]?.trim()).toBe("esc close");
+    await press(ESC);
+    await vi.waitFor(() => expect(screen()).not.toContain("Scan a barcode"));
+    expect(bodyLine()).not.toContain("\u001B[2m");
     app.unmount();
   });
 

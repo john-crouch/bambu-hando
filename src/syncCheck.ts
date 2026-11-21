@@ -40,13 +40,15 @@ function splitPresetName(name: string): { name: string; printer: string } {
 
 /**
  * The presets of a preset folder that don't inherit a system preset, from filament/ and filament/base/.
- * Presets inheriting one (BambuStudio's "save as" copies) share its filament ID and are skipped.
+ * Presets inheriting one (BambuStudio's "save as" copies) share its filament ID and are skipped;
+ * inherited counts them, so a list can say how many it leaves out.
  */
 export async function readUserPresets(
   presetFolder: string,
-): Promise<{ presets: UserPreset[]; warnings: string[] }> {
+): Promise<{ presets: UserPreset[]; warnings: string[]; inherited: number }> {
   const presets: UserPreset[] = [];
   const warnings: string[] = [];
+  let inherited = 0;
   for (const dir of [bambuBaseFilamentDir(presetFolder), bambuFilamentDir(presetFolder)]) {
     const files = await readdir(dir).catch(() => [] as string[]);
     for (const file of files.filter((f) => f.endsWith(".json")).sort()) {
@@ -58,7 +60,10 @@ export async function readUserPresets(
         warnings.push(`Couldn't read BambuStudio preset ${path}: ${errorMessage(err)}`);
         continue;
       }
-      if (typeof preset.inherits === "string" && preset.inherits) continue;
+      if (typeof preset.inherits === "string" && preset.inherits) {
+        inherited += 1;
+        continue;
+      }
       // Seen in real presets made outside BambuStudio's Create filament: the string "null" as the ID.
       const id =
         typeof preset.filament_id === "string" && preset.filament_id !== "null"
@@ -71,7 +76,7 @@ export async function readUserPresets(
       presets.push({ ...splitPresetName(name), filamentId: id, path });
     }
   }
-  return { presets, warnings };
+  return { presets, warnings, inherited };
 }
 
 function spoolLine(spool: SpoolRecord): string {
