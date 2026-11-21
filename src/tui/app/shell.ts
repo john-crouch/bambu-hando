@@ -469,15 +469,24 @@ export function createShell(deps: ShellDeps) {
     }
   }
 
-  /** The footer's keys: none while an overlay is open (its dialog shows its own), else the tab's and the global ones. */
-  function hints(model: ShellModel): Hint[] {
-    const c = ctx(model);
-    if (model.overlay) return [];
-    const own = tab(model).hints(model.tabs[model.active], c);
-    if (modal(model)) return own;
+  /**
+   * The footer's keys: the tab's at the left, the global ones at the right end. None while an overlay
+   * is open (its dialog shows its own), only the tab's while its own dialog is open, and no q or ?
+   * while it takes text.
+   */
+  function footer(model: ShellModel): { hints: Hint[]; global: Hint[] } {
+    if (model.overlay) return { hints: [], global: [] };
+    const own = tab(model).hints(model.tabs[model.active], ctx(model));
+    if (modal(model)) return { hints: own, global: [] };
     const global = capturing(model)
       ? GLOBAL_HINTS.filter((h) => h.keys !== "?" && h.keys !== "q")
       : GLOBAL_HINTS;
+    return { hints: own, global };
+  }
+
+  /** Every key the footer may show, in order. */
+  function hints(model: ShellModel): Hint[] {
+    const { hints: own, global } = footer(model);
     return [...own, ...global];
   }
 
@@ -498,6 +507,7 @@ export function createShell(deps: ShellDeps) {
     update,
     ctx,
     hints,
+    footer,
     headerTabs,
     tabModule: (id: TabId) => deps.tabs[id],
     overlayModule: (id: OverlayId) => overlays[id],

@@ -375,6 +375,9 @@ describe("global keys", () => {
   it("shows the footer hints of the tab plus the global keys", () => {
     const { shell, model } = start();
     expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "tab", "ctrl+k", "?", "q"]);
+    const footer = shell.footer(model);
+    expect(footer.hints.map((h) => h.keys)).toEqual(["x"]);
+    expect(footer.global.map((h) => h.keys)).toEqual(["tab", "ctrl+k", "?", "q"]);
   });
 
   it("drops q and ? from the footer while the tab takes text, and leaves it to an open overlay", async () => {

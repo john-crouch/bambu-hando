@@ -83,13 +83,8 @@ export function ShellView({ shell, model }: { shell: ShellApi; model: ShellModel
           columns={model.columns}
         />
       }
-      footer={
-        <Footer
-          hints={shell.hints(model)}
-          columns={model.columns}
-          {...(model.toast ? { toast: model.toast } : {})}
-        />
-      }
+      footer={<Footer {...shell.footer(model)} columns={model.columns} />}
+      {...(model.toast ? { toast: model.toast } : {})}
       overlay={
         OverlayView && model.overlay ? <OverlayView model={model.overlay.model} ctx={ctx} /> : null
       }

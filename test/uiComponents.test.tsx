@@ -29,6 +29,7 @@ import { Panel, panelInner, splitWidths } from "../src/tui/ui/Panel.js";
 import { luminance, Swatch } from "../src/tui/ui/Swatch.js";
 import { TextField } from "../src/tui/ui/TextField.js";
 import { TITLE, Title } from "../src/tui/ui/Title.js";
+import { toastSegments } from "../src/tui/ui/Toast.js";
 import { textWidth } from "../src/tui/ui/text.js";
 import { COLORS, GRADIENT, theme } from "../src/tui/ui/theme.js";
 
@@ -114,6 +115,12 @@ const HINTS: Hint[] = [
   { keys: "s", label: "sort" },
   { keys: "l", label: "label", primary: true },
   { keys: "?", label: "help", primary: true },
+];
+
+const GLOBAL: Hint[] = [
+  { keys: "tab", label: "next tab" },
+  { keys: "?", label: "help", primary: true },
+  { keys: "q", label: "quit" },
 ];
 
 const TABS = [
@@ -553,22 +560,38 @@ describe("Footer", () => {
     expect(fitHints(HINTS, 12).map((hint) => hint.keys)).toEqual(["↑↓"]);
   });
 
-  it("puts a toast at the right end in its tone, the hints making room", () => {
-    const frame = draw(
-      <Footer hints={HINTS} columns={80} toast={{ text: "3 labels sent to DYMO", tone: "ok" }} />,
-      80,
+  it("puts the global keys at the right end, always keeping the primary ones", () => {
+    const own = HINTS.filter((hint) => hint.keys !== "?");
+    const line = (width: number) =>
+      footerSegments(own, width, GLOBAL)
+        .map((s) => s.text)
+        .join("");
+    expect(line(100)).toBe(
+      ` ↑↓ move  space tick  / filter  s sort  l label${" ".repeat(24)}tab next tab  ? help  q quit `,
     );
-    const line = plain(frame)[0] ?? "";
-    expect(line.trimEnd().endsWith("✓ 3 labels sent to DYMO")).toBe(true);
-    expect(textWidth(line.trimEnd())).toBe(79);
-    const row = cells(frame);
-    expect(row[79 - 23]).toMatchObject({ ch: "✓", fg: COLORS.ok, bold: true });
+    // Narrow: the tab's own keys give way first, the pinned ? help stays at the right end.
+    expect(line(50)).toBe(" ↑↓ move  space tick  / filter  l label    ? help ");
+    expect(line(24)).toBe(" ↑↓ move         ? help ");
   });
 
-  it("draws the toast's icon from its tone, ok by default", () => {
-    const icon = (toast: Parameters<typeof footerSegments>[2]) => {
-      const right = footerSegments([], 40, toast).filter((segment) => segment.bold);
-      return [right[0]?.text, right[0]?.color];
+  it("puts a toast nowhere: the frame draws it", () => {
+    expect(footerSegments(HINTS, 80).some((s) => s.bold && s.text.startsWith("✓"))).toBe(false);
+  });
+
+  it.each(WIDTHS)("is exactly %i columns", (width) => {
+    for (const global of [[], GLOBAL]) {
+      const segments = footerSegments(HINTS, width, global);
+      expect(textWidth(segments.map((s) => s.text).join(""))).toBe(width);
+      expectWithin(draw(<Footer hints={HINTS} global={global} columns={width} />, width), width);
+    }
+  });
+});
+
+describe("Toast", () => {
+  it("draws its icon from its tone, ok by default, with a space each side", () => {
+    const icon = (toast: Parameters<typeof toastSegments>[0]) => {
+      const text = toastSegments(toast, 40).find((segment) => segment.bold);
+      return [text?.text, text?.color];
     };
     expect(icon({ text: "Saved" })).toEqual(["✓ Saved", COLORS.ok]);
     expect(icon({ text: "Saved", tone: "ok" })).toEqual(["✓ Saved", COLORS.ok]);
@@ -580,25 +603,19 @@ describe("Footer", () => {
       "✗ Print failed",
       COLORS.failed,
     ]);
+    expect(
+      toastSegments({ text: "Saved" }, 40)
+        .map((s) => s.text)
+        .join(""),
+    ).toBe(" ✓ Saved ");
   });
 
-  it("cuts a toast longer than the line", () => {
-    const segments = footerSegments(HINTS, 20, {
-      text: "a very long message that cannot fit",
-      tone: "failed",
-    });
-    expect(segments.map((s) => s.text).join("")).toBe(" ✗ a very long mes… ");
-  });
-
-  it.each(WIDTHS)("is exactly %i columns", (width) => {
-    for (const toast of [undefined, { text: "Saved", tone: "ok" as const }]) {
-      const segments = footerSegments(HINTS, width, toast);
-      expect(textWidth(segments.map((s) => s.text).join(""))).toBe(width);
-      expectWithin(
-        draw(<Footer hints={HINTS} columns={width} {...(toast ? { toast } : {})} />, width),
-        width,
-      );
-    }
+  it("cuts a toast longer than its room", () => {
+    const text = toastSegments({ text: "a very long message that cannot fit", tone: "failed" }, 20)
+      .map((s) => s.text)
+      .join("");
+    expect(text).toBe(" ✗ a very long mes… ");
+    expect(textWidth(text)).toBe(20);
   });
 });
 
@@ -852,6 +869,25 @@ describe("Frame", () => {
       ),
     );
     expect(lines).toEqual(["head", "line 0", "line 1", "line 2", "foot"]);
+  });
+
+  it("draws a toast over the body's last line, two columns in, above the footer", () => {
+    const lines = plain(
+      draw(
+        <Frame
+          columns={40}
+          rows={6}
+          header={<Text>head</Text>}
+          footer={<Text>foot</Text>}
+          toast={{ text: "Saved", tone: "ok" }}
+        >
+          <Text>{["a", "b", "c", "╰".padEnd(39, "─")].join("\n")}</Text>
+        </Frame>,
+        40,
+      ),
+    );
+    expect(lines[4]).toBe(`╰─ ✓ Saved ${"─".repeat(28)}`);
+    expect(lines[5]).toBe("foot");
   });
 
   it("centers an overlay over the body", () => {
