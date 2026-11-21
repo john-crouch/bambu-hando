@@ -69,9 +69,9 @@ export interface SpoolLayout {
 const widest = (texts: string[]): number => texts.reduce((w, t) => Math.max(w, textWidth(t)), 0);
 
 /**
- * The columns that fit: a column no row has a value for is left out, and the date, then the location,
- * goes before the name would get less than NAME_KEEP columns (or its whole length); on a narrow list
- * the bar shortens too.
+ * The columns that fit: a column no row has a value for is left out; the date shows only when every
+ * name fits whole, the location when the names keep NAME_KEEP columns (or their whole length); on a
+ * narrow list the bar shortens too.
  */
 export function spoolLayout(
   rows: readonly InventoryRow[],
@@ -83,11 +83,12 @@ export function spoolLayout(
   const left = Math.max(LEFT_MIN, widest(rows.map(leftText)));
   const location = Math.min(LOCATION_MAX, widest(rows.map((r) => r.spool.location)));
   const added = widest(rows.map((r) => addedText(r.spool.addedTime, now)));
-  const want = Math.min(NAME_KEEP, widest(rows.map((r) => r.name)));
+  const longest = widest(rows.map((r) => r.name));
+  const want = Math.min(NAME_KEEP, longest);
   // Every shown cell after the name costs its width and a one-column gap.
   const nameRoom = (bar: number, ...extra: number[]) =>
     cells - id - left - bar - 3 - extra.reduce((sum, w) => sum + (w > 0 ? w + 1 : 0), 0);
-  if (nameRoom(BAR_CELLS, location, added) >= want)
+  if (nameRoom(BAR_CELLS, location, added) >= longest)
     return { id, left, bar: BAR_CELLS, location, added };
   if (nameRoom(BAR_CELLS, location) >= want)
     return { id, left, bar: BAR_CELLS, location, added: 0 };

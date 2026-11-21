@@ -45,6 +45,12 @@ describe("spoolLayout", () => {
     expect(spoolLayout(placed, 62, NOW)).toMatchObject({ location: 0, added: 0, bar: 10 });
   });
 
+  it("shows added only when every name fits whole: a date isn't worth a cut name", () => {
+    // 36 columns of name: from 80 the date would leave it 32, from 84 all 36.
+    expect(spoolLayout(placed, 83, NOW)).toMatchObject({ location: 10, added: 0 });
+    expect(spoolLayout(placed, 84, NOW)).toMatchObject({ location: 10, added: 6 });
+  });
+
   it("shortens the bar on a narrow list so the name keeps more", () => {
     expect(spoolLayout(placed, 56, NOW)).toMatchObject({ location: 0, added: 0, bar: 5 });
   });

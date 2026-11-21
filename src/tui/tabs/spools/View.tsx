@@ -22,15 +22,31 @@ import {
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
 import { SpoolsDialog } from "./Dialogs.js";
-import { consoleConnection, consoleUrl, SORT_LABELS, spoolDetail, spoolsSummary } from "./data.js";
-import { cursorIndex, isWide, type SpoolsModel, spoolsScreen, visibleRows } from "./model.js";
+import {
+  compactDetail,
+  consoleConnection,
+  consoleUrl,
+  SORT_LABELS,
+  spoolDetail,
+  spoolsSummary,
+  swatchOf,
+} from "./data.js";
+import {
+  COMPACT_DETAIL,
+  cursorIndex,
+  isWide,
+  type SpoolsModel,
+  spoolsScreen,
+  stacksDetail,
+  visibleRows,
+} from "./model.js";
 import { spoolListRows, summarySegments } from "./rows.js";
 
 /** Lines of the list panel's inside above the rows: the summary and the filter. */
 export const LIST_HEAD = 2;
-/** The detail panel's width beside the list. */
+/** The detail panel's width beside the list: the list keeps room for the name and its columns. */
 function detailWidth(columns: number): number {
-  return Math.min(46, Math.max(34, Math.round(columns * 0.36)));
+  return Math.min(46, Math.max(34, Math.round(columns * 0.3)));
 }
 
 function ListPanel({
@@ -173,6 +189,49 @@ function DetailPanel({
   );
 }
 
+/** The highlighted spool in three lines under the list, for terminals too narrow to show it beside. */
+function CompactDetail({
+  row,
+  data,
+  width,
+}: {
+  row: InventoryRow | undefined;
+  data: ConsoleData;
+  width: number;
+}) {
+  const inner = panelInner(width, COMPACT_DETAIL);
+  if (!row)
+    return (
+      <Panel title="Spool" width={width} height={COMPACT_DETAIL}>
+        <Line
+          segments={[{ text: " No spool highlighted", color: COLORS.muted }]}
+          width={inner.width}
+        />
+      </Panel>
+    );
+  const swatch = swatchOf(row.spool.colorCodes);
+  const chip: Segment[] = swatch
+    ? [{ text: " " }, { text: "  ", backgroundColor: swatch }, { text: " " }]
+    : [];
+  return (
+    <Panel title={`#${row.spool.id} ${row.name}`} width={width} height={COMPACT_DETAIL}>
+      <Box flexDirection="row">
+        {swatch ? (
+          <Box flexDirection="column" width={4} flexShrink={0}>
+            <Line segments={chip} width={4} />
+            <Line segments={chip} width={4} />
+          </Box>
+        ) : null}
+        <Detail
+          rows={compactDetail(row, data.filaments)}
+          width={inner.width - (swatch ? 4 : 0)}
+          labelWidth={8}
+        />
+      </Box>
+    </Panel>
+  );
+}
+
 function EmptyState({ ctx, width, height }: { ctx: Ctx; width: number; height: number }) {
   const screen = spoolsScreen(ctx);
   const inner = panelInner(width, height);
@@ -207,8 +266,8 @@ function EmptyState({ ctx, width, height }: { ctx: Ctx; width: number; height: n
       body = (
         <Empty
           title="Couldn't read the console's spools"
-          lines={[screen.error]}
-          action={{ keys: "r", label: "try again" }}
+          lines={[screen.error, "Check its address in Settings, or press r to try again."]}
+          action={{ keys: "enter", label: "open Settings" }}
           width={inner.width}
           height={inner.height}
         />
@@ -248,14 +307,14 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
   } else {
     const rows = visibleRows(model, ctx);
     const row = rows[cursorIndex(model, rows)];
-    const list = (listWidth: number) => (
+    const list = (listWidth: number, listHeight = height) => (
       <ListPanel
         model={model}
         ctx={ctx}
         data={screen.data}
         rows={rows}
         width={listWidth}
-        height={height}
+        height={listHeight}
         reloading={screen.reloading}
         error={screen.error}
       />
@@ -278,8 +337,17 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
           {detail(side, false)}
         </>
       );
+    } else if (model.detailOpen) {
+      body = detail(width, !model.dialog);
+    } else if (stacksDetail(ctx)) {
+      body = (
+        <Box flexDirection="column" width={width} height={height}>
+          {list(width, height - COMPACT_DETAIL)}
+          <CompactDetail row={row} data={screen.data} width={width} />
+        </Box>
+      );
     } else {
-      body = model.detailOpen ? detail(width, !model.dialog) : list(width);
+      body = list(width);
     }
   }
   return (
