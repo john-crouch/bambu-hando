@@ -25,10 +25,19 @@ const COLUMNS = {
 
 type Column = keyof typeof COLUMNS;
 
-// On a narrow terminal the name gives up columns first, down to this, then the brand; nothing else does.
+// On a narrow terminal the name gives up columns first, down to this, then the brand. Below that the
+// status columns give way down to a whole badge (" SKIPPED " plus a gap, so the header fits too), then
+// material and temperatures, then name and brand again. Code and empty weight never shrink: the code
+// is the ID that links preset, CSV and spool. Past every minimum the rows are clipped (see PlanTable).
 const SHRINK: readonly (readonly [Column, number])[] = [
   ["name", 10],
   ["brand", 5],
+  ["spool", 10],
+  ["preset", 10],
+  ["material", 6],
+  ["temps", 8],
+  ["name", 6],
+  ["brand", 4],
 ];
 
 type Tone = "new" | "same" | "change";
@@ -98,13 +107,23 @@ export function finishedProfiles(progress: RowProgress[]): number {
 
 const PROGRESS_WIDTH = 30;
 
-/** A bar of the profiles finished out of the run's total, with the count beside it. */
+/**
+ * How far the run is, 0 to 100: each profile is two steps, its preset and its SpoolEase status, since
+ * every preset is written before any spool and counting whole profiles would leave the bar empty meanwhile.
+ */
+export function runPercent(progress: RowProgress[], total: number): number {
+  if (total <= 0) return 0;
+  const steps = progress.reduce((sum, row) => sum + (row.preset ? 1 : 0) + (row.spool ? 1 : 0), 0);
+  return (steps / (2 * total)) * 100;
+}
+
+/** A bar of how far the run is, with the profiles finished out of its total beside it. */
 export function RunProgress({ progress, total }: { progress: RowProgress[]; total: number }) {
   const finished = finishedProfiles(progress);
   return (
     <Box gap={1}>
       <Box width={PROGRESS_WIDTH} flexShrink={0}>
-        <ProgressBar value={total > 0 ? (finished / total) * 100 : 0} />
+        <ProgressBar value={runPercent(progress, total)} />
       </Box>
       <Text wrap="truncate-end">
         {finished}/{total} profiles finished
@@ -152,8 +171,12 @@ export function PlanTable({
   const width = fitColumns(COLUMNS, columns, SHRINK);
   // Once a run starts, every row shows its live status instead of the plan.
   const started = activePresets || activeSpools || progress.length > 0;
+  // Rows wider than the terminal would wrap and throw off Ink's redraws, so past every minimum they're clipped.
   return (
-    <Box flexDirection="column">
+    <Box
+      flexDirection="column"
+      {...(columns ? { width: columns, overflowX: "hidden" as const } : {})}
+    >
       <Box>
         <Cell width={width.swatch} dim>
           {""}

@@ -123,6 +123,44 @@ describe("statuses, while and after a run", () => {
     },
   );
 
+  it.each([72, 64])(
+    "fits %i columns by cutting the status, material and temperature columns too, every cell keeping its gap",
+    (columns) => {
+      const { lastFrame } = render(
+        <PlanTable
+          profiles={[LONG]}
+          progress={[{ preset: "written", spool: "skipped" }]}
+          activePresets={false}
+          activeSpools={false}
+          columns={columns}
+        />,
+      );
+
+      const [header = "", row = ""] = (lastFrame() ?? "").split("\n");
+      expect(header.length).toBeLessThanOrEqual(columns);
+      expect(row.length).toBeLessThanOrEqual(columns);
+      // The code and empty weight stay whole, each followed by a gap, and the badges stay whole.
+      expect(row).toMatch(/ P1234567 140 g +WRITTEN +SKIPPED$/);
+      expect(row.indexOf("P1234567")).toBe(header.indexOf("Code"));
+    },
+  );
+
+  it("clips rows at the terminal's width once every column is at its minimum", () => {
+    const { lastFrame } = render(
+      <PlanTable
+        profiles={[LONG]}
+        progress={[{ preset: "written", spool: "skipped" }]}
+        activePresets={false}
+        activeSpools={false}
+        columns={50}
+      />,
+    );
+
+    const lines = (lastFrame() ?? "").split("\n");
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line.length).toBeLessThanOrEqual(50);
+  });
+
   it("spins in the column a stage is working on, for rows without a status yet", () => {
     const { lastFrame, unmount } = renderStatuses(
       [LONG, LONG],
@@ -148,7 +186,7 @@ describe("run progress", () => {
     expect(finishedProfiles([])).toBe(0);
   });
 
-  it("fills the bar with the share of profiles finished and says how many", async () => {
+  it("fills the bar with the share of statuses in, preset and SpoolEase each, and says how many profiles finished", async () => {
     const { lastFrame } = render(
       <ThemeProvider theme={theme}>
         <RunProgress
@@ -159,7 +197,19 @@ describe("run progress", () => {
     );
 
     await vi.waitFor(() =>
-      expect(lastFrame()).toBe(`${"▰".repeat(10)}${"▱".repeat(20)} 1/3 profiles finished`),
+      expect(lastFrame()).toBe(`${"▰".repeat(15)}${"▱".repeat(15)} 1/3 profiles finished`),
+    );
+  });
+
+  it("moves the bar while presets are written, before any SpoolEase status is in", async () => {
+    const { lastFrame } = render(
+      <ThemeProvider theme={theme}>
+        <RunProgress progress={[{ preset: "written" }, { preset: "written" }]} total={2} />
+      </ThemeProvider>,
+    );
+
+    await vi.waitFor(() =>
+      expect(lastFrame()).toBe(`${"▰".repeat(15)}${"▱".repeat(15)} 0/2 profiles finished`),
     );
   });
 

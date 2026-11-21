@@ -42,6 +42,16 @@ describe("consoleUrl", () => {
     expect(consoleUrl(conn("[fe80::1%25eth0]", 80))).toBe("http://[fe80::1%25eth0]");
   });
 
+  it("brackets only an IPv6 address, not a host typed with a colon in it", () => {
+    expect(consoleUrl(conn("spoolease.local:8080", 80))).not.toContain("[");
+  });
+
+  it("leaves out a port that isn't a valid one, as when the field is blank", () => {
+    expect(consoleUrl(conn("spoolease.local", Number.NaN))).toBe("http://spoolease.local");
+    expect(consoleUrl(conn("spoolease.local", 0))).toBe("http://spoolease.local");
+    expect(consoleUrl(conn("spoolease.local", 70000))).toBe("http://spoolease.local");
+  });
+
   it("never carries the security key", () => {
     expect(consoleUrl(conn("host", 80))).not.toContain("secret");
   });

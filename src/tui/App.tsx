@@ -89,7 +89,7 @@ import {
   colorFormTyping,
   initialColorForm,
 } from "./ColorForm.js";
-import { consoleUrl, type TextPart } from "./ConsoleLink.js";
+import { consoleUrl, LinkedText, type TextPart } from "./ConsoleLink.js";
 import { Help, type HelpTopic } from "./Help.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import {
@@ -1917,9 +1917,19 @@ export function App({ initial, onExit }: Props) {
         </Text>
         <Text>
           {"SpoolEase: "}
-          {target
-            ? `${target.https ? "https" : "http"}://${target.host}:${target.port} · ${values.createSpools ? "register filaments + create spools" : "register filaments only"}`
-            : "skipped"}
+          {target ? (
+            <LinkedText
+              parts={[
+                {
+                  text: `${target.https ? "https" : "http"}://${target.host}:${target.port}`,
+                  url: consoleUrl(target),
+                },
+                ` · ${values.createSpools ? "register filaments + create spools" : "register filaments only"}`,
+              ]}
+            />
+          ) : (
+            "skipped"
+          )}
         </Text>
       </Box>
       <Box marginY={1}>

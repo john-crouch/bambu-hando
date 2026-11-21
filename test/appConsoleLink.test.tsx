@@ -81,4 +81,22 @@ describe("App's console links", () => {
     const target = `127.0.0.1:${server.port}`;
     expect(lastFrame()).toContain(`SpoolEase ${link(`http://${target}`, target)}`);
   });
+
+  it("links the plan screen's console", async () => {
+    const { lastFrame, stdin } = render(
+      <App
+        initial={values({ source: "test/fixtures/source.json", createSpools: false })}
+        onExit={onExit}
+      />,
+    );
+    await settle();
+    stdin.write("i");
+    await settle();
+    stdin.write(ENTER);
+    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
+    const shown = `http://127.0.0.1:${server.port}`;
+    expect(lastFrame()).toContain(
+      `SpoolEase: ${link(shown, shown)}\u001B]8;;\u0007 · register filaments only`,
+    );
+  });
 });
