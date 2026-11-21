@@ -16,7 +16,7 @@ import type {
   TabMsg,
 } from "../../core/types.js";
 import { toTab } from "../../core/types.js";
-import { moveCursor } from "../settings/keys.js";
+import { moveCursor } from "../../ui/index.js";
 import { writeIds } from "./cmds.js";
 import { checkView, consoleConfigured, firstWithItems, idRows, itemRows } from "./report.js";
 

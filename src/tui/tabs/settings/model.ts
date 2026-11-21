@@ -14,6 +14,7 @@ import type {
   TabMsg,
 } from "../../core/types.js";
 import { toTab } from "../../core/types.js";
+import { editText, moveCursor, type TextEdit } from "../../ui/index.js";
 import {
   type LoadWhat,
   loadFolders,
@@ -42,7 +43,7 @@ import {
   textFor,
   tickItem,
 } from "./fields.js";
-import { editText, insertText, moveCursor, type Typed, typeAheadJump } from "./keys.js";
+import { type Typed, typeAheadJump } from "./keys.js";
 
 export type Open =
   | { kind: "list"; field: FieldId; cursor: number; typed?: Typed }
@@ -223,7 +224,7 @@ function valuesAfter(ctx: Ctx, change: Change): Ctx {
 function textEdited(
   model: SettingsModel,
   open: Extract<Open, { kind: "text" }>,
-  next: { value: string; cursor: number; submit: boolean },
+  next: TextEdit,
   ctx: Ctx,
 ): Step<SettingsModel> {
   const edited = { ...model, open: { ...open, value: next.value, cursor: next.cursor } };
@@ -237,6 +238,7 @@ function keyStep(model: SettingsModel, key: KeyPress, ctx: Ctx): Step<SettingsMo
   const open = model.open;
   if (open?.kind === "text") {
     if (key.name === "esc") return step({ ...model, open: null });
+    if (key.name === "enter") return textEdited(model, open, { ...open, submit: true }, ctx);
     const next = editText(open, key);
     return next ? textEdited(model, open, next, ctx) : step(model);
   }
@@ -267,7 +269,10 @@ function update(model: SettingsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<Sett
       const open = model.open;
       if (open?.kind !== "text") return step(model);
       const text = (msg as Extract<AppMsg, { type: "paste" }>).text;
-      return textEdited({ ...model, error: "" }, open, insertText(open, text), ctx);
+      // A paste is a typed burst: a newline in it saves what came before.
+      const burst = { input: text, ctrl: false, shift: false, meta: false };
+      const next = editText(open, burst);
+      return next ? textEdited({ ...model, error: "" }, open, next, ctx) : step(model);
     }
     case "settings/loaded": {
       const what = msg.what as LoadWhat;

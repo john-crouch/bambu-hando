@@ -3,7 +3,8 @@
 
 import { type CheckSection, checkCounts, checkSummary } from "../../../syncCheck.js";
 import type { CheckData, Ctx } from "../../core/types.js";
-import { connectionOf, consoleUrl } from "../settings/connection.js";
+import { consoleUrl } from "../../ui/index.js";
+import { connectionOf } from "../settings/connection.js";
 
 /** none: no console to check against (SpoolEase skipped or not set up). */
 export interface CheckView {

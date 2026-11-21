@@ -16,7 +16,7 @@ import { SpoolEaseClient, type SpoolEaseConnection } from "../../../spoolease.js
 import { saveTuiSettings } from "../../../tuiSettings.js";
 import type { Cmd } from "../../core/program.js";
 import { type AppMsg, toTab } from "../../core/types.js";
-import { consoleUrl } from "./connection.js";
+import { consoleUrl } from "../../ui/index.js";
 import type { Sources } from "./fields.js";
 
 export type LoadWhat = keyof Sources;
