@@ -362,8 +362,8 @@ describe("palette commands", () => {
   it("give IDs from anywhere; checking again is the shell's reload", async () => {
     const h = await loaded();
     const commands = checkLogic.commands?.(h.model, h.ctx) ?? [];
-    expect(commands.map((c) => [c.title, c.msg])).toEqual([
-      ["Give presets a filament ID", toTab("check", { type: "check/fix" })],
+    expect(commands.map((c) => [c.title, c.msg, c.keys])).toEqual([
+      ["Give presets a filament ID", toTab("check", { type: "check/fix" }), "f"],
     ]);
     await h.dispatch({ type: "check/fix" });
     expect(h.model.page).toBe("ids");

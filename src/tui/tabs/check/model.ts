@@ -340,6 +340,7 @@ function commands(model: CheckModel, ctx: Ctx): PaletteCommand[] {
           {
             title: "Give presets a filament ID",
             detail: "Check",
+            keys: "f",
             msg: toTab("check", { type: "check/fix" }),
           },
         ]

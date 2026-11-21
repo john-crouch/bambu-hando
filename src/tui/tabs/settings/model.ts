@@ -446,6 +446,7 @@ function commands(_model: SettingsModel, _ctx: Ctx): PaletteCommand[] {
     {
       title: "Test the SpoolEase connection",
       detail: "Settings",
+      keys: "t",
       msg: toTab("settings", { type: "settings/test" }),
     },
   ];
