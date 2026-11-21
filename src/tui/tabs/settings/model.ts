@@ -23,6 +23,7 @@ import {
   loadLabelPrinters,
   loadLabels,
   loadPrinters,
+  loadStoredKey,
   saveConsole,
   saveKey,
   saveLabels,
@@ -133,6 +134,10 @@ function apply(model: SettingsModel, change: Change, ctx: Ctx): Step<SettingsMod
     cmds.push(savePrinters(printerList(values.printerPreset)));
   const console = consoleChange(values, ctx);
   if (console) cmds.push(saveConsole(console));
+  // A session started with --skip-spoolease never read the keyring: turning SpoolEase on reads it, unless the
+  // session already has a key (a flag's, the variable's or BambuStudio's).
+  if (values.skipSpoolease === false && ctx.values.skipSpoolease && !ctx.values.securityKey)
+    cmds.push(loadStoredKey(ctx.values.host.trim()));
   const connectionChanged = CONNECTION_FIELDS.some(
     (key) => key in values && values[key] !== ctx.values[key],
   );
@@ -380,6 +385,17 @@ function update(model: SettingsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<Sett
         if (cursor >= 0) return step({ ...next, open: { ...open, cursor } });
       }
       return step(next);
+    }
+    case "settings/storedKey": {
+      // Only for the console it was read for, and only while nothing else has given the session a key.
+      const { values } = ctx;
+      if (values.skipSpoolease || values.securityKey || values.host.trim() !== msg.host)
+        return step(model);
+      const key = String(msg.key);
+      return [
+        { ...model, test: { state: "idle" }, testSeq: model.testSeq + 1 },
+        [send<AppMsg>({ type: "app/values", values: { securityKey: key } })],
+      ];
     }
     case "settings/tested": {
       if (msg.seq !== model.testSeq) return step(model);

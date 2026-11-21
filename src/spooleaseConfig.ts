@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { bambuConfigDir } from "./paths.js";
 import { KeyringError, loadSecret, SECRETS, secretProblem } from "./secrets.js";
 import type { SpoolEaseConnection } from "./spoolease.js";
-import { loadTuiSettings } from "./tuiSettings.js";
+import { loadTuiSettings, type SavedConsole } from "./tuiSettings.js";
 
 export interface SpoolEaseSettings {
   host: string | null;
@@ -134,26 +134,51 @@ export async function consoleSettings(
     bambu.host ||
     ""
   ).trim();
-  // tui.json's port, HTTPS and keyring key belong to its host; saved without one, to whichever console is used.
+  // tui.json's port and HTTPS belong to its host; saved without one, to whichever console is used.
   const savedFits = !saved.host || sameHost(saved.host, host);
-  let stored: Promise<string | null> | undefined;
-  const keyring = () => {
-    stored ??= useKeyring ? keyringKey() : Promise.resolve(null);
-    return stored;
-  };
   const securityKey =
-    flags["spoolease-security-key"] ||
-    (await envKey(env, !useKeyring)) ||
-    (savedFits ? await keyring() : null) ||
-    (sameHost(bambu.host, host) ? bambu.securityKey : null) ||
-    (await keyring()) ||
-    "";
+    flags["spoolease-security-key"] || (await keyFor(host, env, useKeyring, bambu, saved)) || "";
   return {
     host,
     port: flags["spoolease-port"] ?? String((savedFits ? saved.port : undefined) ?? 80),
     securityKey,
     https: flags["spoolease-https"] ?? (savedFits ? saved.https : undefined) ?? false,
   };
+}
+
+/** The key consoleSettings' rule gives `host` after the flag: the variable, the keyring, BambuStudio's. */
+async function keyFor(
+  host: string,
+  env: Record<string, string | undefined>,
+  useKeyring: boolean,
+  bambu: SpoolEaseSettings,
+  saved: SavedConsole,
+): Promise<string | null> {
+  let stored: Promise<string | null> | undefined;
+  const keyring = () => {
+    stored ??= useKeyring ? keyringKey() : Promise.resolve(null);
+    return stored;
+  };
+  // tui.json's keyring key belongs to its host; saved without one, to whichever console is used.
+  const savedFits = !saved.host || sameHost(saved.host, host);
+  return (
+    (await envKey(env, !useKeyring)) ||
+    (savedFits ? await keyring() : null) ||
+    (sameHost(bambu.host, host) ? bambu.securityKey : null) ||
+    (await keyring())
+  );
+}
+
+/**
+ * The key consoleSettings gives the console at `host` without flags, reading the keyring: for a session that skipped
+ * SpoolEase (and so never read it) and turns it on. Null when there's none; throws InvalidSecretError as it does.
+ */
+export async function consoleKey(
+  host: string,
+  env: Record<string, string | undefined> = process.env,
+): Promise<string | null> {
+  const [bambu, remembered] = await Promise.all([readSpoolEaseConfig(), loadTuiSettings()]);
+  return keyFor(host.trim(), env, true, bambu, remembered.console ?? {});
 }
 
 /** The connection the settings make on a checked port; null without both a host and a key. */
