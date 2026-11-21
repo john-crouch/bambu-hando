@@ -2,7 +2,7 @@
 // ABOUTME: init and the helpers that read the catalog and import out of the model and the shell's resources.
 
 import type { FilamentProfile, SyncResult } from "../../../models.js";
-import type { ProfilePlan } from "../../../planPreview.js";
+import type { ConsoleState, ProfilePlan } from "../../../planPreview.js";
 import type { EditChange, Edits } from "../../../presetEdit.js";
 import type { Catalog } from "../../../spoolmanDb.js";
 import type { WeightChoice, WeightGroup } from "../../../spoolWeights.js";
@@ -14,10 +14,13 @@ import type { TextState } from "../../ui/textField.js";
 import type { EditorModel } from "../presets/index.js";
 import {
   type Entry,
+  type FindRow,
   importName,
   importSourceOf,
   type Level,
+  levelRows,
   type Sources,
+  searchRows,
   selectedEntries,
 } from "./catalog.js";
 import { importCmd } from "./cmds.js";
@@ -103,6 +106,21 @@ export interface RunModel {
   sourceLabel: string;
 }
 
+/** What adding Find's highlighted color would do (peek.ts), cached per settings. */
+export interface PeekModel {
+  /** The settings these were read with; others start over. */
+  basis: PlanBasis | null;
+  console: "idle" | "loading" | "ready" | "failed";
+  /** The console as read; null when it isn't set up or couldn't be read. */
+  state: ConsoleState | null;
+  /** Each filament's plan by ID: "loading" while read, null when it couldn't be worked out. */
+  plans: ReadonlyMap<string, ProfilePlan | "loading" | null>;
+}
+
+export function emptyPeek(): PeekModel {
+  return { basis: null, console: "idle", state: null, plans: new Map() };
+}
+
 export interface AddModel {
   page: PageId;
   /** The drill-down levels, top last; each keeps its cursor for going back up. */
@@ -133,6 +151,8 @@ export interface AddModel {
   weightMemory: ReadonlyMap<string, WeightChoice>;
   /** A filament ID a deep link asked for before the catalog had loaded: opened once it has. */
   focus: string | null;
+  /** What adding Find's highlighted color would do, read as Review reads it. */
+  peek: PeekModel;
 }
 
 export function emptyWeights(): WeightsModel {
@@ -213,6 +233,20 @@ export function sourcesOf(model: AddModel, ctx: Ctx): Sources {
   };
 }
 
+/** The rows Find lists now: the search's matches, else the drill-down's current level. */
+export function findRows(model: AddModel, ctx: Ctx): FindRow[] {
+  const sources = sourcesOf(model, ctx);
+  if (model.search) return searchRows(sources, model.search.text.value);
+  return levelRows(model.stack.at(-1)?.level ?? { kind: "brands" }, sources, model.selected);
+}
+
+/** Find's highlighted row, as the list draws it. */
+export function findRow(model: AddModel, ctx: Ctx): FindRow | undefined {
+  const rows = findRows(model, ctx);
+  const cursor = model.search ? model.search.cursor : (model.stack.at(-1)?.cursor ?? 0);
+  return rows[Math.max(0, Math.min(cursor, rows.length - 1))];
+}
+
 export function ticked(model: AddModel, ctx: Ctx): Entry[] {
   return selectedEntries(sourcesOf(model, ctx), model.selected);
 }
@@ -265,6 +299,7 @@ export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
     typed: null,
     weightMemory: new Map(),
     focus: null,
+    peek: emptyPeek(),
   };
   // SpoolmanDB is a download: fetched now only when the app opens on Add, else on Add's first visit.
   const [requested, cmds] = landsOnAdd(ctx.values, start)

@@ -6,8 +6,7 @@ import { basename } from "node:path";
 import type { FilamentProfile } from "../../../models.js";
 import { filterProfiles, SPOOLMANDB_SOURCE } from "../../../spoolmanDb.js";
 import type { FormValues } from "../../core/values.js";
-import { formatGrams, formatRange, plural, shortPrinter } from "../../ui/format.js";
-import { consoleSetup, printersOf } from "./targets.js";
+import { formatGrams, formatRange, plural } from "../../ui/format.js";
 
 export const SPOOLMANDB_LABEL = "SpoolmanDB";
 export const OTHER_COLOR = "Other color…";
@@ -262,6 +261,19 @@ export interface Fact {
   dim?: boolean;
 }
 
+/**
+ * One target of adding a filament: + written, = there already and left alone, ↻ replaced or updated,
+ * ? not known until Review reads it. short is the same for a one-line summary ("= preset kept").
+ */
+export interface AddLine {
+  mark: "+" | "=" | "↻" | "?";
+  text: string;
+  short: string;
+}
+
+/** What adding a profile does, worked out elsewhere (it reads disk and the console); null while unknown. */
+export type AddsOf = (profile: FilamentProfile) => AddLine[] | null;
+
 export type FindDetail =
   | { kind: "source"; title: string; lines: string[] }
   | { kind: "brand"; title: string; materials: { label: string; count: number; ticked: number }[] }
@@ -272,10 +284,8 @@ export type FindDetail =
       swatch: string;
       ticked: boolean;
       facts: Fact[];
-      /** What saving it adds, one line per target. */
-      adds: string[];
-      /** The same in one short line, for a panel without room: "preset ×2 · custom filament · spool". */
-      addsShort: string;
+      /** What adding it does, one line per target; null until that's known (never promised). */
+      adds: AddLine[] | null;
     }
   | { kind: "other"; title: string; lines: string[] };
 
@@ -283,8 +293,12 @@ function grams(value: number): string {
   return value > 0 ? formatGrams(value) : "unknown";
 }
 
-/** The filament's facts and what a run writes for it with these settings. */
-function colorDetail(profile: FilamentProfile, ticked: boolean, values: FormValues): FindDetail {
+/** The filament's facts and what adding it does. */
+function colorDetail(
+  profile: FilamentProfile,
+  ticked: boolean,
+  adds: AddLine[] | null,
+): FindDetail {
   const swatch = swatchOf(profile);
   const facts: Fact[] = [
     { label: "Brand", value: profile.brand },
@@ -300,20 +314,7 @@ function colorDetail(profile: FilamentProfile, ticked: boolean, values: FormValu
       ? [{ label: "Slicer code", value: profile.slicerFilamentCode, dim: true }]
       : []),
   ];
-  const ready = consoleSetup(values) === "ready";
-  const printers = printersOf(values);
-  const spool = ready && values.createSpools;
-  const adds = [
-    ...printers.map((printer) => `BambuStudio preset for ${shortPrinter(printer)}`),
-    ...(ready ? [`SpoolEase custom filament ${profile.filamentId}`] : []),
-    ...(spool ? ["A SpoolEase spool"] : []),
-  ];
-  const addsShort = [
-    ...(printers.length > 0 ? [`preset ×${printers.length}`] : []),
-    ...(ready ? ["custom filament"] : []),
-    ...(spool ? ["spool"] : []),
-  ].join(" · ");
-  return { kind: "color", title: profile.name, swatch, ticked, facts, adds, addsShort };
+  return { kind: "color", title: profile.name, swatch, ticked, facts, adds };
 }
 
 /**
@@ -325,7 +326,7 @@ export function findDetail(
   row: FindRow | undefined,
   sources: Sources,
   selected: ReadonlySet<string>,
-  values: FormValues,
+  addsOf: AddsOf,
 ): FindDetail | null {
   if (!row) return null;
   switch (row.kind) {
@@ -363,7 +364,7 @@ export function findDetail(
       };
     }
     case "color":
-      return colorDetail(row.profile, selected.has(row.key), values);
+      return colorDetail(row.profile, selected.has(row.key), addsOf(row.profile));
     case "other": {
       const what = level?.kind === "colors" ? ` for ${level.brand} ${level.material}` : "";
       return {

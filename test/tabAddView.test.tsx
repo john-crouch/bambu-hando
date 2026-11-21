@@ -13,6 +13,7 @@ import { press } from "../src/tui/core/keys.js";
 import type { AppMsg, Ctx, TabMsg } from "../src/tui/core/types.js";
 import { addTab } from "../src/tui/tabs/add/index.js";
 import type { AddModel } from "../src/tui/tabs/add/model.js";
+import { planBasis } from "../src/tui/tabs/add/targets.js";
 import { textWidth, theme } from "../src/tui/ui/index.js";
 import { ctx as baseCtx } from "./tabAddHarness.js";
 
@@ -157,9 +158,47 @@ describe("what the pages say", () => {
     expect(colors).toMatch(/Code\s+PACMBLU0/);
     expect(colors).not.toContain("space ticks it");
     expect(colors).toContain("+  Other color…");
-    expect(colors).toContain("Adding it writes");
-    expect(colors).toContain("+ SpoolEase custom filament");
+    expect(colors).toContain("Checking what's there already…");
+    expect(colors).not.toContain("+ a SpoolEase");
     expect(colors).toMatch(/✓ 1 ticked\s+Acme PLA/);
+  });
+
+  it("says what adding the color does once it's read, and never what's there already", () => {
+    for (const [columns, rows] of [
+      [120, 36],
+      [80, 24],
+      [60, 20],
+    ] as const) {
+      const c = sized(columns, rows, { ...CONSOLE, createSpools: true });
+      const colorsPage = after(c, "enter", "down", "enter", "down");
+      const peeked = addTab.update(
+        addTab.update(
+          colorsPage,
+          { type: "add/peekConsole", basis: planBasis(c.values), state: null },
+          c,
+        )[0],
+        {
+          type: "add/peeked",
+          basis: planBasis(c.values),
+          filamentId: "PACMBLU0",
+          plan: plan({
+            existingPresets: 1,
+            filament: { state: "same", listed: "", becomes: "" },
+            spool: "create",
+          }),
+        },
+        c,
+      )[0];
+      const lines = screen(peeked, c);
+      for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
+      const text = lines.join("\n");
+      if (columns === 60) expect(text).toMatch(/Adding it = preset kept · = listed · \+ spool/);
+      else {
+        expect(text).toContain("= BambuStudio preset for X1C 0.4: kept");
+        expect(text).toContain("= on SpoolEase's custom filaments already");
+        expect(text).toContain("+ a SpoolEase spool");
+      }
+    }
   });
 
   it("draws the Other color dialog over the list", () => {

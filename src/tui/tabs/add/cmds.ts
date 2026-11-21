@@ -22,7 +22,7 @@ import { loadTuiSettings, rememberWeight, saveTuiSettings } from "../../../tuiSe
 import type { Cmd } from "../../core/program.js";
 import { type AppMsg, toTab } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
-import { consoleOf, createsSpools, printersOf } from "./targets.js";
+import { consoleOf, createsSpools, type PlanBasis, printersOf } from "./targets.js";
 
 /** The Add tab's own messages, as its commands send them (wrapped for the shell by toTab). */
 export type AddMsg =
@@ -40,6 +40,10 @@ export type AddMsg =
     }
   | { type: "add/weightsFailed"; signature: string; error: string; keyRejected: boolean }
   | { type: "add/planRead"; seq: number; plans: ProfilePlan[] | null; warnings: string[] }
+  /** Find's detail: the console as a plan reads it (null when it couldn't be read), for these settings. */
+  | { type: "add/peekConsole"; basis: PlanBasis; state: ConsoleState | null }
+  /** Find's detail: what a run would do to one filament (null when that couldn't be worked out). */
+  | { type: "add/peeked"; basis: PlanBasis; filamentId: string; plan: ProfilePlan | null }
   | { type: "add/runEvent"; event: SyncEvent }
   | { type: "add/runDone"; results: SyncResult[] }
   | { type: "add/runFailed"; error: string; exitCode: 1 | 2 }
@@ -67,6 +71,8 @@ export const ADD_MSG_TYPES: ReadonlySet<string> = new Set<AddMsg["type"]>([
   "add/weightsRead",
   "add/weightsFailed",
   "add/planRead",
+  "add/peekConsole",
+  "add/peeked",
   "add/runEvent",
   "add/runDone",
   "add/runFailed",
@@ -167,38 +173,74 @@ export function planCmd(
 ): Cmd<AppMsg> {
   return async (dispatch) => {
     const warnings: string[] = [];
-    const connection = consoleOf(values);
     let spoolease: ConsoleState | null = null;
-    if (connection) {
-      try {
-        const client = new SpoolEaseClient(connection);
-        await checkKey(client);
-        const [csv, spooledIds] = await Promise.all([
-          client.getCustomFilamentsCsv(),
-          createsSpools(values)
-            ? client.listSpoolFilamentIds()
-            : Promise.resolve(new Set<string>()),
-        ]);
-        spoolease = { csv, spooledIds };
-      } catch (err) {
-        warnings.push(
-          `Couldn't read SpoolEase to show what the run changes there: ${errorMessage(err)}`,
-        );
-      }
+    try {
+      spoolease = await readConsoleState(values);
+    } catch (err) {
+      warnings.push(
+        `Couldn't read SpoolEase to show what the run changes there: ${errorMessage(err)}`,
+      );
     }
     let plans: ProfilePlan[] | null = null;
     try {
-      plans = await previewPlan(
-        profiles,
-        { presetFolder: values.presetFolder.trim(), printers: printersOf(values) },
-        spoolease,
-        createsSpools(values),
-        { overwrite: values.overwritePresets, edits },
-      );
+      plans = await planFor(profiles, values, spoolease, edits);
     } catch (err) {
       warnings.push(`Couldn't look for existing presets: ${errorMessage(err)}`);
     }
     dispatch(addMsg({ type: "add/planRead", seq, plans, warnings }));
+  };
+}
+
+/** The console's custom filaments and spooled codes, as a run reads them first; null without a console. */
+async function readConsoleState(values: FormValues): Promise<ConsoleState | null> {
+  const connection = consoleOf(values);
+  if (!connection) return null;
+  const client = new SpoolEaseClient(connection);
+  await checkKey(client);
+  const [csv, spooledIds] = await Promise.all([
+    client.getCustomFilamentsCsv(),
+    createsSpools(values) ? client.listSpoolFilamentIds() : Promise.resolve(new Set<string>()),
+  ]);
+  return { csv, spooledIds };
+}
+
+function planFor(
+  profiles: FilamentProfile[],
+  values: FormValues,
+  spoolease: ConsoleState | null,
+  edits: ReadonlyMap<string, Edits>,
+): Promise<ProfilePlan[]> {
+  return previewPlan(
+    profiles,
+    { presetFolder: values.presetFolder.trim(), printers: printersOf(values) },
+    spoolease,
+    createsSpools(values),
+    { overwrite: values.overwritePresets, edits },
+  );
+}
+
+/** The console as Find's detail compares with it, read once per settings; null when it can't be read. */
+export function peekConsoleCmd(basis: PlanBasis, values: FormValues): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const state = await readConsoleState(values).catch(() => null);
+    dispatch(addMsg({ type: "add/peekConsole", basis, state }));
+  };
+}
+
+/** What a run would do to one filament, the way Review's plan works it out. Reads only. */
+export function peekCmd(
+  basis: PlanBasis,
+  profile: FilamentProfile,
+  values: FormValues,
+  spoolease: ConsoleState | null,
+  edits: ReadonlyMap<string, Edits>,
+): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const plan = await planFor([profile], values, spoolease, edits).then(
+      ([first]) => first ?? null,
+      () => null,
+    );
+    dispatch(addMsg({ type: "add/peeked", basis, filamentId: profile.filamentId, plan }));
   };
 }
 

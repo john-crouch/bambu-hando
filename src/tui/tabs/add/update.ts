@@ -43,9 +43,11 @@ import { pageArea } from "./layout.js";
 import {
   type AddModel,
   dbProfiles,
+  emptyPeek,
   emptyReview,
   emptyWeights,
   type FindFrame,
+  findRows,
   importModel,
   PAGE_ORDER,
   type PageId,
@@ -54,6 +56,7 @@ import {
   sourcesOf,
   ticked,
 } from "./model.js";
+import { forgetPeeks, peekReply, peekStep } from "./peek.js";
 import { applyEvent, presetPlanText, runOutcome, spoolEasePlanText } from "./plan.js";
 import {
   consoleOf,
@@ -95,7 +98,9 @@ export function update(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result 
   const [next, cmds] = used
     ? shown(synced, (msg as { focus?: unknown }).focus, ctx)
     : route(synced, msg, ctx);
-  return [next, [...syncCmds, ...cmds]];
+  // Find's detail says what adding the highlighted color does: read it once it's highlighted.
+  const [peeked, peekCmds] = peekStep(next, ctx);
+  return [peeked, [...syncCmds, ...cmds, ...peekCmds]];
 }
 
 /** Add is shown again: a plan read with settings changed meanwhile is read again; a deep link opens its filament. */
@@ -198,12 +203,10 @@ function route(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result {
     return keyUpdate(model, { input: text, ctrl: false, shift: false, meta: false }, ctx);
   }
   if (isAddMsg(msg)) return ownUpdate(model, msg, ctx);
-  if (
-    msg.type === "app/loaded" &&
-    (msg as { resource: unknown }).resource === "catalog" &&
-    model.focus !== null
-  )
-    return openFocus(model, model.focus, ctx);
+  const loaded = msg.type === "app/loaded" ? (msg as { resource: unknown }).resource : null;
+  if (loaded === "catalog" && model.focus !== null) return openFocus(model, model.focus, ctx);
+  // Presets or the console changed (a run, the Presets or Spools tab): what's there is read again.
+  if (loaded === "presets" || loaded === "console") return none(forgetPeeks(model));
   return none(model);
 }
 
@@ -250,6 +253,9 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
           cursor: clampIndex(model.review.cursor, model.review.profiles.length),
         },
       });
+    case "add/peekConsole":
+    case "add/peeked":
+      return none(peekReply(model, msg));
     case "add/plannedPreset":
       if (msg.seq !== model.review.seq || model.page !== "review") return none(model);
       return none({
@@ -287,7 +293,7 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
       // Edits from elsewhere come without their before and after: the note counts them instead.
       const changes = new Map(model.planChanges);
       changes.delete(msg.filamentId);
-      const next = { ...model, planEdits: edits, planChanges: changes };
+      const next = forgetPeeks({ ...model, planEdits: edits, planChanges: changes });
       return next.page === "review" ? enterReview(next, ctx) : none(next);
     }
     case "add/openSearch": {
@@ -363,11 +369,7 @@ function openSearch(model: AddModel, focus: "query" | "list"): Result {
 }
 
 /** The rows Find shows now: the search results or the top level's. */
-export function findRows(model: AddModel, ctx: Ctx): FindRow[] {
-  const sources = sourcesOf(model, ctx);
-  if (model.search) return searchRows(sources, model.search.text.value);
-  return levelRows(top(model).level, sources, model.selected);
-}
+export { findRows };
 
 function findKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   if (model.dialog) return dialogKey(model, key, ctx);
@@ -861,12 +863,12 @@ function editorKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
       changes.delete(editing.filamentId);
     }
     return enterReview(
-      {
+      forgetPeeks({
         ...model,
         planEdits: edits,
         planChanges: changes,
         review: { ...model.review, editing: null },
-      },
+      }),
       ctx,
     );
   }
@@ -949,6 +951,7 @@ function runDone(model: AddModel, results: Parameters<typeof runOutcome>[0], ctx
       planEdits: new Map(),
       planChanges: new Map(),
       review: emptyReview(model.review.seq),
+      peek: emptyPeek(),
     },
     [
       send<AppMsg>({ type: "app/runFinished", summary: outcome.summary }, ...reloads(ctx), {
