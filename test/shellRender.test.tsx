@@ -4,6 +4,7 @@
 import { render } from "ink-testing-library";
 import stringWidth from "string-width";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { placeholder } from "../src/tui/app/registry.js";
 import type { Loaders } from "../src/tui/app/resources.js";
 import { Shell } from "../src/tui/app/Shell.js";
 import type { FormValues } from "../src/tui/core/values.js";
@@ -25,6 +26,15 @@ function loaders(overrides: Partial<Loaders> = {}): Loaders {
   };
 }
 
+/** Title-only tabs, so these tests cover the shell whatever the real tabs draw. */
+const PLACEHOLDER_TABS = {
+  spools: placeholder("spools", "Spools"),
+  add: placeholder("add", "Add"),
+  presets: placeholder("presets", "Presets"),
+  check: placeholder("check", "Check"),
+  settings: placeholder("settings", "Settings"),
+};
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
 async function shellAt(
@@ -37,7 +47,7 @@ async function shellAt(
     <Shell
       initial={values(options.values)}
       start={{ query: "" }}
-      deps={{ loaders: loaders(options.loaders), now: () => 0 }}
+      deps={{ tabs: PLACEHOLDER_TABS, loaders: loaders(options.loaders), now: () => 0 }}
       onExit={onExit}
     />,
   );
@@ -50,6 +60,8 @@ async function shellAt(
     const lines = screen().split("\n");
     expect(lines).toHaveLength(rows);
     expect(lines[rows - 1]).toContain("? help");
+    // ink-testing-library reports 100 columns until the resize lands: wait for a frame drawn at ours.
+    for (const line of lines) expect(stringWidth(line)).toBeLessThanOrEqual(columns);
   });
   const press = async (...keys: string[]) => {
     for (const key of keys) {

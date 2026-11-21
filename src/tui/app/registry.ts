@@ -4,8 +4,13 @@
 import { createElement } from "react";
 
 import type { Ctx, LabelsRequest, OverlayModule, TabId, TabModule } from "../core/types.js";
+import { labelsOverlay } from "../overlays/labels/index.js";
 import { addTab } from "../tabs/add/index.js";
-import { DIALOG_WIDTH, Dialog, dialogInner, Empty } from "../ui/index.js";
+import { checkTab } from "../tabs/check/index.js";
+import { presetsTab } from "../tabs/presets/index.js";
+import { settingsTab } from "../tabs/settings/index.js";
+import { spoolsTab } from "../tabs/spools/index.js";
+import { Empty } from "../ui/index.js";
 
 /** Any tab module: the shell keeps each tab's model opaque. */
 // biome-ignore lint/suspicious/noExplicitAny: each tab has its own model type, opaque to the shell.
@@ -27,7 +32,8 @@ function PlaceholderView({ model, ctx }: { model: PlaceholderModel; ctx: Ctx }) 
   });
 }
 
-function placeholder(id: TabId, title: string): TabModule<PlaceholderModel> {
+/** A tab that only shows its title: the shell's own tests use these, so they test the shell alone. */
+export function placeholder(id: TabId, title: string): TabModule<PlaceholderModel> {
   return {
     id,
     title,
@@ -40,35 +46,11 @@ function placeholder(id: TabId, title: string): TabModule<PlaceholderModel> {
 }
 
 export const TABS: Record<TabId, AnyTab> = {
-  spools: placeholder("spools", "Spools"),
+  spools: spoolsTab,
   add: addTab,
-  presets: placeholder("presets", "Presets"),
-  check: placeholder("check", "Check"),
-  settings: placeholder("settings", "Settings"),
+  presets: presetsTab,
+  check: checkTab,
+  settings: settingsTab,
 };
 
-const CLOSE = [{ keys: "any key", label: "close" }];
-
-function LabelsView({ model }: { model: LabelsRequest }) {
-  return createElement(
-    Dialog,
-    { title: "Labels", hints: CLOSE },
-    createElement(Empty, {
-      title: `${model.spoolIds.length} spools`,
-      lines: ["Coming soon"],
-      width: dialogInner(DIALOG_WIDTH),
-      height: 3,
-    }),
-  );
-}
-
-export const LABELS: AnyLabels = {
-  id: "labels",
-  init: (request: LabelsRequest) => [request, []],
-  update: (model, msg) =>
-    msg.type === "key"
-      ? [model, [(dispatch) => dispatch({ type: "app/closeOverlay" })]]
-      : [model, []],
-  View: LabelsView,
-  hints: () => CLOSE,
-};
+export const LABELS: AnyLabels = labelsOverlay;
