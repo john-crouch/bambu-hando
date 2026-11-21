@@ -333,3 +333,23 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     expect(lines.every((line) => line.length <= 80)).toBe(true);
   });
 });
+
+describe("bambu-hando tui --help", () => {
+  it("prints the TUI's own short usage with its keys, not the headless help", async () => {
+    const { code, stdout } = await new Promise<{ code: number; stdout: string }>((resolve) => {
+      execFile(process.execPath, [BIN, "tui", "--help"], (err, out) =>
+        resolve({ code: err ? Number(err.code ?? 1) : 0, stdout: out }),
+      );
+    });
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/^Usage: bambu-hando tui \[options\]\n/);
+    expect(stdout).toContain("ctrl+k");
+    expect(stdout).toContain("shift+tab");
+    expect(stdout).toContain("--printer-preset");
+    // Headless-only flags and the other commands stay in the main help.
+    expect(stdout).not.toContain("--dry-run");
+    expect(stdout).not.toContain("--label-output");
+    expect(stdout).not.toContain("bambu-hando labels");
+    for (const line of stdout.split("\n")) expect(line.length).toBeLessThanOrEqual(80);
+  });
+});
