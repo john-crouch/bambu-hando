@@ -1,12 +1,20 @@
 // ABOUTME: The Add tab's pure update: keys per page (Find, Weights, Review, Run/Done), its own messages, and the page bar.
 // ABOUTME: Also hints, capturesText and palette commands; every write goes through Review and ends in app/runFinished.
 
+import type { Edits } from "../../../presetEdit.js";
 import { applyWeights, weightGroups } from "../../../spoolWeights.js";
 import { isCtrl, type KeyPress, letter, typed } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Hint, PaletteCommand, Step, TabMsg } from "../../core/types.js";
 import { moveCursor, typeAhead } from "../../ui/list.js";
 import { editText } from "../../ui/textField.js";
+import {
+  editorCapturesText,
+  editorHints,
+  editorListRows,
+  initEditor,
+  updateEditor,
+} from "../presets/index.js";
 import {
   dbKey,
   type FindRow,
@@ -23,10 +31,12 @@ import {
   addMsg,
   importCmd,
   planCmd,
+  plannedPresetCmd,
   runCmd,
   weightsCmd,
 } from "./cmds.js";
 import { colorDialogKey, openColorDialog } from "./color.js";
+import { pageArea } from "./layout.js";
 import {
   type AddModel,
   dbProfiles,
@@ -150,6 +160,30 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
           cursor: clampIndex(model.review.cursor, model.review.profiles.length),
         },
       });
+    case "add/plannedPreset":
+      if (msg.seq !== model.review.seq || model.page !== "review") return none(model);
+      return none({
+        ...model,
+        review: {
+          ...model.review,
+          editing: {
+            filamentId: msg.filamentId,
+            editor: initEditor({
+              name: msg.name,
+              printer: msg.printer,
+              path: msg.path,
+              original: msg.original,
+              ...(model.planEdits.has(msg.filamentId)
+                ? { edits: model.planEdits.get(msg.filamentId) as Edits }
+                : {}),
+              mode: "planned",
+            }),
+          },
+        },
+      });
+    case "add/plannedPresetFailed":
+      if (msg.seq !== model.review.seq) return none(model);
+      return none({ ...model, review: { ...model.review, error: msg.error } });
     case "add/runEvent":
       return none(runEvent(model, msg.event));
     case "add/runDone":
@@ -390,6 +424,11 @@ function continueFind(model: AddModel, ctx: Ctx, highlighted: string | undefined
   const selected =
     model.selected.size === 0 && highlighted ? new Set([highlighted]) : model.selected;
   const next = { ...model, selected };
+  if (ticked(next, ctx).length === 0 && model.imported.state === "loading")
+    return none({
+      ...next,
+      notice: `Still reading ${importName(model.imported.source ?? "")}: try again in a moment`,
+    });
   if (ticked(next, ctx).length === 0)
     return none({
       ...next,
@@ -589,6 +628,7 @@ function sourceLabel(model: AddModel, ctx: Ctx): string {
 
 function reviewKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   const { review } = model;
+  if (review.editing) return editorKey(model, key, ctx);
   if (key.name === "esc" || key.name === "left") {
     if (weightsNeeded(model, ctx)) {
       const last = model.weights.prompts.length - 1;
@@ -609,12 +649,37 @@ function reviewKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   return none(model);
 }
 
-/**
- * Where e opens the preset editor on the highlighted row's preset, as the run would write it. The
- * editor comes from the Presets tab in a later phase; it reports back with add/planEdits.
- */
-function openPlanEdit(model: AddModel, _ctx: Ctx): Result {
-  return none(model);
+/** e: the highlighted row's preset, as the run would write it, opens in the Presets tab's editor. */
+function openPlanEdit(model: AddModel, ctx: Ctx): Result {
+  const { review } = model;
+  const profile = review.profiles[review.cursor];
+  if (review.state !== "ready" || !profile)
+    return none({ ...model, notice: "Wait for the plan: it's still being read" });
+  return [model, [plannedPresetCmd(review.seq, profile, ctx.values)]];
+}
+
+/** Keys while the editor is open: it takes them all; leaving keeps its edits for the run. */
+function editorKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
+  const { editing } = model.review;
+  if (!editing) return none(model);
+  const step = updateEditor(
+    editing.editor,
+    key,
+    editorListRows(pageArea(ctx.bodyColumns, ctx.bodyRows).height),
+  );
+  if (step.outcome?.type === "leave") {
+    const edits = new Map(model.planEdits);
+    if (step.outcome.edits.size > 0) edits.set(editing.filamentId, step.outcome.edits);
+    else edits.delete(editing.filamentId);
+    return enterReview(
+      { ...model, planEdits: edits, review: { ...model.review, editing: null } },
+      ctx,
+    );
+  }
+  return none({
+    ...model,
+    review: { ...model.review, editing: { ...editing, editor: step.model } },
+  });
 }
 
 function apply(model: AddModel, ctx: Ctx): Result {
@@ -810,7 +875,14 @@ export function hints(model: AddModel, ctx: Ctx): Hint[] {
       ];
     }
     case "review":
-      return [h("a", "apply", true), h("↑↓", "move"), h("r", "read again"), h("esc", "back", true)];
+      if (model.review.editing) return editorHints(model.review.editing.editor);
+      return [
+        h("a", "apply", true),
+        h("↑↓", "move"),
+        h("e", "edit its preset", true),
+        h("r", "read again"),
+        h("esc", "back", true),
+      ];
     case "run": {
       const { run } = model;
       if (!run || run.state === "running") return [];
@@ -872,6 +944,8 @@ function findHints(model: AddModel, ctx: Ctx): Hint[] {
 
 /** True while the search query or a dialog has the keys, so q, ? and letters type there. */
 export function capturesText(model: AddModel): boolean {
+  if (model.page === "review" && model.review.editing)
+    return editorCapturesText(model.review.editing.editor);
   if (model.page !== "find") return false;
   // A dialog takes every key while open, so q never quits from it.
   if (model.dialog) return true;

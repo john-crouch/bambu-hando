@@ -11,6 +11,7 @@ import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Resource, StartOptions, Step } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
 import type { TextState } from "../../ui/textField.js";
+import type { EditorModel } from "../presets/index.js";
 import {
   type Entry,
   importName,
@@ -79,6 +80,8 @@ export interface ReviewModel {
   cursor: number;
   /** Why the run can't start (settings), shown until the next key. */
   error: string;
+  /** A row's preset open in the editor, as the run would write it (e); its edits go into planEdits. */
+  editing: { filamentId: string; editor: EditorModel } | null;
 }
 
 export interface RunModel {
@@ -137,7 +140,16 @@ export function emptyWeights(): WeightsModel {
 }
 
 export function emptyReview(seq = 0): ReviewModel {
-  return { state: "idle", seq, profiles: [], plans: null, warnings: [], cursor: 0, error: "" };
+  return {
+    state: "idle",
+    seq,
+    profiles: [],
+    plans: null,
+    warnings: [],
+    cursor: 0,
+    error: "",
+    editing: null,
+  };
 }
 
 /** The top of Find: both sources when there's an import (on the import), else straight into the brands. */

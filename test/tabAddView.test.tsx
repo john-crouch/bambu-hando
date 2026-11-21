@@ -187,6 +187,62 @@ describe("what the pages say", () => {
   });
 });
 
+describe("the preset editor on Review", () => {
+  it.each([
+    [80, 24],
+    [120, 36],
+  ])("fills the body at %ix%i and marks the edited row back on the plan", (columns, rows) => {
+    const context = sized(columns, rows);
+    const model = after(context, "enter", "down", "enter", "space", "right");
+    const ready = addTab.update(
+      model,
+      { type: "add/planRead", seq: model.review.seq, plans: [plan()], warnings: [] },
+      context,
+    )[0];
+    const editing = addTab.update(
+      ready,
+      {
+        type: "add/plannedPreset",
+        seq: ready.review.seq,
+        filamentId: "PACMBLK0",
+        name: "Acme PLA Black",
+        printer: "Bambu Lab X1 Carbon 0.4 nozzle",
+        path: "/tmp/x.json",
+        original: {
+          nozzle_temperature: ["210"],
+          nozzle_temperature_range_low: ["200"],
+          nozzle_temperature_range_high: ["220"],
+        },
+      },
+      context,
+    )[0];
+    const lines = screen(editing, context);
+    expect(lines).toHaveLength(context.bodyRows);
+    for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
+    const text = lines.join("\n");
+    expect(text).toContain("Edit Acme PLA Black");
+    expect(text).toContain("esc keeps the changes for the run");
+
+    const edited = addTab.update(
+      ready,
+      {
+        type: "add/planEdits",
+        filamentId: "PACMBLK0",
+        edits: new Map([["nozzle_temperature", { every: "215" }]]),
+      },
+      context,
+    )[0];
+    const back = addTab.update(
+      edited,
+      { type: "add/planRead", seq: edited.review.seq, plans: [plan()], warnings: [] },
+      context,
+    )[0];
+    const plan80 = screen(back, context).join("\n");
+    expect(plan80).toContain("✎ Acme PLA Black");
+    expect(plan80).toContain("✎ PACMBLK0: 1 change goes into the 1 preset the run writes");
+  });
+});
+
 describe("a narrow table", () => {
   it("drops brand and material below 100 columns and keeps the code", () => {
     const context = sized(80, 24);

@@ -1,7 +1,7 @@
 // ABOUTME: Tests for the Add tab's Weights, Review and Run/Done pages through update(), with their commands really run.
 // ABOUTME: SpoolEase is the local stand-in console; BambuStudio is a temp HOME with the trimmed real system profiles.
 
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,6 +12,7 @@ import type { Ctx } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
 import { type AddModel, init, ticked } from "../src/tui/tabs/add/model.js";
 import {
+  capturesText,
   commands,
   currentWeightItems,
   hints,
@@ -343,6 +344,74 @@ describe("run and done", () => {
     d.key(press("a"), press("esc"), press("n"));
     expect(d.model.page).toBe("run");
     await d.settle();
+  });
+});
+
+describe("editing a preset before the run writes it", () => {
+  const RATRIG = "RatRig ABS Punkfil Brute Black";
+  const RATRIG_FILE = `${RATRIG} @${X1C_04}.json`;
+
+  it("opens the editor on the preset the run would write, and the run writes the edits", async () => {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    expect(hints(d.model, d.context).map((h) => h.keys)).toContain("e");
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing?.editor).toMatchObject({
+      name: RATRIG,
+      printer: X1C_04,
+      mode: "planned",
+    });
+    expect(capturesText(d.model)).toBe(false);
+    d.key(press("enter"));
+    expect(capturesText(d.model)).toBe(true);
+    d.key(press("u", { ctrl: true }), press("250"), press("enter"), press("esc"));
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.planEdits.get("P9a3bd74")).toEqual(
+      new Map([["nozzle_temperature", { every: "250" }]]),
+    );
+    expect(d.model.review.state).toBe("loading");
+    await d.settle();
+    expect(d.model.review.state).toBe("ready");
+
+    d.key(press("a"));
+    await d.settle();
+    const written = JSON.parse(await readFile(join(baseFilamentDir(home), RATRIG_FILE), "utf-8"));
+    expect(written.nozzle_temperature).toEqual(["250"]);
+  });
+
+  it("opens again with the edits made so far, and hands keys to the editor while it's open", async () => {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    d.key(press("enter"), press("u", { ctrl: true }), press("250"), press("enter"));
+    expect(hints(d.model, d.context).map((h) => h.label)).toEqual(
+      expect.arrayContaining(["back"]),
+    );
+    d.key(press("a"));
+    expect(d.model.review.editing).toBeNull();
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing?.editor.edits.get("nozzle_temperature")).toEqual({
+      every: "250",
+    });
+  });
+
+  it("says so when the run keeps every preset of the row, as there's nothing it would write", async () => {
+    const dir = baseFilamentDir(home);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, RATRIG_FILE), "{}\n", "utf-8");
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.review.error).toMatch(/already there and the run keeps them/);
   });
 });
 

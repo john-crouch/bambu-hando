@@ -1,10 +1,15 @@
 // ABOUTME: The Add tab's side work: import a file or URL, read SpoolEase's spool weights, preview the plan, run the sync.
 // ABOUTME: Each command reports back with the tab's own messages; errors become messages, never throws.
 
+import { access } from "node:fs/promises";
+
+import { SystemProfiles } from "../../../bambuProfiles.js";
+import { buildPreset, presetPath } from "../../../bambuStudio.js";
 import { errorMessage } from "../../../errors.js";
 import type { FilamentProfile, SyncResult } from "../../../models.js";
+import { bambuConfigDir } from "../../../paths.js";
 import { type ConsoleState, type ProfilePlan, previewPlan } from "../../../planPreview.js";
-import type { Edits } from "../../../presetEdit.js";
+import type { Edits, Preset } from "../../../presetEdit.js";
 import { loadProfiles } from "../../../sources.js";
 import { SpoolEaseClient } from "../../../spoolease.js";
 import { readSpoolWeights, type SpoolWeightEntry } from "../../../spoolWeights.js";
@@ -25,6 +30,17 @@ export type AddMsg =
   | { type: "add/runEvent"; event: SyncEvent }
   | { type: "add/runDone"; results: SyncResult[] }
   | { type: "add/runFailed"; error: string; exitCode: 1 | 2 }
+  /** The preset the run would write for a row, built for the editor (e on Review). */
+  | {
+      type: "add/plannedPreset";
+      seq: number;
+      filamentId: string;
+      name: string;
+      printer: string;
+      path: string;
+      original: Preset;
+    }
+  | { type: "add/plannedPresetFailed"; seq: number; error: string }
   /** Edits made to a row's preset before the run writes it (from the preset editor). */
   | { type: "add/planEdits"; filamentId: string; edits: Edits }
   /** From the command palette. */
@@ -41,6 +57,8 @@ export const ADD_MSG_TYPES: ReadonlySet<string> = new Set<AddMsg["type"]>([
   "add/runEvent",
   "add/runDone",
   "add/runFailed",
+  "add/plannedPreset",
+  "add/plannedPresetFailed",
   "add/planEdits",
   "add/openSearch",
   "add/review",
@@ -176,5 +194,60 @@ export function runCmd(
         }),
       );
     }
+  };
+}
+
+/**
+ * The preset the run would write for the profile, for the editor: for the first printer whose preset
+ * the run writes (all of them when overwriting; else those without a file yet), built as runSync builds it.
+ */
+export function plannedPresetCmd(
+  seq: number,
+  profile: FilamentProfile,
+  values: FormValues,
+): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const fail = (error: string) =>
+      dispatch(addMsg({ type: "add/plannedPresetFailed", seq, error }));
+    const folder = values.presetFolder.trim();
+    const printers = printersOf(values);
+    const found = await Promise.all(
+      printers.map((printer) =>
+        access(presetPath(profile, folder, printer)).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    );
+    const printer = printers.find((_, i) => values.overwritePresets || !found[i]);
+    if (printer === undefined) {
+      fail(
+        `${profile.name}'s presets are already there and the run keeps them: edit them in the Presets tab`,
+      );
+      return;
+    }
+    let system: SystemProfiles;
+    try {
+      system = await SystemProfiles.load(bambuConfigDir());
+    } catch (err) {
+      fail(errorMessage(err));
+      return;
+    }
+    const template = system.template(profile.material, printer);
+    if (!template) {
+      fail(`BambuStudio has no Generic ${profile.material} preset for ${printer}`);
+      return;
+    }
+    dispatch(
+      addMsg({
+        type: "add/plannedPreset",
+        seq,
+        filamentId: profile.filamentId,
+        name: profile.name,
+        printer,
+        path: presetPath(profile, folder, printer),
+        original: buildPreset(profile, printer, template, system.version),
+      }),
+    );
   };
 }

@@ -6,6 +6,7 @@ import { Box } from "ink";
 import type { Ctx } from "../../core/types.js";
 import { Line, PageBar, type Segment } from "../../ui/index.js";
 import { COLORS } from "../../ui/theme.js";
+import { EditorView } from "../presets/index.js";
 import { ColorDialogView } from "./ColorDialogView.js";
 import { trayText } from "./catalog.js";
 import { FindView } from "./FindView.js";
@@ -18,6 +19,13 @@ import { WeightsView } from "./WeightsView.js";
 /** The bottom line: what the last key needs, else a warning, else what's ticked across brands. */
 export function statusSegments(model: AddModel, ctx: Ctx): Segment[] {
   if (model.notice) return [{ text: ` ! ${model.notice}`, color: COLORS.warning }];
+  if (model.page === "review" && model.review.editing)
+    return [
+      {
+        text: " Editing the preset the run writes: esc keeps the changes for the run",
+        color: COLORS.muted,
+      },
+    ];
   const [warning] = model.page === "find" ? catalogWarnings(ctx) : [];
   if (warning) return [{ text: ` ! ${warning}`, color: COLORS.warning }];
   if (model.run?.state === "done" && model.run.results.length > 0)
@@ -42,6 +50,8 @@ export function AddView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
           <FindView model={model} ctx={ctx} />
         ) : model.page === "weights" ? (
           <WeightsView model={model} ctx={ctx} />
+        ) : model.page === "review" && model.review.editing ? (
+          <EditorView model={model.review.editing.editor} width={width} height={area.height} />
         ) : (
           <PlanView model={model} ctx={ctx} />
         )}

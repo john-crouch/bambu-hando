@@ -276,6 +276,13 @@ describe("import source", () => {
     expect(top(d)?.level).toEqual({ kind: "brands" });
   });
 
+  it("says it's still reading the import when asked to go on before it's read", () => {
+    const d = start(withImport());
+    d.key(press("right"));
+    expect(d.model.page).toBe("find");
+    expect(d.model.notice).toBe("Still reading source.json: try again in a moment");
+  });
+
   it("says why an import failed", async () => {
     const d = start(withImport("/nowhere/missing.json"));
     await d.settle();

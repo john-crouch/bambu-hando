@@ -345,7 +345,13 @@ export function PlanView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
           </Box>
         ) : (
           <List
-            rows={rows.map((row, index) => tableRow(row, index, widths))}
+            rows={rows.map((row, index) =>
+              tableRow(
+                model.planEdits.has(row.code) ? { ...row, name: `✎ ${row.name}` } : row,
+                index,
+                widths,
+              ),
+            )}
             cursor={Math.min(review.cursor, Math.max(0, rows.length - 1))}
             height={Math.max(0, inner.height - 1)}
             width={inner.width}
