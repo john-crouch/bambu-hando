@@ -25,9 +25,11 @@ import {
   type TabMsg,
   toTab,
 } from "../../core/types.js";
+import { hintSegments } from "../../ui/hints.js";
 import { editText, moveCursor, plural, type TextState, typeAhead } from "../../ui/index.js";
+import { segmentsWidth } from "../../ui/text.js";
 import { addCopiesCmd, loadBarcodesCmd, rememberBarcodeCmd } from "./cmds.js";
-import { consoleConnection, consoleUrl, consoleValue } from "./data.js";
+import { consoleConnection, consoleUrl, consoleValue, SORT_NAMES } from "./data.js";
 import { pasted, textState } from "./local.js";
 
 /** The most copies one dialog adds. */
@@ -815,13 +817,14 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
     return [
       { keys: "type", label: "filter", primary: true },
       { keys: "↑↓", label: "move", primary: true },
-      { keys: "enter", label: "keep filter", primary: true },
+      { keys: "enter", label: "done", primary: true },
       { keys: "esc", label: "clear", primary: true },
     ];
   const row = highlightedRow(model, ctx);
   const ticked = model.ticked.length;
   const problems = syncProblems(ctx);
-  return [
+  const sortHint: Hint = { keys: "s", label: "sort", primary: true };
+  const list: Hint[] = [
     { keys: "↑↓", label: "move", primary: true },
     ...(isWide(ctx)
       ? []
@@ -832,15 +835,25 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
         ]),
     { keys: "space", label: "tick" },
     { keys: "/", label: "filter", primary: true },
-    { keys: "s", label: "sort", primary: true },
+    // Right after the filter it clears, and kept before the tab's actions when the footer is short.
+    ...(model.filter.value ? [{ keys: "esc", label: "clear filter", primary: true }] : []),
+    sortHint,
     { keys: "l", label: ticked > 0 ? `labels for ${ticked}` : "label", primary: true },
     ...(row?.spool.slicerFilament ? [{ keys: "+", label: "more like this", primary: true }] : []),
     { keys: "b", label: "scan", primary: true },
     ...(problems > 0 ? [{ keys: "c", label: `see ${plural(problems, "problem")}` }] : []),
     { keys: "r", label: "reload" },
-    ...(model.filter.value ? [{ keys: "esc", label: "clear filter", primary: true }] : []),
   ];
+  // The order the list is in, when the primary keys still fit beside ? help with it.
+  const named = { ...sortHint, label: `sort: ${SORT_NAMES[model.sort]}` };
+  const primary = list.map((h) => (h === sortHint ? named : h)).filter((h) => h.primary);
+  return segmentsWidth(hintSegments(primary)) + HELP_RESERVE <= ctx.columns
+    ? list.map((h) => (h === sortHint ? named : h))
+    : list;
 }
+
+/** Footer columns the shell keeps for its own keys at the least: "  ? help" and the gap before it. */
+const HELP_RESERVE = 10;
 
 export function commands(model: SpoolsModel, ctx: Ctx): PaletteCommand[] {
   if (!consoleConnection(ctx.values)) return [];

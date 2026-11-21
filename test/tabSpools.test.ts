@@ -21,6 +21,7 @@ import {
   update,
   visibleRows,
 } from "../src/tui/tabs/spools/model.js";
+import { fitHints } from "../src/tui/ui/hints.js";
 import { consoleOf, FILAMENTS, makeCtx, runCmds, spool } from "./tabSpoolsFixtures.js";
 
 const SPOOLS: SpoolRecord[] = [
@@ -791,5 +792,33 @@ describe("a kept filter", () => {
       primary: true,
     });
     expect(hints(start(), CTX).find((h) => h.keys === "esc")).toBeUndefined();
+  });
+
+  it("keeps esc clear filter in an 80-column footer, before the tab's actions", () => {
+    const narrow = { ...CTX, bodyColumns: 80 };
+    const kept = keys(start(narrow), ["/", "Zeta", "enter"], narrow);
+    const shown = fitHints(hints(kept, narrow), 80 - 8).map((h) => `${h.keys} ${h.label}`);
+    expect(shown).toContain("esc clear filter");
+    const order = hints(kept, narrow).map((h) => h.keys);
+    expect(order.indexOf("esc")).toBe(order.indexOf("/") + 1);
+  });
+});
+
+describe("the sort hint", () => {
+  it("names the order the list is in when there's room, else stays short", () => {
+    const sort = (model: SpoolsModel, ctx = CTX) => hints(model, ctx).find((h) => h.keys === "s");
+    expect(sort(start())).toEqual({ keys: "s", label: "sort: newest", primary: true });
+    const narrow = { ...CTX, columns: 60, bodyColumns: 60 };
+    expect(sort(start(narrow), narrow)).toEqual({ keys: "s", label: "sort", primary: true });
+    expect(sort(keys(start(), ["s"]))?.label).toBe("sort: name");
+    expect(sort(keys(start(), ["s", "s"]))?.label).toBe("sort: least left");
+    expect(sort(keys(start(), ["s", "s", "s"]))?.label).toBe("sort: location");
+  });
+});
+
+describe("filtering", () => {
+  it("says enter done, as every filter does", () => {
+    const filtering = keys(start(), ["/"]);
+    expect(hints(filtering, CTX).find((h) => h.keys === "enter")?.label).toBe("done");
   });
 });

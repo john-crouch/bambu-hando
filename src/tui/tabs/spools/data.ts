@@ -19,6 +19,14 @@ export const SORT_LABELS: Record<InventorySort, string> = {
   location: "by location",
 };
 
+/** The order in a hint, short: "s sort: newest". */
+export const SORT_NAMES: Record<InventorySort, string> = {
+  newest: "newest",
+  name: "name",
+  left: "least left",
+  location: "location",
+};
+
 export type Tone = "ok" | "warning" | "failed";
 
 /** The console the settings point at; null when SpoolEase is skipped or its host or key is missing. */
