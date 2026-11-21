@@ -5,6 +5,7 @@ import { Box } from "ink";
 
 import { LABEL_FIELDS } from "../../../labels.js";
 import type { Ctx } from "../../core/types.js";
+import { labelFieldName } from "../../overlays/labels/fields.js";
 import {
   Busy,
   COLORS,
@@ -25,7 +26,6 @@ import {
 import { connectionOf, printerLabel, printerList, validPort } from "./connection.js";
 import {
   fieldKind,
-  labelFieldName,
   listFor,
   PAGE_FIELDS,
   PAGES,

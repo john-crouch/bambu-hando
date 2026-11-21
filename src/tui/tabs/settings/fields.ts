@@ -5,6 +5,7 @@ import type { LabelSettings } from "../../../labelSettings.js";
 import { LABEL_FIELDS, type LabelField, parseLabelSize } from "../../../labels.js";
 import type { Ctx } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
+import { labelFieldList, labelFieldName } from "../../overlays/labels/fields.js";
 import { filterRows, type TextState } from "../../ui/index.js";
 import {
   byModelAndNozzle,
@@ -194,30 +195,6 @@ export interface SettingRow {
   detail: string;
 }
 
-const LABEL_NAMES: Record<LabelField, string> = {
-  qr: "QR code",
-  brand: "brand",
-  material: "material",
-  name: "filament name",
-  color: "color name",
-  hex: "color code",
-  temps: "temperatures",
-  weight: "weight",
-  empty: "empty spool weight",
-  code: "filament code",
-  location: "location",
-  added: "date added",
-  note: "note",
-  id: "spool ID",
-};
-
-const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
-
-/** A label field as a list shows it, e.g. "Color name". */
-export function labelFieldName(field: LabelField): string {
-  return capital(LABEL_NAMES[field]);
-}
-
 const DEFAULT_FOLDER_NOTE = "used when not logged in to BambuStudio";
 
 function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, "value" | "tone"> {
@@ -249,13 +226,7 @@ function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, 
       return { value: toggleOn(field, values) ? "on" : "off" };
     case "labelFields":
       return {
-        value: labels
-          ? capital(
-              LABEL_FIELDS.filter((f) => labels.fields.includes(f.key))
-                .map((f) => LABEL_NAMES[f.key])
-                .join(", "),
-            )
-          : "…",
+        value: labels ? labelFieldList(labels.fields) : "…",
       };
     case "labelSize":
       return { value: labels ? labels.size : "…" };
