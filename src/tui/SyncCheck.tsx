@@ -3,7 +3,7 @@
 
 import { Box, type Key, Text } from "ink";
 
-import { type CheckLine, checkLines, type CheckSection, checkSummary } from "../syncCheck.js";
+import { type CheckLine, type CheckSection, checkLines, checkSummary } from "../syncCheck.js";
 import { listRows } from "./screenSize.js";
 
 /** Report lines on screen at once when the terminal's height is unknown. */
@@ -17,11 +17,26 @@ export function checkRows(height: number | undefined, warnings: number): number 
   return listRows(height, CHROME + warnings, CHECK_ROWS);
 }
 
-export type CheckAction = { type: "scroll"; top: number } | { type: "back" } | { type: "again" } | { type: "fix" } | { type: "quit" } | { type: "none" };
+export type CheckAction =
+  | { type: "scroll"; top: number }
+  | { type: "back" }
+  | { type: "again" }
+  | { type: "fix" }
+  | { type: "quit" }
+  | { type: "none" };
 
-export function checkInput(top: number, input: string, key: Key, lineCount: number, rows: number = CHECK_ROWS): CheckAction {
+export function checkInput(
+  top: number,
+  input: string,
+  key: Key,
+  lineCount: number,
+  rows: number = CHECK_ROWS,
+): CheckAction {
   const last = Math.max(0, lineCount - rows);
-  const scroll = (to: number): CheckAction => ({ type: "scroll", top: Math.max(0, Math.min(to, last)) });
+  const scroll = (to: number): CheckAction => ({
+    type: "scroll",
+    top: Math.max(0, Math.min(to, last)),
+  });
   if (key.escape || input === "b") return { type: "back" };
   if (input === "r") return { type: "again" };
   if (input === "f") return { type: "fix" };
@@ -74,7 +89,12 @@ export function SyncCheck({ sections, top, compared, warnings, fixable = 0, heig
       <Box flexDirection="column" marginY={1}>
         {top > 0 ? <Text dimColor>… {top} above</Text> : null}
         {shown.map((line, index) => (
-          <Text key={top + index} wrap="truncate-end" color={TONES[line.tone].color} dimColor={TONES[line.tone].dim}>
+          <Text
+            key={top + index}
+            wrap="truncate-end"
+            color={TONES[line.tone].color}
+            dimColor={TONES[line.tone].dim}
+          >
             {line.text}
           </Text>
         ))}
@@ -82,7 +102,10 @@ export function SyncCheck({ sections, top, compared, warnings, fixable = 0, heig
       </Box>
       <Text dimColor>
         {lines.length > rows ? "↑/↓ scroll · " : ""}
-        {fixable > 0 ? `[f] give ${fixable} preset${fixable === 1 ? "" : "s"} a filament ID · ` : ""}[r] check again · [b] back to menu · [q] quit · ? help
+        {fixable > 0
+          ? `[f] give ${fixable} preset${fixable === 1 ? "" : "s"} a filament ID · `
+          : ""}
+        [r] check again · [b] back to menu · [q] quit · ? help
       </Text>
     </Box>
   );

@@ -10,7 +10,17 @@ import { listMove, typeAhead, typedLetter } from "./menu.js";
 
 const LABEL_WIDTH = 46;
 
-export type HomeId = "spoolmandb" | "import" | "more" | "barcode" | "labels" | "spools" | "edit" | "check" | "settings" | "quit";
+export type HomeId =
+  | "spoolmandb"
+  | "import"
+  | "more"
+  | "barcode"
+  | "labels"
+  | "spools"
+  | "edit"
+  | "check"
+  | "settings"
+  | "quit";
 
 export interface HomeItem {
   id: HomeId;
@@ -18,20 +28,79 @@ export interface HomeItem {
   detail: string;
 }
 
-export type HomeAction = { type: "move"; cursor: number } | { type: "choose"; id: HomeId } | { type: "none" };
+export type HomeAction =
+  | { type: "move"; cursor: number }
+  | { type: "choose"; id: HomeId }
+  | { type: "none" };
 
 /** SpoolmanDB, preset editing, settings and quit, plus import for a file or URL source, and more spools, labels and the sync check when SpoolEase is set up. */
 export function homeItems(source: string, spoolease: boolean): HomeItem[] {
   const file = source.trim();
   return [
-    { id: "spoolmandb", label: "Add spools from SpoolmanDB", detail: "browse brands, materials and colors" },
-    ...(file && file !== SPOOLMANDB_SOURCE ? [{ id: "import" as const, label: `Import ${basename(file)}`, detail: "sync the profiles it lists" }] : []),
-    ...(spoolease ? [{ id: "more" as const, label: "More spools of a filament you have", detail: "copy a spool already on your console" }] : []),
-    ...(spoolease ? [{ id: "barcode" as const, label: "Barcode: more spools of what you scan", detail: "learns each barcode once" }] : []),
-    ...(spoolease ? [{ id: "labels" as const, label: "Print labels for existing spools", detail: "pick spools on your SpoolEase console" }] : []),
-    ...(spoolease ? [{ id: "spools" as const, label: "Your spools on the console", detail: "what's left on each and where it is" }] : []),
-    { id: "edit", label: "Edit a filament preset", detail: "temperatures, flow, cooling, any setting" },
-    ...(spoolease ? [{ id: "check" as const, label: "Check sync", detail: "compare presets, custom filaments and spools; changes nothing" }] : []),
+    {
+      id: "spoolmandb",
+      label: "Add spools from SpoolmanDB",
+      detail: "browse brands, materials and colors",
+    },
+    ...(file && file !== SPOOLMANDB_SOURCE
+      ? [
+          {
+            id: "import" as const,
+            label: `Import ${basename(file)}`,
+            detail: "sync the profiles it lists",
+          },
+        ]
+      : []),
+    ...(spoolease
+      ? [
+          {
+            id: "more" as const,
+            label: "More spools of a filament you have",
+            detail: "copy a spool already on your console",
+          },
+        ]
+      : []),
+    ...(spoolease
+      ? [
+          {
+            id: "barcode" as const,
+            label: "Barcode: more spools of what you scan",
+            detail: "learns each barcode once",
+          },
+        ]
+      : []),
+    ...(spoolease
+      ? [
+          {
+            id: "labels" as const,
+            label: "Print labels for existing spools",
+            detail: "pick spools on your SpoolEase console",
+          },
+        ]
+      : []),
+    ...(spoolease
+      ? [
+          {
+            id: "spools" as const,
+            label: "Your spools on the console",
+            detail: "what's left on each and where it is",
+          },
+        ]
+      : []),
+    {
+      id: "edit",
+      label: "Edit a filament preset",
+      detail: "temperatures, flow, cooling, any setting",
+    },
+    ...(spoolease
+      ? [
+          {
+            id: "check" as const,
+            label: "Check sync",
+            detail: "compare presets, custom filaments and spools; changes nothing",
+          },
+        ]
+      : []),
     { id: "settings", label: "Settings", detail: "BambuStudio folder and printers, SpoolEase" },
     { id: "quit", label: "Quit", detail: "" },
   ];
@@ -39,7 +108,10 @@ export function homeItems(source: string, spoolease: boolean): HomeItem[] {
 
 /** A source given on the command line is what the user came for, so the menu starts on it. */
 export function initialHomeCursor(items: HomeItem[]): number {
-  return Math.max(0, items.findIndex((item) => item.id === "import"));
+  return Math.max(
+    0,
+    items.findIndex((item) => item.id === "import"),
+  );
 }
 
 export function homeInput(cursor: number, input: string, key: Key, items: HomeItem[]): HomeAction {
@@ -50,7 +122,15 @@ export function homeInput(cursor: number, input: string, key: Key, items: HomeIt
   const moved = listMove(cursor, key, items.length, items.length);
   if (moved !== null) return { type: "move", cursor: moved };
   const letter = typedLetter(input, key);
-  if (letter) return { type: "move", cursor: typeAhead(items.map((i) => i.label), cursor, letter) };
+  if (letter)
+    return {
+      type: "move",
+      cursor: typeAhead(
+        items.map((i) => i.label),
+        cursor,
+        letter,
+      ),
+    };
   return { type: "none" };
 }
 

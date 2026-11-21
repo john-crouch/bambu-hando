@@ -35,7 +35,11 @@ export interface ChoiceState {
   error: string;
 }
 
-export type ChoiceAction = { type: "update"; state: ChoiceState } | { type: "done"; values: string[] } | { type: "cancel" } | { type: "none" };
+export type ChoiceAction =
+  | { type: "update"; state: ChoiceState }
+  | { type: "done"; values: string[] }
+  | { type: "cancel" }
+  | { type: "none" };
 
 /** The current values ticked, with the cursor on the first of them. */
 export function initialChoiceState(items: ChoiceItem[], current: string[]): ChoiceState {
@@ -43,8 +47,19 @@ export function initialChoiceState(items: ChoiceItem[], current: string[]): Choi
   return { cursor: Math.max(0, cursor), ticked: new Set(current), error: "" };
 }
 
-export function choiceInput(state: ChoiceState, input: string, key: Key, items: ChoiceItem[], multi: boolean, now: number = Date.now(), rows: number = ROWS): ChoiceAction {
-  const next = (changes: Partial<ChoiceState>): ChoiceAction => ({ type: "update", state: { ...state, error: "", ...changes } });
+export function choiceInput(
+  state: ChoiceState,
+  input: string,
+  key: Key,
+  items: ChoiceItem[],
+  multi: boolean,
+  now: number = Date.now(),
+  rows: number = ROWS,
+): ChoiceAction {
+  const next = (changes: Partial<ChoiceState>): ChoiceAction => ({
+    type: "update",
+    state: { ...state, error: "", ...changes },
+  });
   if (key.escape) return { type: "cancel" };
   if (key.return) {
     if (!multi) {
@@ -52,7 +67,9 @@ export function choiceInput(state: ChoiceState, input: string, key: Key, items: 
       return item ? { type: "done", values: [item.value] } : { type: "none" };
     }
     const values = items.filter((item) => state.ticked.has(item.value)).map((item) => item.value);
-    return values.length > 0 ? { type: "done", values } : next({ error: "Tick at least one with space" });
+    return values.length > 0
+      ? { type: "done", values }
+      : next({ error: "Tick at least one with space" });
   }
   if (multi && input === " " && !key.ctrl && !key.meta) {
     const item = items[state.cursor];
@@ -64,7 +81,16 @@ export function choiceInput(state: ChoiceState, input: string, key: Key, items: 
   const moved = listMove(state.cursor, key, items.length, rows);
   if (moved !== null) return next({ cursor: moved });
   const letter = typedLetter(input, key);
-  if (letter) return next(typeAheadJump(items.map((i) => i.label), state.cursor, letter, state.typed, now));
+  if (letter)
+    return next(
+      typeAheadJump(
+        items.map((i) => i.label),
+        state.cursor,
+        letter,
+        state.typed,
+        now,
+      ),
+    );
   return { type: "none" };
 }
 
@@ -116,7 +142,9 @@ export function ChoiceList({ title, items, state, multi, height }: Props) {
       </Box>
       {state.error ? <Text color="red">{state.error}</Text> : null}
       <Text dimColor>
-        {multi ? "↑/↓ move · space tick · enter done · esc cancel · ? help" : "↑/↓ move · enter choose · esc cancel · ? help"}
+        {multi
+          ? "↑/↓ move · space tick · enter done · esc cancel · ? help"
+          : "↑/↓ move · enter choose · esc cancel · ? help"}
       </Text>
     </Box>
   );

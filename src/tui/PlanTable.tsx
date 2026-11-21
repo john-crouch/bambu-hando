@@ -9,18 +9,36 @@ import type { ProfilePlan } from "../planPreview.js";
 import type { Edits } from "../presetEdit.js";
 
 // The swatch shows the color, so the table leaves its RGBA out and keeps the width for what the run does.
-const COLUMNS = { swatch: 3, name: 22, brand: 12, material: 10, temps: 10, code: 9, empty: 7, preset: 12, spool: 14 } as const;
+const COLUMNS = {
+  swatch: 3,
+  name: 22,
+  brand: 12,
+  material: 10,
+  temps: 10,
+  code: 9,
+  empty: 7,
+  preset: 12,
+  spool: 14,
+} as const;
 
 type Tone = "new" | "same" | "change";
 
-const TONE_COLORS: Record<Tone, { color?: string; dim?: boolean }> = { new: { color: "green" }, same: { dim: true }, change: { color: "yellow" } };
+const TONE_COLORS: Record<Tone, { color?: string; dim?: boolean }> = {
+  new: { color: "green" },
+  same: { dim: true },
+  change: { color: "yellow" },
+};
 
 /** What the run does to the profile's presets: all new, kept (or replaced when overwriting), or some of each. */
-export function presetPlanText(plan: ProfilePlan, overwrite: boolean): { text: string; tone: Tone } {
+export function presetPlanText(
+  plan: ProfilePlan,
+  overwrite: boolean,
+): { text: string; tone: Tone } {
   const { presets, existingPresets } = plan;
   if (existingPresets === 0) return { text: "+ new", tone: "new" };
   const tone: Tone = overwrite ? "change" : "same";
-  if (existingPresets < presets) return { text: `${existingPresets}/${presets} ${overwrite ? "replace" : "kept"}`, tone };
+  if (existingPresets < presets)
+    return { text: `${existingPresets}/${presets} ${overwrite ? "replace" : "kept"}`, tone };
   return { text: overwrite ? "↻ replace" : "= kept", tone };
 }
 
@@ -86,7 +104,14 @@ interface Props {
   activeSpools: boolean;
 }
 
-export function PlanTable({ profiles, progress, plans, overwrite = false, activePresets, activeSpools }: Props) {
+export function PlanTable({
+  profiles,
+  progress,
+  plans,
+  overwrite = false,
+  activePresets,
+  activeSpools,
+}: Props) {
   // Once a run starts, every row shows its live status instead of the plan.
   const started = activePresets || activeSpools || progress.length > 0;
   return (
@@ -123,7 +148,10 @@ export function PlanTable({ profiles, progress, plans, overwrite = false, active
       {profiles.map((profile, index) => {
         const row = progress[index] ?? {};
         const plan = started ? undefined : plans?.[index];
-        const range = plans?.[index]?.nozzleRange ?? { low: profile.nozzleTempMin, high: profile.nozzleTempMax };
+        const range = plans?.[index]?.nozzleRange ?? {
+          low: profile.nozzleTempMin,
+          high: profile.nozzleTempMax,
+        };
         return (
           <Box key={`${index}-${profile.name}`}>
             <Box width={COLUMNS.swatch}>
@@ -134,12 +162,22 @@ export function PlanTable({ profiles, progress, plans, overwrite = false, active
             <Cell width={COLUMNS.material}>{profile.material}</Cell>
             <Cell width={COLUMNS.temps}>{`${range.low}-${range.high}`}</Cell>
             <Cell width={COLUMNS.code}>{profile.filamentId}</Cell>
-            <Cell width={COLUMNS.empty}>{profile.coreWeight ? `${profile.coreWeight} g` : "–"}</Cell>
+            <Cell width={COLUMNS.empty}>
+              {profile.coreWeight ? `${profile.coreWeight} g` : "–"}
+            </Cell>
             <Box width={COLUMNS.preset} paddingRight={1}>
-              {plan ? <PlanCell plan={presetPlanText(plan, overwrite)} /> : <StatusCell status={row.preset} active={activePresets} />}
+              {plan ? (
+                <PlanCell plan={presetPlanText(plan, overwrite)} />
+              ) : (
+                <StatusCell status={row.preset} active={activePresets} />
+              )}
             </Box>
             <Box width={COLUMNS.spool}>
-              {plan ? <PlanCell plan={spoolEasePlanText(plan)} /> : <StatusCell status={row.spool} active={activeSpools} />}
+              {plan ? (
+                <PlanCell plan={spoolEasePlanText(plan)} />
+              ) : (
+                <StatusCell status={row.spool} active={activeSpools} />
+              )}
             </Box>
           </Box>
         );
@@ -153,11 +191,23 @@ function plural(count: number, noun: string): string {
 }
 
 /** Where a filament's plan edits go: the presets the run writes for it, or nowhere when it keeps them all. */
-function editNote(profile: FilamentProfile, plan: ProfilePlan, overwrite: boolean, count: number): { text: string; tone: "yellow" | "red" } {
+function editNote(
+  profile: FilamentProfile,
+  plan: ProfilePlan,
+  overwrite: boolean,
+  count: number,
+): { text: string; tone: "yellow" | "red" } {
   const written = overwrite ? plan.presets : plan.presets - plan.existingPresets;
   const changes = plural(count, "change");
-  if (written === 0) return { text: `✎ ${profile.filamentId}: the run keeps its presets, so its ${changes} ${count === 1 ? "goes" : "go"} nowhere`, tone: "red" };
-  return { text: `✎ ${profile.filamentId}: ${changes} ${count === 1 ? "goes" : "go"} into the ${plural(written, "preset")} the run writes`, tone: "yellow" };
+  if (written === 0)
+    return {
+      text: `✎ ${profile.filamentId}: the run keeps its presets, so its ${changes} ${count === 1 ? "goes" : "go"} nowhere`,
+      tone: "red",
+    };
+  return {
+    text: `✎ ${profile.filamentId}: ${changes} ${count === 1 ? "goes" : "go"} into the ${plural(written, "preset")} the run writes`,
+    tone: "yellow",
+  };
 }
 
 interface NotesProps {
@@ -172,12 +222,16 @@ interface NotesProps {
 export function PlanNotes({ profiles, plans, overwrite, edits = new Map() }: NotesProps) {
   const updates = plans.flatMap((plan, index) => {
     const profile = profiles[index];
-    return plan.filament?.state === "update" && profile ? [{ profile, filament: plan.filament }] : [];
+    return plan.filament?.state === "update" && profile
+      ? [{ profile, filament: plan.filament }]
+      : [];
   });
   const edited = plans.flatMap((plan, index) => {
     const profile = profiles[index];
     const count = profile ? (edits.get(profile.filamentId)?.size ?? 0) : 0;
-    return profile && count > 0 ? [{ key: profile.filamentId, ...editNote(profile, plan, overwrite, count) }] : [];
+    return profile && count > 0
+      ? [{ key: profile.filamentId, ...editNote(profile, plan, overwrite, count) }]
+      : [];
   });
   const kept = overwrite ? 0 : plans.reduce((sum, plan) => sum + plan.existingPresets, 0);
   const spooled = plans.filter((plan) => plan.spool === "exists").length;
@@ -191,17 +245,21 @@ export function PlanNotes({ profiles, plans, overwrite, edits = new Map() }: Not
       ))}
       {updates.map(({ profile, filament }) => (
         <Text key={profile.filamentId} color="yellow" wrap="truncate-end">
-          ↻ {profile.filamentId} is {filament.listed} on SpoolEase; the run changes it to {filament.becomes}
+          ↻ {profile.filamentId} is {filament.listed} on SpoolEase; the run changes it to{" "}
+          {filament.becomes}
         </Text>
       ))}
       {kept > 0 ? (
         <Text dimColor wrap="truncate-end">
-          = kept: {plural(kept, "preset")} {kept === 1 ? "is" : "are"} there already and {kept === 1 ? "stays as it is" : "stay as they are"} (Overwrite presets in Settings replaces {kept === 1 ? "it" : "them"})
+          = kept: {plural(kept, "preset")} {kept === 1 ? "is" : "are"} there already and{" "}
+          {kept === 1 ? "stays as it is" : "stay as they are"} (Overwrite presets in Settings
+          replaces {kept === 1 ? "it" : "them"})
         </Text>
       ) : null}
       {spooled > 0 ? (
         <Text dimColor wrap="truncate-end">
-          has spool: the console has a spool of {plural(spooled, "filament")} already, so {spooled === 1 ? "it gets" : "they get"} no new one
+          has spool: the console has a spool of {plural(spooled, "filament")} already, so{" "}
+          {spooled === 1 ? "it gets" : "they get"} no new one
         </Text>
       ) : null}
     </Box>

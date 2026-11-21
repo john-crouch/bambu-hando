@@ -11,17 +11,31 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { baseFilamentDir, installBambuStudio, X1C_06 } from "./bambuStudioSetup.js";
 import { expectedSpoolPayload, SOURCE_FIXTURE } from "./parity.js";
-import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 import { decodeQr, readPdf } from "./pdf.js";
+import {
+  SPOOLS_CATALOG,
+  type SpoolEaseServer,
+  startSpoolEaseServer,
+  TEST_SECURITY_KEY,
+} from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 
-function spawnCli(args: string[], home: string, env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
+function spawnCli(
+  args: string[],
+  home: string,
+  env: Record<string, string> = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(process.execPath, [BIN, ...args], { env: { PATH: process.env.PATH ?? "", HOME: home, ...env } }, (err, stdout, stderr) => {
-      resolve({ code: err ? Number(err.code) : 0, stdout, stderr });
-    });
+    execFile(
+      process.execPath,
+      [BIN, ...args],
+      { env: { PATH: process.env.PATH ?? "", HOME: home, ...env } },
+      (err, stdout, stderr) => {
+        resolve({ code: err ? Number(err.code) : 0, stdout, stderr });
+      },
+    );
   });
 }
 
@@ -39,7 +53,14 @@ describe("bambu-hando binary", () => {
     await server.close();
   });
 
-  const spooleaseArgs = (): string[] => ["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port), "--spoolease-security-key", TEST_SECURITY_KEY];
+  const spooleaseArgs = (): string[] => [
+    "--spoolease-host",
+    "127.0.0.1",
+    "--spoolease-port",
+    String(server.port),
+    "--spoolease-security-key",
+    TEST_SECURITY_KEY,
+  ];
 
   it("syncs presets to disk and spools to SpoolEase", async () => {
     const { code, stdout, stderr } = await spawnCli(
@@ -61,10 +82,19 @@ describe("bambu-hando binary", () => {
     expect(stderr).toBe("");
     expect(code).toBe(0);
     const report = JSON.parse(stdout);
-    expect(report.bambu_preset_paths[0]).toBe(join(baseFilamentDir(home, "1234567890"), `PETG Red @${X1C_06}.json`));
+    expect(report.bambu_preset_paths[0]).toBe(
+      join(baseFilamentDir(home, "1234567890"), `PETG Red @${X1C_06}.json`),
+    );
     const preset = JSON.parse(await readFile(report.bambu_preset_paths[0], "utf-8"));
-    expect(preset).toMatchObject({ filament_id: "PABC1234", inherits: "", compatible_printers: [X1C_06], filament_type: ["PETG"] });
-    expect(server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body)).toEqual([0, 1, 2].map(expectedSpoolPayload));
+    expect(preset).toMatchObject({
+      filament_id: "PABC1234",
+      inherits: "",
+      compatible_printers: [X1C_06],
+      filament_type: ["PETG"],
+    });
+    expect(
+      server.requests.filter((r) => r.path === "/api/spools/add-edit").map((r) => r.body),
+    ).toEqual([0, 1, 2].map(expectedSpoolPayload));
   });
 
   it("checks a sync without loading the TUI, exiting 1 on a problem", async () => {
@@ -76,22 +106,34 @@ describe("bambu-hando binary", () => {
     server.customFilaments += "\nPNOPRESET,Acme PLA Ghost,200,220,PLA";
     const { code, stdout } = await spawnCli(["check", "--json", ...spooleaseArgs()], home);
     expect(code).toBe(1);
-    expect(JSON.parse(stdout).sections[0]).toMatchObject({ key: "csv_only", items: ["Acme PLA Ghost (PNOPRESET)"] });
+    expect(JSON.parse(stdout).sections[0]).toMatchObject({
+      key: "csv_only",
+      items: ["Acme PLA Ghost (PNOPRESET)"],
+    });
   });
 
   it("downloads SpoolmanDB filaments and writes linked presets", async () => {
     const spoolmanDb = await startSpoolmanDbServer();
     try {
-      const { code, stdout, stderr } = await spawnCli(["--source", "spoolmandb", "--match", "polylite", "--skip-spoolease"], home, {
-        SPOOLMANDB_URL: spoolmanDb.url,
-      });
+      const { code, stdout, stderr } = await spawnCli(
+        ["--source", "spoolmandb", "--match", "polylite", "--skip-spoolease"],
+        home,
+        {
+          SPOOLMANDB_URL: spoolmanDb.url,
+        },
+      );
 
       expect(stderr).toBe("");
       expect(code).toBe(0);
       const report = JSON.parse(stdout);
       const preset = JSON.parse(await readFile(report.bambu_preset_paths[0], "utf-8"));
-      expect(preset).toMatchObject({ name: "Polymaker PolyLite™ PETG Black @Bambu Lab X1 Carbon 0.4 nozzle", filament_id: "Peddfd02" });
-      expect(await readFile(join(home, ".cache", "bambu-hando", "filaments.json"), "utf-8")).toBe(spoolmanDb.files.get("/filaments.json"));
+      expect(preset).toMatchObject({
+        name: "Polymaker PolyLite™ PETG Black @Bambu Lab X1 Carbon 0.4 nozzle",
+        filament_id: "Peddfd02",
+      });
+      expect(await readFile(join(home, ".cache", "bambu-hando", "filaments.json"), "utf-8")).toBe(
+        spoolmanDb.files.get("/filaments.json"),
+      );
     } finally {
       await spoolmanDb.close();
     }
@@ -101,15 +143,27 @@ describe("bambu-hando binary", () => {
     server.spoolsCatalog = SPOOLS_CATALOG;
     const spoolmanDb = await startSpoolmanDbServer();
     try {
-      const args = ["--source", "spoolmandb", "--brand", "Polymaker", ...["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)]];
+      const args = [
+        "--source",
+        "spoolmandb",
+        "--brand",
+        "Polymaker",
+        ...["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)],
+      ];
       const env = { SPOOLMANDB_URL: spoolmanDb.url, SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY };
 
       const asked = await spawnCli(args, home, env);
       expect(asked.code).toBe(2);
-      expect(asked.stderr).toContain('--spool-weight "Polymaker=149"  PolyMaker - Cardboard - 149g');
+      expect(asked.stderr).toContain(
+        '--spool-weight "Polymaker=149"  PolyMaker - Cardboard - 149g',
+      );
       expect(server.spools).toEqual([]);
 
-      const { code, stderr } = await spawnCli([...args, "--spool-weight", "Polymaker=149"], home, env);
+      const { code, stderr } = await spawnCli(
+        [...args, "--spool-weight", "Polymaker=149"],
+        home,
+        env,
+      );
       expect(stderr).toBe("");
       expect(code).toBe(0);
       expect(server.spools[0]).toMatchObject({ brand: "Polymaker", weight_core: "149" });
@@ -119,11 +173,17 @@ describe("bambu-hando binary", () => {
   });
 
   it("makes QR labels for the spools it created", async () => {
-    const sync = await spawnCli(["--source", SOURCE_FIXTURE, "--printer-preset", X1C_06, ...spooleaseArgs()], home);
+    const sync = await spawnCli(
+      ["--source", SOURCE_FIXTURE, "--printer-preset", X1C_06, ...spooleaseArgs()],
+      home,
+    );
     expect(sync.code).toBe(0);
 
     const output = join(home, "labels.pdf");
-    const { code, stdout, stderr } = await spawnCli(["labels", "--all", "--output", output, ...spooleaseArgs()], home);
+    const { code, stdout, stderr } = await spawnCli(
+      ["labels", "--all", "--output", output, ...spooleaseArgs()],
+      home,
+    );
 
     expect(stderr).toBe("");
     expect(code).toBe(0);

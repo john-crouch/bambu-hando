@@ -10,7 +10,7 @@ import { askYesNo } from "./confirm.js";
 import { errorMessage } from "./errors.js";
 import { filamentProfilesCommand } from "./filamentProfilesCommand.js";
 import { keyCommand } from "./keyCommand.js";
-import { type LabelTarget, LabelSelectionError, makeLabels } from "./labelJob.js";
+import { LabelSelectionError, type LabelTarget, makeLabels } from "./labelJob.js";
 import {
   DEFAULT_LABEL_FIELDS,
   DEFAULT_LABEL_SIZE,
@@ -26,7 +26,18 @@ import { type FilamentProfile, resultFailed, type Status, type SyncResult } from
 import type { SecretInput } from "./secretPrompt.js";
 import { loadProfiles } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
-import { readSpoolEaseConfig, SPOOLEASE_SETTINGS_HINT, type SpoolEaseFlags, spooleaseConnectionFrom } from "./spooleaseConfig.js";
+import {
+  readSpoolEaseConfig,
+  SPOOLEASE_SETTINGS_HINT,
+  type SpoolEaseFlags,
+  spooleaseConnectionFrom,
+} from "./spooleaseConfig.js";
+import {
+  filterProfiles,
+  loadSpoolmanDb,
+  type ProfileFilters,
+  SPOOLMANDB_SOURCE,
+} from "./spoolmanDb.js";
 import {
   applyWeights,
   defaultChoice,
@@ -36,11 +47,10 @@ import {
   type WeightChoice,
   weightGroups,
 } from "./spoolWeights.js";
-import { filterProfiles, loadSpoolmanDb, type ProfileFilters, SPOOLMANDB_SOURCE } from "./spoolmanDb.js";
 import { checkKey, KeyCheckError, runSync, SetupError } from "./sync.js";
 import { checkCounts, checkLines, checkSummary, readCheck } from "./syncCheck.js";
-import { loadTuiSettings } from "./tuiSettings.js";
 import type { FormValues } from "./tui/App.js";
+import { loadTuiSettings } from "./tuiSettings.js";
 
 /** Headless SpoolmanDB runs sync at most this many filaments unless --max-filaments says otherwise. */
 const DEFAULT_MAX_FILAMENTS = 10;
@@ -267,27 +277,37 @@ function tooManyMatches(profiles: FilamentProfile[], maxFilaments: number): stri
 
 function parseDiameter(value: string | undefined): number {
   const diameter = Number(value ?? "1.75");
-  if (!Number.isFinite(diameter) || diameter <= 0) throw new UsageError("--diameter must be a positive number");
+  if (!Number.isFinite(diameter) || diameter <= 0)
+    throw new UsageError("--diameter must be a positive number");
   return diameter;
 }
 
 function parseMaxFilaments(value: string | undefined): number {
   if (value === undefined) return DEFAULT_MAX_FILAMENTS;
   const max = Number(value);
-  if (!/^\d+$/.test(value) || max < 1) throw new UsageError("--max-filaments must be a whole number of at least 1");
+  if (!/^\d+$/.test(value) || max < 1)
+    throw new UsageError("--max-filaments must be a whole number of at least 1");
   return max;
 }
 
 function parsePort(value: string): number {
   const port = Number(value);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new UsageError("--spoolease-port must be a port number");
+  if (!Number.isInteger(port) || port < 1 || port > 65_535)
+    throw new UsageError("--spoolease-port must be a port number");
   return port;
 }
 
 /** Flags, then environment, then the SpoolEase settings saved in BambuStudio. */
-async function spooleaseConnection(values: SpoolEaseFlags, port: number, unless = ""): Promise<SpoolEaseConnection> {
+async function spooleaseConnection(
+  values: SpoolEaseFlags,
+  port: number,
+  unless = "",
+): Promise<SpoolEaseConnection> {
   const connection = spooleaseConnectionFrom(values, port, await readSpoolEaseConfig());
-  if (!connection) throw new UsageError(`SpoolEase host and security key are required${unless}: ${SPOOLEASE_SETTINGS_HINT}`);
+  if (!connection)
+    throw new UsageError(
+      `SpoolEase host and security key are required${unless}: ${SPOOLEASE_SETTINGS_HINT}`,
+    );
   return connection;
 }
 
@@ -316,7 +336,9 @@ export interface Settings {
   report: string;
 }
 
-async function parseSettings(argv: string[]): Promise<{ settings: Settings | null; help: boolean }> {
+async function parseSettings(
+  argv: string[],
+): Promise<{ settings: Settings | null; help: boolean }> {
   let parsed;
   try {
     parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
@@ -330,18 +352,38 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
   if (!values.source) throw new UsageError("--source is required");
 
   let spoolmanDb: SpoolmanDbSelection | null = null;
-  const filters = { brand: values.brand ?? "", material: values.material ?? "", match: values.match ?? "" };
+  const filters = {
+    brand: values.brand ?? "",
+    material: values.material ?? "",
+    match: values.match ?? "",
+  };
   if (values.source === SPOOLMANDB_SOURCE) {
     if (!filters.brand && !filters.material && !filters.match) {
-      throw new UsageError("--source spoolmandb needs at least one of --brand, --material, --match");
+      throw new UsageError(
+        "--source spoolmandb needs at least one of --brand, --material, --match",
+      );
     }
-    spoolmanDb = { ...filters, diameter: parseDiameter(values.diameter), maxFilaments: parseMaxFilaments(values["max-filaments"]) };
-  } else if (filters.brand || filters.material || filters.match || values.diameter !== undefined || values["max-filaments"] !== undefined) {
-    throw new UsageError("--brand, --material, --match, --diameter and --max-filaments only apply to --source spoolmandb");
+    spoolmanDb = {
+      ...filters,
+      diameter: parseDiameter(values.diameter),
+      maxFilaments: parseMaxFilaments(values["max-filaments"]),
+    };
+  } else if (
+    filters.brand ||
+    filters.material ||
+    filters.match ||
+    values.diameter !== undefined ||
+    values["max-filaments"] !== undefined
+  ) {
+    throw new UsageError(
+      "--brand, --material, --match, --diameter and --max-filaments only apply to --source spoolmandb",
+    );
   }
 
   const port = parsePort(values["spoolease-port"]);
-  const spoolease = values["skip-spoolease"] ? null : await spooleaseConnection(values, port, " unless --skip-spoolease is set");
+  const spoolease = values["skip-spoolease"]
+    ? null
+    : await spooleaseConnection(values, port, " unless --skip-spoolease is set");
 
   const createSpools = !values["skip-spools"];
   const spoolWeights: Settings["spoolWeights"] = new Map();
@@ -362,10 +404,22 @@ async function parseSettings(argv: string[]): Promise<{ settings: Settings | nul
   const labelOutput = values["label-output"] ?? "";
   const labelPrinter = values["label-printer"] ?? "";
   if (labelOutput || labelPrinter) {
-    if (!spoolease || !createSpools) throw new UsageError("--label-output and --label-printer only apply when SpoolEase spools are created");
+    if (!spoolease || !createSpools)
+      throw new UsageError(
+        "--label-output and --label-printer only apply when SpoolEase spools are created",
+      );
     try {
-      const fields = values["label-fields"] === undefined ? DEFAULT_LABEL_FIELDS : parseLabelFields(values["label-fields"]);
-      labels = { fields, size: parseLabelSize(values["label-size"] ?? DEFAULT_LABEL_SIZE), output: labelOutput, printer: labelPrinter, printOptions: [] };
+      const fields =
+        values["label-fields"] === undefined
+          ? DEFAULT_LABEL_FIELDS
+          : parseLabelFields(values["label-fields"]);
+      labels = {
+        fields,
+        size: parseLabelSize(values["label-size"] ?? DEFAULT_LABEL_SIZE),
+        output: labelOutput,
+        printer: labelPrinter,
+        printOptions: [],
+      };
     } catch (err) {
       throw new UsageError(err instanceof Error ? err.message : String(err));
     }
@@ -446,21 +500,29 @@ async function chooseSpoolWeights(
 
   for (const [key, { brand, arg }] of chosen) {
     if (!groups.some((g) => g.key === key)) {
-      io.stderr(`bambu-hando: error: --spool-weight "${arg}": none of the filaments is from ${brand}\n`);
+      io.stderr(
+        `bambu-hando: error: --spool-weight "${arg}": none of the filaments is from ${brand}\n`,
+      );
       return null;
     }
   }
 
   const open = groups.filter((g) => !chosen.has(g.key) && defaultChoice(g) === null);
   if (open.length > 0) {
-    const lines = ["bambu-hando: error: SpoolEase lists several empty spool weights for these brands; run again with the --spool-weight you want:"];
+    const lines = [
+      "bambu-hando: error: SpoolEase lists several empty spool weights for these brands; run again with the --spool-weight you want:",
+    ];
     for (const group of open) {
       const count = group.profiles.length;
-      lines.push(`  ${group.brand} (${count} filament${count === 1 ? "" : "s"}; ${sourceName}: ${describeSourceWeights(profiles, group)})`);
+      lines.push(
+        `  ${group.brand} (${count} filament${count === 1 ? "" : "s"}; ${sourceName}: ${describeSourceWeights(profiles, group)})`,
+      );
       const flags = group.options.map((o) => `--spool-weight "${group.brand}=${o.grams}"`);
       const width = Math.max(...flags.map((f) => f.length));
       group.options.forEach((option, i) => {
-        lines.push(`    ${flags[i]!.padEnd(width)}  ${option.label}${option.mine ? " (My Spools List)" : ""}`);
+        lines.push(
+          `    ${flags[i]!.padEnd(width)}  ${option.label}${option.mine ? " (My Spools List)" : ""}`,
+        );
       });
     }
     io.stderr(`${lines.join("\n")}\n`);
@@ -470,10 +532,16 @@ async function chooseSpoolWeights(
   for (const group of groups) {
     const [only] = group.options;
     if (!chosen.has(group.key) && only && group.options.length === 1) {
-      io.stderr(`${group.brand}: empty spool weight ${only.grams} g from SpoolEase (${only.label})\n`);
+      io.stderr(
+        `${group.brand}: empty spool weight ${only.grams} g from SpoolEase (${only.label})\n`,
+      );
     }
   }
-  return applyWeights(profiles, groups, new Map([...chosen].map(([key, { choice }]) => [key, choice])));
+  return applyWeights(
+    profiles,
+    groups,
+    new Map([...chosen].map(([key, { choice }]) => [key, choice])),
+  );
 }
 
 /** Labels for the spools a sync created; failures are reported, never thrown, since the sync itself is done. */
@@ -495,7 +563,12 @@ async function labelsAfterSync(
   if (dryRun) return report("planned", "dry-run");
   if (ids.length === 0) return report("skipped", "no new spools");
   try {
-    const made = await makeLabels(new SpoolEaseClient(spoolease), { ids, brand: "", material: "", match: "" }, target, (w) => io.stderr(`${w}\n`));
+    const made = await makeLabels(
+      new SpoolEaseClient(spoolease),
+      { ids, brand: "", material: "", match: "" },
+      target,
+      (w) => io.stderr(`${w}\n`),
+    );
     if (made.printError) {
       io.stderr(`bambu-hando: error: ${made.printError}\n`);
       return report("failed", made.printError);
@@ -507,7 +580,9 @@ async function labelsAfterSync(
   }
 }
 
-async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | null; help: boolean }> {
+async function parseTuiValues(
+  argv: string[],
+): Promise<{ values: FormValues | null; help: boolean }> {
   let parsed;
   try {
     parsed = parseArgs({ args: argv, options: TUI_OPTIONS, strict: true });
@@ -517,9 +592,15 @@ async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | nu
   const { values } = parsed;
   if (values.help) return { values: null, help: true };
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
-  const [defaults, saved, remembered] = await Promise.all([bambuDefaults(), readSpoolEaseConfig(), loadTuiSettings()]);
+  const [defaults, saved, remembered] = await Promise.all([
+    bambuDefaults(),
+    readSpoolEaseConfig(),
+    loadTuiSettings(),
+  ]);
   // --printer-preset, else the printers of the last TUI run, else the printer selected in BambuStudio.
-  const printerList = values["printer-preset"] ?? (remembered.printers.length ? remembered.printers : [defaults.printer]);
+  const printerList =
+    values["printer-preset"] ??
+    (remembered.printers.length ? remembered.printers : [defaults.printer]);
 
   return {
     help: false,
@@ -530,7 +611,11 @@ async function parseTuiValues(argv: string[]): Promise<{ values: FormValues | nu
       overwritePresets: values["overwrite-presets"],
       host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "",
       port: values["spoolease-port"],
-      securityKey: values["spoolease-security-key"] || process.env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "",
+      securityKey:
+        values["spoolease-security-key"] ||
+        process.env.SPOOLEASE_SECURITY_KEY ||
+        saved.securityKey ||
+        "",
       https: values["spoolease-https"],
       skipSpoolease: values["skip-spoolease"],
       createSpools: !values["skip-spools"],
@@ -563,7 +648,9 @@ interface LabelsSettings {
   spoolease: SpoolEaseConnection;
 }
 
-async function parseLabelsSettings(argv: string[]): Promise<{ settings: LabelsSettings | null; help: boolean }> {
+async function parseLabelsSettings(
+  argv: string[],
+): Promise<{ settings: LabelsSettings | null; help: boolean }> {
   let parsed;
   try {
     parsed = parseArgs({ args: argv, options: LABEL_OPTIONS, strict: true });
@@ -573,12 +660,19 @@ async function parseLabelsSettings(argv: string[]): Promise<{ settings: LabelsSe
   const { values } = parsed;
   if (values.help) return { settings: null, help: true };
 
-  const filters = { ids: values["spool-id"] ?? [], brand: values.brand ?? "", material: values.material ?? "", match: values.match ?? "" };
+  const filters = {
+    ids: values["spool-id"] ?? [],
+    brand: values.brand ?? "",
+    material: values.material ?? "",
+    match: values.match ?? "",
+  };
   if (!values.all && !filters.ids.length && !filters.brand && !filters.material && !filters.match) {
     throw new UsageError("labels needs --spool-id, --brand, --material, --match or --all");
   }
-  if (!values.output && !values.printer) throw new UsageError("labels needs --output, --printer or both");
-  if (values["print-option"] && !values.printer) throw new UsageError("--print-option only applies with --printer");
+  if (!values.output && !values.printer)
+    throw new UsageError("labels needs --output, --printer or both");
+  if (values["print-option"] && !values.printer)
+    throw new UsageError("--print-option only applies with --printer");
   let size: LabelSize;
   let fields: LabelField[];
   try {
@@ -593,7 +687,13 @@ async function parseLabelsSettings(argv: string[]): Promise<{ settings: LabelsSe
     help: false,
     settings: {
       filters,
-      target: { fields, size, output: values.output ?? "", printer: values.printer ?? "", printOptions: values["print-option"] ?? [] },
+      target: {
+        fields,
+        size,
+        output: values.output ?? "",
+        printer: values.printer ?? "",
+        printOptions: values["print-option"] ?? [],
+      },
       spoolease,
     },
   };
@@ -629,7 +729,10 @@ async function labelsCommand(argv: string[], io: Io): Promise<number> {
       io.stderr(`bambu-hando: error: ${made.printError}\n`);
       return 1;
     }
-    if (target.printer) io.stdout(`Sent ${count} to ${target.printer}${made.printReply ? `: ${made.printReply}` : ""}\n`);
+    if (target.printer)
+      io.stdout(
+        `Sent ${count} to ${target.printer}${made.printReply ? `: ${made.printReply}` : ""}\n`,
+      );
     return 0;
   } catch (err) {
     if (err instanceof KeyCheckError) {
@@ -670,13 +773,23 @@ async function checkCommand(argv: string[], io: Io): Promise<number> {
         preset_folder: presetFolder,
         spoolease: where,
         summary: counts,
-        sections: sections.map((section) => ({ key: snakeCase(section.key), title: section.title, problem: section.problem, items: section.items })),
+        sections: sections.map((section) => ({
+          key: snakeCase(section.key),
+          title: section.title,
+          problem: section.problem,
+          items: section.items,
+        })),
         warnings,
       };
       io.stdout(`${JSON.stringify(report, null, 2)}\n`);
     } else {
       for (const warning of warnings) io.stderr(`${warning}\n`);
-      const lines = [`Sync check: BambuStudio ${presetFolder} · SpoolEase ${where}`, checkSummary(sections), "", ...checkLines(sections).map((line) => line.text)];
+      const lines = [
+        `Sync check: BambuStudio ${presetFolder} · SpoolEase ${where}`,
+        checkSummary(sections),
+        "",
+        ...checkLines(sections).map((line) => line.text),
+      ];
       io.stdout(`${lines.join("\n")}\n`);
     }
     return counts.problems > 0 ? 1 : 0;
@@ -694,8 +807,13 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
   if (argv[0] === "labels") return labelsCommand(argv.slice(1), io);
   if (argv[0] === "check") return checkCommand(argv.slice(1), io);
-  if (argv[0] === "3dfp") return filamentProfilesCommand(argv.slice(1), { ...io, confirm: io.confirm ?? ((question) => askYesNo(question)) });
-  if (argv[0] === "key") return keyCommand(argv.slice(1), { ...io, stdin: io.stdin ?? process.stdin });
+  if (argv[0] === "3dfp")
+    return filamentProfilesCommand(argv.slice(1), {
+      ...io,
+      confirm: io.confirm ?? ((question) => askYesNo(question)),
+    });
+  if (argv[0] === "key")
+    return keyCommand(argv.slice(1), { ...io, stdin: io.stdin ?? process.stdin });
 
   let parsed;
   try {
@@ -732,7 +850,13 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
       profiles = await loadProfiles(settings.source);
     }
     if (settings.spoolease && settings.createSpools) {
-      const weighed = await chooseSpoolWeights(profiles, settings.spoolease, settings.spoolWeights, settings.spoolmanDb ? "SpoolmanDB" : "Source file", io);
+      const weighed = await chooseSpoolWeights(
+        profiles,
+        settings.spoolease,
+        settings.spoolWeights,
+        settings.spoolmanDb ? "SpoolmanDB" : "Source file",
+        io,
+      );
       if (!weighed) return 2;
       profiles = weighed;
     }
@@ -745,7 +869,10 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
       if (event.type === "warning") io.stderr(`${event.message}\n`);
     });
 
-    const labels = settings.labels && settings.spoolease ? await labelsAfterSync(settings.labels, settings.spoolease, results, settings.dryRun, io) : null;
+    const labels =
+      settings.labels && settings.spoolease
+        ? await labelsAfterSync(settings.labels, settings.spoolease, results, settings.dryRun, io)
+        : null;
 
     const report = buildReport(settings.source, settings.dryRun, presets, results, labels);
     io.stdout(report);

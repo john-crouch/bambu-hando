@@ -11,7 +11,11 @@ const TAG_BYTES = 16;
 // base64 of a 12-byte nonce is exactly 16 characters with no padding.
 const NONCE_CHARS = 16;
 
-export function deriveKey(securityKey: string, salt = DEFAULT_SALT, iterations = DEFAULT_ITERATIONS): Buffer {
+export function deriveKey(
+  securityKey: string,
+  salt = DEFAULT_SALT,
+  iterations = DEFAULT_ITERATIONS,
+): Buffer {
   return pbkdf2Sync(securityKey, salt, iterations, 32, "sha256");
 }
 
@@ -20,9 +24,17 @@ function b64NoPad(data: Buffer): string {
 }
 
 /** Encrypt to no-pad base64(nonce) + no-pad base64(ciphertext || tag). */
-export function encryptText(key: Buffer, plaintext: string, nonce: Buffer = randomBytes(NONCE_BYTES)): string {
+export function encryptText(
+  key: Buffer,
+  plaintext: string,
+  nonce: Buffer = randomBytes(NONCE_BYTES),
+): string {
   const cipher = createCipheriv("aes-256-gcm", key, nonce);
-  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf-8"), cipher.final(), cipher.getAuthTag()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(plaintext, "utf-8"),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]);
   return b64NoPad(nonce) + b64NoPad(ciphertext);
 }
 
@@ -32,5 +44,8 @@ export function decryptText(key: Buffer, encrypted: string): string {
   if (payload.length < TAG_BYTES) throw new Error("Encrypted payload is too short");
   const decipher = createDecipheriv("aes-256-gcm", key, nonce);
   decipher.setAuthTag(payload.subarray(payload.length - TAG_BYTES));
-  return Buffer.concat([decipher.update(payload.subarray(0, payload.length - TAG_BYTES)), decipher.final()]).toString("utf-8");
+  return Buffer.concat([
+    decipher.update(payload.subarray(0, payload.length - TAG_BYTES)),
+    decipher.final(),
+  ]).toString("utf-8");
 }

@@ -18,8 +18,10 @@ const ESCAPES = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001bO.|\u001b/g;
 export function secretKeys(entry: SecretEntry, chunk: string): SecretEntry {
   let value = entry.value;
   for (const char of chunk.replace(ESCAPES, "")) {
-    if (char === CTRL_C || (char === CTRL_D && value === "")) return { value: "", done: false, cancelled: true };
-    if (char === "\r" || char === "\n" || char === CTRL_D) return { value, done: true, cancelled: false };
+    if (char === CTRL_C || (char === CTRL_D && value === ""))
+      return { value: "", done: false, cancelled: true };
+    if (char === "\r" || char === "\n" || char === CTRL_D)
+      return { value, done: true, cancelled: false };
     if (BACKSPACES.has(char)) value = [...value].slice(0, -1).join("");
     else if (char === CTRL_U) value = "";
     else if (!/\p{Cc}/u.test(char)) value += char;
@@ -42,12 +44,17 @@ export interface SecretInput extends NodeJS.ReadableStream {
 /** Everything piped to stdin, as text. */
 export async function readPiped(input: NodeJS.ReadableStream): Promise<string> {
   let text = "";
-  for await (const chunk of input) text += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8");
+  for await (const chunk of input)
+    text += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8");
   return text;
 }
 
 /** Asks on `output` and reads keystrokes in raw mode, echoing nothing; rejects with PromptCancelled on ctrl+c. */
-export function promptHidden(input: SecretInput & { setRawMode: (mode: boolean) => unknown }, output: (text: string) => void, prompt: string): Promise<string> {
+export function promptHidden(
+  input: SecretInput & { setRawMode: (mode: boolean) => unknown },
+  output: (text: string) => void,
+  prompt: string,
+): Promise<string> {
   output(prompt);
   input.setRawMode(true);
   input.setEncoding("utf-8");

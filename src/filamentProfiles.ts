@@ -21,7 +21,9 @@ export function apiBase(env: Record<string, string | undefined> = process.env): 
   }
   const origin = url.protocol === "http:" || url.protocol === "https:" ? url.hostname : "";
   if (!LOOPBACK.has(origin)) {
-    throw new Error(`refusing to send the 3DFilamentProfiles API key to FILAMENTPROFILES_API_URL: only ${FILAMENT_PROFILES_API} or this machine (for tests) get it`);
+    throw new Error(
+      `refusing to send the 3DFilamentProfiles API key to FILAMENTPROFILES_API_URL: only ${FILAMENT_PROFILES_API} or this machine (for tests) get it`,
+    );
   }
   return override.replace(/\/+$/, "");
 }
@@ -83,7 +85,9 @@ export interface NewSpool {
   notes?: string;
 }
 
-export type AddedSpool = { created: true; spool: TdfpSpool } | { created: false; existing: string[] };
+export type AddedSpool =
+  | { created: true; spool: TdfpSpool }
+  | { created: false; existing: string[] };
 
 export interface FilamentFilters {
   q?: string;
@@ -146,8 +150,10 @@ type Json = Record<string, unknown>;
 
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 const optStr = (value: unknown): string | null => (typeof value === "string" ? value : null);
-const num = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
-const optNum = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+const num = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0;
+const optNum = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
 
 function spool(raw: Json): TdfpSpool {
   const parsed: TdfpSpool = {
@@ -191,19 +197,30 @@ function invalid(message: string): FilamentProfilesError {
   return new FilamentProfilesError(`not sent to 3DFilamentProfiles: ${message}`);
 }
 
-const isInt = (value: number, min: number, max: number) => Number.isInteger(value) && value >= min && value <= max;
+const isInt = (value: number, min: number, max: number) =>
+  Number.isInteger(value) && value >= min && value <= max;
 
 // The API's documented bounds, checked here because a request it refuses still costs a call.
 function patchBody(patch: SpoolPatch): Json {
-  const weights = [patch.remainingGrams, patch.usedGrams, patch.usedMm].filter((value) => value !== undefined);
+  const weights = [patch.remainingGrams, patch.usedGrams, patch.usedMm].filter(
+    (value) => value !== undefined,
+  );
   if (weights.length > 1) throw invalid("send at most one of remainingGrams, usedGrams and usedMm");
-  if (patch.remainingGrams !== undefined && !isInt(patch.remainingGrams, 0, 10_000)) throw invalid("remainingGrams must be a whole number from 0 to 10000");
-  if (patch.usedGrams !== undefined && !(patch.usedGrams > 0 && patch.usedGrams <= 10_000)) throw invalid("usedGrams must be above 0 and at most 10000");
-  if (patch.usedMm !== undefined && !(patch.usedMm > 0 && patch.usedMm <= 1_000_000)) throw invalid("usedMm must be above 0 and at most 1000000");
-  if (typeof patch.location === "string" && (patch.location.trim() === "" || patch.location.length > 200)) {
+  if (patch.remainingGrams !== undefined && !isInt(patch.remainingGrams, 0, 10_000))
+    throw invalid("remainingGrams must be a whole number from 0 to 10000");
+  if (patch.usedGrams !== undefined && !(patch.usedGrams > 0 && patch.usedGrams <= 10_000))
+    throw invalid("usedGrams must be above 0 and at most 10000");
+  if (patch.usedMm !== undefined && !(patch.usedMm > 0 && patch.usedMm <= 1_000_000))
+    throw invalid("usedMm must be above 0 and at most 1000000");
+  if (
+    typeof patch.location === "string" &&
+    (patch.location.trim() === "" || patch.location.length > 200)
+  ) {
     throw invalid("location must be 1 to 200 characters, or null to clear it");
   }
-  for (const id of [patch.bambuSpoolId, patch.bambuTagId]) if (typeof id === "string" && id.length > 64) throw invalid("Bambu IDs are at most 64 characters");
+  for (const id of [patch.bambuSpoolId, patch.bambuTagId])
+    if (typeof id === "string" && id.length > 64)
+      throw invalid("Bambu IDs are at most 64 characters");
   const body: Json = {};
   if (patch.remainingGrams !== undefined) body.remaining_grams = patch.remainingGrams;
   if (patch.usedGrams !== undefined) body.used_grams = patch.usedGrams;
@@ -216,15 +233,19 @@ function patchBody(patch: SpoolPatch): Json {
 }
 
 function filamentQuery(filters: FilamentFilters): URLSearchParams {
-  if (filters.q !== undefined && filters.q.length > 100) throw invalid("q is at most 100 characters");
-  if (filters.page !== undefined && !isInt(filters.page, 1, 20)) throw invalid("page must be from 1 to 20");
-  if (filters.limit !== undefined && !isInt(filters.limit, 1, 50)) throw invalid("limit must be from 1 to 50");
+  if (filters.q !== undefined && filters.q.length > 100)
+    throw invalid("q is at most 100 characters");
+  if (filters.page !== undefined && !isInt(filters.page, 1, 20))
+    throw invalid("page must be from 1 to 20");
+  if (filters.limit !== undefined && !isInt(filters.limit, 1, 50))
+    throw invalid("limit must be from 1 to 50");
   if (filters.gtin !== undefined) {
     if (!/^\d{8,14}$/.test(filters.gtin)) throw invalid("gtin must be 8 to 14 digits");
     if ((filters.page ?? 1) > 1) throw invalid("a gtin lookup has only one page");
   }
   const query = new URLSearchParams();
-  for (const [name, value] of Object.entries(filters)) if (value !== undefined) query.set(name, String(value));
+  for (const [name, value] of Object.entries(filters))
+    if (value !== undefined) query.set(name, String(value));
   return query;
 }
 
@@ -280,7 +301,10 @@ export class FilamentProfilesClient {
     await this.recordQuota({ status: resp.status, headers: resp.headers });
     const text = await resp.text();
     if (resp.status >= 300 && resp.status < 400) {
-      throw new FilamentProfilesError(`3DFilamentProfiles answered with a redirect (HTTP ${resp.status}), which bambu-hando never follows`, resp.status);
+      throw new FilamentProfilesError(
+        `3DFilamentProfiles answered with a redirect (HTTP ${resp.status}), which bambu-hando never follows`,
+        resp.status,
+      );
     }
     let parsed: unknown;
     try {
@@ -289,29 +313,54 @@ export class FilamentProfilesClient {
       parsed = null;
     }
     if (resp.ok) {
-      if (parsed === null || typeof parsed !== "object") throw new FilamentProfilesError(`3DFilamentProfiles sent a reply that isn't JSON (HTTP ${resp.status})`, resp.status);
+      if (parsed === null || typeof parsed !== "object")
+        throw new FilamentProfilesError(
+          `3DFilamentProfiles sent a reply that isn't JSON (HTTP ${resp.status})`,
+          resp.status,
+        );
       return parsed as Json;
     }
     const error = (parsed as { error?: { code?: unknown; message?: unknown } } | null)?.error;
     const code = typeof error?.code === "string" ? error.code : null;
     if (resp.status === 401) {
-      throw new FilamentProfilesError("3DFilamentProfiles rejected the API key (missing, malformed or regenerated): run `bambu-hando key set 3dfp` with the current one", 401, code);
+      throw new FilamentProfilesError(
+        "3DFilamentProfiles rejected the API key (missing, malformed or regenerated): run `bambu-hando key set 3dfp` with the current one",
+        401,
+        code,
+      );
     }
-    if (resp.status === 402) throw new FilamentProfilesError("the 3DFilamentProfiles account has no active API access (subscription or Patreon lapsed?)", 402, code);
+    if (resp.status === 402)
+      throw new FilamentProfilesError(
+        "the 3DFilamentProfiles account has no active API access (subscription or Patreon lapsed?)",
+        402,
+        code,
+      );
     if (resp.status === 429) {
       // The ledger now knows the quota is used up, and says until when.
       await this.options.ledger.ensure(1);
-      throw new QuotaError("the monthly 3DFilamentProfiles API quota is used up until the 1st of next month, 00:00 UTC");
+      throw new QuotaError(
+        "the monthly 3DFilamentProfiles API quota is used up until the 1st of next month, 00:00 UTC",
+      );
     }
     const message = typeof error?.message === "string" ? error.message : null;
-    if (!message) throw new FilamentProfilesError(`3DFilamentProfiles answered HTTP ${resp.status}`, resp.status, code);
-    throw new FilamentProfilesError(`3DFilamentProfiles: ${message}${code ? ` (${code})` : ""}`, resp.status, code);
+    if (!message)
+      throw new FilamentProfilesError(
+        `3DFilamentProfiles answered HTTP ${resp.status}`,
+        resp.status,
+        code,
+      );
+    throw new FilamentProfilesError(
+      `3DFilamentProfiles: ${message}${code ? ` (${code})` : ""}`,
+      resp.status,
+      code,
+    );
   }
 
   /** Every spool in the account, in one call. */
   async listSpools(): Promise<TdfpSpool[]> {
     const reply = await this.request("GET", "/my/spools");
-    if (!Array.isArray(reply.data)) throw new FilamentProfilesError("3DFilamentProfiles sent a spool list without data");
+    if (!Array.isArray(reply.data))
+      throw new FilamentProfilesError("3DFilamentProfiles sent a spool list without data");
     return reply.data.map((raw) => spool(raw as Json));
   }
 
@@ -320,7 +369,11 @@ export class FilamentProfilesClient {
   }
 
   async updateSpool(shortCode: string, patch: SpoolPatch): Promise<SpoolUpdate> {
-    const reply = await this.request("PATCH", `/my/spools/${encodeURIComponent(shortCode)}`, patchBody(patch));
+    const reply = await this.request(
+      "PATCH",
+      `/my/spools/${encodeURIComponent(shortCode)}`,
+      patchBody(patch),
+    );
     return {
       shortCode: str(reply.short_code),
       remainingGrams: num(reply.remaining_grams),
@@ -332,24 +385,37 @@ export class FilamentProfilesClient {
   }
 
   async addSpool(request: NewSpool): Promise<AddedSpool> {
-    if (request.remainingGrams !== undefined && !isInt(request.remainingGrams, 0, 10_000)) throw invalid("remainingGrams must be a whole number from 0 to 10000");
-    if (request.notes !== undefined && request.notes.length > 500) throw invalid("notes are at most 500 characters");
+    if (request.remainingGrams !== undefined && !isInt(request.remainingGrams, 0, 10_000))
+      throw invalid("remainingGrams must be a whole number from 0 to 10000");
+    if (request.notes !== undefined && request.notes.length > 500)
+      throw invalid("notes are at most 500 characters");
     const body: Json = { filament_id: request.filamentId };
     if (request.remainingGrams !== undefined) body.remaining_grams = request.remainingGrams;
     if (request.notes !== undefined) body.notes = request.notes;
     if (request.ifNotOwned !== undefined) body.if_not_owned = request.ifNotOwned;
     const reply = await this.request("POST", "/my/spools", body);
     if (reply.created === true) return { created: true, spool: spool(reply.spool as Json) };
-    const existing = Array.isArray(reply.spools) ? reply.spools.map((raw) => str((raw as Json).short_code)) : [];
+    const existing = Array.isArray(reply.spools)
+      ? reply.spools.map((raw) => str((raw as Json).short_code))
+      : [];
     return { created: false, existing };
   }
 
   async listFilaments(filters: FilamentFilters = {}): Promise<FilamentPage> {
     const query = filamentQuery(filters).toString();
     const reply = await this.request("GET", `/filaments${query ? `?${query}` : ""}`);
-    const filaments = Array.isArray(reply.data) ? reply.data.map((raw) => filament(raw as Json)) : [];
+    const filaments = Array.isArray(reply.data)
+      ? reply.data.map((raw) => filament(raw as Json))
+      : [];
     const limit = num(reply.limit);
-    return { filaments, page: num(reply.page), limit, total: num(reply.total), totalIsEstimate: reply.total_is_estimate === true, last: filaments.length < limit };
+    return {
+      filaments,
+      page: num(reply.page),
+      limit,
+      total: num(reply.total),
+      totalIsEstimate: reply.total_is_estimate === true,
+      last: filaments.length < limit,
+    };
   }
 
   /** The id in the result is the surviving filament's when filaments were merged: keep that one. */

@@ -7,7 +7,12 @@ import { errorMessage } from "./errors.js";
 import type { FilamentProfile, Status, SyncResult } from "./models.js";
 import { bambuConfigDir } from "./paths.js";
 import { applyEdits, type Edits, readPreset, skippedDetail, syncedRange } from "./presetEdit.js";
-import { buildCustomFilamentsCsv, mergeCustomFilamentsCsv, SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
+import {
+  buildCustomFilamentsCsv,
+  mergeCustomFilamentsCsv,
+  SpoolEaseClient,
+  type SpoolEaseConnection,
+} from "./spoolease.js";
 
 const DETAIL_LIMIT = 120;
 
@@ -31,7 +36,14 @@ export type SyncStage = "presets" | "key-check" | "custom-filaments" | "spools";
 
 export type SyncEvent =
   | { type: "stage"; stage: SyncStage }
-  | { type: "preset"; index: number; status: Status; paths: string[]; kept: string[]; error: string }
+  | {
+      type: "preset";
+      index: number;
+      status: Status;
+      paths: string[];
+      kept: string[];
+      error: string;
+    }
   | { type: "spool"; index: number; status: Status; detail: string }
   | { type: "warning"; message: string };
 
@@ -71,7 +83,10 @@ async function loadSystemProfiles(printers: string[]): Promise<SystemProfiles> {
   const known = system.printers();
   if (printers.length === 0) throw new SetupError("no BambuStudio printer given");
   for (const printer of printers) {
-    if (!known.includes(printer)) throw new SetupError(`unknown BambuStudio printer "${printer}"; known printers: ${known.join(", ")}`);
+    if (!known.includes(printer))
+      throw new SetupError(
+        `unknown BambuStudio printer "${printer}"; known printers: ${known.join(", ")}`,
+      );
   }
   return system;
 }
@@ -79,26 +94,42 @@ async function loadSystemProfiles(printers: string[]): Promise<SystemProfiles> {
 // A profile whose presets all exist already was skipped; one with any new preset was written.
 function presetStatus(outcome: PresetOutcome | undefined, dryRun: boolean): Status {
   if (outcome?.error) return "failed";
-  if (outcome && outcome.paths.length > 0 && outcome.kept.length === outcome.paths.length) return "skipped";
+  if (outcome && outcome.paths.length > 0 && outcome.kept.length === outcome.paths.length)
+    return "skipped";
   return dryRun ? "planned" : "written";
 }
 
-export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) => void = () => {}): Promise<SyncOutcome> {
+export async function runSync(
+  options: SyncOptions,
+  onEvent: (event: SyncEvent) => void = () => {},
+): Promise<SyncOutcome> {
   const { profiles, dryRun } = options;
   const system = await loadSystemProfiles(options.printers);
 
   onEvent({ type: "stage", stage: "presets" });
   const target = { presetFolder: options.presetFolder, printers: options.printers, system };
   const edits = options.presetEdits ?? new Map<string, Edits>();
-  const adjust = (profile: FilamentProfile, printer: string, built: Record<string, unknown>): Record<string, unknown> => {
+  const adjust = (
+    profile: FilamentProfile,
+    printer: string,
+    built: Record<string, unknown>,
+  ): Record<string, unknown> => {
     const profileEdits = edits.get(profile.filamentId);
     if (!profileEdits) return built;
     const { preset, skipped } = applyEdits(built, profileEdits);
-    if (skipped.length > 0) onEvent({ type: "warning", message: `${presetName(profile, printer)}: ${skippedDetail(built, profileEdits, skipped)}` });
+    if (skipped.length > 0)
+      onEvent({
+        type: "warning",
+        message: `${presetName(profile, printer)}: ${skippedDetail(built, profileEdits, skipped)}`,
+      });
     return preset;
   };
-  const presets = await writeMany(profiles, target, { dryRun, overwrite: options.overwritePresets ?? false, adjust }, (index, outcome) =>
-    onEvent({ type: "preset", index, status: presetStatus(outcome, dryRun), ...outcome }),
+  const presets = await writeMany(
+    profiles,
+    target,
+    { dryRun, overwrite: options.overwritePresets ?? false, adjust },
+    (index, outcome) =>
+      onEvent({ type: "preset", index, status: presetStatus(outcome, dryRun), ...outcome }),
   );
 
   // SpoolEase's range follows the presets as the run leaves them: a kept one's tuning, or the edits.
@@ -121,7 +152,8 @@ export async function runSync(options: SyncOptions, onEvent: (event: SyncEvent) 
     const spool = spools[index] ?? { status: "skipped" as Status, detail: "", spoolId: null };
     let detail = spool.detail;
     if (bambuError) detail = `BambuStudio preset: ${bambuError}; ${spool.detail}`;
-    else if (bambuStatus === "skipped") detail = `BambuStudio preset exists (overwrite to replace it); ${spool.detail}`;
+    else if (bambuStatus === "skipped")
+      detail = `BambuStudio preset exists (overwrite to replace it); ${spool.detail}`;
     return {
       profileName: profile.name,
       filamentId: profile.filamentId,
@@ -143,7 +175,10 @@ interface SpoolOutcome {
   spoolId: string | null;
 }
 
-async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) => void): Promise<SpoolOutcome[]> {
+async function syncSpoolEase(
+  options: SyncOptions,
+  onEvent: (event: SyncEvent) => void,
+): Promise<SpoolOutcome[]> {
   const { profiles, dryRun, spoolease } = options;
 
   if (!spoolease) {
@@ -166,7 +201,10 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
       existing = await client.getCustomFilamentsCsv();
     } catch (err) {
       // Writing without the current list would replace it with only ours, so don't write at all.
-      onEvent({ type: "warning", message: `Failed to read current custom filaments CSV: ${errorMessage(err)}` });
+      onEvent({
+        type: "warning",
+        message: `Failed to read current custom filaments CSV: ${errorMessage(err)}`,
+      });
       csvError = `custom filaments CSV: reading current list failed: ${errorMessage(err)}`;
     }
 
@@ -175,11 +213,17 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
         const merged = mergeCustomFilamentsCsv(existing, buildCustomFilamentsCsv(profiles));
         const stored = await client.setCustomFilamentsCsv(merged);
         if (!stored.ok) {
-          onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${stored.error}` });
+          onEvent({
+            type: "warning",
+            message: `Failed to set custom filaments CSV: ${stored.error}`,
+          });
           csvError = `custom filaments CSV: ${stored.error.slice(0, DETAIL_LIMIT)}`;
         }
       } catch (err) {
-        onEvent({ type: "warning", message: `Failed to set custom filaments CSV: ${errorMessage(err)}` });
+        onEvent({
+          type: "warning",
+          message: `Failed to set custom filaments CSV: ${errorMessage(err)}`,
+        });
         csvError = `custom filaments CSV: ${errorMessage(err)}`;
       }
     }
@@ -222,10 +266,16 @@ async function syncSpoolEase(options: SyncOptions, onEvent: (event: SyncEvent) =
           spoolId = created.id;
           outcome = { status: "written", detail: `${registered}; spool ${created.id} created` };
         } else {
-          outcome = { status: "failed", detail: `${registered}; spool rejected: ${created.error.slice(0, DETAIL_LIMIT)}` };
+          outcome = {
+            status: "failed",
+            detail: `${registered}; spool rejected: ${created.error.slice(0, DETAIL_LIMIT)}`,
+          };
         }
       } catch (err) {
-        outcome = { status: "failed", detail: `${registered}; spool request error: ${errorMessage(err)}` };
+        outcome = {
+          status: "failed",
+          detail: `${registered}; spool request error: ${errorMessage(err)}`,
+        };
       }
     }
     outcomes.push({ ...outcome, spoolId });

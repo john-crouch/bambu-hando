@@ -37,11 +37,23 @@ export interface SpoolsCacheOptions {
   beforeFetch?: () => Promise<void>;
 }
 
-async function readCache(path: string, account: string): Promise<{ spools: TdfpSpool[]; fetchedAt: Date } | null> {
+async function readCache(
+  path: string,
+  account: string,
+): Promise<{ spools: TdfpSpool[]; fetchedAt: Date } | null> {
   try {
-    const saved = JSON.parse(await readFile(path, "utf-8")) as { account?: unknown; fetchedAt?: unknown; spools?: unknown };
+    const saved = JSON.parse(await readFile(path, "utf-8")) as {
+      account?: unknown;
+      fetchedAt?: unknown;
+      spools?: unknown;
+    };
     const fetchedAt = new Date(String(saved.fetchedAt));
-    if (saved.account !== account || Number.isNaN(fetchedAt.getTime()) || !Array.isArray(saved.spools)) return null;
+    if (
+      saved.account !== account ||
+      Number.isNaN(fetchedAt.getTime()) ||
+      !Array.isArray(saved.spools)
+    )
+      return null;
     return { spools: saved.spools as TdfpSpool[], fetchedAt };
   } catch {
     return null;
@@ -49,14 +61,18 @@ async function readCache(path: string, account: string): Promise<{ spools: TdfpS
 }
 
 /** The account's spools: from the cache while it's younger than maxAgeMs, else one API call. */
-export async function mySpools(client: FilamentProfilesClient, options: SpoolsCacheOptions): Promise<CachedSpools> {
+export async function mySpools(
+  client: FilamentProfilesClient,
+  options: SpoolsCacheOptions,
+): Promise<CachedSpools> {
   const path = options.path ?? spoolsCachePath();
   const now = (options.now ?? (() => new Date()))();
   if (!options.refresh) {
     const cached = await readCache(path, options.account);
     const age = cached ? now.getTime() - cached.fetchedAt.getTime() : -1;
     // A cache dated in the future (clock changed) is as good as none.
-    if (cached && age >= 0 && age < (options.maxAgeMs ?? SPOOLS_MAX_AGE_MS)) return { ...cached, fromCache: true };
+    if (cached && age >= 0 && age < (options.maxAgeMs ?? SPOOLS_MAX_AGE_MS))
+      return { ...cached, fromCache: true };
   }
   await options.beforeFetch?.();
   const spools = await client.listSpools();

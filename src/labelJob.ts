@@ -7,7 +7,13 @@ import { join } from "node:path";
 
 import { errorMessage } from "./errors.js";
 import { printPdf, renderLabelsPdf } from "./labelPdf.js";
-import { filterSpools, type LabelField, type LabelSize, labelContent, type SpoolFilters } from "./labels.js";
+import {
+  filterSpools,
+  type LabelField,
+  type LabelSize,
+  labelContent,
+  type SpoolFilters,
+} from "./labels.js";
 import type { CustomFilament, SpoolEaseClient, SpoolRecord } from "./spoolease.js";
 
 /** The filters matched no spool, or named one SpoolEase doesn't have. */
@@ -44,7 +50,9 @@ export async function makeLabels(
   try {
     filaments = await client.getCustomFilaments();
   } catch (err) {
-    warn(`Couldn't read custom filaments from SpoolEase, so labels show no filament names or temperatures: ${errorMessage(err)}`);
+    warn(
+      `Couldn't read custom filaments from SpoolEase, so labels show no filament names or temperatures: ${errorMessage(err)}`,
+    );
   }
 
   let chosen: SpoolRecord[];

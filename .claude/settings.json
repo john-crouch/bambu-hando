@@ -10,12 +10,7 @@
       "Bash(gh pr *)",
       "Bash(gh run *)"
     ],
-    "deny": [
-      "Bash(rm -rf /)",
-      "Bash(rm -rf ~)",
-      "Bash(rm -rf ~/)",
-      "Bash(rm -rf $HOME)"
-    ]
+    "deny": ["Bash(rm -rf /)", "Bash(rm -rf ~)", "Bash(rm -rf ~/)", "Bash(rm -rf $HOME)"]
   },
   "hooks": {
     "PostToolUse": [

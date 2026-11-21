@@ -24,7 +24,10 @@ export async function connectFilamentProfiles(): Promise<FilamentProfilesConnect
     // An unusable key is as much a setup problem as a missing one.
     throw err instanceof InvalidSecretError ? new MissingKeyError(err.message) : err;
   }
-  if (!key) throw new MissingKeyError(`no ${spec.label}: run \`bambu-hando key set 3dfp\`, or set ${spec.env}`);
+  if (!key)
+    throw new MissingKeyError(
+      `no ${spec.label}: run \`bambu-hando key set 3dfp\`, or set ${spec.env}`,
+    );
   const account = accountId(key.value);
   const ledger = new QuotaLedger(quotaPath(), account);
   return { client: new FilamentProfilesClient({ key: key.value, ledger }), ledger, account };

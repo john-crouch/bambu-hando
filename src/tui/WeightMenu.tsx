@@ -20,13 +20,21 @@ export interface WeightItem {
   choice: WeightChoice;
 }
 
-export type WeightAction = { type: "move"; cursor: number } | { type: "choose" } | { type: "back" } | { type: "none" };
+export type WeightAction =
+  | { type: "move"; cursor: number }
+  | { type: "choose" }
+  | { type: "back" }
+  | { type: "none" };
 
 /**
  * The brand's catalog rows, then the source's weight and unspecified, which are always offered: when the
  * spool in hand matches no catalog row, SpoolEase can still work its weight out on the first full weigh.
  */
-export function weightItems(group: WeightGroup, profiles: FilamentProfile[], sourceName: string): WeightItem[] {
+export function weightItems(
+  group: WeightGroup,
+  profiles: FilamentProfile[],
+  sourceName: string,
+): WeightItem[] {
   const rows: WeightItem[] = group.options.map((option) => ({
     label: option.label,
     detail: `${option.grams} g${option.mine ? " · My Spools List" : ""}`,
@@ -34,8 +42,16 @@ export function weightItems(group: WeightGroup, profiles: FilamentProfile[], sou
   }));
   return [
     ...rows,
-    { label: sourceName, detail: describeSourceWeights(profiles, group), choice: { kind: "source" } },
-    { label: "Unspecified", detail: "SpoolEase works it out on the first full weigh", choice: { kind: "unspecified" } },
+    {
+      label: sourceName,
+      detail: describeSourceWeights(profiles, group),
+      choice: { kind: "source" },
+    },
+    {
+      label: "Unspecified",
+      detail: "SpoolEase works it out on the first full weigh",
+      choice: { kind: "unspecified" },
+    },
   ];
 }
 
@@ -68,8 +84,22 @@ interface Props {
   height?: number;
 }
 
-export function WeightMenu({ group, profiles, items, cursor, step, steps, sourceName, warnings, height }: Props) {
-  const [start, end] = visibleRange(cursor, items.length, listRows(height, CHROME + warnings.length, ROWS));
+export function WeightMenu({
+  group,
+  profiles,
+  items,
+  cursor,
+  step,
+  steps,
+  sourceName,
+  warnings,
+  height,
+}: Props) {
+  const [start, end] = visibleRange(
+    cursor,
+    items.length,
+    listRows(height, CHROME + warnings.length, ROWS),
+  );
   const names = group.profiles.map((i) => profiles[i]?.name ?? "");
   const count = names.length;
 
@@ -83,7 +113,8 @@ export function WeightMenu({ group, profiles, items, cursor, step, steps, source
       </Text>
       {group.options.length > 0 ? (
         <Text dimColor>
-          SpoolEase's spool catalog lists several; {sourceName} says {describeSourceWeights(profiles, group)}
+          SpoolEase's spool catalog lists several; {sourceName} says{" "}
+          {describeSourceWeights(profiles, group)}
         </Text>
       ) : (
         <Text dimColor>Not in SpoolEase's spool catalog</Text>

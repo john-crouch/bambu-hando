@@ -16,7 +16,13 @@ export interface SecretSpec {
 }
 
 export const SECRETS = {
-  "3dfp": { name: "3dfp", label: "3DFilamentProfiles API key", account: "3dfilamentprofiles-api-key", env: "FILAMENTPROFILES_API_KEY", prefix: "3dfp_" },
+  "3dfp": {
+    name: "3dfp",
+    label: "3DFilamentProfiles API key",
+    account: "3dfilamentprofiles-api-key",
+    env: "FILAMENTPROFILES_API_KEY",
+    prefix: "3dfp_",
+  },
 } as const satisfies Record<string, SecretSpec>;
 
 const SERVICE = "bambu-hando";
@@ -48,8 +54,10 @@ export function validateSecret(value: string, spec?: SecretSpec): string {
   const key = value.trim();
   if (key === "") throw new Error("the key is empty");
   // Spaces or control characters inside mean a mangled paste (or two lines), not a key.
-  if (/[\s\p{Cc}]/u.test(key)) throw new Error("the key contains spaces or control characters: paste only the key");
-  if (spec && !key.startsWith(spec.prefix)) throw new Error(`${spec.label}s start with ${spec.prefix}: that doesn't look like one`);
+  if (/[\s\p{Cc}]/u.test(key))
+    throw new Error("the key contains spaces or control characters: paste only the key");
+  if (spec && !key.startsWith(spec.prefix))
+    throw new Error(`${spec.label}s start with ${spec.prefix}: that doesn't look like one`);
   return key;
 }
 
@@ -62,7 +70,9 @@ async function inKeyring<T>(spec: SecretSpec, use: (entry: AsyncEntry) => Promis
   try {
     return await use(entry(spec));
   } catch (err) {
-    throw new KeyringError(`can't use ${keyringName()} (${errorMessage(err)}): unlock it, or set ${spec.env} instead`);
+    throw new KeyringError(
+      `can't use ${keyringName()} (${errorMessage(err)}): unlock it, or set ${spec.env} instead`,
+    );
   }
 }
 
@@ -96,19 +106,27 @@ export function secretProblem(spec: SecretSpec, value: string): string | null {
 }
 
 /** The key to use: the environment variable when set, else the keyring's; null when neither has one. */
-export async function loadSecret(spec: SecretSpec, env: Record<string, string | undefined> = process.env): Promise<LoadedSecret | null> {
+export async function loadSecret(
+  spec: SecretSpec,
+  env: Record<string, string | undefined> = process.env,
+): Promise<LoadedSecret | null> {
   // Checked like `key set` checks a paste: a mangled value would end up in a header, and in fetch's error about it.
   const fromEnv = env[spec.env]?.trim();
   if (fromEnv) {
     try {
       return { value: validateSecret(fromEnv, spec), from: "env" };
     } catch (err) {
-      throw new InvalidSecretError(`${spec.env} doesn't hold a usable ${spec.label}: ${errorMessage(err)}`);
+      throw new InvalidSecretError(
+        `${spec.env} doesn't hold a usable ${spec.label}: ${errorMessage(err)}`,
+      );
     }
   }
   const stored = await storedSecret(spec);
   if (stored === null) return null;
   const problem = secretProblem(spec, stored);
-  if (problem) throw new InvalidSecretError(`the ${spec.label} stored in ${keyringName()} isn't usable: ${problem}; store it again with \`bambu-hando key set ${spec.name}\``);
+  if (problem)
+    throw new InvalidSecretError(
+      `the ${spec.label} stored in ${keyringName()} isn't usable: ${problem}; store it again with \`bambu-hando key set ${spec.name}\``,
+    );
   return { value: stored.trim(), from: "keyring" };
 }

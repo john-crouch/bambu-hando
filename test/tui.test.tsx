@@ -7,18 +7,22 @@ import { join } from "node:path";
 
 import { render } from "ink-testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { labelSettingsPath } from "../src/labelSettings.js";
 import { barcodesPath, rememberBarcode } from "../src/barcodes.js";
+import { labelSettingsPath } from "../src/labelSettings.js";
 import { derivedFilamentId } from "../src/sources.js";
-import { tuiSettingsPath } from "../src/tuiSettings.js";
 import { App, type FormValues } from "../src/tui/App.js";
+import { tuiSettingsPath } from "../src/tuiSettings.js";
+import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 import { installFakeLp } from "./fakeLp.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { decodeQr, readPdf } from "./pdf.js";
-import { SPOOLS_CATALOG, startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
-import { startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
-import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
+import {
+  SPOOLS_CATALOG,
+  type SpoolEaseServer,
+  startSpoolEaseServer,
+  TEST_SECURITY_KEY,
+} from "./spooleaseServer.js";
+import { type SpoolmanDbServer, startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const ENTER = "\r";
 const DOWN = "\u001B[B";
@@ -80,14 +84,20 @@ describe("TUI", () => {
   }
 
   // "s" jumps to Settings on the start menu.
-  async function openSettings(stdin: { write: (data: string) => void }, lastFrame: () => string | undefined): Promise<void> {
+  async function openSettings(
+    stdin: { write: (data: string) => void },
+    lastFrame: () => string | undefined,
+  ): Promise<void> {
     await press(stdin, "s", ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Import file or URL"));
   }
 
   // SOURCE_FIXTURE's brands, Polymaker and Generic (the brandless profiles), aren't in the test console's
   // empty catalog, so each asks once; enter keeps the source's weight.
-  async function keepSourceWeights(stdin: { write: (data: string) => void }, lastFrame: () => string | undefined): Promise<void> {
+  async function keepSourceWeights(
+    stdin: { write: (data: string) => void },
+    lastFrame: () => string | undefined,
+  ): Promise<void> {
     for (const step of ["brand 1 of 2", "brand 2 of 2"]) {
       await vi.waitFor(() => expect(lastFrame()).toContain(step));
       await press(stdin, ENTER);
@@ -183,7 +193,9 @@ describe("TUI", () => {
   });
 
   it("keeps a gap between every form label and its value", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
     await openSettings(stdin, lastFrame);
 
@@ -208,7 +220,11 @@ describe("TUI", () => {
     expect(frame).toContain("PABC1234");
     expect(frame).toContain("Pb1a2a16");
     expect(frame).toContain("230-255");
-    expect(frame).toMatch(new RegExp(`Presets: +${baseFilamentDir(home).replace(home, "~").replace(/[.]/g, "\\.")} · existing presets kept`));
+    expect(frame).toMatch(
+      new RegExp(
+        `Presets: +${baseFilamentDir(home).replace(home, "~").replace(/[.]/g, "\\.")} · existing presets kept`,
+      ),
+    );
     expect(frame).toMatch(new RegExp(`Printers: +${X1C_04.replace(/[.]/g, "\\.")}`));
     expect(frame).toContain(`127.0.0.1:${server.port}`);
     expect(frame).toContain("200 g");
@@ -225,7 +241,9 @@ describe("TUI", () => {
   });
 
   it("shows source loading errors on the form", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: join(home, "missing.json") })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: join(home, "missing.json") })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -246,7 +264,9 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain(`${X1C_04}, ${X1C_06}`));
     await press(stdin, ESC);
 
-    await vi.waitFor(() => expect(lastFrame()).toContain(`BambuStudio: default · ${X1C_04}, ${X1C_06}`));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain(`BambuStudio: default · ${X1C_04}, ${X1C_06}`),
+    );
   });
 
   it("keeps the printers when the checklist is cancelled", async () => {
@@ -260,7 +280,9 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Tick at least one"));
     await press(stdin, ESC);
 
-    await vi.waitFor(() => expect(lastFrame()).toMatch(/Printer preset\(s\) +Bambu Lab X1 Carbon 0.4 nozzle/));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toMatch(/Printer preset\(s\) +Bambu Lab X1 Carbon 0.4 nozzle/),
+    );
   });
 
   it("chooses the preset folder from BambuStudio's user folders", async () => {
@@ -278,7 +300,9 @@ describe("TUI", () => {
   });
 
   it("toggles skip SpoolEase so host and key are no longer required", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ host: "", securityKey: "" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ host: "", securityKey: "" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -291,7 +315,9 @@ describe("TUI", () => {
   });
 
   it("applies with live statuses, registers filaments without spools, and exits 0", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ createSpools: false })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -309,7 +335,9 @@ describe("TUI", () => {
   });
 
   it("keeps existing presets unless the Overwrite presets toggle is on", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ skipSpoolease: true })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ skipSpoolease: true })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -370,14 +398,18 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 0 written, 3 failed"));
 
     await press(stdin, "m");
-    await vi.waitFor(() => expect(lastFrame()).toContain("✗ 3 profiles from source.json: 0 written, 3 failed"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("✗ 3 profiles from source.json: 0 written, 3 failed"),
+    );
     await press(stdin, "q", ENTER);
 
     expect(onExit).toHaveBeenCalledWith(1);
   });
 
   it("shows key check errors and exits 2", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ securityKey: "WRONG", createSpools: false })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ securityKey: "WRONG", createSpools: false })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -397,14 +429,18 @@ describe("TUI", () => {
 
     await press(stdin, ENTER);
     await keepSourceWeights(stdin, lastFrame);
-    await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply · [e] edit presets · [b] back to menu"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("[a] apply · [e] edit presets · [b] back to menu"),
+    );
     await press(stdin, "b");
 
     await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
   });
 
   it("returns to the menu after a run, says what it did, and starts the next run with nothing selected", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
@@ -417,11 +453,17 @@ describe("TUI", () => {
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
     await press(stdin, "a");
-    await vi.waitFor(() => expect(lastFrame()).toContain("[l] labels for 1 new spool · [m] menu · [q] quit"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("[l] labels for 1 new spool · [m] menu · [q] quit"),
+    );
 
     await press(stdin, "m");
 
-    await vi.waitFor(() => expect(lastFrame()).toContain("✓ 1 profile from spoolmandb: 1 written, 0 failed, 1 new spool"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain(
+        "✓ 1 profile from spoolmandb: 1 written, 0 failed, 1 new spool",
+      ),
+    );
     await press(stdin, "a", ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("SpoolmanDB: 9 filaments · 0 selected"));
   });
@@ -439,7 +481,10 @@ describe("TUI", () => {
     await press(stdin, "m");
     await vi.waitFor(() => expect(lastFrame()).toContain("› Import source.json"));
     // Renamed on the console since: the next run puts the source's name back.
-    server.customFilaments = server.customFilaments!.replace(/^PABC1234,[^,]*,/m, "PABC1234,Old Red,");
+    server.customFilaments = server.customFilaments!.replace(
+      /^PABC1234,[^,]*,/m,
+      "PABC1234,Old Red,",
+    );
     const requests = server.requests.length;
 
     await press(stdin, ENTER);
@@ -448,15 +493,24 @@ describe("TUI", () => {
     const frame = lastFrame() ?? "";
     expect(frame.match(/= kept +has spool/g)).toHaveLength(2);
     expect(frame).toMatch(/= kept +update/);
-    expect(frame).toContain("↻ PABC1234 is Old Red 230-255 °C on SpoolEase; the run changes it to Polymaker PETG Red 230-255 °C");
+    expect(frame).toContain(
+      "↻ PABC1234 is Old Red 230-255 °C on SpoolEase; the run changes it to Polymaker PETG Red 230-255 °C",
+    );
     expect(frame).toContain("= kept: 3 presets are there already");
     expect(frame).toContain("has spool: the console has a spool of 3 filaments already");
     // Working the plan out only reads.
-    expect(server.requests.slice(requests).filter((r) => r.method !== "GET").map((r) => r.path)).toEqual(["/api/test-key", "/api/test-key"]);
+    expect(
+      server.requests
+        .slice(requests)
+        .filter((r) => r.method !== "GET")
+        .map((r) => r.path),
+    ).toEqual(["/api/test-key", "/api/test-key"]);
   });
 
   it("searches SpoolmanDB, picks filaments with tab, and applies them", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -482,11 +536,15 @@ describe("TUI", () => {
     await press(stdin, "a");
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 written, 0 failed"));
     expect(await readdir(baseFilamentDir(home))).toHaveLength(2);
-    expect(server.customFilaments).toBe("Pccd78d1,3DHoJor ABS+ Brown,230,270,ABS+\r\nPd6ef068,3DHoJor PLA-CF Brown,210,230,PLA-CF");
+    expect(server.customFilaments).toBe(
+      "Pccd78d1,3DHoJor ABS+ Brown,230,270,ABS+\r\nPd6ef068,3DHoJor PLA-CF Brown,210,230,PLA-CF",
+    );
   });
 
   it("prefills the search and selects every match with ctrl+a", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -502,7 +560,9 @@ describe("TUI", () => {
   });
 
   it("asks for a selection, and escape returns to the brands, then the start menu", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -519,7 +579,9 @@ describe("TUI", () => {
   });
 
   it("browses brand, material and color, applies the chosen color, and b returns to its colors", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -547,7 +609,9 @@ describe("TUI", () => {
   });
 
   it("adds a color the catalog doesn't list, with a listed color's settings, and applies it", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
@@ -559,7 +623,9 @@ describe("TUI", () => {
     await press(stdin, DOWN, DOWN, DOWN, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Choose the listed color it's like"));
     await press(stdin, UP, UP, UP, ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("Which listed RatRig ABS color has the same settings?"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("Which listed RatRig ABS color has the same settings?"),
+    );
     await press(stdin, ENTER);
     // Choosing it moves on to the name.
     await vi.waitFor(() => expect(lastFrame()).toMatch(/› Color name/));
@@ -577,12 +643,20 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 written, 0 failed"));
     const id = derivedFilamentId("RatRig ABS Punkfil Brute Red");
     expect(server.customFilaments).toContain(`${id},RatRig ABS Punkfil Brute Red,`);
-    expect(server.spools[0]).toMatchObject({ slicer_filament: id, color_name: "Punkfil Brute Red", color_code: "AD0000FF" });
-    expect(await readdir(baseFilamentDir(home))).toEqual([`RatRig ABS Punkfil Brute Red @${X1C_04}.json`]);
+    expect(server.spools[0]).toMatchObject({
+      slicer_filament: id,
+      color_name: "Punkfil Brute Red",
+      color_code: "AD0000FF",
+    });
+    expect(await readdir(baseFilamentDir(home))).toEqual([
+      `RatRig ABS Punkfil Brute Red @${X1C_04}.json`,
+    ]);
   });
 
   it("refuses an unlisted color with a name that's already listed, and esc returns to the colors", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Brands"));
@@ -596,7 +670,9 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toMatch(/› Color name/));
 
     await press(stdin, ..."punkfil brute black", ENTER, ..."000000", ENTER, ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("RatRig ABS punkfil brute black is already listed"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("RatRig ABS punkfil brute black is already listed"),
+    );
     await press(stdin, ESC);
 
     await vi.waitFor(() => expect(lastFrame()).toContain("RatRig / ABS"));
@@ -604,7 +680,9 @@ describe("TUI", () => {
   });
 
   it("goes up a level at a time with escape, keeping what is selected", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -626,7 +704,9 @@ describe("TUI", () => {
   });
 
   it("goes back from the plan to the picker and keeps the selection", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -650,13 +730,17 @@ describe("TUI", () => {
     });
 
     it("asks for a brand's weight among its SpoolEase catalog rows and applies it", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
       await press(stdin, CTRL_A, ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("Empty spool weight: Polymaker · brand 1 of 1"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("Empty spool weight: Polymaker · brand 1 of 1"),
+      );
       const frame = lastFrame() ?? "";
       expect(frame).toContain("SpoolmanDB says 140 g");
       expect(frame).toContain("› PolyMaker - Cardboard - 137g");
@@ -674,7 +758,9 @@ describe("TUI", () => {
     });
 
     it("can leave the weight unspecified for a brand the catalog lists", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);
@@ -692,7 +778,9 @@ describe("TUI", () => {
     });
 
     it("takes a brand's only catalog row without asking", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "ratrig" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb", query: "ratrig" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);
@@ -704,7 +792,9 @@ describe("TUI", () => {
     });
 
     it("offers SpoolmanDB's weight or unspecified for a brand the catalog doesn't list", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "3dhojor abs+" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb", query: "3dhojor abs+" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);
@@ -723,7 +813,9 @@ describe("TUI", () => {
     });
 
     it("goes back from the weight menu to the picker with escape, and remembers the choice", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb", query: "polylite" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);
@@ -742,7 +834,9 @@ describe("TUI", () => {
     });
 
     it("shows a rejected SpoolEase key on the form before the plan", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ securityKey: "WRONG" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ securityKey: "WRONG" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);
@@ -753,14 +847,20 @@ describe("TUI", () => {
 
     it("warns and keeps the source's weights when the catalog can't be read", async () => {
       server.replies["GET /spools-catalog"] = { status: 404, body: "not found" };
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", query: "ratrig" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb", query: "ratrig" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("1 match"));
       await press(stdin, CTRL_A, ENTER);
 
-      await vi.waitFor(() => expect(lastFrame()).toContain("Couldn't read the spool catalog from SpoolEase: HTTP 404: not found"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain(
+          "Couldn't read the spool catalog from SpoolEase: HTTP 404: not found",
+        ),
+      );
       expect(lastFrame()).toContain("Empty spool weight: RatRig");
     });
   });
@@ -768,10 +868,20 @@ describe("TUI", () => {
   it("checks that presets, custom filaments and spools line up, without writing, and checks again with r", async () => {
     const base = baseFilamentDir(home);
     await mkdir(base, { recursive: true });
-    await writeFile(join(base, `Studio Only @${X1C_04}.json`), JSON.stringify({ name: `Studio Only @${X1C_04}`, inherits: "", filament_id: "PA000009" }));
+    await writeFile(
+      join(base, `Studio Only @${X1C_04}.json`),
+      JSON.stringify({ name: `Studio Only @${X1C_04}`, inherits: "", filament_id: "PA000009" }),
+    );
     server.customFilaments = "PA000002,No Preset,200,220,PLA";
-    server.spools.push({ id: "1", brand: "Acme", material_type: "PLA", slicer_filament: "PZZZZZZ1" });
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    server.spools.push({
+      id: "1",
+      brand: "Acme",
+      material_type: "PLA",
+      slicer_filament: "PZZZZZZ1",
+    });
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, "c", ENTER);
@@ -782,7 +892,9 @@ describe("TUI", () => {
     expect(lastFrame()).toContain("#1 Acme PLA (PZZZZZZ1)");
     expect(lastFrame()).toContain(`Studio Only (PA000009) · ${X1C_04}`);
     expect(lastFrame()).toContain("✓ Custom filament rows SpoolEase misreads: none");
-    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual([
+      "/api/test-key",
+    ]);
 
     server.customFilaments = "PA000009,Studio Only,200,220,PLA";
     server.spools.splice(0);
@@ -795,14 +907,38 @@ describe("TUI", () => {
   it("lists the console's spools with what's left, filters and sorts them, and offers a label or more spools from one", async () => {
     server.customFilaments = "PA000001,Sunlu PETG Elite Red,240,260,PETG";
     server.spools.push(
-      { id: "1", brand: "Sunlu", material_type: "PETG", color_name: "Red", color_code: "AD0000FF", weight_advertised: "1000", weight_core: "189", weight_current: "753", slicer_filament: "PA000001", actual_location: "AMS 1" },
-      { id: "2", brand: "Acme", material_type: "PLA", color_name: "Blue", color_code: "0000FFFF", weight_advertised: "1000", weight_core: "200", weight_current: "300" },
+      {
+        id: "1",
+        brand: "Sunlu",
+        material_type: "PETG",
+        color_name: "Red",
+        color_code: "AD0000FF",
+        weight_advertised: "1000",
+        weight_core: "189",
+        weight_current: "753",
+        slicer_filament: "PA000001",
+        actual_location: "AMS 1",
+      },
+      {
+        id: "2",
+        brand: "Acme",
+        material_type: "PLA",
+        color_name: "Blue",
+        color_code: "0000FFFF",
+        weight_advertised: "1000",
+        weight_core: "200",
+        weight_current: "300",
+      },
     );
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, "y", ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("Your spools on the console: 2 · newest first"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("Your spools on the console: 2 · newest first"),
+    );
     expect(lastFrame()).toMatch(/#1 +Sunlu PETG Elite Red +564 g/);
     expect(lastFrame()).toMatch(/#2 +Acme PLA Blue +100 g/);
 
@@ -816,81 +952,147 @@ describe("TUI", () => {
     await vi.waitFor(() => expect(lastFrame()).toContain("#1 Sunlu PETG Elite Red"));
     expect(lastFrame()).toContain("Print a label");
     await press(stdin, DOWN, ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"),
+    );
     // esc goes back to the list as it was, filter and sort kept.
     await press(stdin, ESC);
     await vi.waitFor(() => expect(lastFrame()).toContain("1 of 2 · least left first"));
     await press(stdin, ESC, ESC);
     await vi.waitFor(() => expect(lastFrame()).toContain("Add spools from SpoolmanDB"));
-    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual([
+      "/api/test-key",
+    ]);
   });
 
   it("learns which filament a scanned barcode is, then goes straight to more spools of it", async () => {
-    server.customFilaments = "PA000001,Sunlu PETG Elite Red,240,260,PETG\r\nPB000002,Acme PLA Blue,200,220,PLA";
+    server.customFilaments =
+      "PA000001,Sunlu PETG Elite Red,240,260,PETG\r\nPB000002,Acme PLA Blue,200,220,PLA";
     server.spools.push(
-      { id: "1", brand: "Sunlu", material_type: "PETG", color_name: "Red", weight_advertised: "1000", weight_core: "180", slicer_filament: "PA000001" },
-      { id: "2", brand: "Acme", material_type: "PLA", color_name: "Blue", weight_advertised: "1000", slicer_filament: "PB000002" },
+      {
+        id: "1",
+        brand: "Sunlu",
+        material_type: "PETG",
+        color_name: "Red",
+        weight_advertised: "1000",
+        weight_core: "180",
+        slicer_filament: "PA000001",
+      },
+      {
+        id: "2",
+        brand: "Acme",
+        material_type: "PLA",
+        color_name: "Blue",
+        weight_advertised: "1000",
+        slicer_filament: "PB000002",
+      },
     );
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, "b", ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("Barcode scan: more spools of what you scan"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("Barcode scan: more spools of what you scan"),
+    );
     // A scanner types the code and enter together.
     await press(stdin, "00150603Z\r");
     await vi.waitFor(() => expect(lastFrame()).toContain("Which filament is barcode 00150603Z?"));
     await press(stdin, DOWN, ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"));
-    expect(JSON.parse(await readFile(barcodesPath(), "utf-8"))).toEqual({ "00150603Z": { code: "PA000001", name: "Sunlu PETG Elite Red" } });
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"),
+    );
+    expect(JSON.parse(await readFile(barcodesPath(), "utf-8"))).toEqual({
+      "00150603Z": { code: "PA000001", name: "Sunlu PETG Elite Red" },
+    });
 
     // esc from how many goes back to scanning; the same barcode, typed by hand, is known now.
     await press(stdin, ESC);
     await vi.waitFor(() => expect(lastFrame()).toContain("1 known so far"));
     await press(stdin, "0", "0", "1", "5", "0", "6", "0", "3", "z", ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("Barcode 00150603Z is Sunlu PETG Elite Red"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("Barcode 00150603Z is Sunlu PETG Elite Red"),
+    );
     await press(stdin, ENTER);
-    await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("How many new spools of Sunlu PETG Elite Red?"),
+    );
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Add 1 spool of Sunlu PETG Elite Red"));
-    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+    expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual([
+      "/api/test-key",
+    ]);
   });
 
   it("asks again when a known barcode's filament has no spool on the console any more", async () => {
     await rememberBarcode("4000000000001", { code: "PGONE001", name: "Gone PLA" });
-    server.spools.push({ id: "2", brand: "Acme", material_type: "PLA", color_name: "Blue", slicer_filament: "PB000002" });
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    server.spools.push({
+      id: "2",
+      brand: "Acme",
+      material_type: "PLA",
+      color_name: "Blue",
+      slicer_filament: "PB000002",
+    });
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, "b", ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("Barcode scan"));
     await press(stdin, "4000000000001\r");
-    await vi.waitFor(() => expect(lastFrame()).toContain("Which filament is barcode 4000000000001? (it was Gone PLA, which no spool on the console is now)"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain(
+        "Which filament is barcode 4000000000001? (it was Gone PLA, which no spool on the console is now)",
+      ),
+    );
   });
 
   it("gives presets without a filament ID the one BambuStudio would make, from the check", async () => {
     const base = baseFilamentDir(home);
     await mkdir(base, { recursive: true });
     const rock = join(base, `Rock PLA @${X1C_04}.json`);
-    await writeFile(rock, `${JSON.stringify({ name: `Rock PLA @${X1C_04}`, inherits: "", filament_id: "null" }, null, 4)}\n`);
-    await writeFile(join(base, `Rock PLA @${X1C_04}.info`), "sync_info = \nupdated_time = 1700000000\n");
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    await writeFile(
+      rock,
+      `${JSON.stringify({ name: `Rock PLA @${X1C_04}`, inherits: "", filament_id: "null" }, null, 4)}\n`,
+    );
+    await writeFile(
+      join(base, `Rock PLA @${X1C_04}.info`),
+      "sync_info = \nupdated_time = 1700000000\n",
+    );
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, "c", ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("[f] give 1 preset a filament ID"));
     await press(stdin, "f");
-    await vi.waitFor(() => expect(lastFrame()).toContain("Give 1 BambuStudio preset a filament ID"));
-    expect(lastFrame()).toMatch(new RegExp(`Rock PLA @${X1C_04.replace(/[.]/g, "\\.")}\\.json +${derivedFilamentId("Rock PLA")}`));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("Give 1 BambuStudio preset a filament ID"),
+    );
+    expect(lastFrame()).toMatch(
+      new RegExp(
+        `Rock PLA @${X1C_04.replace(/[.]/g, "\\.")}\\.json +${derivedFilamentId("Rock PLA")}`,
+      ),
+    );
     expect(JSON.parse(await readFile(rock, "utf-8")).filament_id).toBe("null");
 
     await press(stdin, "a");
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 preset given an ID, 0 failed"));
-    expect(JSON.parse(await readFile(rock, "utf-8")).filament_id).toBe(derivedFilamentId("Rock PLA"));
-    expect(await readFile(join(base, `Rock PLA @${X1C_04}.info`), "utf-8")).not.toContain("updated_time = 1700000000");
+    expect(JSON.parse(await readFile(rock, "utf-8")).filament_id).toBe(
+      derivedFilamentId("Rock PLA"),
+    );
+    expect(await readFile(join(base, `Rock PLA @${X1C_04}.info`), "utf-8")).not.toContain(
+      "updated_time = 1700000000",
+    );
 
     // Back to the check, which looks again: the preset now has an ID SpoolEase doesn't know, a note.
     await press(stdin, "b");
-    await vi.waitFor(() => expect(lastFrame()).toContain("✓ BambuStudio presets without a filament ID: none"));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain("✓ BambuStudio presets without a filament ID: none"),
+    );
     expect(lastFrame()).toContain(`Rock PLA (${derivedFilamentId("Rock PLA")})`);
   });
 
@@ -917,7 +1119,10 @@ describe("TUI", () => {
           filament_start_gcode: ["; start"],
         };
         await writeFile(path, `${JSON.stringify(preset, null, 4)}\n`);
-        await writeFile(join(base, `Red @${printer}.info`), "sync_info = \nupdated_time = 1700000000\n");
+        await writeFile(
+          join(base, `Red @${printer}.info`),
+          "sync_info = \nupdated_time = 1700000000\n",
+        );
         paths.push(path);
       }
       return paths;
@@ -929,12 +1134,17 @@ describe("TUI", () => {
 
     it("edits fields, keeps edits not saved yet, and saves them into the filament's presets and SpoolEase's range", async () => {
       const [first, second] = await redPresets();
-      server.customFilaments = "PA000001,Acme PLA Red,190,230,PLA\r\nPB000002,Acme PLA Blue,200,220,PLA";
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+      server.customFilaments =
+        "PA000001,Acme PLA Red,190,230,PLA\r\nPB000002,Acme PLA Blue,200,220,PLA";
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, "e", ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("Edit a filament preset: 2 in BambuStudio folder default"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("Edit a filament preset: 2 in BambuStudio folder default"),
+      );
       await press(stdin, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("Edit Red @ X1 Carbon 0.4 nozzle"));
       expect(lastFrame()).toMatch(/Temperature +Nozzle +220 °C/);
@@ -955,29 +1165,50 @@ describe("TUI", () => {
       await press(stdin, PAGE_DOWN, PAGE_DOWN, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("Save to which presets of Red?"));
       await press(stdin, ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("Save 2 changes to Red @ X1 Carbon 0.4 nozzle"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("Save 2 changes to Red @ X1 Carbon 0.4 nozzle"),
+      );
       expect(lastFrame()).toMatch(/Nozzle +220 °C → 215 °C/);
       expect(lastFrame()).toContain("Into 2 presets:");
-      expect(lastFrame()).toContain("SpoolEase: custom filament PA000001's nozzle range 190-230 °C → 200-230 °C");
-      expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual(["/api/test-key"]);
+      expect(lastFrame()).toContain(
+        "SpoolEase: custom filament PA000001's nozzle range 190-230 °C → 200-230 °C",
+      );
+      expect(server.requests.filter((r) => r.method === "POST").map((r) => r.path)).toEqual([
+        "/api/test-key",
+      ]);
 
       await press(stdin, "a");
       await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 presets saved, 0 failed"));
       expect(lastFrame()).toContain("✓ SpoolEase's nozzle range for PA000001 is 200-230 °C");
       for (const path of [first!, second!]) {
         const saved = JSON.parse(await readFile(path, "utf-8"));
-        expect(saved).toMatchObject({ nozzle_temperature: ["215"], nozzle_temperature_initial_layer: ["220"], nozzle_temperature_range_low: ["200"], filament_id: "PA000001" });
-        expect(await readFile(path.replace(/\.json$/, ".info"), "utf-8")).not.toContain("updated_time = 1700000000");
+        expect(saved).toMatchObject({
+          nozzle_temperature: ["215"],
+          nozzle_temperature_initial_layer: ["220"],
+          nozzle_temperature_range_low: ["200"],
+          filament_id: "PA000001",
+        });
+        expect(await readFile(path.replace(/\.json$/, ".info"), "utf-8")).not.toContain(
+          "updated_time = 1700000000",
+        );
       }
-      expect(server.customFilaments).toBe("PA000001,Acme PLA Red,200,230,PLA\r\nPB000002,Acme PLA Blue,200,220,PLA");
+      expect(server.customFilaments).toBe(
+        "PA000001,Acme PLA Red,200,230,PLA\r\nPB000002,Acme PLA Blue,200,220,PLA",
+      );
 
       await press(stdin, "m");
-      await vi.waitFor(() => expect(lastFrame()).toContain("✓ 2 BambuStudio presets of Red saved: restart BambuStudio to load"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain(
+          "✓ 2 BambuStudio presets of Red saved: restart BambuStudio to load",
+        ),
+      );
     });
 
     it("edits any setting as raw text under All settings, and saves only into the presets ticked", async () => {
       const [first, second] = await redPresets();
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, "e", ENTER);
@@ -985,7 +1216,9 @@ describe("TUI", () => {
       await press(stdin, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("Edit Red @"));
       await press(stdin, PAGE_DOWN, PAGE_DOWN, UP, ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("All settings: Red @ X1 Carbon 0.4 nozzle"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("All settings: Red @ X1 Carbon 0.4 nozzle"),
+      );
 
       await press(stdin, ..."start".split(""));
       await vi.waitFor(() => expect(lastFrame()).toContain("1 of 8"));
@@ -995,7 +1228,9 @@ describe("TUI", () => {
       await press(stdin, ESC);
       await vi.waitFor(() => expect(lastFrame()).not.toContain("1 of 8"));
       await press(stdin, ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("name can't be changed here: it comes from the file name"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("name can't be changed here: it comes from the file name"),
+      );
 
       await press(stdin, ESC);
       await vi.waitFor(() => expect(lastFrame()).toContain("Review and save"));
@@ -1007,19 +1242,31 @@ describe("TUI", () => {
 
       await press(stdin, "a");
       await vi.waitFor(() => expect(lastFrame()).toContain("Done: 1 preset saved, 0 failed"));
-      expect(JSON.parse(await readFile(first!, "utf-8")).filament_start_gcode).toEqual(["; start\nG28"]);
-      expect(JSON.parse(await readFile(second!, "utf-8")).filament_start_gcode).toEqual(["; start"]);
+      expect(JSON.parse(await readFile(first!, "utf-8")).filament_start_gcode).toEqual([
+        "; start\nG28",
+      ]);
+      expect(JSON.parse(await readFile(second!, "utf-8")).filament_start_gcode).toEqual([
+        "; start",
+      ]);
     });
 
     it("won't review nothing, or a nozzle range that runs high to low, and says when there are no presets", async () => {
-      const { lastFrame, stdin, unmount } = render(<App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />);
+      const { lastFrame, stdin, unmount } = render(
+        <App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />,
+      );
       await settle();
       await press(stdin, "e", ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("✗ BambuStudio folder default has no filament presets of your own"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain(
+          "✗ BambuStudio folder default has no filament presets of your own",
+        ),
+      );
       unmount();
 
       await redPresets();
-      const again = render(<App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />);
+      const again = render(
+        <App initial={values({ source: "spoolmandb", skipSpoolease: true })} onExit={onExit} />,
+      );
       await settle();
       await press(again.stdin, "e", ENTER);
       await vi.waitFor(() => expect(again.lastFrame()).toContain("Edit a filament preset"));
@@ -1031,7 +1278,9 @@ describe("TUI", () => {
       await press(again.stdin, PAGE_UP, PAGE_UP, DOWN, DOWN);
       await retype(again.stdin, "240");
       await press(again.stdin, PAGE_DOWN, PAGE_DOWN, ENTER);
-      await vi.waitFor(() => expect(again.lastFrame()).toContain("Nozzle range: low (240 °C) is above high (230 °C)"));
+      await vi.waitFor(() =>
+        expect(again.lastFrame()).toContain("Nozzle range: low (240 °C) is above high (230 °C)"),
+      );
     });
   });
 
@@ -1041,13 +1290,17 @@ describe("TUI", () => {
     }
 
     it("edits a filament's new preset before the run writes it, and the run writes it with SpoolEase's range", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ createSpools: false })} onExit={onExit} />,
+      );
       await settle();
       await press(stdin, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply · [e] edit presets"));
 
       await press(stdin, "e");
-      await vi.waitFor(() => expect(lastFrame()).toContain("Edit the new presets of which filament?"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("Edit the new presets of which filament?"),
+      );
       await press(stdin, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain(`Edit PETG Red @ X1 Carbon 0.4 nozzle`));
       expect(lastFrame()).toContain("the run writes it");
@@ -1058,21 +1311,32 @@ describe("TUI", () => {
       await retype(stdin, "260");
       await vi.waitFor(() => expect(lastFrame()).toMatch(/Nozzle range, low +260 °C/));
       await press(stdin, ESC);
-      await vi.waitFor(() => expect(lastFrame()).toContain("Nozzle range: low (260 °C) is above high (255 °C)"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("Nozzle range: low (260 °C) is above high (255 °C)"),
+      );
       await press(stdin, "u", DOWN);
       await retype(stdin, "245");
       await vi.waitFor(() => expect(lastFrame()).toMatch(/Nozzle range, high +245 °C +was 255 °C/));
 
       await press(stdin, ESC);
-      await vi.waitFor(() => expect(lastFrame()).toContain("✎ PABC1234: 1 change goes into the 1 preset the run writes"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("✎ PABC1234: 1 change goes into the 1 preset the run writes"),
+      );
       expect(lastFrame()).toMatch(/PETG +230-245/);
       expect(await readdir(baseFilamentDir(home)).catch(() => [])).toEqual([]);
 
       await press(stdin, "a");
       await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
-      const written = JSON.parse(await readFile(join(baseFilamentDir(home), `PETG Red @${X1C_04}.json`), "utf-8"));
-      expect(written).toMatchObject({ nozzle_temperature_range_low: ["230"], nozzle_temperature_range_high: ["245"] });
-      expect(server.customFilaments?.split("\r\n")[0]).toBe("PABC1234,Polymaker PETG Red,230,245,PETG");
+      const written = JSON.parse(
+        await readFile(join(baseFilamentDir(home), `PETG Red @${X1C_04}.json`), "utf-8"),
+      );
+      expect(written).toMatchObject({
+        nozzle_temperature_range_low: ["230"],
+        nozzle_temperature_range_high: ["245"],
+      });
+      expect(server.customFilaments?.split("\r\n")[0]).toBe(
+        "PABC1234,Polymaker PETG Red,230,245,PETG",
+      );
 
       // The next run starts without the edits.
       await press(stdin, "m");
@@ -1085,28 +1349,45 @@ describe("TUI", () => {
     it("sends SpoolEase a kept preset's range, and points to the preset editor for kept presets", async () => {
       const base = baseFilamentDir(home);
       await mkdir(base, { recursive: true });
-      const tuned = { name: `PETG Red @${X1C_04}`, filament_id: "PABC1234", nozzle_temperature_range_low: ["235"], nozzle_temperature_range_high: ["250"] };
+      const tuned = {
+        name: `PETG Red @${X1C_04}`,
+        filament_id: "PABC1234",
+        nozzle_temperature_range_low: ["235"],
+        nozzle_temperature_range_high: ["250"],
+      };
       await writeFile(join(base, `PETG Red @${X1C_04}.json`), JSON.stringify(tuned));
-      const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ createSpools: false })} onExit={onExit} />,
+      );
       await settle();
       await press(stdin, ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
       expect(lastFrame()).toMatch(/PETG +235-250/);
 
       await press(stdin, "e", ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("PETG Red's presets are there already and the run keeps them"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain(
+          "PETG Red's presets are there already and the run keeps them",
+        ),
+      );
       expect(lastFrame()).toContain("[a] apply");
 
       await press(stdin, "a");
       await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
-      expect(server.customFilaments?.split("\r\n")[0]).toBe("PABC1234,Polymaker PETG Red,235,250,PETG");
-      expect(JSON.parse(await readFile(join(base, `PETG Red @${X1C_04}.json`), "utf-8"))).toEqual(tuned);
+      expect(server.customFilaments?.split("\r\n")[0]).toBe(
+        "PABC1234,Polymaker PETG Red,235,250,PETG",
+      );
+      expect(JSON.parse(await readFile(join(base, `PETG Red @${X1C_04}.json`), "utf-8"))).toEqual(
+        tuned,
+      );
     });
   });
 
   it("shows SpoolmanDB download errors on the form", async () => {
     spoolmanDb.failWith = 503;
-    const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -1116,7 +1397,12 @@ describe("TUI", () => {
   });
 
   it("writes one preset per comma-separated printer and remembers them", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ skipSpoolease: true, printerPreset: `${X1C_04}, ${X1C_06}` })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App
+        initial={values({ skipSpoolease: true, printerPreset: `${X1C_04}, ${X1C_06}` })}
+        onExit={onExit}
+      />,
+    );
     await settle();
 
     await press(stdin, ENTER);
@@ -1125,18 +1411,27 @@ describe("TUI", () => {
 
     await vi.waitFor(() => expect(lastFrame()).toContain("Done: 3 written, 0 failed"));
     expect(await readdir(baseFilamentDir(home))).toHaveLength(6);
-    expect(JSON.parse(await readFile(tuiSettingsPath(), "utf-8"))).toEqual({ printers: [X1C_04, X1C_06] });
+    expect(JSON.parse(await readFile(tuiSettingsPath(), "utf-8"))).toEqual({
+      printers: [X1C_04, X1C_06],
+    });
   });
 
   it("shows setup errors such as an unknown printer and exits 2", async () => {
-    const { lastFrame, stdin } = render(<App initial={values({ skipSpoolease: true, printerPreset: "Bambu Lab X1C 0.4 nozzle" })} onExit={onExit} />);
+    const { lastFrame, stdin } = render(
+      <App
+        initial={values({ skipSpoolease: true, printerPreset: "Bambu Lab X1C 0.4 nozzle" })}
+        onExit={onExit}
+      />,
+    );
     await settle();
 
     await press(stdin, ENTER);
     await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
     await press(stdin, "a");
 
-    await vi.waitFor(() => expect(lastFrame()).toContain('unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"'));
+    await vi.waitFor(() =>
+      expect(lastFrame()).toContain('unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"'),
+    );
     await press(stdin, "q");
     expect(onExit).toHaveBeenCalledWith(2);
   });
@@ -1149,7 +1444,10 @@ describe("TUI", () => {
       lpLog = await installFakeLp(home);
     });
 
-    async function applyAndFinish(lastFrame: () => string | undefined, stdin: { write: (data: string) => void }): Promise<void> {
+    async function applyAndFinish(
+      lastFrame: () => string | undefined,
+      stdin: { write: (data: string) => void },
+    ): Promise<void> {
       await press(stdin, ENTER);
       await keepSourceWeights(stdin, lastFrame);
       await vi.waitFor(() => expect(lastFrame()).toContain("[a] apply"));
@@ -1172,12 +1470,25 @@ describe("TUI", () => {
       await vi.waitFor(() => expect(lastFrame()).toMatch(/Printer +Label-Printer\/spools/));
       await press(stdin, DOWN, DOWN, ENTER);
 
-      await vi.waitFor(() => expect(lastFrame()).toContain("Sent 3 labels to Label-Printer/spools: request id is Label-7 (1 file(s))"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain(
+          "Sent 3 labels to Label-Printer/spools: request id is Label-7 (1 file(s))",
+        ),
+      );
       expect(lastFrame()).toContain("Done: 3 written, 0 failed");
-      expect((await readFile(join(lpLog, "args"), "utf-8")).split("\n")).toContain("media=Custom.57x32mm");
+      expect((await readFile(join(lpLog, "args"), "utf-8")).split("\n")).toContain(
+        "media=Custom.57x32mm",
+      );
       const pages = readPdf(await readFile(join(lpLog, "printed.pdf")));
-      expect(pages.map((p) => new URL(decodeQr(p)!).searchParams.get("ID"))).toEqual(["1", "2", "3"]);
-      expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toMatchObject({ printer: "Label-Printer/spools", size: "57x32mm" });
+      expect(pages.map((p) => new URL(decodeQr(p)!).searchParams.get("ID"))).toEqual([
+        "1",
+        "2",
+        "3",
+      ]);
+      expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toMatchObject({
+        printer: "Label-Printer/spools",
+        size: "57x32mm",
+      });
     });
 
     it("chooses the label size from a list of common sizes", async () => {
@@ -1202,7 +1513,9 @@ describe("TUI", () => {
       await press(stdin, "l");
       await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 3 new spools"));
       await press(stdin, ENTER);
-      await vi.waitFor(() => expect(lastFrame()).toContain("Choose a printer, a PDF path, or both"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("Choose a printer, a PDF path, or both"),
+      );
       await press(stdin, ESC);
 
       await vi.waitFor(() => expect(lastFrame()).toContain("[l] labels for 3 new spools"));
@@ -1211,15 +1524,37 @@ describe("TUI", () => {
 
     it("prints labels for spools already on the console, from the start menu", async () => {
       server.spools.push(
-        { id: "1", material_type: "PETG", color_name: "Black", color_code: "000000FF", brand: "Acme", weight_advertised: "1000", slicer_filament: "PA000001" },
-        { id: "2", material_type: "PLA", color_name: "Vivid Yellow", color_code: "F1C400FF", brand: "Sunlu", weight_advertised: "1000", slicer_filament: "PA000002" },
+        {
+          id: "1",
+          material_type: "PETG",
+          color_name: "Black",
+          color_code: "000000FF",
+          brand: "Acme",
+          weight_advertised: "1000",
+          slicer_filament: "PA000001",
+        },
+        {
+          id: "2",
+          material_type: "PLA",
+          color_name: "Vivid Yellow",
+          color_code: "F1C400FF",
+          brand: "Sunlu",
+          weight_advertised: "1000",
+          slicer_filament: "PA000002",
+        },
       );
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, "p", ENTER);
       // Newest first, each with a swatch of its color between the mark and the name.
-      await vi.waitFor(() => expect(lastFrame()).toMatch(/› \[ \] {4}#2 Sunlu PLA Vivid Yellow[\s\S]*#1 Acme PETG Black/));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toMatch(
+          /› \[ \] {4}#2 Sunlu PLA Vivid Yellow[\s\S]*#1 Acme PETG Black/,
+        ),
+      );
       await press(stdin, " ", ENTER);
       await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 1 spool: #2"));
       await press(stdin, UP, UP, ENTER);
@@ -1235,19 +1570,31 @@ describe("TUI", () => {
     });
 
     it("says so when the console has no spools to label", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, "p", ENTER);
 
-      await vi.waitFor(() => expect(lastFrame()).toContain("The SpoolEase console has no spools yet"));
+      await vi.waitFor(() =>
+        expect(lastFrame()).toContain("The SpoolEase console has no spools yet"),
+      );
       expect(lastFrame()).toContain("Print labels for existing spools");
     });
 
     describe("more spools of a filament you have", () => {
       beforeEach(() => {
         server.spools.push(
-          { id: "1", material_type: "PETG", color_name: "Black", color_code: "000000FF", brand: "Acme", weight_advertised: "1000", slicer_filament: "PA000001" },
+          {
+            id: "1",
+            material_type: "PETG",
+            color_name: "Black",
+            color_code: "000000FF",
+            brand: "Acme",
+            weight_advertised: "1000",
+            slicer_filament: "PA000001",
+          },
           {
             id: "2",
             material_type: "PLA",
@@ -1263,16 +1610,26 @@ describe("TUI", () => {
       });
 
       it("adds copies of a filament's spool without touching presets or the CSV, then labels them", async () => {
-        const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+        const { lastFrame, stdin } = render(
+          <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+        );
         await settle();
 
         await press(stdin, "m", ENTER);
         // Named from the custom filaments CSV when it lists the code, else from the spool.
-        await vi.waitFor(() => expect(lastFrame()).toMatch(/› \( \) {4}Acme PETG Black +1 spool[\s\S]*Sunlu PLA 2\.0 Vivid Yellow +1 spool/));
+        await vi.waitFor(() =>
+          expect(lastFrame()).toMatch(
+            /› \( \) {4}Acme PETG Black +1 spool[\s\S]*Sunlu PLA 2\.0 Vivid Yellow +1 spool/,
+          ),
+        );
         await press(stdin, DOWN, ENTER);
-        await vi.waitFor(() => expect(lastFrame()).toContain("How many new spools of Sunlu PLA 2.0 Vivid Yellow?"));
+        await vi.waitFor(() =>
+          expect(lastFrame()).toContain("How many new spools of Sunlu PLA 2.0 Vivid Yellow?"),
+        );
         await press(stdin, DOWN, ENTER);
-        await vi.waitFor(() => expect(lastFrame()).toContain("Add 2 spools of Sunlu PLA 2.0 Vivid Yellow"));
+        await vi.waitFor(() =>
+          expect(lastFrame()).toContain("Add 2 spools of Sunlu PLA 2.0 Vivid Yellow"),
+        );
         expect(lastFrame()).toContain("1000 g on a 189 g spool");
         expect(server.spools).toHaveLength(2);
 
@@ -1281,7 +1638,14 @@ describe("TUI", () => {
         await vi.waitFor(() => expect(lastFrame()).toContain("Done: 2 added, 0 failed"));
         expect(lastFrame()).toContain("[l] labels for 2 new spools");
         expect(server.spools.slice(2)).toMatchObject([
-          { id: "3", brand: "Sunlu", material_type: "PLA", color_name: "Vivid Yellow", weight_core: "189", slicer_filament: "PA000002" },
+          {
+            id: "3",
+            brand: "Sunlu",
+            material_type: "PLA",
+            color_name: "Vivid Yellow",
+            weight_core: "189",
+            slicer_filament: "PA000002",
+          },
           { id: "4", slicer_filament: "PA000002" },
         ]);
         // The key is checked when the list opens and again right before writing.
@@ -1291,7 +1655,9 @@ describe("TUI", () => {
           "/api/spools/add-edit",
           "/api/spools/add-edit",
         ]);
-        await expect(readdir(join(home, ".config", "BambuStudio", "user", "default", "filament"))).rejects.toThrow("ENOENT");
+        await expect(
+          readdir(join(home, ".config", "BambuStudio", "user", "default", "filament")),
+        ).rejects.toThrow("ENOENT");
 
         await press(stdin, "l");
         await vi.waitFor(() => expect(lastFrame()).toContain("Labels for 2 new spools: #3, #4"));
@@ -1302,7 +1668,9 @@ describe("TUI", () => {
       });
 
       it("goes back a step at a time and keeps what was chosen", async () => {
-        const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+        const { lastFrame, stdin } = render(
+          <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+        );
         await settle();
         await press(stdin, "m", ENTER);
         await vi.waitFor(() => expect(lastFrame()).toContain("Which filament?"));
@@ -1314,7 +1682,9 @@ describe("TUI", () => {
         await press(stdin, "b");
         await vi.waitFor(() => expect(lastFrame()).toContain("› (*) 3 spools"));
         await press(stdin, ESC);
-        await vi.waitFor(() => expect(lastFrame()).toMatch(/› \(\*\) +Sunlu PLA 2\.0 Vivid Yellow/));
+        await vi.waitFor(() =>
+          expect(lastFrame()).toMatch(/› \(\*\) +Sunlu PLA 2\.0 Vivid Yellow/),
+        );
         await press(stdin, ESC);
 
         await vi.waitFor(() => expect(lastFrame()).toContain("More spools of a filament you have"));
@@ -1323,18 +1693,24 @@ describe("TUI", () => {
 
       it("says so when no spool on the console has a filament code to copy", async () => {
         server.spools.splice(0, 2, { id: "1", brand: "Acme" });
-        const { lastFrame, stdin } = render(<App initial={values({ source: "spoolmandb" })} onExit={onExit} />);
+        const { lastFrame, stdin } = render(
+          <App initial={values({ source: "spoolmandb" })} onExit={onExit} />,
+        );
         await settle();
 
         await press(stdin, "m", ENTER);
 
-        await vi.waitFor(() => expect(lastFrame()).toContain("No spool on the console has a filament code to copy"));
+        await vi.waitFor(() =>
+          expect(lastFrame()).toContain("No spool on the console has a filament code to copy"),
+        );
         expect(lastFrame()).toContain("More spools of a filament you have");
       });
     });
 
     it("offers no labels when the run created no spools", async () => {
-      const { lastFrame, stdin } = render(<App initial={values({ createSpools: false })} onExit={onExit} />);
+      const { lastFrame, stdin } = render(
+        <App initial={values({ createSpools: false })} onExit={onExit} />,
+      );
       await settle();
 
       await press(stdin, ENTER);

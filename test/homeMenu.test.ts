@@ -35,7 +35,10 @@ describe("typeAheadJump", () => {
   it("builds a prefix from letters typed in quick succession", () => {
     const s = typeAheadJump(brands, 0, "s", undefined, 1_000);
     expect(s).toEqual({ cursor: 1, typed: { text: "s", at: 1_000 } });
-    expect(typeAheadJump(brands, s.cursor, "u", s.typed, 1_000 + TYPE_AHEAD_MS - 1)).toEqual({ cursor: 4, typed: { text: "su", at: 1_999 } });
+    expect(typeAheadJump(brands, s.cursor, "u", s.typed, 1_000 + TYPE_AHEAD_MS - 1)).toEqual({
+      cursor: 4,
+      typed: { text: "su", at: 1_999 },
+    });
   });
 
   it("starts over after a pause", () => {
@@ -75,20 +78,58 @@ describe("listMove", () => {
 
 describe("homeItems", () => {
   it("offers SpoolmanDB, more spools of a filament, a barcode scan, labels for existing spools, the spool list, preset editing, the sync check, settings and quit", () => {
-    expect(homeItems("spoolmandb", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "barcode", "labels", "spools", "edit", "check", "settings", "quit"]);
-    expect(homeItems("", true).map((i) => i.id)).toEqual(["spoolmandb", "more", "barcode", "labels", "spools", "edit", "check", "settings", "quit"]);
+    expect(homeItems("spoolmandb", true).map((i) => i.id)).toEqual([
+      "spoolmandb",
+      "more",
+      "barcode",
+      "labels",
+      "spools",
+      "edit",
+      "check",
+      "settings",
+      "quit",
+    ]);
+    expect(homeItems("", true).map((i) => i.id)).toEqual([
+      "spoolmandb",
+      "more",
+      "barcode",
+      "labels",
+      "spools",
+      "edit",
+      "check",
+      "settings",
+      "quit",
+    ]);
   });
 
   it("leaves out what needs the console when SpoolEase is skipped", () => {
-    expect(homeItems("spoolmandb", false).map((i) => i.id)).toEqual(["spoolmandb", "edit", "settings", "quit"]);
+    expect(homeItems("spoolmandb", false).map((i) => i.id)).toEqual([
+      "spoolmandb",
+      "edit",
+      "settings",
+      "quit",
+    ]);
   });
 
   it("adds an import item for a file or URL source", () => {
     const items = homeItems("/tmp/profiles.json", true);
 
-    expect(items.map((i) => i.id)).toEqual(["spoolmandb", "import", "more", "barcode", "labels", "spools", "edit", "check", "settings", "quit"]);
+    expect(items.map((i) => i.id)).toEqual([
+      "spoolmandb",
+      "import",
+      "more",
+      "barcode",
+      "labels",
+      "spools",
+      "edit",
+      "check",
+      "settings",
+      "quit",
+    ]);
     expect(items[1]?.label).toBe("Import profiles.json");
-    expect(homeItems("https://example.com/shared/list.json", true)[1]?.label).toBe("Import list.json");
+    expect(homeItems("https://example.com/shared/list.json", true)[1]?.label).toBe(
+      "Import list.json",
+    );
   });
 
   it("starts on the import item when there is one, else on SpoolmanDB", () => {
@@ -103,7 +144,10 @@ describe("homeInput", () => {
   it("moves, jumps by letter, and chooses with enter", () => {
     expect(homeInput(0, "", key({ downArrow: true }), items)).toEqual({ type: "move", cursor: 1 });
     expect(homeInput(0, "s", key(), items)).toEqual({ type: "move", cursor: 8 });
-    expect(homeInput(8, "", key({ return: true }), items)).toEqual({ type: "choose", id: "settings" });
+    expect(homeInput(8, "", key({ return: true }), items)).toEqual({
+      type: "choose",
+      id: "settings",
+    });
   });
 
   it("ignores other keys", () => {

@@ -51,11 +51,15 @@ function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function nozzleTemps(entry: Record<string, unknown>, materialTemp: number | undefined): readonly [number, number] {
+function nozzleTemps(
+  entry: Record<string, unknown>,
+  materialTemp: number | undefined,
+): readonly [number, number] {
   const range = entry.extruder_temp_range;
   if (Array.isArray(range) && range.length === 2) {
     const [low, high] = range.map(num);
-    if (low !== null && low !== undefined && high !== null && high !== undefined) return [Math.round(low), Math.round(high)];
+    if (low !== null && low !== undefined && high !== null && high !== undefined)
+      return [Math.round(low), Math.round(high)];
   }
   const single = num(entry.extruder_temp) ?? materialTemp ?? null;
   return single === null ? DEFAULT_TEMPS : [Math.round(single), Math.round(single)];
@@ -80,7 +84,11 @@ function materialTemps(materials: unknown): Map<string, number> {
  * (material only when the name lacks it, which keeps names unique across the database), and the first
  * variant of each name wins. Malformed entries are skipped.
  */
-export function catalogProfiles(filaments: unknown, materials: unknown, diameter: number): FilamentProfile[] {
+export function catalogProfiles(
+  filaments: unknown,
+  materials: unknown,
+  diameter: number,
+): FilamentProfile[] {
   if (!Array.isArray(filaments)) throw new Error("SpoolmanDB filaments.json is not a list");
   const temps = materialTemps(materials);
   const byName = new Map<string, FilamentProfile>();
@@ -94,7 +102,9 @@ export function catalogProfiles(filaments: unknown, materials: unknown, diameter
     if (!manufacturer || !product || !material || num(entry.diameter) !== diameter) continue;
     if (EXCLUDED_MANUFACTURERS.has(manufacturer.toLowerCase())) continue;
 
-    const name = product.toUpperCase().includes(material) ? `${manufacturer} ${product}` : `${manufacturer} ${material} ${product}`;
+    const name = product.toUpperCase().includes(material)
+      ? `${manufacturer} ${product}`
+      : `${manufacturer} ${material} ${product}`;
     if (byName.has(name)) continue;
 
     const hexes = entry.color_hexes;
@@ -121,7 +131,10 @@ export function catalogProfiles(filaments: unknown, materials: unknown, diameter
 }
 
 /** Brand and material match exactly (ignoring case); every --match word must appear in the name. */
-export function filterProfiles(profiles: FilamentProfile[], filters: ProfileFilters): FilamentProfile[] {
+export function filterProfiles(
+  profiles: FilamentProfile[],
+  filters: ProfileFilters,
+): FilamentProfile[] {
   const brand = filters.brand.trim().toLowerCase();
   const material = filters.material.trim().toLowerCase();
   const words = filters.match.toLowerCase().split(/\s+/).filter(Boolean);
@@ -145,7 +158,10 @@ async function readOptional(path: string): Promise<string | null> {
  * Fetch a JSON file, revalidating the cached copy with its ETag. When the download fails and a
  * cached copy exists, return that with a warning instead of failing.
  */
-async function fetchCachedJson(url: string, cachePath: string): Promise<{ value: unknown; warning: string }> {
+async function fetchCachedJson(
+  url: string,
+  cachePath: string,
+): Promise<{ value: unknown; warning: string }> {
   const etagPath = `${cachePath}.etag`;
   const cached = await readOptional(cachePath);
   const etag = cached === null ? null : await readOptional(etagPath);
@@ -154,12 +170,18 @@ async function fetchCachedJson(url: string, cachePath: string): Promise<{ value:
     if (cached === null) throw new Error(`Failed to download ${url}: ${reason}`);
     const day = (await stat(cachePath)).mtime.toISOString().slice(0, 10);
     const file = url.slice(url.lastIndexOf("/") + 1);
-    return { value: JSON.parse(cached), warning: `SpoolmanDB ${file} could not be refreshed (${reason}); using the copy cached on ${day}` };
+    return {
+      value: JSON.parse(cached),
+      warning: `SpoolmanDB ${file} could not be refreshed (${reason}); using the copy cached on ${day}`,
+    };
   };
 
   let resp: Response;
   try {
-    resp = await fetch(url, { headers: etag ? { "If-None-Match": etag } : {}, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    resp = await fetch(url, {
+      headers: etag ? { "If-None-Match": etag } : {},
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
   } catch (err) {
     return fallback(errorMessage(err));
   }
@@ -185,11 +207,17 @@ async function fetchCachedJson(url: string, cachePath: string): Promise<{ value:
 
 /** Download (or reuse the cached) SpoolmanDB catalog and map it onto profiles of one diameter. */
 export async function loadSpoolmanDb(options: SpoolmanDbOptions): Promise<Catalog> {
-  const base = (options.baseUrl ?? (process.env.SPOOLMANDB_URL || SPOOLMANDB_URL)).replace(/\/+$/, "");
+  const base = (options.baseUrl ?? (process.env.SPOOLMANDB_URL || SPOOLMANDB_URL)).replace(
+    /\/+$/,
+    "",
+  );
   const dir = options.cacheDir ?? cacheDir();
   const fetchFile = (file: string) => fetchCachedJson(`${base}/${file}`, join(dir, file));
   // allSettled, so the error doesn't depend on which download happens to fail first.
-  const [filamentsResult, materialsResult] = await Promise.allSettled([fetchFile("filaments.json"), fetchFile("materials.json")]);
+  const [filamentsResult, materialsResult] = await Promise.allSettled([
+    fetchFile("filaments.json"),
+    fetchFile("materials.json"),
+  ]);
   if (filamentsResult.status === "rejected") throw filamentsResult.reason;
   if (materialsResult.status === "rejected") throw materialsResult.reason;
   const [filaments, materials] = [filamentsResult.value, materialsResult.value];

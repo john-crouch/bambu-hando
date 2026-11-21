@@ -7,7 +7,12 @@ import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_LABEL_SETTINGS, labelSettingsPath, loadLabelSettings, saveLabelSettings } from "../src/labelSettings.js";
+import {
+  DEFAULT_LABEL_SETTINGS,
+  labelSettingsPath,
+  loadLabelSettings,
+  saveLabelSettings,
+} from "../src/labelSettings.js";
 
 describe("label settings", () => {
   let home: string;
@@ -33,11 +38,19 @@ describe("label settings", () => {
   });
 
   it("saves and loads the last choices", async () => {
-    const choices = { fields: ["qr", "brand", "id"] as const, size: "40x30mm", printer: "Label-Printer/spools", output: "/tmp/labels.pdf" };
+    const choices = {
+      fields: ["qr", "brand", "id"] as const,
+      size: "40x30mm",
+      printer: "Label-Printer/spools",
+      output: "/tmp/labels.pdf",
+    };
     await saveLabelSettings({ ...choices, fields: [...choices.fields] });
 
     expect(await loadLabelSettings()).toEqual({ ...choices, fields: [...choices.fields] });
-    expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toEqual({ ...choices, fields: [...choices.fields] });
+    expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toEqual({
+      ...choices,
+      fields: [...choices.fields],
+    });
   });
 
   it("falls back to defaults for damaged files and values it doesn't know", async () => {
@@ -45,7 +58,14 @@ describe("label settings", () => {
     await writeFile(labelSettingsPath(), "{ not json", "utf-8");
     expect(await loadLabelSettings()).toEqual(DEFAULT_LABEL_SETTINGS);
 
-    await writeFile(labelSettingsPath(), JSON.stringify({ fields: ["brand", "price", "id"], size: "huge", printer: 7 }), "utf-8");
-    expect(await loadLabelSettings()).toEqual({ ...DEFAULT_LABEL_SETTINGS, fields: ["brand", "id"] });
+    await writeFile(
+      labelSettingsPath(),
+      JSON.stringify({ fields: ["brand", "price", "id"], size: "huge", printer: 7 }),
+      "utf-8",
+    );
+    expect(await loadLabelSettings()).toEqual({
+      ...DEFAULT_LABEL_SETTINGS,
+      fields: ["brand", "id"],
+    });
   });
 });

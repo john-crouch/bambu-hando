@@ -8,10 +8,10 @@ import { DEFAULT_LABEL_SETTINGS } from "../src/labelSettings.js";
 import { parseLabelSize } from "../src/labels.js";
 import {
   initialLabelForm,
+  type LabelFormState,
   labelFormInput,
   labelFormSettings,
   labelFormTarget,
-  type LabelFormState,
   labelPrinterItems,
   labelSizeItems,
   MAKE_ROW,
@@ -38,10 +38,19 @@ function update(state: LabelFormState, input: string, k: Partial<Key> = {}): Lab
 
 describe("initialLabelForm", () => {
   it("starts from the saved choices, offering a saved printer even when lpstat doesn't list it", () => {
-    const state = initialLabelForm({ ...DEFAULT_LABEL_SETTINGS, printer: "Gone-Printer", output: "/tmp/l.pdf" }, PRINTERS);
+    const state = initialLabelForm(
+      { ...DEFAULT_LABEL_SETTINGS, printer: "Gone-Printer", output: "/tmp/l.pdf" },
+      PRINTERS,
+    );
 
     // The choices are remembered, so the cursor starts on Make labels.
-    expect(state).toMatchObject({ fields: DEFAULT_LABEL_SETTINGS.fields, size: "57x32mm", printer: "Gone-Printer", output: "/tmp/l.pdf", cursor: MAKE_ROW });
+    expect(state).toMatchObject({
+      fields: DEFAULT_LABEL_SETTINGS.fields,
+      size: "57x32mm",
+      printer: "Gone-Printer",
+      output: "/tmp/l.pdf",
+      cursor: MAKE_ROW,
+    });
     expect(state.printers).toEqual([...PRINTERS, "Gone-Printer"]);
   });
 });
@@ -81,8 +90,14 @@ describe("labelFormInput", () => {
   });
 
   it("opens the size and printer lists with enter or space", () => {
-    expect(labelFormInput(form({ cursor: SIZE_ROW }), "", key({ return: true }))).toEqual({ type: "choose", list: "size" });
-    expect(labelFormInput(form({ cursor: PRINTER_ROW }), " ", key())).toEqual({ type: "choose", list: "printer" });
+    expect(labelFormInput(form({ cursor: SIZE_ROW }), "", key({ return: true }))).toEqual({
+      type: "choose",
+      list: "size",
+    });
+    expect(labelFormInput(form({ cursor: PRINTER_ROW }), " ", key())).toEqual({
+      type: "choose",
+      list: "printer",
+    });
   });
 
   it("moves on from the PDF path with enter", () => {
@@ -104,7 +119,11 @@ describe("label lists", () => {
   it("offers common label sizes, the default first, plus a size of your own", () => {
     expect(labelSizeItems("57x32mm")[0]).toMatchObject({ value: "57x32mm" });
     expect(labelSizeItems("57x32mm").every((item) => parseLabelSize(item.value))).toBe(true);
-    expect(labelSizeItems("70x40mm").at(-1)).toEqual({ value: "70x40mm", label: "70x40mm", detail: "your size" });
+    expect(labelSizeItems("70x40mm").at(-1)).toEqual({
+      value: "70x40mm",
+      label: "70x40mm",
+      detail: "your size",
+    });
   });
 
   it("offers not printing, then every printer", () => {
@@ -129,8 +148,12 @@ describe("labelFormTarget", () => {
   });
 
   it("explains what is missing", () => {
-    expect(labelFormTarget(form({ printer: "P", fields: [] }))).toEqual({ error: "Pick at least one field" });
-    expect(labelFormTarget(form({ printer: "P", size: "big" }))).toEqual({ error: 'label size must look like 2.5x1.5in or 40x30mm, got "big"' });
+    expect(labelFormTarget(form({ printer: "P", fields: [] }))).toEqual({
+      error: "Pick at least one field",
+    });
+    expect(labelFormTarget(form({ printer: "P", size: "big" }))).toEqual({
+      error: 'label size must look like 2.5x1.5in or 40x30mm, got "big"',
+    });
     expect(labelFormTarget(form())).toEqual({ error: "Choose a printer, a PDF path, or both" });
   });
 

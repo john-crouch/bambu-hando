@@ -28,7 +28,13 @@ const FIELDS: Field[] = [
   { key: "connection", label: "SpoolEase console", kind: "section", spoolease: true },
   { key: "host", label: "  Host", kind: "text", spoolease: true, inConnection: true },
   { key: "port", label: "  Port", kind: "text", spoolease: true, inConnection: true },
-  { key: "securityKey", label: "  Security key", kind: "secret", spoolease: true, inConnection: true },
+  {
+    key: "securityKey",
+    label: "  Security key",
+    kind: "secret",
+    spoolease: true,
+    inConnection: true,
+  },
   { key: "https", label: "  Use HTTPS", kind: "toggle", spoolease: true, inConnection: true },
 ];
 
@@ -65,7 +71,17 @@ interface Props {
   onBack: () => void;
 }
 
-export function SetupForm({ values, error, focus, onFocus, connection, onConnection, onChange, onChoose, onBack }: Props) {
+export function SetupForm({
+  values,
+  error,
+  focus,
+  onFocus,
+  connection,
+  onConnection,
+  onChange,
+  onChoose,
+  onBack,
+}: Props) {
   const fields = FIELDS.filter((field) => connection || !field.inConnection);
   const focused = fields[focus];
   const down = (): void => onFocus((focus + 1) % fields.length);
@@ -121,9 +137,15 @@ export function SetupForm({ values, error, focus, onFocus, connection, onConnect
           );
         })}
       </Box>
-      <Text dimColor>A JSON file or URL of filament profiles shows up as Import on the menu. Folder and printers open a list.</Text>
+      <Text dimColor>
+        A JSON file or URL of filament profiles shows up as Import on the menu. Folder and printers
+        open a list.
+      </Text>
       {error ? <Text color="red">{error}</Text> : null}
-      <Text dimColor>↑/↓ move · enter change · esc menu{focused?.kind === "text" || focused?.kind === "secret" ? "" : " · ? help"} · ctrl+c quit</Text>
+      <Text dimColor>
+        ↑/↓ move · enter change · esc menu
+        {focused?.kind === "text" || focused?.kind === "secret" ? "" : " · ? help"} · ctrl+c quit
+      </Text>
     </Box>
   );
 }

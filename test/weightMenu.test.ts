@@ -30,7 +30,9 @@ function profile(brand: string, coreWeight: number): FilamentProfile {
   };
 }
 
-const entries = parseSpoolWeightList("Sunlu - V3 - 179g,179,Sunlu V3 with Cardboard - 219g,219\r\n");
+const entries = parseSpoolWeightList(
+  "Sunlu - V3 - 179g,179,Sunlu V3 with Cardboard - 219g,219\r\n",
+);
 const mine = parseSpoolWeightList("Sunlu weighed,171", true);
 
 describe("weightItems", () => {
@@ -39,11 +41,23 @@ describe("weightItems", () => {
     const [group] = weightGroups(profiles, [...entries, ...mine]);
 
     expect(weightItems(group!, profiles, "SpoolmanDB")).toEqual([
-      { label: "Sunlu weighed", detail: "171 g · My Spools List", choice: { kind: "grams", grams: 171 } },
+      {
+        label: "Sunlu weighed",
+        detail: "171 g · My Spools List",
+        choice: { kind: "grams", grams: 171 },
+      },
       { label: "Sunlu - V3 - 179g", detail: "179 g", choice: { kind: "grams", grams: 179 } },
-      { label: "Sunlu V3 with Cardboard - 219g", detail: "219 g", choice: { kind: "grams", grams: 219 } },
+      {
+        label: "Sunlu V3 with Cardboard - 219g",
+        detail: "219 g",
+        choice: { kind: "grams", grams: 219 },
+      },
       { label: "SpoolmanDB", detail: "189 g", choice: { kind: "source" } },
-      { label: "Unspecified", detail: "SpoolEase works it out on the first full weigh", choice: { kind: "unspecified" } },
+      {
+        label: "Unspecified",
+        detail: "SpoolEase works it out on the first full weigh",
+        choice: { kind: "unspecified" },
+      },
     ]);
   });
 
@@ -53,7 +67,11 @@ describe("weightItems", () => {
 
     expect(weightItems(group!, profiles, "SpoolmanDB")).toEqual([
       { label: "SpoolmanDB", detail: "150 g", choice: { kind: "source" } },
-      { label: "Unspecified", detail: "SpoolEase works it out on the first full weigh", choice: { kind: "unspecified" } },
+      {
+        label: "Unspecified",
+        detail: "SpoolEase works it out on the first full weigh",
+        choice: { kind: "unspecified" },
+      },
     ]);
   });
 

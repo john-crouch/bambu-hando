@@ -33,16 +33,25 @@ export async function loadBarcodes(path = barcodesPath()): Promise<Map<string, B
   if (typeof saved !== "object" || saved === null) return barcodes;
   for (const [barcode, value] of Object.entries(saved)) {
     const entry = value as Partial<BarcodeFilament> | null;
-    if (typeof entry?.code === "string" && entry.code && typeof entry.name === "string") barcodes.set(barcode, { code: entry.code, name: entry.name });
+    if (typeof entry?.code === "string" && entry.code && typeof entry.name === "string")
+      barcodes.set(barcode, { code: entry.code, name: entry.name });
   }
   return barcodes;
 }
 
 /** Saves the answer for `barcode`, replacing an earlier one; written atomically. */
-export async function rememberBarcode(barcode: string, filament: BarcodeFilament, path = barcodesPath()): Promise<void> {
+export async function rememberBarcode(
+  barcode: string,
+  filament: BarcodeFilament,
+  path = barcodesPath(),
+): Promise<void> {
   const barcodes = await loadBarcodes(path);
   barcodes.set(normalizeBarcode(barcode), filament);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(`${path}.tmp`, `${JSON.stringify(Object.fromEntries(barcodes), null, 2)}\n`, "utf-8");
+  await writeFile(
+    `${path}.tmp`,
+    `${JSON.stringify(Object.fromEntries(barcodes), null, 2)}\n`,
+    "utf-8",
+  );
   await rename(`${path}.tmp`, path);
 }

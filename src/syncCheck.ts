@@ -42,7 +42,9 @@ function splitPresetName(name: string): { name: string; printer: string } {
  * The presets of a preset folder that don't inherit a system preset, from filament/ and filament/base/.
  * Presets inheriting one (BambuStudio's "save as" copies) share its filament ID and are skipped.
  */
-export async function readUserPresets(presetFolder: string): Promise<{ presets: UserPreset[]; warnings: string[] }> {
+export async function readUserPresets(
+  presetFolder: string,
+): Promise<{ presets: UserPreset[]; warnings: string[] }> {
   const presets: UserPreset[] = [];
   const warnings: string[] = [];
   for (const dir of [bambuBaseFilamentDir(presetFolder), bambuFilamentDir(presetFolder)]) {
@@ -58,8 +60,14 @@ export async function readUserPresets(presetFolder: string): Promise<{ presets: 
       }
       if (typeof preset.inherits === "string" && preset.inherits) continue;
       // Seen in real presets made outside BambuStudio's Create filament: the string "null" as the ID.
-      const id = typeof preset.filament_id === "string" && preset.filament_id !== "null" ? preset.filament_id : "";
-      const name = typeof preset.name === "string" && preset.name ? preset.name : file.slice(0, -".json".length);
+      const id =
+        typeof preset.filament_id === "string" && preset.filament_id !== "null"
+          ? preset.filament_id
+          : "";
+      const name =
+        typeof preset.name === "string" && preset.name
+          ? preset.name
+          : file.slice(0, -".json".length);
       presets.push({ ...splitPresetName(name), filamentId: id, path });
     }
   }
@@ -70,7 +78,8 @@ function spoolLine(spool: SpoolRecord): string {
   return `#${spool.id} ${[spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ")}`;
 }
 
-const byName = (a: string, b: string): number => a.localeCompare(b, undefined, { sensitivity: "base" });
+const byName = (a: string, b: string): number =>
+  a.localeCompare(b, undefined, { sensitivity: "base" });
 const newestFirst = (a: SpoolRecord, b: SpoolRecord): number => Number(b.id) - Number(a.id);
 
 interface CheckInput {
@@ -90,7 +99,8 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
     const code = fields[0] ?? "";
     const first = rows.findIndex((other) => other.split(",")[0] === code);
     if (fields.length !== 5) badRows.push(`row ${index + 1}: ${line}`);
-    else if (first !== index) badRows.push(`row ${index + 1}: ${code} again (row ${first + 1} has it)`);
+    else if (first !== index)
+      badRows.push(`row ${index + 1}: ${code} again (row ${first + 1} has it)`);
     if (!names.has(code)) names.set(code, fields[1] ?? "");
   });
 
@@ -99,7 +109,9 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
   const presetsNoId = new Map<string, UserPreset[]>();
   for (const preset of presets) {
     if (names.has(preset.filamentId)) continue;
-    const [groups, key] = preset.filamentId ? [presetsOnly, preset.filamentId] : [presetsNoId, preset.name];
+    const [groups, key] = preset.filamentId
+      ? [presetsOnly, preset.filamentId]
+      : [presetsNoId, preset.name];
     groups.set(key, [...(groups.get(key) ?? []), preset]);
   }
   const printersOf = (group: UserPreset[]): string => group.map((p) => p.printer).join(", ");
@@ -121,7 +133,10 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
       why: "Their code is neither a custom filament nor a Bambu Lab one, so nothing names them or finds their preset.",
       problem: true,
       items: spools
-        .filter((s) => s.slicerFilament && !names.has(s.slicerFilament) && !BAMBU_CODE.test(s.slicerFilament))
+        .filter(
+          (s) =>
+            s.slicerFilament && !names.has(s.slicerFilament) && !BAMBU_CODE.test(s.slicerFilament),
+        )
         .sort(newestFirst)
         .map((s) => `${spoolLine(s)} (${s.slicerFilament})`),
     },
@@ -144,9 +159,11 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
     {
       key: "presetsNoId",
       title: "BambuStudio presets without a filament ID",
-      why: "Their filament_id is missing or \"null\", so no spool can ever be matched to them.",
+      why: 'Their filament_id is missing or "null", so no spool can ever be matched to them.',
       problem: false,
-      items: [...presetsNoId.values()].map((group) => `${group[0]!.name} · ${printersOf(group)}`).sort(byName),
+      items: [...presetsNoId.values()]
+        .map((group) => `${group[0]!.name} · ${printersOf(group)}`)
+        .sort(byName),
     },
     {
       key: "noCode",
@@ -172,7 +189,10 @@ export function checkLines(sections: CheckSection[]): CheckLine[] {
   return sections.flatMap((section): CheckLine[] => {
     if (section.items.length === 0) return [{ tone: "ok", text: `✓ ${section.title}: none` }];
     return [
-      { tone: section.problem ? "problem" : "note", text: `${section.problem ? "✗" : "!"} ${section.title}: ${section.items.length}` },
+      {
+        tone: section.problem ? "problem" : "note",
+        text: `${section.problem ? "✗" : "!"} ${section.title}: ${section.items.length}`,
+      },
       { tone: "why", text: `  ${section.why}` },
       ...section.items.map((item): CheckLine => ({ tone: "item", text: `    ${item}` })),
     ];
@@ -181,7 +201,8 @@ export function checkLines(sections: CheckSection[]): CheckLine[] {
 
 /** Items in problem sections and in note sections. */
 export function checkCounts(sections: CheckSection[]): { problems: number; notes: number } {
-  const count = (problem: boolean) => sections.filter((s) => s.problem === problem).reduce((sum, s) => sum + s.items.length, 0);
+  const count = (problem: boolean) =>
+    sections.filter((s) => s.problem === problem).reduce((sum, s) => sum + s.items.length, 0);
   return { problems: count(true), notes: count(false) };
 }
 
@@ -191,7 +212,9 @@ function plural(count: number, noun: string): string {
 
 export function checkSummary(sections: CheckSection[]): string {
   const { problems, notes } = checkCounts(sections);
-  return problems + notes === 0 ? "Everything lines up" : `${plural(problems, "problem")}, ${plural(notes, "note")}`;
+  return problems + notes === 0
+    ? "Everything lines up"
+    : `${plural(problems, "problem")}, ${plural(notes, "note")}`;
 }
 
 /** Reads the preset folder's presets and the console's custom filaments and spools, and checks them; writes nothing. */
@@ -199,6 +222,10 @@ export async function readCheck(
   client: SpoolEaseClient,
   presetFolder: string,
 ): Promise<{ sections: CheckSection[]; warnings: string[]; presets: UserPreset[] }> {
-  const [{ presets, warnings }, csv, spools] = await Promise.all([readUserPresets(presetFolder), client.getCustomFilamentsCsv(), client.listSpools()]);
+  const [{ presets, warnings }, csv, spools] = await Promise.all([
+    readUserPresets(presetFolder),
+    client.getCustomFilamentsCsv(),
+    client.listSpools(),
+  ]);
   return { sections: checkSync({ presets, csv, spools }), warnings, presets };
 }

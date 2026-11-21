@@ -8,11 +8,29 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { QuotaLedger } from "../src/apiQuota.js";
-import { FilamentProfilesClient, type TdfpFilament, type TdfpSpool } from "../src/filamentProfiles.js";
+import {
+  FilamentProfilesClient,
+  type TdfpFilament,
+  type TdfpSpool,
+} from "../src/filamentProfiles.js";
 import type { SpoolRecord } from "../src/spoolease.js";
 import type { SpoolLink } from "../src/spoolLinks.js";
-import { addCandidates, applySync, planSync, type SyncRow, SyncPlanError, spoolsMatch, weightVerdict } from "../src/spoolSync.js";
-import { type FilamentProfilesServer, serverFilament, serverSpool, startFilamentProfilesServer, TEST_API_KEY } from "./filamentProfilesServer.js";
+import {
+  addCandidates,
+  applySync,
+  planSync,
+  SyncPlanError,
+  type SyncRow,
+  spoolsMatch,
+  weightVerdict,
+} from "../src/spoolSync.js";
+import {
+  type FilamentProfilesServer,
+  serverFilament,
+  serverSpool,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
 
 const NOW = new Date("2026-11-15T13:00:00Z");
 
@@ -132,8 +150,15 @@ describe("weightVerdict", () => {
 describe("spoolsMatch", () => {
   it("matches brand, material and color, ignoring case, spaces and punctuation", () => {
     expect(spoolsMatch(sePool(), tdSpool())).toBe(true);
-    expect(spoolsMatch(sePool({ colorName: "Vivid Yellow", subtype: "2.0" }), tdSpool())).toBe(true);
-    expect(spoolsMatch(sePool({ colorName: "Mildewed Red", material: "PETG", subtype: "Elite" }), tdSpool({ materialType: "Basic Elite", color: "Mildewed Red" }))).toBe(true);
+    expect(spoolsMatch(sePool({ colorName: "Vivid Yellow", subtype: "2.0" }), tdSpool())).toBe(
+      true,
+    );
+    expect(
+      spoolsMatch(
+        sePool({ colorName: "Mildewed Red", material: "PETG", subtype: "Elite" }),
+        tdSpool({ materialType: "Basic Elite", color: "Mildewed Red" }),
+      ),
+    ).toBe(true);
   });
 
   it("needs all three to agree", () => {
@@ -145,7 +170,8 @@ describe("spoolsMatch", () => {
 
   it("takes extra words on SpoolEase's side, such as the product line, only when the colors agree", () => {
     // SpoolmanDB product names carry the line; 3DFP's spool list often has no material type.
-    const bare = (rgb: string | null) => tdSpool({ materialType: null, color: "Vivid Yellow", rgb });
+    const bare = (rgb: string | null) =>
+      tdSpool({ materialType: null, color: "Vivid Yellow", rgb });
     expect(spoolsMatch(sePool(), bare("#FFD700"))).toBe(true);
     expect(spoolsMatch(sePool(), bare("#F0C810"))).toBe(true);
     expect(spoolsMatch(sePool(), bare("#3050C0"))).toBe(false);
@@ -154,7 +180,10 @@ describe("spoolsMatch", () => {
 
   it("doesn't take a plain color for a variant of it", () => {
     const pair = (ours: string, code: string, theirs: string, rgb: string) =>
-      spoolsMatch(sePool({ colorName: ours, colorCodes: [code] }), tdSpool({ materialType: null, color: theirs, rgb }));
+      spoolsMatch(
+        sePool({ colorName: ours, colorCodes: [code] }),
+        tdSpool({ materialType: null, color: theirs, rgb }),
+      );
     // The extra word is on 3DFP's side, whatever the colors.
     expect(pair("Black", "000000FF", "Matte Black", "#000000")).toBe(false);
     expect(pair("Red", "FF0000FF", "Dark Red", "#FF0000")).toBe(false);
@@ -162,28 +191,54 @@ describe("spoolsMatch", () => {
     expect(pair("Light Blue", "ADD8E6FF", "Blue", "#0000FF")).toBe(false);
     expect(pair("Matte Black", "2B2B2BFF", "Black", "#000000")).toBe(false);
     // The extra word is the other side's material type, so it's the same color.
-    expect(spoolsMatch(sePool({ colorName: "Matte Black", colorCodes: ["000000FF"] }), tdSpool({ materialType: "Matte", color: "Black", rgb: null }))).toBe(true);
+    expect(
+      spoolsMatch(
+        sePool({ colorName: "Matte Black", colorCodes: ["000000FF"] }),
+        tdSpool({ materialType: "Matte", color: "Black", rgb: null }),
+      ),
+    ).toBe(true);
   });
 });
 
 describe("addCandidates", () => {
   it("keeps catalog filaments of the spool's brand, material and color", () => {
     const fits = filament();
-    const found = addCandidates(sePool(), [filament({ id: 2, color: "Black" }), fits, filament({ id: 3, material: "PLA", materialKey: "pla" }), filament({ id: 4, brandName: "eSUN", brandKey: "esun" })]);
+    const found = addCandidates(sePool(), [
+      filament({ id: 2, color: "Black" }),
+      fits,
+      filament({ id: 3, material: "PLA", materialKey: "pla" }),
+      filament({ id: 4, brandName: "eSUN", brandKey: "esun" }),
+    ]);
     expect(found).toEqual([fits]);
   });
 
   it("leaves out variants of the spool's color, and keeps the product line when the colors agree", () => {
     const black = sePool({ colorName: "Black", colorCodes: ["000000FF"] });
-    expect(addCandidates(black, [filament({ color: "Matte Black", materialType: null, rgb: "#000000" })])).toEqual([]);
+    expect(
+      addCandidates(black, [
+        filament({ color: "Matte Black", materialType: null, rgb: "#000000" }),
+      ]),
+    ).toEqual([]);
     const bare = filament({ color: "Vivid Yellow", materialType: null, rgb: "#FFD700" });
-    expect(addCandidates(sePool(), [bare, filament({ id: 9, color: "Vivid Yellow", materialType: null, rgb: "#3050C0" })])).toEqual([bare]);
+    expect(
+      addCandidates(sePool(), [
+        bare,
+        filament({ id: 9, color: "Vivid Yellow", materialType: null, rgb: "#3050C0" }),
+      ]),
+    ).toEqual([bare]);
   });
 });
 
 describe("planSync", () => {
   const plan = (input: Partial<Parameters<typeof planSync>[0]> = {}) =>
-    planSync({ spoolease: [sePool()], tdfp: [tdSpool()], links: [], now: NOW, filamentsFor: () => [], ...input });
+    planSync({
+      spoolease: [sePool()],
+      tdfp: [tdSpool()],
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+      ...input,
+    });
 
   it("links a spool that matches exactly one on the other side, pushing the lower weight and the tag", () => {
     const result = plan();
@@ -194,7 +249,13 @@ describe("planSync", () => {
         spool: sePool(),
         tdfp: tdSpool(),
         before: null,
-        after: { spoolease: "1", tdfp: "ABC123", agreed: { spoolease: 564, tdfp: 564 }, tag: "04A1B2C3D4E5F6", linkedAt: NOW.toISOString() },
+        after: {
+          spoolease: "1",
+          tdfp: "ABC123",
+          agreed: { spoolease: 564, tdfp: 564 },
+          tag: "04A1B2C3D4E5F6",
+          linkedAt: NOW.toISOString(),
+        },
         weight: { kind: "push", grams: 564 },
         patch: { remainingGrams: 564, bambuTagId: "04A1B2C3D4E5F6" },
       },
@@ -203,25 +264,53 @@ describe("planSync", () => {
   });
 
   it("sends nothing for a linked pair in step whose tag is written", () => {
-    const result = plan({ spoolease: [sePool({ currentWeight: 789 })], links: [link()], tdfp: [tdSpool({ remainingGrams: 600 })] });
-    expect(result.rows[0]).toMatchObject({ kind: "linked", how: "kept", weight: { kind: "agree" }, patch: null });
+    const result = plan({
+      spoolease: [sePool({ currentWeight: 789 })],
+      links: [link()],
+      tdfp: [tdSpool({ remainingGrams: 600 })],
+    });
+    expect(result.rows[0]).toMatchObject({
+      kind: "linked",
+      how: "kept",
+      weight: { kind: "agree" },
+      patch: null,
+    });
     expect(result).toMatchObject({ calls: 0, changes: 0 });
   });
 
   it("remembers the new agreement without a call when both moved to the same weight", () => {
     const result = plan({ links: [link()], tdfp: [tdSpool({ remainingGrams: 565 })] });
-    expect(result.rows[0]).toMatchObject({ weight: { kind: "agree" }, patch: null, after: { agreed: { spoolease: 564, tdfp: 565 } } });
+    expect(result.rows[0]).toMatchObject({
+      weight: { kind: "agree" },
+      patch: null,
+      after: { agreed: { spoolease: 564, tdfp: 565 } },
+    });
     expect(result.calls).toBe(0);
   });
 
   it("keeps the last agreement while asking for a weigh", () => {
-    const result = plan({ spoolease: [sePool({ currentWeight: 789 })], links: [link()], tdfp: [tdSpool({ remainingGrams: 500 })] });
-    expect(result.rows[0]).toMatchObject({ weight: { kind: "weigh" }, patch: null, after: { agreed: { spoolease: 600, tdfp: 600 } } });
+    const result = plan({
+      spoolease: [sePool({ currentWeight: 789 })],
+      links: [link()],
+      tdfp: [tdSpool({ remainingGrams: 500 })],
+    });
+    expect(result.rows[0]).toMatchObject({
+      weight: { kind: "weigh" },
+      patch: null,
+      after: { agreed: { spoolease: 600, tdfp: 600 } },
+    });
   });
 
   it("writes the tag again when SpoolEase's changed, and only the tag when weights agree", () => {
-    const result = plan({ spoolease: [sePool({ currentWeight: 789, tagId: "04FFFFFFFFFFFF" })], links: [link()], tdfp: [tdSpool({ remainingGrams: 600 })] });
-    expect(result.rows[0]).toMatchObject({ patch: { bambuTagId: "04FFFFFFFFFFFF" }, after: { tag: "04FFFFFFFFFFFF" } });
+    const result = plan({
+      spoolease: [sePool({ currentWeight: 789, tagId: "04FFFFFFFFFFFF" })],
+      links: [link()],
+      tdfp: [tdSpool({ remainingGrams: 600 })],
+    });
+    expect(result.rows[0]).toMatchObject({
+      patch: { bambuTagId: "04FFFFFFFFFFFF" },
+      after: { tag: "04FFFFFFFFFFFF" },
+    });
     expect(result).toMatchObject({ calls: 1, changes: 1 });
   });
 
@@ -231,12 +320,19 @@ describe("planSync", () => {
   });
 
   it("drops a link whose spool is gone on either side", () => {
-    const result = plan({ spoolease: [], tdfp: [tdSpool({ shortCode: "OTHER1", color: "Black" })], links: [link()] });
+    const result = plan({
+      spoolease: [],
+      tdfp: [tdSpool({ shortCode: "OTHER1", color: "Black" })],
+      links: [link()],
+    });
     expect(result.rows).toEqual([
       { kind: "unlinked", link: link(), spool: null, tdfp: null, reason: "spoolease-gone" },
       { kind: "tdfp-only", tdfp: tdSpool({ shortCode: "OTHER1", color: "Black" }) },
     ]);
-    expect(plan({ tdfp: [], links: [link()] }).rows[0]).toMatchObject({ kind: "unlinked", reason: "tdfp-gone" });
+    expect(plan({ tdfp: [], links: [link()] }).rows[0]).toMatchObject({
+      kind: "unlinked",
+      reason: "tdfp-gone",
+    });
   });
 
   it("asks which spool when several match, and matches none of them", () => {
@@ -252,32 +348,60 @@ describe("planSync", () => {
   });
 
   it("offers to add a SpoolEase spool to 3DFP when exactly one catalog filament fits", () => {
-    const result = plan({ tdfp: [], filamentsFor: () => [filament({ id: 9, color: "Black" }), filament()] });
-    expect(result.rows).toEqual([{ kind: "add", spool: sePool(), chosen: false, filamentId: 101, filament: filament(), grams: 564, tag: "04A1B2C3D4E5F6" }]);
+    const result = plan({
+      tdfp: [],
+      filamentsFor: () => [filament({ id: 9, color: "Black" }), filament()],
+    });
+    expect(result.rows).toEqual([
+      {
+        kind: "add",
+        spool: sePool(),
+        chosen: false,
+        filamentId: 101,
+        filament: filament(),
+        grams: 564,
+        tag: "04A1B2C3D4E5F6",
+      },
+    ]);
     expect(result).toMatchObject({ calls: 2, changes: 1 });
   });
 
   it("adds an unweighed spool at the filament's own weight, and without a tag in one call", () => {
-    const result = plan({ spoolease: [sePool({ currentWeight: null, tagId: "" })], tdfp: [], filamentsFor: () => [filament()] });
+    const result = plan({
+      spoolease: [sePool({ currentWeight: null, tagId: "" })],
+      tdfp: [],
+      filamentsFor: () => [filament()],
+    });
     expect(result.rows[0]).toMatchObject({ kind: "add", grams: null, tag: null });
     expect(result.calls).toBe(1);
   });
 
   it("lists the fitting filaments when there are none or several", () => {
     const several = [filament(), filament({ id: 102 })];
-    expect(plan({ tdfp: [], filamentsFor: () => several }).rows).toEqual([{ kind: "suggest", spool: sePool(), filaments: several }]);
+    expect(plan({ tdfp: [], filamentsFor: () => several }).rows).toEqual([
+      { kind: "suggest", spool: sePool(), filaments: several },
+    ]);
     expect(plan({ tdfp: [] }).rows).toEqual([{ kind: "suggest", spool: sePool(), filaments: [] }]);
   });
 
   it("lists 3DFP spools nothing on SpoolEase matches", () => {
-    const result = plan({ tdfp: [tdSpool(), tdSpool({ shortCode: "ZZZ999", brand: "eSUN", color: "Light Khaki" })] });
+    const result = plan({
+      tdfp: [tdSpool(), tdSpool({ shortCode: "ZZZ999", brand: "eSUN", color: "Light Khaki" })],
+    });
     expect(kinds(result.rows)).toEqual(["linked", "tdfp-only"]);
   });
 
   describe("choices", () => {
     it("links the pair given, whatever the names say", () => {
-      const result = plan({ tdfp: [tdSpool({ color: "Wine Red" })], choices: { link: new Map([["1", "ABC123"]]) } });
-      expect(result.rows[0]).toMatchObject({ kind: "linked", how: "chosen", patch: { remainingGrams: 564 } });
+      const result = plan({
+        tdfp: [tdSpool({ color: "Wine Red" })],
+        choices: { link: new Map([["1", "ABC123"]]) },
+      });
+      expect(result.rows[0]).toMatchObject({
+        kind: "linked",
+        how: "chosen",
+        patch: { remainingGrams: 564 },
+      });
     });
 
     it("replaces the links a chosen pair takes over", () => {
@@ -291,31 +415,71 @@ describe("planSync", () => {
         { link: { spoolease: "1", tdfp: "ABC123" }, reason: "replaced" },
         { link: { spoolease: "2", tdfp: "DEF456" }, reason: "replaced" },
       ]);
-      expect(result.rows.find((row) => row.kind === "linked")).toMatchObject({ how: "chosen", after: { spoolease: "1", tdfp: "DEF456", agreed: { spoolease: 564, tdfp: 564 } } });
+      expect(result.rows.find((row) => row.kind === "linked")).toMatchObject({
+        how: "chosen",
+        after: { spoolease: "1", tdfp: "DEF456", agreed: { spoolease: 564, tdfp: 564 } },
+      });
     });
 
     it("unlinks when asked, leaving the SpoolEase spool out of matching and adding for that run", () => {
-      const result = plan({ links: [link()], choices: { unlink: new Set(["1"]) }, filamentsFor: () => [filament()] });
+      const result = plan({
+        links: [link()],
+        choices: { unlink: new Set(["1"]) },
+        filamentsFor: () => [filament()],
+      });
       expect(kinds(result.rows)).toEqual(["unlinked", "tdfp-only"]);
       expect(result.rows[0]).toMatchObject({ reason: "asked" });
       expect(result.changes).toBe(1);
     });
 
     it("adds as the filament given", () => {
-      const result = plan({ tdfp: [], choices: { add: new Map([["1", 555]]) }, filamentsFor: () => [filament()] });
-      expect(result.rows[0]).toMatchObject({ kind: "add", chosen: true, filamentId: 555, filament: null });
+      const result = plan({
+        tdfp: [],
+        choices: { add: new Map([["1", 555]]) },
+        filamentsFor: () => [filament()],
+      });
+      expect(result.rows[0]).toMatchObject({
+        kind: "add",
+        chosen: true,
+        filamentId: 555,
+        filament: null,
+      });
     });
 
     it("refuses choices that don't fit the spools", () => {
-      expect(() => plan({ choices: { link: new Map([["9", "ABC123"]]) } })).toThrow(new SyncPlanError("SpoolEase has no spool #9"));
-      expect(() => plan({ choices: { link: new Map([["1", "NOPE"]]) } })).toThrow(new SyncPlanError("3DFilamentProfiles has no spool NOPE"));
-      expect(() => plan({ spoolease: [sePool(), sePool({ id: "2" })], choices: { link: new Map([["1", "ABC123"], ["2", "ABC123"]]) } })).toThrow(
-        new SyncPlanError("3DFilamentProfiles spool ABC123 can't be linked to two SpoolEase spools"),
+      expect(() => plan({ choices: { link: new Map([["9", "ABC123"]]) } })).toThrow(
+        new SyncPlanError("SpoolEase has no spool #9"),
       );
-      expect(() => plan({ choices: { add: new Map([["9", 101]]) } })).toThrow(new SyncPlanError("SpoolEase has no spool #9"));
-      expect(() => plan({ choices: { link: new Map([["1", "ABC123"]]), add: new Map([["1", 101]]) } })).toThrow(new SyncPlanError("#1 can't be both linked and added"));
-      expect(() => plan({ links: [link()], choices: { add: new Map([["1", 101]]) } })).toThrow(new SyncPlanError("#1 is already linked to ABC123: --unlink 1 first"));
-      expect(() => plan({ choices: { unlink: new Set(["1"]) } })).toThrow(new SyncPlanError("#1 isn't linked"));
+      expect(() => plan({ choices: { link: new Map([["1", "NOPE"]]) } })).toThrow(
+        new SyncPlanError("3DFilamentProfiles has no spool NOPE"),
+      );
+      expect(() =>
+        plan({
+          spoolease: [sePool(), sePool({ id: "2" })],
+          choices: {
+            link: new Map([
+              ["1", "ABC123"],
+              ["2", "ABC123"],
+            ]),
+          },
+        }),
+      ).toThrow(
+        new SyncPlanError(
+          "3DFilamentProfiles spool ABC123 can't be linked to two SpoolEase spools",
+        ),
+      );
+      expect(() => plan({ choices: { add: new Map([["9", 101]]) } })).toThrow(
+        new SyncPlanError("SpoolEase has no spool #9"),
+      );
+      expect(() =>
+        plan({ choices: { link: new Map([["1", "ABC123"]]), add: new Map([["1", 101]]) } }),
+      ).toThrow(new SyncPlanError("#1 can't be both linked and added"));
+      expect(() => plan({ links: [link()], choices: { add: new Map([["1", 101]]) } })).toThrow(
+        new SyncPlanError("#1 is already linked to ABC123: --unlink 1 first"),
+      );
+      expect(() => plan({ choices: { unlink: new Set(["1"]) } })).toThrow(
+        new SyncPlanError("#1 isn't linked"),
+      );
     });
   });
 });
@@ -329,7 +493,11 @@ describe("applySync", () => {
     server.filaments = [serverFilament()];
     server.spools = [serverSpool({ remaining_grams: 1000 })];
     const dir = await mkdtemp(join(tmpdir(), "bh-spool-sync-"));
-    client = new FilamentProfilesClient({ key: TEST_API_KEY, base: server.url, ledger: new QuotaLedger(join(dir, "quota.json"), "acct1") });
+    client = new FilamentProfilesClient({
+      key: TEST_API_KEY,
+      base: server.url,
+      ledger: new QuotaLedger(join(dir, "quota.json"), "acct1"),
+    });
   });
 
   afterEach(async () => {
@@ -340,55 +508,128 @@ describe("applySync", () => {
 
   it("sends a new link's weight and tag in one call and returns the links to keep", async () => {
     const tdfp = await listed();
-    const plan = planSync({ spoolease: [sePool()], tdfp, links: [], now: NOW, filamentsFor: () => [] });
+    const plan = planSync({
+      spoolease: [sePool()],
+      tdfp,
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
     const before = server.requests.length;
     const result = await applySync(plan, client);
     expect(server.requests.slice(before).map((r) => [r.method, r.path, r.body])).toEqual([
-      ["PATCH", "/api/v1/my/spools/ABC123", { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }],
+      [
+        "PATCH",
+        "/api/v1/my/spools/ABC123",
+        { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+      ],
     ]);
     expect(result.outcomes).toMatchObject([{ ok: true, error: null }]);
-    expect(result.links).toEqual([{ spoolease: "1", tdfp: "ABC123", agreed: { spoolease: 564, tdfp: 564 }, tag: "04A1B2C3D4E5F6", linkedAt: NOW.toISOString() }]);
-    expect(server.spools[0]).toMatchObject({ remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" });
+    expect(result.links).toEqual([
+      {
+        spoolease: "1",
+        tdfp: "ABC123",
+        agreed: { spoolease: 564, tdfp: 564 },
+        tag: "04A1B2C3D4E5F6",
+        linkedAt: NOW.toISOString(),
+      },
+    ]);
+    expect(server.spools[0]).toMatchObject({
+      remaining_grams: 564,
+      bambu_tag_id: "04A1B2C3D4E5F6",
+    });
   });
 
   it("adds a spool, then writes its tag, and links it", async () => {
     server.spools = [];
-    const plan = planSync({ spoolease: [sePool()], tdfp: [], links: [], now: NOW, filamentsFor: () => [filament()] });
+    const plan = planSync({
+      spoolease: [sePool()],
+      tdfp: [],
+      links: [],
+      now: NOW,
+      filamentsFor: () => [filament()],
+    });
     const result = await applySync(plan, client);
     expect(server.requests.map((r) => [r.method, r.path, r.body])).toEqual([
       ["POST", "/api/v1/my/spools", { filament_id: 101, remaining_grams: 564 }],
       ["PATCH", "/api/v1/my/spools/NEW001", { bambu_tag_id: "04A1B2C3D4E5F6" }],
     ]);
     expect(result.outcomes).toMatchObject([{ ok: true, created: "NEW001" }]);
-    expect(result.links).toEqual([{ spoolease: "1", tdfp: "NEW001", agreed: { spoolease: 564, tdfp: 564 }, tag: "04A1B2C3D4E5F6", linkedAt: NOW.toISOString() }]);
+    expect(result.links).toEqual([
+      {
+        spoolease: "1",
+        tdfp: "NEW001",
+        agreed: { spoolease: 564, tdfp: 564 },
+        tag: "04A1B2C3D4E5F6",
+        linkedAt: NOW.toISOString(),
+      },
+    ]);
   });
 
   it("keeps a new link without the unsent changes when its call fails, and goes on", async () => {
-    server.spools = [serverSpool({ remaining_grams: 1000 }), serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 })];
-    server.replies["PATCH /api/v1/my/spools/ABC123"] = { status: 500, body: { error: { code: "internal", message: "An unexpected error occurred" } } };
+    server.spools = [
+      serverSpool({ remaining_grams: 1000 }),
+      serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
+    ];
+    server.replies["PATCH /api/v1/my/spools/ABC123"] = {
+      status: 500,
+      body: { error: { code: "internal", message: "An unexpected error occurred" } },
+    };
     const tdfp = await listed();
-    const plan = planSync({ spoolease: [sePool(), sePool({ id: "2", colorName: "Black", tagId: "" })], tdfp, links: [], now: NOW, filamentsFor: () => [] });
+    const plan = planSync({
+      spoolease: [sePool(), sePool({ id: "2", colorName: "Black", tagId: "" })],
+      tdfp,
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
     const result = await applySync(plan, client);
-    expect(result.outcomes.map((o) => o.error)).toEqual(["3DFilamentProfiles: An unexpected error occurred (internal)", null]);
+    expect(result.outcomes.map((o) => o.error)).toEqual([
+      "3DFilamentProfiles: An unexpected error occurred (internal)",
+      null,
+    ]);
     expect(result.links).toEqual([
       { spoolease: "1", tdfp: "ABC123", agreed: null, tag: null, linkedAt: NOW.toISOString() },
-      { spoolease: "2", tdfp: "DEF456", agreed: { spoolease: 564, tdfp: 564 }, tag: null, linkedAt: NOW.toISOString() },
+      {
+        spoolease: "2",
+        tdfp: "DEF456",
+        agreed: { spoolease: 564, tdfp: 564 },
+        tag: null,
+        linkedAt: NOW.toISOString(),
+      },
     ]);
   });
 
   it("keeps a new link, without its changes, when 3DFP no longer has the spool", async () => {
     server.spools = [];
-    const plan = planSync({ spoolease: [sePool()], tdfp: [tdSpool()], links: [], now: NOW, filamentsFor: () => [] });
+    const plan = planSync({
+      spoolease: [sePool()],
+      tdfp: [tdSpool()],
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
     const result = await applySync(plan, client);
     expect(result.outcomes[0]?.error).toMatch(/No spool matches/);
-    expect(result.links).toEqual([{ spoolease: "1", tdfp: "ABC123", agreed: null, tag: null, linkedAt: NOW.toISOString() }]);
+    expect(result.links).toEqual([
+      { spoolease: "1", tdfp: "ABC123", agreed: null, tag: null, linkedAt: NOW.toISOString() },
+    ]);
   });
 
   it("stops calling once the quota runs out, keeping what's unsent for next time", async () => {
-    server.spools = [serverSpool({ remaining_grams: 1000 }), serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 })];
+    server.spools = [
+      serverSpool({ remaining_grams: 1000 }),
+      serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
+    ];
     const tdfp = await listed();
     server.quota.remaining = 1;
-    const plan = planSync({ spoolease: [sePool(), sePool({ id: "2", colorName: "Black" })], tdfp, links: [], now: NOW, filamentsFor: () => [] });
+    const plan = planSync({
+      spoolease: [sePool(), sePool({ id: "2", colorName: "Black" })],
+      tdfp,
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
     const before = server.requests.length;
     const result = await applySync(plan, client);
     expect(server.requests.length - before).toBe(1);

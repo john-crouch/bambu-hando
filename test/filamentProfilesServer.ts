@@ -206,18 +206,38 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     close: async () => {},
   };
 
-  function spoolUpdate(spool: ServerSpool, body: Record<string, unknown>): { status: number; body: unknown } {
-    const weights = ["remaining_grams", "used_grams", "used_mm"].filter((field) => body[field] !== undefined);
-    if (weights.length > 1) return error(400, "invalid_request", "Send at most one of remaining_grams, used_grams and used_mm");
+  function spoolUpdate(
+    spool: ServerSpool,
+    body: Record<string, unknown>,
+  ): { status: number; body: unknown } {
+    const weights = ["remaining_grams", "used_grams", "used_mm"].filter(
+      (field) => body[field] !== undefined,
+    );
+    if (weights.length > 1)
+      return error(
+        400,
+        "invalid_request",
+        "Send at most one of remaining_grams, used_grams and used_mm",
+      );
     let deducted = 0;
     if (body.remaining_grams !== undefined) {
       const grams = body.remaining_grams;
-      if (!Number.isInteger(grams) || (grams as number) < 0 || (grams as number) > 10000) return error(400, "invalid_request", "remaining_grams: expected an integer from 0 to 10000");
+      if (!Number.isInteger(grams) || (grams as number) < 0 || (grams as number) > 10000)
+        return error(
+          400,
+          "invalid_request",
+          "remaining_grams: expected an integer from 0 to 10000",
+        );
       spool.remaining_grams = grams as number;
     }
     if (body.used_grams !== undefined) {
       const used = body.used_grams as number;
-      if (typeof used !== "number" || used <= 0 || used > 10000) return error(400, "invalid_request", "used_grams: expected a number above 0 and at most 10000");
+      if (typeof used !== "number" || used <= 0 || used > 10000)
+        return error(
+          400,
+          "invalid_request",
+          "used_grams: expected a number above 0 and at most 10000",
+        );
       deducted = Math.min(used, spool.remaining_grams);
       spool.remaining_grams = Math.max(0, Math.round(spool.remaining_grams - used));
     }
@@ -226,7 +246,8 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
       else {
         const name = String(body.location).trim().toLowerCase();
         const match = state.locations.find((location) => location.toLowerCase() === name);
-        if (!match || name === "empty") return error(422, "invalid_location", "No saved location has that name");
+        if (!match || name === "empty")
+          return error(422, "invalid_location", "No saved location has that name");
         spool.location = match;
       }
     }
@@ -234,7 +255,9 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     for (const field of ["bambu_spool_id", "bambu_tag_id"] as const) {
       if (body[field] === undefined) continue;
       const value = body[field] === "" ? null : (body[field] as string | null);
-      if (field === "bambu_tag_id" && value !== null) for (const other of state.spools) if (other.bambu_tag_id === value) other.bambu_tag_id = null;
+      if (field === "bambu_tag_id" && value !== null)
+        for (const other of state.spools)
+          if (other.bambu_tag_id === value) other.bambu_tag_id = null;
       spool[field] = value;
     }
     spool.updated_at = new Date().toISOString();
@@ -251,16 +274,34 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     };
   }
 
-  function route(method: string, path: string, query: Record<string, string>, body: unknown): { status: number; body: unknown } {
-    if (body === Symbol.for("invalid-json")) return error(400, "invalid_request", "Body is not valid JSON");
+  function route(
+    method: string,
+    path: string,
+    query: Record<string, string>,
+    body: unknown,
+  ): { status: number; body: unknown } {
+    if (body === Symbol.for("invalid-json"))
+      return error(400, "invalid_request", "Body is not valid JSON");
     const fields = (body ?? {}) as Record<string, unknown>;
-    if (method === "GET" && path === "/api/v1/my/spools") return { status: 200, body: { data: state.spools.map(listed) } };
+    if (method === "GET" && path === "/api/v1/my/spools")
+      return { status: 200, body: { data: state.spools.map(listed) } };
     if (method === "POST" && path === "/api/v1/my/spools") {
       const filament = state.filaments.find((f) => f.id === fields.filament_id);
       if (!filament) return error(404, "filament_not_found", "No filament has that filament_id");
-      const owned = state.spools.filter((s) => s.filament_id === filament.id && s.remaining_grams > 0);
+      const owned = state.spools.filter(
+        (s) => s.filament_id === filament.id && s.remaining_grams > 0,
+      );
       if (fields.if_not_owned === true && owned.length > 0) {
-        return { status: 200, body: { created: false, spools: owned.map((s) => ({ short_code: s.short_code, url: `https://spooldb.com/s/${s.short_code}` })) } };
+        return {
+          status: 200,
+          body: {
+            created: false,
+            spools: owned.map((s) => ({
+              short_code: s.short_code,
+              url: `https://spooldb.com/s/${s.short_code}`,
+            })),
+          },
+        };
       }
       const spool = serverSpool({
         short_code: `NEW${String(nextCode++).padStart(3, "0")}`,
@@ -270,7 +311,8 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
         material_type: filament.material_type,
         color: filament.color,
         rgb: filament.rgb,
-        remaining_grams: (fields.remaining_grams as number | undefined) ?? filament.nominal_weight ?? 1000,
+        remaining_grams:
+          (fields.remaining_grams as number | undefined) ?? filament.nominal_weight ?? 1000,
         notes: (fields.notes as string | undefined) ?? null,
         empty_spool_weight: filament.spool_weight,
       });
@@ -279,7 +321,9 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     }
     const spoolMatch = /^\/api\/v1\/my\/spools\/([^/]+)$/.exec(path);
     if (spoolMatch) {
-      const spool = state.spools.find((s) => s.short_code === decodeURIComponent(spoolMatch[1] ?? ""));
+      const spool = state.spools.find(
+        (s) => s.short_code === decodeURIComponent(spoolMatch[1] ?? ""),
+      );
       if (!spool) return error(404, "not_found", "No spool matches the identifier");
       if (method === "GET") return { status: 200, body: detailed(spool) };
       if (method === "PATCH") return spoolUpdate(spool, fields);
@@ -287,24 +331,40 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     if (method === "GET" && path === "/api/v1/filaments") {
       const limit = Number(query.limit ?? 25);
       const page = Number(query.page ?? 1);
-      if (!Number.isInteger(limit) || limit < 1 || limit > 50) return error(400, "invalid_request", "limit: Too big: expected number to be <=50");
-      if (!Number.isInteger(page) || page < 1 || page > 20) return error(400, "invalid_request", "page: expected 1 to 20");
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50)
+        return error(400, "invalid_request", "limit: Too big: expected number to be <=50");
+      if (!Number.isInteger(page) || page < 1 || page > 20)
+        return error(400, "invalid_request", "page: expected 1 to 20");
       const words = (query.q ?? "").toLowerCase().split(/\s+/).filter(Boolean);
       const matching = state.filaments.filter(
         (f) =>
           (!query.brand || f.brand_key === query.brand) &&
           (!query.material || f.material_key === query.material) &&
           (!query.type || f.material_type_key === query.type) &&
-          words.every((word) => `${f.brand_name} ${f.material} ${f.material_type ?? ""} ${f.color}`.toLowerCase().includes(word)),
+          words.every((word) =>
+            `${f.brand_name} ${f.material} ${f.material_type ?? ""} ${f.color}`
+              .toLowerCase()
+              .includes(word),
+          ),
       );
       const data = matching.slice((page - 1) * limit, page * limit).map(summary);
-      return { status: 200, body: { data, page, limit, total: matching.length, total_is_estimate: false } };
+      return {
+        status: 200,
+        body: { data, page, limit, total: matching.length, total_is_estimate: false },
+      };
     }
     const filamentMatch = /^\/api\/v1\/filaments\/(\d+)$/.exec(path);
     if (method === "GET" && filamentMatch) {
       const filament = state.filaments.find((f) => f.id === Number(filamentMatch[1]));
       if (!filament) return error(404, "not_found", "No filament matches the identifier");
-      return { status: 200, body: { ...summary(filament), ...filament, stores: [{ region: "us", price: 19.99, currency: "USD", availability: "in_stock" }] } };
+      return {
+        status: 200,
+        body: {
+          ...summary(filament),
+          ...filament,
+          stores: [{ region: "us", price: 19.99, currency: "USD", availability: "in_stock" }],
+        },
+      };
     }
     return error(404, "not_found", `No route for ${method} ${path}`);
   }
@@ -320,23 +380,58 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     const url = new URL(req.url ?? "/", "http://localhost");
     const method = req.method ?? "GET";
     const body = await readBody(req);
-    state.requests.push({ method, path: url.pathname, query: Object.fromEntries(url.searchParams), headers: req.headers, body });
+    state.requests.push({
+      method,
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams),
+      headers: req.headers,
+      body,
+    });
 
-    const send = (status: number, payload: unknown, headers: Record<string, string> = {}, counted = true): void => {
+    const send = (
+      status: number,
+      payload: unknown,
+      headers: Record<string, string> = {},
+      counted = true,
+    ): void => {
       const quotaHeaders: Record<string, string> =
-        counted && state.sendQuotaHeaders ? { "X-RateLimit-Limit": String(state.quota.limit), "X-RateLimit-Remaining": String(state.quota.remaining) } : {};
-      res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "private, no-store", ...quotaHeaders, ...headers });
+        counted && state.sendQuotaHeaders
+          ? {
+              "X-RateLimit-Limit": String(state.quota.limit),
+              "X-RateLimit-Remaining": String(state.quota.remaining),
+            }
+          : {};
+      res.writeHead(status, {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, no-store",
+        ...quotaHeaders,
+        ...headers,
+      });
       res.end(JSON.stringify(payload));
     };
 
     // Rejected keys and lapsed access don't count toward the quota.
-    if (bearer(req) !== TEST_API_KEY) return send(401, error(401, "invalid_key", "The API key is missing, malformed or has been regenerated").body, {}, false);
-    if (state.access === "no_access") return send(402, error(402, "no_access", "The key is valid but the account has no active API access").body, {}, false);
-    if (state.quota.remaining <= 0) return send(429, error(429, "rate_limited", "The monthly request quota has been used").body);
+    if (bearer(req) !== TEST_API_KEY)
+      return send(
+        401,
+        error(401, "invalid_key", "The API key is missing, malformed or has been regenerated").body,
+        {},
+        false,
+      );
+    if (state.access === "no_access")
+      return send(
+        402,
+        error(402, "no_access", "The key is valid but the account has no active API access").body,
+        {},
+        false,
+      );
+    if (state.quota.remaining <= 0)
+      return send(429, error(429, "rate_limited", "The monthly request quota has been used").body);
     state.quota.remaining -= 1;
 
     const override = state.replies[`${method} ${url.pathname}`] ?? state.replies[url.pathname];
-    const reply = override ?? route(method, url.pathname, Object.fromEntries(url.searchParams), body);
+    const reply =
+      override ?? route(method, url.pathname, Object.fromEntries(url.searchParams), body);
     send(reply.status, reply.body, override?.headers);
   }
 

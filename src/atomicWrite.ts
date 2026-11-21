@@ -10,9 +10,16 @@ import { dirname } from "node:path";
  * written (0o600 keeps it to its owner). Each write has its own temporary name: another bambu-hando process writing the
  * same file would otherwise rename a shared one away under it.
  */
-export async function writeAtomic(path: string, content: string, options: { mode?: number } = {}): Promise<void> {
+export async function writeAtomic(
+  path: string,
+  content: string,
+  options: { mode?: number } = {},
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}-${randomUUID()}.tmp`;
-  await writeFile(temp, content, { encoding: "utf-8", ...(options.mode === undefined ? {} : { mode: options.mode }) });
+  await writeFile(temp, content, {
+    encoding: "utf-8",
+    ...(options.mode === undefined ? {} : { mode: options.mode }),
+  });
   await rename(temp, path);
 }

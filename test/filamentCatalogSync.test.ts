@@ -9,16 +9,36 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { QuotaLedger } from "../src/apiQuota.js";
 import { FilamentCatalog } from "../src/filamentCatalog.js";
-import { type CatalogApi, filamentRecord, fillFilters, fillSearch, monthEndFill, searchOnline } from "../src/filamentCatalogSync.js";
+import {
+  type CatalogApi,
+  filamentRecord,
+  fillFilters,
+  fillSearch,
+  monthEndFill,
+  searchOnline,
+} from "../src/filamentCatalogSync.js";
 import { FilamentProfilesClient } from "../src/filamentProfiles.js";
-import { type FilamentProfilesServer, type ServerFilament, serverFilament, startFilamentProfilesServer, TEST_API_KEY } from "./filamentProfilesServer.js";
+import {
+  type FilamentProfilesServer,
+  type ServerFilament,
+  serverFilament,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
 
 const T0 = new Date("2026-11-15T13:00:00Z");
 const days = (n: number) => new Date(T0.getTime() + n * 86_400_000);
 
 function brandOf(key: string, count: number, firstId: number, material = "pla"): ServerFilament[] {
   return Array.from({ length: count }, (_, i) =>
-    serverFilament({ id: firstId + i, brand_key: key, brand_name: key.toUpperCase(), material_key: material, material: material.toUpperCase(), color: `Color ${i}` }),
+    serverFilament({
+      id: firstId + i,
+      brand_key: key,
+      brand_name: key.toUpperCase(),
+      material_key: material,
+      material: material.toUpperCase(),
+      color: `Color ${i}`,
+    }),
   );
 }
 
@@ -80,17 +100,25 @@ describe("catalog sync", () => {
     it("doesn't refetch a fresh record even when refresh is on", async () => {
       await filamentRecord(api, 101);
       now = days(29);
-      expect(await filamentRecord(api, 101, { refreshStale: true })).toMatchObject({ fetched: false, stale: false });
+      expect(await filamentRecord(api, 101, { refreshStale: true })).toMatchObject({
+        fetched: false,
+        stale: false,
+      });
       expect(calls()).toBe(1);
     });
 
     it("keeps the old record, with a warning, when a refresh fails", async () => {
       await filamentRecord(api, 101);
       now = days(40);
-      server.replies["/api/v1/filaments/101"] = { status: 500, body: { error: { code: "internal", message: "An unexpected error occurred" } } };
+      server.replies["/api/v1/filaments/101"] = {
+        status: 500,
+        body: { error: { code: "internal", message: "An unexpected error occurred" } },
+      };
       const kept = await filamentRecord(api, 101, { refreshStale: true });
       expect(kept).toMatchObject({ fetched: false, stale: true, ageDays: 40 });
-      expect(kept.warning).toBe("couldn't refresh Sunlu PETG Vivid Yellow (3DFilamentProfiles: An unexpected error occurred (internal)): using the copy from 2026-11-15");
+      expect(kept.warning).toBe(
+        "couldn't refresh Sunlu PETG Vivid Yellow (3DFilamentProfiles: An unexpected error occurred (internal)): using the copy from 2026-11-15",
+      );
     });
 
     it("throws when there's no record to fall back on", async () => {
@@ -98,7 +126,10 @@ describe("catalog sync", () => {
     });
 
     it("follows a merge to the surviving filament, locally afterwards", async () => {
-      server.replies["/api/v1/filaments/101"] = { status: 200, body: { ...serverFilament({ id: 205 }), stores: [] } };
+      server.replies["/api/v1/filaments/101"] = {
+        status: 200,
+        body: { ...serverFilament({ id: 205 }), stores: [] },
+      };
       expect((await filamentRecord(api, 101)).entry.filament.id).toBe(205);
       expect((await filamentRecord(api, 101)).fetched).toBe(false);
       expect(calls()).toBe(1);
@@ -125,8 +156,17 @@ describe("catalog sync", () => {
     it("pages through a search until a short page", async () => {
       server.filaments = brandOf("esun", 120, 1);
       const result = await fillSearch(api, "brand:esun");
-      expect(result).toEqual({ key: "brand:esun", calls: 3, saved: 120, complete: true, truncated: false, stoppedBy: null });
-      expect(server.requests.map((r) => r.query)).toEqual([1, 2, 3].map((page) => ({ brand: "esun", limit: "50", page: String(page) })));
+      expect(result).toEqual({
+        key: "brand:esun",
+        calls: 3,
+        saved: 120,
+        complete: true,
+        truncated: false,
+        stoppedBy: null,
+      });
+      expect(server.requests.map((r) => r.query)).toEqual(
+        [1, 2, 3].map((page) => ({ brand: "esun", limit: "50", page: String(page) })),
+      );
       expect(api.catalog.stats()).toMatchObject({ filaments: 120, completeBrands: 1 });
     });
 
@@ -156,8 +196,15 @@ describe("catalog sync", () => {
     });
 
     it("counts a search the API refuses as done, since it won't work next time either", async () => {
-      server.replies["/api/v1/filaments"] = { status: 400, body: { error: { code: "invalid_parameter", message: "Unknown brand" } } };
-      expect(await fillSearch(api, "brand:nope")).toMatchObject({ calls: 1, complete: true, stoppedBy: null });
+      server.replies["/api/v1/filaments"] = {
+        status: 400,
+        body: { error: { code: "invalid_parameter", message: "Unknown brand" } },
+      };
+      expect(await fillSearch(api, "brand:nope")).toMatchObject({
+        calls: 1,
+        complete: true,
+        stoppedBy: null,
+      });
     });
 
     it("stops, without marking the search done, when the key is rejected or the account has no access", async () => {
@@ -166,7 +213,10 @@ describe("catalog sync", () => {
         [401, /rejected the API key/],
         [402, /no active API access/],
       ] as const) {
-        server.replies["/api/v1/filaments"] = { status, body: { error: { code: "x", message: "x" } } };
+        server.replies["/api/v1/filaments"] = {
+          status,
+          body: { error: { code: "x", message: "x" } },
+        };
         const stopped = await fillSearch(api, "brand:esun");
         expect(stopped).toMatchObject({ calls: 1, complete: false });
         expect(stopped.stoppedBy).toMatch(message);
@@ -174,29 +224,57 @@ describe("catalog sync", () => {
       }
       // Once the key works again, the search runs instead of being skipped for 30 days.
       delete server.replies["/api/v1/filaments"];
-      expect(await fillSearch(api, "brand:esun")).toMatchObject({ calls: 1, saved: 10, complete: true });
+      expect(await fillSearch(api, "brand:esun")).toMatchObject({
+        calls: 1,
+        saved: 10,
+        complete: true,
+      });
     });
 
     it("marks a search with more than 20 full pages as truncated", async () => {
       server.filaments = brandOf("big", 1001, 1);
-      expect(await fillSearch(api, "brand:big")).toMatchObject({ calls: 20, saved: 1000, complete: true, truncated: true });
+      expect(await fillSearch(api, "brand:big")).toMatchObject({
+        calls: 20,
+        saved: 1000,
+        complete: true,
+        truncated: true,
+      });
     });
   });
 
   describe("monthEndFill", () => {
     it("waits for the 28th (UTC) unless forced", async () => {
-      expect(await monthEndFill(api, {})).toEqual({ ran: false, reason: "the month-end fill starts on 2026-11-28 (UTC)", calls: 0, records: 0, searches: [] });
+      expect(await monthEndFill(api, {})).toEqual({
+        ran: false,
+        reason: "the month-end fill starts on 2026-11-28 (UTC)",
+        calls: 0,
+        records: 0,
+        searches: [],
+      });
       expect(calls()).toBe(0);
     });
 
     it("fills owned filaments' records, their brands, other known brands, then discovers more, down to the reserve", async () => {
       now = new Date("2026-11-28T03:00:00Z");
-      server.filaments = [...brandOf("sunlu", 60, 1, "petg"), ...brandOf("esun", 10, 100), ...brandOf("polymaker", 5, 200), ...brandOf("overture", 5, 300)];
+      server.filaments = [
+        ...brandOf("sunlu", 60, 1, "petg"),
+        ...brandOf("esun", 10, 100),
+        ...brandOf("polymaker", 5, 200),
+        ...brandOf("overture", 5, 300),
+      ];
       api.catalog.saveSummaries([{ ...(await summaryOf(100)) }], T0);
       const report = await monthEndFill(api, { ownedFilamentIds: [1] });
       expect(report).toMatchObject({ ran: true, records: 1, reason: "nothing left to fill" });
       const keys = report.searches.map((s) => s.key);
-      expect(keys.slice(0, 7)).toEqual(["brand:sunlu", "brand:esun", "all", "brand:overture", "brand:polymaker", "material:petg", "material:pla"]);
+      expect(keys.slice(0, 7)).toEqual([
+        "brand:sunlu",
+        "brand:esun",
+        "all",
+        "brand:overture",
+        "brand:polymaker",
+        "material:petg",
+        "material:pla",
+      ]);
       // Common materials no page has shown yet are tried too, once each.
       expect(keys).toContain("material:abs");
       expect(new Set(keys).size).toBe(keys.length);
@@ -234,7 +312,10 @@ describe("catalog sync", () => {
       server.filaments = brandOf("esun", 10, 1);
       const report = await monthEndFill(api, { ownedFilamentIds: [999, 1] });
       expect(report).toMatchObject({ ran: true, records: 1, reason: "nothing left to fill" });
-      expect(server.requests.slice(0, 2).map((r) => r.path)).toEqual(["/api/v1/filaments/999", "/api/v1/filaments/1"]);
+      expect(server.requests.slice(0, 2).map((r) => r.path)).toEqual([
+        "/api/v1/filaments/999",
+        "/api/v1/filaments/1",
+      ]);
       expect(report.searches.map((s) => s.key)).toContain("brand:esun");
     });
 
@@ -265,7 +346,25 @@ describe("catalog sync", () => {
     it("splits a truncated brand by the materials it has", async () => {
       now = new Date("2026-11-28T03:00:00Z");
       server.filaments = [...brandOf("big", 1001, 1, "pla"), ...brandOf("big", 30, 5000, "petg")];
-      api.catalog.saveSummaries([{ id: 1, brandKey: "big", brandName: "BIG", materialKey: "pla", material: "PLA", materialTypeKey: null, materialType: null, color: "x", rgb: null, tdValue: null, discontinued: false, url: "" }], T0);
+      api.catalog.saveSummaries(
+        [
+          {
+            id: 1,
+            brandKey: "big",
+            brandName: "BIG",
+            materialKey: "pla",
+            material: "PLA",
+            materialTypeKey: null,
+            materialType: null,
+            color: "x",
+            rgb: null,
+            tdValue: null,
+            discontinued: false,
+            url: "",
+          },
+        ],
+        T0,
+      );
       const report = await monthEndFill(api, {});
       const keys = report.searches.map((s) => s.key);
       expect(keys.slice(0, 2)).toEqual(["brand:big", "brand:big,material:pla"]);

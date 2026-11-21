@@ -7,7 +7,11 @@ import { describe, expect, it } from "vitest";
 
 import { askYesNo } from "../src/confirm.js";
 
-function terminal(): { input: PassThrough & { isTTY?: boolean }; output: PassThrough; shown: () => string } {
+function terminal(): {
+  input: PassThrough & { isTTY?: boolean };
+  output: PassThrough;
+  shown: () => string;
+} {
   const input = Object.assign(new PassThrough(), { isTTY: true });
   const output = new PassThrough();
   let text = "";

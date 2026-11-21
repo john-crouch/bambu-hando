@@ -8,17 +8,24 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { beforeEach, describe, expect, it } from "vitest";
-
-import { SOURCE_FIXTURE } from "./parity.js";
 import { installBambuStudio } from "./bambuStudioSetup.js";
+import { SOURCE_FIXTURE } from "./parity.js";
 
 const SCRIPT = fileURLToPath(new URL("../scripts/tui-snap.mjs", import.meta.url));
 
-function snap(args: string[], home: string): Promise<{ code: number; stdout: string; stderr: string }> {
+function snap(
+  args: string[],
+  home: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(process.execPath, [SCRIPT, ...args], { env: { PATH: process.env.PATH ?? "", HOME: home } }, (err, stdout, stderr) => {
-      resolve({ code: err ? Number(err.code ?? 1) : 0, stdout, stderr });
-    });
+    execFile(
+      process.execPath,
+      [SCRIPT, ...args],
+      { env: { PATH: process.env.PATH ?? "", HOME: home } },
+      (err, stdout, stderr) => {
+        resolve({ code: err ? Number(err.code ?? 1) : 0, stdout, stderr });
+      },
+    );
   });
 }
 
@@ -32,7 +39,17 @@ describe("tui-snap", () => {
 
   it("plays keys and prints each requested screen as the terminal shows it", async () => {
     const { code, stdout } = await snap(
-      ["wait=ctrl+c quit", "snap=menu", "key=enter", "wait=[a] apply", "snap=plan", "--", "--source", SOURCE_FIXTURE, "--skip-spoolease"],
+      [
+        "wait=ctrl+c quit",
+        "snap=menu",
+        "key=enter",
+        "wait=[a] apply",
+        "snap=plan",
+        "--",
+        "--source",
+        SOURCE_FIXTURE,
+        "--skip-spoolease",
+      ],
       home,
     );
 
@@ -46,7 +63,18 @@ describe("tui-snap", () => {
   });
 
   it("shows the screen and exits 1 when the awaited text never appears", async () => {
-    const { code, stdout } = await snap(["--timeout", "2000", "wait=no such text", "--", "--source", SOURCE_FIXTURE, "--skip-spoolease"], home);
+    const { code, stdout } = await snap(
+      [
+        "--timeout",
+        "2000",
+        "wait=no such text",
+        "--",
+        "--source",
+        SOURCE_FIXTURE,
+        "--skip-spoolease",
+      ],
+      home,
+    );
 
     expect(code).toBe(1);
     expect(stdout).toContain('timed out waiting for "no such text"');

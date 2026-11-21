@@ -15,7 +15,11 @@ function installed(command: string): boolean {
   }
 }
 
-export const privateKeyringSupported = process.platform === "linux" && installed("dbus-daemon") && installed("dbus-send") && installed("gnome-keyring-daemon");
+export const privateKeyringSupported =
+  process.platform === "linux" &&
+  installed("dbus-daemon") &&
+  installed("dbus-send") &&
+  installed("gnome-keyring-daemon");
 
 export interface PrivateKeyring {
   /** Variables that point a process at this keyring's bus (and nowhere else). */
@@ -52,13 +56,20 @@ export async function startPrivateKeyring(): Promise<PrivateKeyring> {
     XDG_RUNTIME_DIR: root,
     XDG_DATA_HOME: join(root, "data"),
   };
-  const bus = spawn("dbus-daemon", ["--session", "--nofork", "--print-address=1"], { env, stdio: ["ignore", "pipe", "ignore"] });
+  const bus = spawn("dbus-daemon", ["--session", "--nofork", "--print-address=1"], {
+    env,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
   const address = await firstLine(bus);
   const busEnv = { ...env, DBUS_SESSION_BUS_ADDRESS: address };
-  const keyring = spawn("gnome-keyring-daemon", ["--foreground", "--unlock", "--components=secrets"], {
-    env: busEnv,
-    stdio: ["pipe", "ignore", "ignore"],
-  });
+  const keyring = spawn(
+    "gnome-keyring-daemon",
+    ["--foreground", "--unlock", "--components=secrets"],
+    {
+      env: busEnv,
+      stdio: ["pipe", "ignore", "ignore"],
+    },
+  );
   keyring.stdin?.end("test-password");
   await waitForSecretService(busEnv);
   return {
@@ -75,7 +86,13 @@ async function waitForSecretService(env: Record<string, string>): Promise<void> 
     try {
       const names = execFileSync(
         "dbus-send",
-        ["--session", "--print-reply", "--dest=org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus.ListNames"],
+        [
+          "--session",
+          "--print-reply",
+          "--dest=org.freedesktop.DBus",
+          "/org/freedesktop/DBus",
+          "org.freedesktop.DBus.ListNames",
+        ],
         { env, encoding: "utf-8" },
       );
       if (names.includes("org.freedesktop.secrets")) return;

@@ -4,7 +4,13 @@
 import type { Key } from "ink";
 import { describe, expect, it } from "vitest";
 
-import { type ChoiceAction, choiceInput, type ChoiceItem, type ChoiceState, initialChoiceState } from "../src/tui/ChoiceList.js";
+import {
+  type ChoiceAction,
+  type ChoiceItem,
+  type ChoiceState,
+  choiceInput,
+  initialChoiceState,
+} from "../src/tui/ChoiceList.js";
 
 function key(overrides: Partial<Key> = {}): Key {
   return overrides as Key;
@@ -36,12 +42,17 @@ describe("choiceInput", () => {
   const start = initialChoiceState(ITEMS, ["Bambu Lab X1 Carbon 0.4 nozzle"]);
 
   it("picks the highlighted item with enter when only one can be chosen", () => {
-    expect(choiceInput({ ...start, cursor: 2 }, "", key({ return: true }), ITEMS, false)).toEqual({ type: "done", values: ["Bambu Lab X1 Carbon 0.6 nozzle"] });
+    expect(choiceInput({ ...start, cursor: 2 }, "", key({ return: true }), ITEMS, false)).toEqual({
+      type: "done",
+      values: ["Bambu Lab X1 Carbon 0.6 nozzle"],
+    });
   });
 
   it("ticks with space and confirms the ticked items in list order with enter", () => {
     const ticked = update(choiceInput({ ...start, cursor: 2 }, " ", key(), ITEMS, true));
-    expect(ticked.ticked).toEqual(new Set(["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab X1 Carbon 0.6 nozzle"]));
+    expect(ticked.ticked).toEqual(
+      new Set(["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab X1 Carbon 0.6 nozzle"]),
+    );
     expect(choiceInput(ticked, "", key({ return: true }), ITEMS, true)).toEqual({
       type: "done",
       values: ["Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab X1 Carbon 0.6 nozzle"],
@@ -51,7 +62,9 @@ describe("choiceInput", () => {
   it("asks for at least one ticked item", () => {
     const none = update(choiceInput(start, " ", key(), ITEMS, true));
     expect(none.ticked.size).toBe(0);
-    expect(update(choiceInput(none, "", key({ return: true }), ITEMS, true)).error).toBe("Tick at least one with space");
+    expect(update(choiceInput(none, "", key({ return: true }), ITEMS, true)).error).toBe(
+      "Tick at least one with space",
+    );
   });
 
   it("cancels with escape", () => {
@@ -66,6 +79,16 @@ describe("choiceInput", () => {
   });
 
   it("clears the error on the next key", () => {
-    expect(update(choiceInput({ ...start, error: "Tick at least one with space" }, "", key({ downArrow: true }), ITEMS, true)).error).toBe("");
+    expect(
+      update(
+        choiceInput(
+          { ...start, error: "Tick at least one with space" },
+          "",
+          key({ downArrow: true }),
+          ITEMS,
+          true,
+        ),
+      ).error,
+    ).toBe("");
   });
 });

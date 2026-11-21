@@ -36,11 +36,18 @@ export interface Typed {
  * Type-ahead over several letters: letters typed in quick succession build a prefix ("su" finds Sunlu),
  * searched from the current item on; one letter repeated cycles through the items starting with it.
  */
-export function typeAheadJump(labels: string[], cursor: number, letter: string, typed: Typed | undefined, now: number): { cursor: number; typed: Typed } {
+export function typeAheadJump(
+  labels: string[],
+  cursor: number,
+  letter: string,
+  typed: Typed | undefined,
+  now: number,
+): { cursor: number; typed: Typed } {
   const recent = typed && now - typed.at <= TYPE_AHEAD_MS ? typed.text : "";
   const text = (recent + letter).toLowerCase();
   const next = { text, at: now };
-  if ([...text].every((c) => c === text[0])) return { cursor: typeAhead(labels, cursor, letter), typed: next };
+  if ([...text].every((c) => c === text[0]))
+    return { cursor: typeAhead(labels, cursor, letter), typed: next };
   for (let step = 0; step < labels.length; step++) {
     const index = (cursor + step) % labels.length;
     if (labels[index]?.toLowerCase().startsWith(text)) return { cursor: index, typed: next };

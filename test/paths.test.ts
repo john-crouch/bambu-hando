@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import { bambuFilamentDir, bambuUserRoot, cacheDir, configDir, dataDir, tildePath } from "../src/paths.js";
+import {
+  bambuFilamentDir,
+  bambuUserRoot,
+  cacheDir,
+  configDir,
+  dataDir,
+  tildePath,
+} from "../src/paths.js";
 
 describe("bambuUserRoot", () => {
   it("uses ~/.config on Linux", () => {
@@ -11,17 +18,23 @@ describe("bambuUserRoot", () => {
   });
 
   it("uses Application Support on macOS", () => {
-    expect(bambuUserRoot("darwin", "/Users/max")).toBe("/Users/max/Library/Application Support/BambuStudio/user");
+    expect(bambuUserRoot("darwin", "/Users/max")).toBe(
+      "/Users/max/Library/Application Support/BambuStudio/user",
+    );
   });
 
   it("rejects unsupported platforms", () => {
-    expect(() => bambuUserRoot("win32", "C:\\Users\\max")).toThrow("Unsupported OS for this tool: win32");
+    expect(() => bambuUserRoot("win32", "C:\\Users\\max")).toThrow(
+      "Unsupported OS for this tool: win32",
+    );
   });
 });
 
 describe("bambuFilamentDir", () => {
   it("appends the preset folder and filament directory", () => {
-    expect(bambuFilamentDir("default", "linux", "/home/max")).toBe("/home/max/.config/BambuStudio/user/default/filament");
+    expect(bambuFilamentDir("default", "linux", "/home/max")).toBe(
+      "/home/max/.config/BambuStudio/user/default/filament",
+    );
   });
 });
 
@@ -31,11 +44,15 @@ describe("cacheDir", () => {
   });
 
   it("honors XDG_CACHE_HOME on Linux", () => {
-    expect(cacheDir("linux", "/home/max", { XDG_CACHE_HOME: "/var/cache/max" })).toBe("/var/cache/max/bambu-hando");
+    expect(cacheDir("linux", "/home/max", { XDG_CACHE_HOME: "/var/cache/max" })).toBe(
+      "/var/cache/max/bambu-hando",
+    );
   });
 
   it("uses Library/Caches on macOS", () => {
-    expect(cacheDir("darwin", "/Users/max", { XDG_CACHE_HOME: "/ignored" })).toBe("/Users/max/Library/Caches/bambu-hando");
+    expect(cacheDir("darwin", "/Users/max", { XDG_CACHE_HOME: "/ignored" })).toBe(
+      "/Users/max/Library/Caches/bambu-hando",
+    );
   });
 });
 
@@ -45,11 +62,15 @@ describe("configDir", () => {
   });
 
   it("honors XDG_CONFIG_HOME on Linux", () => {
-    expect(configDir("linux", "/home/max", { XDG_CONFIG_HOME: "/etc/max" })).toBe("/etc/max/bambu-hando");
+    expect(configDir("linux", "/home/max", { XDG_CONFIG_HOME: "/etc/max" })).toBe(
+      "/etc/max/bambu-hando",
+    );
   });
 
   it("uses Application Support on macOS", () => {
-    expect(configDir("darwin", "/Users/max", { XDG_CONFIG_HOME: "/ignored" })).toBe("/Users/max/Library/Application Support/bambu-hando");
+    expect(configDir("darwin", "/Users/max", { XDG_CONFIG_HOME: "/ignored" })).toBe(
+      "/Users/max/Library/Application Support/bambu-hando",
+    );
   });
 });
 
@@ -59,11 +80,15 @@ describe("dataDir", () => {
   });
 
   it("honors XDG_DATA_HOME on Linux", () => {
-    expect(dataDir("linux", "/home/max", { XDG_DATA_HOME: "/data/max" })).toBe("/data/max/bambu-hando");
+    expect(dataDir("linux", "/home/max", { XDG_DATA_HOME: "/data/max" })).toBe(
+      "/data/max/bambu-hando",
+    );
   });
 
   it("uses Application Support on macOS", () => {
-    expect(dataDir("darwin", "/Users/max", { XDG_DATA_HOME: "/ignored" })).toBe("/Users/max/Library/Application Support/bambu-hando");
+    expect(dataDir("darwin", "/Users/max", { XDG_DATA_HOME: "/ignored" })).toBe(
+      "/Users/max/Library/Application Support/bambu-hando",
+    );
   });
 });
 

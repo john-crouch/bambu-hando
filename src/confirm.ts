@@ -7,7 +7,11 @@ export interface ConfirmInput extends NodeJS.ReadableStream {
   isTTY?: boolean;
 }
 
-export function askYesNo(question: string, input: ConfirmInput = process.stdin, output: NodeJS.WritableStream = process.stdout): Promise<boolean | null> {
+export function askYesNo(
+  question: string,
+  input: ConfirmInput = process.stdin,
+  output: NodeJS.WritableStream = process.stdout,
+): Promise<boolean | null> {
   if (!input.isTTY) return Promise.resolve(null);
   return new Promise((resolve) => {
     const rl = createInterface({ input, output });

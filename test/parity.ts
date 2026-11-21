@@ -63,12 +63,20 @@ export const parityProfiles: FilamentProfile[] = parity.profiles.map((p, i) => (
 }));
 
 /** Python's CSV with its position-based fallback codes replaced by stable filament IDs. */
-export const expectedCsv = parity.custom_filaments_csv.replace("P000002,", `${FILAMENT_IDS[1]},`).replace("P000003,", `${FILAMENT_IDS[2]},`);
+export const expectedCsv = parity.custom_filaments_csv
+  .replace("P000002,", `${FILAMENT_IDS[1]},`)
+  .replace("P000003,", `${FILAMENT_IDS[2]},`);
 
 /** Python's spool payload with slicer_filament pointing at the filament ID instead of the raw source code. */
 export function expectedSpoolPayload(index: number): Record<string, unknown> {
   // SpoolEase 0.7 requires the location and stock-count fields; a new spool has no location and is one spool.
-  return { ...parity.spool_payloads[index], slicer_filament: FILAMENT_IDS[index], assigned_location: "", actual_location: "", spools_count: 1 };
+  return {
+    ...parity.spool_payloads[index],
+    slicer_filament: FILAMENT_IDS[index],
+    assigned_location: "",
+    actual_location: "",
+    spools_count: 1,
+  };
 }
 
 export function profileAt(index: number): FilamentProfile {

@@ -33,7 +33,15 @@ export interface EditField {
   scalar?: boolean;
 }
 
-const temp = (key: string, label: string, group: string, max: number): EditField => ({ key, label, group, kind: "int", unit: "°C", min: 0, max });
+const temp = (key: string, label: string, group: string, max: number): EditField => ({
+  key,
+  label,
+  group,
+  kind: "int",
+  unit: "°C",
+  min: 0,
+  max,
+});
 
 /** The fields the edit form shows, in order; everything else is under All settings. */
 export const EDIT_FIELDS: readonly EditField[] = [
@@ -49,17 +57,88 @@ export const EDIT_FIELDS: readonly EditField[] = [
   temp("cool_plate_temp_initial_layer", "Cool Plate, first layer", "Bed", 200),
   temp("eng_plate_temp", "Engineering Plate", "Bed", 200),
   temp("eng_plate_temp_initial_layer", "Engineering, first layer", "Bed", 200),
-  { key: "filament_flow_ratio", label: "Flow ratio", group: "Flow", kind: "decimal", min: 0.01, max: 2 },
-  { key: "filament_max_volumetric_speed", label: "Max volumetric speed", group: "Flow", kind: "decimal", unit: "mm³/s", min: 0.1, max: 200 },
+  {
+    key: "filament_flow_ratio",
+    label: "Flow ratio",
+    group: "Flow",
+    kind: "decimal",
+    min: 0.01,
+    max: 2,
+  },
+  {
+    key: "filament_max_volumetric_speed",
+    label: "Max volumetric speed",
+    group: "Flow",
+    kind: "decimal",
+    unit: "mm³/s",
+    min: 0.1,
+    max: 200,
+  },
   { key: "enable_pressure_advance", label: "Pressure advance", group: "Flow", kind: "switch" },
-  { key: "pressure_advance", label: "Pressure advance K", group: "Flow", kind: "decimal", min: 0, max: 2 },
-  { key: "filament_retraction_length", label: "Retraction length", group: "Retraction", kind: "decimal", unit: "mm", min: 0, max: 20, nilable: true },
-  { key: "filament_retraction_speed", label: "Retraction speed", group: "Retraction", kind: "decimal", unit: "mm/s", min: 1, max: 500, nilable: true },
-  { key: "fan_min_speed", label: "Fan, min", group: "Cooling", kind: "int", unit: "%", min: 0, max: 100 },
-  { key: "fan_max_speed", label: "Fan, max", group: "Cooling", kind: "int", unit: "%", min: 0, max: 100 },
+  {
+    key: "pressure_advance",
+    label: "Pressure advance K",
+    group: "Flow",
+    kind: "decimal",
+    min: 0,
+    max: 2,
+  },
+  {
+    key: "filament_retraction_length",
+    label: "Retraction length",
+    group: "Retraction",
+    kind: "decimal",
+    unit: "mm",
+    min: 0,
+    max: 20,
+    nilable: true,
+  },
+  {
+    key: "filament_retraction_speed",
+    label: "Retraction speed",
+    group: "Retraction",
+    kind: "decimal",
+    unit: "mm/s",
+    min: 1,
+    max: 500,
+    nilable: true,
+  },
+  {
+    key: "fan_min_speed",
+    label: "Fan, min",
+    group: "Cooling",
+    kind: "int",
+    unit: "%",
+    min: 0,
+    max: 100,
+  },
+  {
+    key: "fan_max_speed",
+    label: "Fan, max",
+    group: "Cooling",
+    kind: "int",
+    unit: "%",
+    min: 0,
+    max: 100,
+  },
   { key: "default_filament_colour", label: "Color", group: "Filament", kind: "color" },
-  { key: "filament_density", label: "Density", group: "Filament", kind: "decimal", unit: "g/cm³", min: 0.1, max: 20 },
-  { key: "filament_cost", label: "Cost per kg", group: "Filament", kind: "decimal", min: 0, max: 100_000 },
+  {
+    key: "filament_density",
+    label: "Density",
+    group: "Filament",
+    kind: "decimal",
+    unit: "g/cm³",
+    min: 0.1,
+    max: 20,
+  },
+  {
+    key: "filament_cost",
+    label: "Cost per kg",
+    group: "Filament",
+    kind: "decimal",
+    min: 0,
+    max: 100_000,
+  },
   { key: "filament_notes", label: "Notes", group: "Filament", kind: "text", scalar: true },
 ];
 
@@ -88,12 +167,15 @@ function escapeText(text: string): string {
 }
 
 function unescapeText(text: string): string {
-  return text.replace(/\\(\\|n|r)/g, (_, c: string) => (c === "n" ? "\n" : c === "r" ? "\r" : "\\"));
+  return text.replace(/\\(\\|n|r)/g, (_, c: string) =>
+    c === "n" ? "\n" : c === "r" ? "\r" : "\\",
+  );
 }
 
 function entries(value: unknown): string[] | null {
   if (typeof value === "string") return [value];
-  if (Array.isArray(value) && value.every((v) => typeof v === "string")) return value.length ? value : [""];
+  if (Array.isArray(value) && value.every((v) => typeof v === "string"))
+    return value.length ? value : [""];
   return null;
 }
 
@@ -139,12 +221,14 @@ export function parseField(field: EditField, text: string): { value: string } | 
   switch (field.kind) {
     case "int": {
       const n = Number(typed);
-      if (!/^-?\d+$/.test(typed) || n < field.min! || n > field.max!) return { error: `${field.label}: type a whole number ${rangeText(field)}` };
+      if (!/^-?\d+$/.test(typed) || n < field.min! || n > field.max!)
+        return { error: `${field.label}: type a whole number ${rangeText(field)}` };
       return { value: String(n) };
     }
     case "decimal": {
       const n = Number(typed);
-      if (!/^-?(\d+\.?\d*|\.\d+)$/.test(typed) || n < field.min! || n > field.max!) return { error: `${field.label}: type a number ${rangeText(field)}` };
+      if (!/^-?(\d+\.?\d*|\.\d+)$/.test(typed) || n < field.min! || n > field.max!)
+        return { error: `${field.label}: type a number ${rangeText(field)}` };
       return { value: String(n) };
     }
     case "switch":
@@ -154,7 +238,9 @@ export function parseField(field: EditField, text: string): { value: string } | 
     case "color": {
       if (!typed) return { value: "" };
       const match = /^#?([0-9a-f]{6})$/i.exec(typed);
-      return match ? { value: `#${match[1]!.toUpperCase()}` } : { error: `${field.label}: type 6 hex digits, such as AD0000, or nothing for none` };
+      return match
+        ? { value: `#${match[1]!.toUpperCase()}` }
+        : { error: `${field.label}: type 6 hex digits, such as AD0000, or nothing for none` };
     }
     case "text":
       return { value: unescapeText(text) };
@@ -186,19 +272,28 @@ export function parseRaw(current: unknown, text: string): { edit: EditValue } | 
     } catch {
       return { error: `Type ${current.length} values ${example}` };
     }
-    if (!Array.isArray(parsed) || parsed.length !== current.length || !parsed.every((v) => typeof v === "string")) {
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length !== current.length ||
+      !parsed.every((v) => typeof v === "string")
+    ) {
       return { error: `Type ${current.length} values ${example}` };
     }
     return { edit: { each: parsed } };
   }
-  if (rawText(current) === null) return { error: "This setting isn't text; change it in BambuStudio" };
+  if (rawText(current) === null)
+    return { error: "This setting isn't text; change it in BambuStudio" };
   return { edit: { every: unescapeText(text) } };
 }
 
 function applyValue(current: unknown, edit: EditValue, missingAsString: boolean): unknown {
-  if ("each" in edit) return Array.isArray(current) && current.length === edit.each.length ? [...edit.each] : undefined;
+  if ("each" in edit)
+    return Array.isArray(current) && current.length === edit.each.length
+      ? [...edit.each]
+      : undefined;
   if (typeof current === "string") return edit.every;
-  if (Array.isArray(current)) return Array.from({ length: Math.max(1, current.length) }, () => edit.every);
+  if (Array.isArray(current))
+    return Array.from({ length: Math.max(1, current.length) }, () => edit.every);
   if (current === undefined) return missingAsString ? edit.every : [edit.every];
   return undefined;
 }
@@ -234,7 +329,14 @@ export function editChanges(preset: Preset, edits: Edits): EditChange[] {
   return [...edits.keys()].flatMap((key) => {
     if (JSON.stringify(preset[key]) === JSON.stringify(edited[key])) return [];
     const field = editField(key);
-    return [{ key, label: field?.label ?? key, from: shownRaw(field, preset[key]), to: shownRaw(field, edited[key]) }];
+    return [
+      {
+        key,
+        label: field?.label ?? key,
+        from: shownRaw(field, preset[key]),
+        to: shownRaw(field, edited[key]),
+      },
+    ];
   });
 }
 
@@ -254,21 +356,35 @@ export function nozzleRange(preset: Preset): { low: number; high: number } | nul
  * The nozzle range a sync gives SpoolEase for a filament: a kept preset's (the run leaves it as it is,
  * tuned or not), else the profile's with the plan's edits, as the presets it writes get them.
  */
-export function syncedRange(profile: FilamentProfile, kept: Preset[], edits?: Edits): { low: number; high: number } {
+export function syncedRange(
+  profile: FilamentProfile,
+  kept: Preset[],
+  edits?: Edits,
+): { low: number; high: number } {
   for (const preset of kept) {
     const range = nozzleRange(preset);
     if (range) return range;
   }
   // buildPreset writes the profile's range as one value each, so the edits apply to it as they do there.
-  const built: Preset = { nozzle_temperature_range_low: [String(profile.nozzleTempMin)], nozzle_temperature_range_high: [String(profile.nozzleTempMax)] };
-  return nozzleRange(edits ? applyEdits(built, edits).preset : built) ?? { low: profile.nozzleTempMin, high: profile.nozzleTempMax };
+  const built: Preset = {
+    nozzle_temperature_range_low: [String(profile.nozzleTempMin)],
+    nozzle_temperature_range_high: [String(profile.nozzleTempMax)],
+  };
+  return (
+    nozzleRange(edits ? applyEdits(built, edits).preset : built) ?? {
+      low: profile.nozzleTempMin,
+      high: profile.nozzleTempMax,
+    }
+  );
 }
 
 /** A preset file's settings; null when it can't be read or isn't a preset. */
 export async function readPreset(path: string): Promise<Preset | null> {
   try {
     const preset: unknown = JSON.parse(await readFile(path, "utf-8"));
-    return typeof preset === "object" && preset !== null && !Array.isArray(preset) ? (preset as Preset) : null;
+    return typeof preset === "object" && preset !== null && !Array.isArray(preset)
+      ? (preset as Preset)
+      : null;
   } catch {
     return null;
   }
@@ -277,12 +393,16 @@ export async function readPreset(path: string): Promise<Preset | null> {
 /** BambuStudio's nozzle range must run low to high; "" when it does. */
 export function rangeError(preset: Preset): string {
   const range = nozzleRange(preset);
-  return range && range.low > range.high ? `Nozzle range: low (${range.low} °C) is above high (${range.high} °C)` : "";
+  return range && range.low > range.high
+    ? `Nozzle range: low (${range.low} °C) is above high (${range.high} °C)`
+    : "";
 }
 
 /** The opened preset, then the other presets of the same filament (by filament ID), which an edit can change too. */
 export function presetFamily(presets: UserPreset[], opened: UserPreset): UserPreset[] {
-  const others = opened.filamentId ? presets.filter((p) => p.path !== opened.path && p.filamentId === opened.filamentId) : [];
+  const others = opened.filamentId
+    ? presets.filter((p) => p.path !== opened.path && p.filamentId === opened.filamentId)
+    : [];
   return [opened, ...others];
 }
 
@@ -300,7 +420,12 @@ export function skippedDetail(preset: Preset, edits: Edits, skipped: string[]): 
       const edit = edits.get(key)!;
       const current = preset[key];
       const wanted = "each" in edit ? edit.each.length : 1;
-      const why = current === undefined ? "the preset doesn't have it" : Array.isArray(current) ? `it has ${current.length} variant${current.length === 1 ? "" : "s"}, not ${wanted}` : "it isn't text";
+      const why =
+        current === undefined
+          ? "the preset doesn't have it"
+          : Array.isArray(current)
+            ? `it has ${current.length} variant${current.length === 1 ? "" : "s"}, not ${wanted}`
+            : "it isn't text";
       return `${key} left as it is: ${why}`;
     })
     .join("; ");
@@ -310,7 +435,11 @@ export function skippedDetail(preset: Preset, edits: Edits, skipped: string[]): 
  * Writes the edits into each preset, read again just before, one file at a time; dates its .info so
  * BambuStudio's cloud sync uploads the change. A preset that already has the values isn't written.
  */
-export async function writePresetEdits(paths: string[], edits: Edits, nowMs: number = Date.now()): Promise<EditResult[]> {
+export async function writePresetEdits(
+  paths: string[],
+  edits: Edits,
+  nowMs: number = Date.now(),
+): Promise<EditResult[]> {
   const results: EditResult[] = [];
   for (const path of paths) {
     let preset: Preset;
@@ -323,7 +452,11 @@ export async function writePresetEdits(paths: string[], edits: Edits, nowMs: num
     const { preset: edited, skipped } = applyEdits(preset, edits);
     const detail = skippedDetail(preset, edits, skipped);
     if (JSON.stringify(edited) === JSON.stringify(preset)) {
-      results.push({ path, ok: true, detail: detail || "it already had these values; left as it is" });
+      results.push({
+        path,
+        ok: true,
+        detail: detail || "it already had these values; left as it is",
+      });
       continue;
     }
     try {

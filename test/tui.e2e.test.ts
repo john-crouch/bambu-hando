@@ -7,15 +7,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { spawn, type IPty } from "node-pty";
+import { type IPty, spawn } from "node-pty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
+import {
+  baseFilamentDir,
+  installBambuStudio,
+  installSpoolEaseConfig,
+  X1C_04,
+  X1C_06,
+} from "./bambuStudioSetup.js";
 import { installFakeLp } from "./fakeLp.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { readPdf } from "./pdf.js";
-import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import {
+  type SpoolEaseServer,
+  startSpoolEaseServer,
+  TEST_SECURITY_KEY,
+} from "./spooleaseServer.js";
 import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
-import { baseFilamentDir, installBambuStudio, installSpoolEaseConfig, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
@@ -34,7 +43,11 @@ const ANSI = /\u001B\[[0-9;?]*[ -/]*[@-~]|\u001B\][^\u0007]*\u0007/g;
 // window goes through the cooked line discipline (Enter arrives as "\n", not "\r") and is lost.
 function rawModeOn(ptsName: string): Promise<boolean> {
   const flag = process.platform === "darwin" ? "-f" : "-F";
-  return new Promise((resolve) => execFile("stty", [flag, ptsName, "-a"], (err, stdout) => resolve(!err && /(^|\s)-icanon(\s|$)/.test(stdout))));
+  return new Promise((resolve) =>
+    execFile("stty", [flag, ptsName, "-a"], (err, stdout) =>
+      resolve(!err && /(^|\s)-icanon(\s|$)/.test(stdout)),
+    ),
+  );
 }
 
 class Terminal {
@@ -82,7 +95,9 @@ class Terminal {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     const what = found ? "raw mode after" : "";
-    throw new Error(`Timed out waiting for ${what} ${JSON.stringify(needle)}. Output:\n${this.text.slice(-2_000)}`);
+    throw new Error(
+      `Timed out waiting for ${what} ${JSON.stringify(needle)}. Output:\n${this.text.slice(-2_000)}`,
+    );
   }
 
   // node-pty's UnixTerminal has ptsName at runtime, but its typings leave it out.
@@ -209,9 +224,19 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
 
   it("fits a list to the terminal's height and follows a resize", async () => {
     for (let i = 1; i <= 12; i++) {
-      server.spools.push({ id: String(i), brand: "Acme", material_type: "PLA", color_name: `Color ${i}`, color_code: "808080FF" });
+      server.spools.push({
+        id: String(i),
+        brand: "Acme",
+        material_type: "PLA",
+        color_name: `Color ${i}`,
+        color_code: "808080FF",
+      });
     }
-    terminal = new Terminal(["--skip-spools", ...spooleaseFlags()], { HOME: home }, { cols: 100, rows: 16 });
+    terminal = new Terminal(
+      ["--skip-spools", ...spooleaseFlags()],
+      { HOME: home },
+      { cols: 100, rows: 16 },
+    );
 
     await terminal.waitFor("Print labels for existing spools");
     terminal.press("p");
@@ -230,7 +255,13 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
 
   it("reads a scanner's barcode, sent with its enter in one burst", async () => {
     server.customFilaments = "PA000001,Sunlu PETG Elite Red,240,260,PETG";
-    server.spools.push({ id: "1", brand: "Sunlu", material_type: "PETG", color_name: "Red", slicer_filament: "PA000001" });
+    server.spools.push({
+      id: "1",
+      brand: "Sunlu",
+      material_type: "PETG",
+      color_name: "Red",
+      slicer_filament: "PA000001",
+    });
     terminal = new Terminal(["--skip-spools", ...spooleaseFlags()], { HOME: home });
 
     await terminal.waitFor("Barcode: more spools of what you scan");
@@ -247,7 +278,13 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     const base = baseFilamentDir(home);
     await mkdir(base, { recursive: true });
     const path = join(base, `Red @${X1C_04}.json`);
-    const preset = { name: `Red @${X1C_04}`, inherits: "", filament_id: "PA000001", nozzle_temperature: ["220"], filament_flow_ratio: ["0.98"] };
+    const preset = {
+      name: `Red @${X1C_04}`,
+      inherits: "",
+      filament_id: "PA000001",
+      nozzle_temperature: ["220"],
+      filament_flow_ratio: ["0.98"],
+    };
     await writeFile(path, `${JSON.stringify(preset, null, 4)}\n`);
     terminal = new Terminal(["--skip-spoolease"], { HOME: home });
 
@@ -266,7 +303,9 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     terminal.press("q");
 
     expect(await terminal.exited).toBe(0);
-    expect(await readFile(path, "utf-8")).toBe(`${JSON.stringify({ ...preset, nozzle_temperature: ["215"] }, null, 4)}\n`);
+    expect(await readFile(path, "utf-8")).toBe(
+      `${JSON.stringify({ ...preset, nozzle_temperature: ["215"] }, null, 4)}\n`,
+    );
   });
 
   it("edits a filament's new preset on the plan and writes it with the run", async () => {
@@ -289,15 +328,20 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     terminal.press("q");
 
     expect(await terminal.exited).toBe(0);
-    const written = JSON.parse(await readFile(join(baseFilamentDir(home), `PETG Red @${X1C_04}.json`), "utf-8"));
+    const written = JSON.parse(
+      await readFile(join(baseFilamentDir(home), `PETG Red @${X1C_04}.json`), "utf-8"),
+    );
     expect(written.nozzle_temperature_range_high).toEqual(["245"]);
   });
 
   it("accepts typed input and never echoes the security key from the environment", async () => {
-    terminal = new Terminal(["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)], {
-      HOME: home,
-      SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
-    });
+    terminal = new Terminal(
+      ["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)],
+      {
+        HOME: home,
+        SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+      },
+    );
 
     await terminal.waitFor("Add spools from SpoolmanDB");
     await terminal.pressEach("s", ENTER);
@@ -326,7 +370,9 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
 
   it("prefills SpoolEase from BambuStudio's SpoolEase settings without echoing the key", async () => {
     await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--spoolease-port", String(server.port)], { HOME: home });
+    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--spoolease-port", String(server.port)], {
+      HOME: home,
+    });
 
     await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press(ENTER);
@@ -344,7 +390,11 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
   describe("remembered printers", () => {
     beforeEach(async () => {
       await mkdir(join(home, ".config", "bambu-hando"), { recursive: true });
-      await writeFile(join(home, ".config", "bambu-hando", "tui.json"), JSON.stringify({ printers: [X1C_04, X1C_06] }), "utf-8");
+      await writeFile(
+        join(home, ".config", "bambu-hando", "tui.json"),
+        JSON.stringify({ printers: [X1C_04, X1C_06] }),
+        "utf-8",
+      );
     });
 
     it("starts from the printers of the last run", async () => {
@@ -356,7 +406,10 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     });
 
     it("lets --printer-preset override them", async () => {
-      terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease", "--printer-preset", X1C_06], { HOME: home });
+      terminal = new Terminal(
+        ["--source", SOURCE_FIXTURE, "--skip-spoolease", "--printer-preset", X1C_06],
+        { HOME: home },
+      );
 
       await terminal.waitFor("BambuStudio:");
       await terminal.waitFor(X1C_06);
@@ -368,7 +421,10 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
 
   it("shows a rejected key and exits 2", async () => {
     // Without spools the key is first checked on apply; with them, before the plan (see tui.test.tsx).
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spools", ...spooleaseFlags("WRONG")], { HOME: home });
+    terminal = new Terminal(
+      ["--source", SOURCE_FIXTURE, "--skip-spools", ...spooleaseFlags("WRONG")],
+      { HOME: home },
+    );
 
     await terminal.waitFor("Add spools from SpoolmanDB");
     terminal.press(ENTER);
@@ -401,7 +457,9 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
       terminal.press("q");
 
       expect(await terminal.exited).toBe(0);
-      expect(await readdir(baseFilamentDir(home))).toEqual([`RatRig ABS Punkfil Brute Black @${X1C_04}.json`]);
+      expect(await readdir(baseFilamentDir(home))).toEqual([
+        `RatRig ABS Punkfil Brute Black @${X1C_04}.json`,
+      ]);
     } finally {
       await spoolmanDb.close();
     }

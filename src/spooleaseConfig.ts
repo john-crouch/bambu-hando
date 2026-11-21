@@ -24,11 +24,16 @@ function hostOf(address: string): string {
 }
 
 /** The console host and security key from BambuStudio's SpoolEase settings; nulls when unknown. */
-export async function readSpoolEaseConfig(configDir: string = bambuConfigDir()): Promise<SpoolEaseSettings> {
+export async function readSpoolEaseConfig(
+  configDir: string = bambuConfigDir(),
+): Promise<SpoolEaseSettings> {
   try {
     const config = JSON.parse(await readFile(join(configDir, "spoolease", "config.json"), "utf-8"));
     const address = text(config?.console?.address);
-    return { host: address ? text(hostOf(address)) : null, securityKey: text(config?.console?.security_key) };
+    return {
+      host: address ? text(hostOf(address)) : null,
+      securityKey: text(config?.console?.security_key),
+    };
   } catch {
     return { host: null, securityKey: null };
   }
@@ -53,6 +58,7 @@ export function spooleaseConnectionFrom(
   env: Record<string, string | undefined> = process.env,
 ): SpoolEaseConnection | null {
   const host = flags["spoolease-host"] || env.SPOOLEASE_HOST || saved.host || "";
-  const securityKey = flags["spoolease-security-key"] || env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "";
+  const securityKey =
+    flags["spoolease-security-key"] || env.SPOOLEASE_SECURITY_KEY || saved.securityKey || "";
   return host && securityKey ? { host, securityKey, port, https: flags["spoolease-https"] } : null;
 }

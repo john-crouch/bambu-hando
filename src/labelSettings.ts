@@ -4,7 +4,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { DEFAULT_LABEL_FIELDS, DEFAULT_LABEL_SIZE, LABEL_FIELDS, type LabelField, parseLabelSize } from "./labels.js";
+import {
+  DEFAULT_LABEL_FIELDS,
+  DEFAULT_LABEL_SIZE,
+  LABEL_FIELDS,
+  type LabelField,
+  parseLabelSize,
+} from "./labels.js";
 import { configDir } from "./paths.js";
 
 export interface LabelSettings {
@@ -17,7 +23,12 @@ export interface LabelSettings {
   output: string;
 }
 
-export const DEFAULT_LABEL_SETTINGS: LabelSettings = { fields: DEFAULT_LABEL_FIELDS, size: DEFAULT_LABEL_SIZE, printer: "", output: "" };
+export const DEFAULT_LABEL_SETTINGS: LabelSettings = {
+  fields: DEFAULT_LABEL_FIELDS,
+  size: DEFAULT_LABEL_SIZE,
+  printer: "",
+  output: "",
+};
 
 export function labelSettingsPath(): string {
   return join(configDir(), "labels.json");
@@ -41,7 +52,9 @@ export async function loadLabelSettings(path = labelSettingsPath()): Promise<Lab
     return DEFAULT_LABEL_SETTINGS;
   }
   const keys: string[] = LABEL_FIELDS.map((f) => f.key);
-  const fields = Array.isArray(saved.fields) ? (saved.fields.filter((f) => keys.includes(f)) as LabelField[]) : [];
+  const fields = Array.isArray(saved.fields)
+    ? (saved.fields.filter((f) => keys.includes(f)) as LabelField[])
+    : [];
   return {
     fields: fields.length > 0 ? fields : DEFAULT_LABEL_SETTINGS.fields,
     size: validSize(saved.size) ? saved.size : DEFAULT_LABEL_SETTINGS.size,
@@ -51,7 +64,10 @@ export async function loadLabelSettings(path = labelSettingsPath()): Promise<Lab
 }
 
 /** Written atomically, so an interrupted save never leaves a half-written file. */
-export async function saveLabelSettings(settings: LabelSettings, path = labelSettingsPath()): Promise<void> {
+export async function saveLabelSettings(
+  settings: LabelSettings,
+  path = labelSettingsPath(),
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(`${path}.tmp`, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
   await rename(`${path}.tmp`, path);

@@ -12,9 +12,21 @@ function key(overrides: Partial<Key> = {}): Key {
 }
 
 const SECTIONS: CheckSection[] = [
-  { key: "csvOnly", title: "Filaments without a preset", why: "Fix them.", problem: true, items: ["A (P1)", "B (P2)"] },
+  {
+    key: "csvOnly",
+    title: "Filaments without a preset",
+    why: "Fix them.",
+    problem: true,
+    items: ["A (P1)", "B (P2)"],
+  },
   { key: "badRows", title: "Bad rows", why: "Commas.", problem: true, items: [] },
-  { key: "presetsOnly", title: "Presets only", why: "Fine.", problem: false, items: ["C (P3) · X1C"] },
+  {
+    key: "presetsOnly",
+    title: "Presets only",
+    why: "Fine.",
+    problem: false,
+    items: ["C (P3) · X1C"],
+  },
 ];
 
 describe("checkLines", () => {
@@ -44,7 +56,10 @@ describe("checkInput", () => {
     expect(checkInput(0, "", key({ downArrow: true }), 50, 20)).toEqual({ type: "scroll", top: 1 });
     expect(checkInput(0, "", key({ upArrow: true }), 50, 20)).toEqual({ type: "scroll", top: 0 });
     expect(checkInput(0, "", key({ pageDown: true }), 50, 20)).toEqual({ type: "scroll", top: 20 });
-    expect(checkInput(25, "", key({ pageDown: true }), 50, 20)).toEqual({ type: "scroll", top: 30 });
+    expect(checkInput(25, "", key({ pageDown: true }), 50, 20)).toEqual({
+      type: "scroll",
+      top: 30,
+    });
     expect(checkInput(0, "", key({ downArrow: true }), 10, 20)).toEqual({ type: "scroll", top: 0 });
   });
 

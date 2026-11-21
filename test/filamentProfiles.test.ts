@@ -1,17 +1,28 @@
 // ABOUTME: Tests for the 3DFilamentProfiles API client against a local stand-in server.
 // ABOUTME: Covers the pinned origin, auth, quota bookkeeping, local validation that saves calls, and error messages.
 
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { QuotaError, QuotaLedger } from "../src/apiQuota.js";
-import { apiBase, FILAMENT_PROFILES_API, FilamentProfilesClient, FilamentProfilesError } from "../src/filamentProfiles.js";
-import { type FilamentProfilesServer, serverFilament, serverSpool, startFilamentProfilesServer, TEST_API_KEY } from "./filamentProfilesServer.js";
+import {
+  apiBase,
+  FILAMENT_PROFILES_API,
+  FilamentProfilesClient,
+  FilamentProfilesError,
+} from "../src/filamentProfiles.js";
+import {
+  type FilamentProfilesServer,
+  serverFilament,
+  serverSpool,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
 
 describe("apiBase", () => {
   it("is the real API unless overridden", () => {
@@ -20,14 +31,25 @@ describe("apiBase", () => {
   });
 
   it("can point at a server on this machine, for tests", () => {
-    for (const url of ["http://127.0.0.1:4321/api/v1", "http://localhost:4321/api/v1", "http://[::1]:4321/api/v1/"]) {
+    for (const url of [
+      "http://127.0.0.1:4321/api/v1",
+      "http://localhost:4321/api/v1",
+      "http://[::1]:4321/api/v1/",
+    ]) {
       expect(apiBase({ FILAMENTPROFILES_API_URL: url })).toBe(url.replace(/\/$/, ""));
     }
   });
 
   it("refuses to send the key anywhere else", () => {
-    for (const url of ["https://evil.example/api/v1", "http://192.168.1.5/api/v1", "http://3dfilamentprofiles.com/api/v1", "not a url"]) {
-      expect(() => apiBase({ FILAMENTPROFILES_API_URL: url })).toThrow(/refusing to send the 3DFilamentProfiles API key/);
+    for (const url of [
+      "https://evil.example/api/v1",
+      "http://192.168.1.5/api/v1",
+      "http://3dfilamentprofiles.com/api/v1",
+      "not a url",
+    ]) {
+      expect(() => apiBase({ FILAMENTPROFILES_API_URL: url })).toThrow(
+        /refusing to send the 3DFilamentProfiles API key/,
+      );
     }
   });
 });
@@ -39,7 +61,10 @@ describe("FilamentProfilesClient", () => {
 
   beforeEach(async () => {
     server = await startFilamentProfilesServer();
-    ledger = new QuotaLedger(join(await mkdtemp(join(tmpdir(), "bh-3dfp-")), "quota.json"), "acct1");
+    ledger = new QuotaLedger(
+      join(await mkdtemp(join(tmpdir(), "bh-3dfp-")), "quota.json"),
+      "acct1",
+    );
     client = new FilamentProfilesClient({ key: TEST_API_KEY, base: server.url, ledger });
   });
 
@@ -58,7 +83,10 @@ describe("FilamentProfilesClient", () => {
   });
 
   it("lists every spool in one call", async () => {
-    server.spools = [serverSpool(), serverSpool({ short_code: "XYZ789", location: null, rgb: null, remaining_grams: 0 })];
+    server.spools = [
+      serverSpool(),
+      serverSpool({ short_code: "XYZ789", location: null, rgb: null, remaining_grams: 0 }),
+    ];
     const spools = await client.listSpools();
     expect(server.requests).toHaveLength(1);
     expect(spools[0]).toEqual({
@@ -76,22 +104,44 @@ describe("FilamentProfilesClient", () => {
       updatedAt: "2026-10-14T18:02:11.000Z",
       url: "https://spooldb.com/s/ABC123",
     });
-    expect(spools[1]).toMatchObject({ shortCode: "XYZ789", location: null, rgb: null, remainingGrams: 0 });
+    expect(spools[1]).toMatchObject({
+      shortCode: "XYZ789",
+      location: null,
+      rgb: null,
+      remainingGrams: 0,
+    });
   });
 
   it("gets one spool with its Bambu IDs, which the list leaves out", async () => {
-    server.spools = [serverSpool({ short_code: "A/B 1", bambu_tag_id: "4C626FE6", bambu_spool_id: null })];
+    server.spools = [
+      serverSpool({ short_code: "A/B 1", bambu_tag_id: "4C626FE6", bambu_spool_id: null }),
+    ];
     const spool = await client.getSpool("A/B 1");
     expect(server.requests[0]?.path).toBe("/api/v1/my/spools/A%2FB%201");
-    expect(spool).toMatchObject({ shortCode: "A/B 1", brand: "Sunlu", bambuTagId: "4C626FE6", bambuSpoolId: null });
+    expect(spool).toMatchObject({
+      shortCode: "A/B 1",
+      brand: "Sunlu",
+      bambuTagId: "4C626FE6",
+      bambuSpoolId: null,
+    });
   });
 
   it("updates a spool with only the fields given", async () => {
     server.spools = [serverSpool()];
     const update = await client.updateSpool("ABC123", { usedGrams: 42, bambuTagId: "4C626FE6" });
-    expect(server.requests[0]).toMatchObject({ method: "PATCH", body: { used_grams: 42, bambu_tag_id: "4C626FE6" } });
+    expect(server.requests[0]).toMatchObject({
+      method: "PATCH",
+      body: { used_grams: 42, bambu_tag_id: "4C626FE6" },
+    });
     expect(server.requests[0]?.headers["content-type"]).toBe("application/json");
-    expect(update).toEqual({ shortCode: "ABC123", remainingGrams: 698, deductedGrams: 42, location: "Shelf A", bambuSpoolId: null, bambuTagId: "4C626FE6" });
+    expect(update).toEqual({
+      shortCode: "ABC123",
+      remainingGrams: 698,
+      deductedGrams: 42,
+      location: "Shelf A",
+      bambuSpoolId: null,
+      bambuTagId: "4C626FE6",
+    });
   });
 
   it("sends null to clear a location or ID", async () => {
@@ -112,15 +162,27 @@ describe("FilamentProfilesClient", () => {
       { location: "x".repeat(201) },
       { bambuTagId: "x".repeat(65) },
     ];
-    for (const patch of bad) await expect(client.updateSpool("ABC123", patch)).rejects.toThrow(FilamentProfilesError);
+    for (const patch of bad)
+      await expect(client.updateSpool("ABC123", patch)).rejects.toThrow(FilamentProfilesError);
     expect(server.requests).toHaveLength(0);
   });
 
   it("adds a spool, or reports the ones already owned", async () => {
     server.filaments = [serverFilament()];
-    const added = await client.addSpool({ filamentId: 101, remainingGrams: 1000, ifNotOwned: true });
-    expect(server.requests[0]?.body).toEqual({ filament_id: 101, remaining_grams: 1000, if_not_owned: true });
-    expect(added).toMatchObject({ created: true, spool: { shortCode: "NEW001", filamentId: 101, remainingGrams: 1000 } });
+    const added = await client.addSpool({
+      filamentId: 101,
+      remainingGrams: 1000,
+      ifNotOwned: true,
+    });
+    expect(server.requests[0]?.body).toEqual({
+      filament_id: 101,
+      remaining_grams: 1000,
+      if_not_owned: true,
+    });
+    expect(added).toMatchObject({
+      created: true,
+      spool: { shortCode: "NEW001", filamentId: 101, remainingGrams: 1000 },
+    });
 
     const again = await client.addSpool({ filamentId: 101, ifNotOwned: true });
     expect(again).toEqual({ created: false, existing: ["NEW001"] });
@@ -128,14 +190,43 @@ describe("FilamentProfilesClient", () => {
 
   it("searches filaments with the documented filters and page bounds", async () => {
     server.filaments = [serverFilament(), serverFilament({ id: 102, color: "Black" })];
-    const page = await client.listFilaments({ brand: "sunlu", material: "petg", q: "black", limit: 50 });
-    expect(server.requests[0]?.query).toEqual({ brand: "sunlu", material: "petg", q: "black", limit: "50" });
-    expect(page).toMatchObject({ page: 1, limit: 50, total: 1, totalIsEstimate: false, last: true });
+    const page = await client.listFilaments({
+      brand: "sunlu",
+      material: "petg",
+      q: "black",
+      limit: 50,
+    });
+    expect(server.requests[0]?.query).toEqual({
+      brand: "sunlu",
+      material: "petg",
+      q: "black",
+      limit: "50",
+    });
+    expect(page).toMatchObject({
+      page: 1,
+      limit: 50,
+      total: 1,
+      totalIsEstimate: false,
+      last: true,
+    });
     expect(page.filaments).toEqual([
-      expect.objectContaining({ id: 102, brandKey: "sunlu", brandName: "Sunlu", materialKey: "petg", color: "Black", discontinued: false }),
+      expect.objectContaining({
+        id: 102,
+        brandKey: "sunlu",
+        brandName: "Sunlu",
+        materialKey: "petg",
+        color: "Black",
+        discontinued: false,
+      }),
     ]);
 
-    for (const filters of [{ limit: 51 }, { page: 21 }, { q: "x".repeat(101) }, { gtin: "123" }, { gtin: "12345678", page: 2 }]) {
+    for (const filters of [
+      { limit: 51 },
+      { page: 21 },
+      { q: "x".repeat(101) },
+      { gtin: "123" },
+      { gtin: "12345678", page: 2 },
+    ]) {
       await expect(client.listFilaments(filters)).rejects.toThrow(FilamentProfilesError);
     }
     expect(server.requests).toHaveLength(1);
@@ -143,10 +234,31 @@ describe("FilamentProfilesClient", () => {
 
   it("gets a filament's full record, keeping the id the server returns", async () => {
     server.filaments = [serverFilament({ id: 205 })];
-    server.replies["/api/v1/filaments/101"] = { status: 200, body: { ...serverFilament({ id: 205 }), stores: [] } };
+    server.replies["/api/v1/filaments/101"] = {
+      status: 200,
+      body: { ...serverFilament({ id: 205 }), stores: [] },
+    };
     const filament = await client.getFilament(101);
-    expect(filament).toMatchObject({ id: 205, tempMin: 230, tempMax: 250, bedTempMin: 70, bedTempMax: 80, density: 1270, diameter: 1750, nominalWeight: 1000, spoolWeight: 189 });
-    expect(filament).toMatchObject({ chamberTemp: null, dryTempMax: 65, dryTime: 6, flowRatio: 0.95, kValue: 0.04, maxVolumetricSpeed: 16, softeningTemp: 78 });
+    expect(filament).toMatchObject({
+      id: 205,
+      tempMin: 230,
+      tempMax: 250,
+      bedTempMin: 70,
+      bedTempMax: 80,
+      density: 1270,
+      diameter: 1750,
+      nominalWeight: 1000,
+      spoolWeight: 189,
+    });
+    expect(filament).toMatchObject({
+      chamberTemp: null,
+      dryTempMax: 65,
+      dryTime: 6,
+      flowRatio: 0.95,
+      kValue: 0.04,
+      maxVolumetricSpeed: 16,
+      softeningTemp: 78,
+    });
   });
 
   it("leaves store prices out of a filament's record, since they change daily", async () => {
@@ -171,7 +283,11 @@ describe("FilamentProfilesClient", () => {
   it("explains a rejected key, which costs nothing", async () => {
     server.quota.remaining = 500;
     await client.listSpools();
-    const wrong = new FilamentProfilesClient({ key: `${TEST_API_KEY}_regenerated`, base: server.url, ledger });
+    const wrong = new FilamentProfilesClient({
+      key: `${TEST_API_KEY}_regenerated`,
+      base: server.url,
+      ledger,
+    });
     const err = await wrong.listSpools().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(FilamentProfilesError);
     expect(err).toMatchObject({ status: 401, code: "invalid_key" });
@@ -189,7 +305,9 @@ describe("FilamentProfilesClient", () => {
     server.spools = [serverSpool()];
     const err = await client.updateSpool("ABC123", { location: "Garage" }).catch((e: unknown) => e);
     expect(err).toMatchObject({ status: 422, code: "invalid_location" });
-    expect(String(err)).toContain("3DFilamentProfiles: No saved location has that name (invalid_location)");
+    expect(String(err)).toContain(
+      "3DFilamentProfiles: No saved location has that name (invalid_location)",
+    );
   });
 
   it("reports an unreadable error body by its status", async () => {
@@ -208,7 +326,11 @@ describe("FilamentProfilesClient", () => {
   it("still returns the reply when the quota file can't be written", async () => {
     const notADir = join(await mkdtemp(join(tmpdir(), "bh-3dfp-")), "file");
     await writeFile(notADir, "", "utf-8");
-    const unwritable = new FilamentProfilesClient({ key: TEST_API_KEY, base: server.url, ledger: new QuotaLedger(join(notADir, "quota.json"), "acct1") });
+    const unwritable = new FilamentProfilesClient({
+      key: TEST_API_KEY,
+      base: server.url,
+      ledger: new QuotaLedger(join(notADir, "quota.json"), "acct1"),
+    });
     expect(await unwritable.listSpools()).toHaveLength(server.spools.length);
     await server.close();
     await expect(unwritable.listSpools()).rejects.toThrow(/can't reach 3DFilamentProfiles/);
@@ -229,8 +351,14 @@ describe("FilamentProfilesClient", () => {
       res.end("{}");
     });
     await new Promise<void>((resolve) => other.listen(0, "127.0.0.1", resolve));
-    server.replies["/api/v1/my/spools"] = { status: 302, body: {}, headers: { Location: `http://127.0.0.1:${(other.address() as AddressInfo).port}/steal` } };
-    await expect(client.listSpools()).rejects.toThrow("3DFilamentProfiles answered with a redirect (HTTP 302), which bambu-hando never follows");
+    server.replies["/api/v1/my/spools"] = {
+      status: 302,
+      body: {},
+      headers: { Location: `http://127.0.0.1:${(other.address() as AddressInfo).port}/steal` },
+    };
+    await expect(client.listSpools()).rejects.toThrow(
+      "3DFilamentProfiles answered with a redirect (HTTP 302), which bambu-hando never follows",
+    );
     expect(elsewhere).toEqual([]);
     await new Promise<void>((resolve) => other.close(() => resolve()));
   });

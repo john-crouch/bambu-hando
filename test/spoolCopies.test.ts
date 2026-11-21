@@ -2,10 +2,13 @@
 // ABOUTME: Copies are created against the local SpoolEase protocol server, which rejects payloads missing required fields.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import { type SpoolRecord, SpoolEaseClient } from "../src/spoolease.js";
 import { addSpoolCopies, copyableFilaments, spoolCopyPayload } from "../src/spoolCopies.js";
-import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import { SpoolEaseClient, type SpoolRecord } from "../src/spoolease.js";
+import {
+  type SpoolEaseServer,
+  startSpoolEaseServer,
+  TEST_SECURITY_KEY,
+} from "./spooleaseServer.js";
 
 function spool(overrides: Partial<SpoolRecord>): SpoolRecord {
   return {
@@ -29,14 +32,22 @@ function spool(overrides: Partial<SpoolRecord>): SpoolRecord {
   };
 }
 
-const names = new Map([["P1111111", { name: "Acme PETG Red", nozzleTempMin: 240, nozzleTempMax: 260 }]]);
+const names = new Map([
+  ["P1111111", { name: "Acme PETG Red", nozzleTempMin: 240, nozzleTempMax: 260 }],
+]);
 
 describe("copyableFilaments", () => {
   it("lists each filament with spools once, by name, with its newest spool to copy", () => {
     const spools = [
       spool({ id: "2" }),
       spool({ id: "10", colorName: "Red (newest)" }),
-      spool({ id: "3", slicerFilament: "P2222222", brand: "Zeta", material: "PLA", colorName: "Blue" }),
+      spool({
+        id: "3",
+        slicerFilament: "P2222222",
+        brand: "Zeta",
+        material: "PLA",
+        colorName: "Blue",
+      }),
     ];
 
     expect(copyableFilaments(spools, names)).toEqual([
@@ -52,7 +63,13 @@ describe("copyableFilaments", () => {
 
 describe("spoolCopyPayload", () => {
   it("copies the filament, color and weights into a new untagged spool without a location", () => {
-    const source = spool({ id: "7", tagId: "04A1B2", subtype: "HF", note: "dried twice", location: "AMS 1" });
+    const source = spool({
+      id: "7",
+      tagId: "04A1B2",
+      subtype: "HF",
+      note: "dried twice",
+      location: "AMS 1",
+    });
 
     expect(spoolCopyPayload(source, "Acme PETG Red")).toEqual({
       tag_id: "",
@@ -75,7 +92,10 @@ describe("spoolCopyPayload", () => {
   });
 
   it("sends unknown weights as 0, SpoolEase's unknown", () => {
-    expect(spoolCopyPayload(spool({ labelWeight: null, coreWeight: null }), "x")).toMatchObject({ label_weight: 0, core_weight: 0 });
+    expect(spoolCopyPayload(spool({ labelWeight: null, coreWeight: null }), "x")).toMatchObject({
+      label_weight: 0,
+      core_weight: 0,
+    });
   });
 });
 
@@ -85,7 +105,12 @@ describe("addSpoolCopies", () => {
 
   beforeEach(async () => {
     server = await startSpoolEaseServer();
-    client = new SpoolEaseClient({ host: "127.0.0.1", port: server.port, securityKey: TEST_SECURITY_KEY, https: false });
+    client = new SpoolEaseClient({
+      host: "127.0.0.1",
+      port: server.port,
+      securityKey: TEST_SECURITY_KEY,
+      https: false,
+    });
   });
 
   afterEach(async () => {
@@ -107,7 +132,11 @@ describe("addSpoolCopies", () => {
   });
 
   it("reports a rejected copy and keeps going", async () => {
-    server.replies["POST /api/spools/add-edit"] = { status: 200, body: "Spool storage full", plain: true };
+    server.replies["POST /api/spools/add-edit"] = {
+      status: 200,
+      body: "Spool storage full",
+      plain: true,
+    };
     const filament = { code: "P1111111", name: "Acme PETG Red", count: 1, spool: spool({}) };
 
     expect(await addSpoolCopies(client, filament, 2)).toEqual([

@@ -50,7 +50,10 @@ describe("remembered barcodes", () => {
 
   it("skips damaged entries and treats a damaged file as empty", async () => {
     await mkdir(dirname(barcodesPath()), { recursive: true });
-    await writeFile(barcodesPath(), JSON.stringify({ A1: { code: "PA000001", name: "Red" }, B2: "nope", C3: { code: 7 } }));
+    await writeFile(
+      barcodesPath(),
+      JSON.stringify({ A1: { code: "PA000001", name: "Red" }, B2: "nope", C3: { code: 7 } }),
+    );
     expect(await loadBarcodes()).toEqual(new Map([["A1", { code: "PA000001", name: "Red" }]]));
 
     await writeFile(barcodesPath(), "{");
@@ -61,7 +64,10 @@ describe("remembered barcodes", () => {
 describe("scanInput", () => {
   it("types a code a key at a time and submits it with enter", () => {
     expect(scanInput("0015", "0", key())).toEqual({ type: "update", code: "00150" });
-    expect(scanInput("00150603Z", "", key({ return: true }))).toEqual({ type: "submit", code: "00150603Z" });
+    expect(scanInput("00150603Z", "", key({ return: true }))).toEqual({
+      type: "submit",
+      code: "00150603Z",
+    });
   });
 
   it("takes a scanner's burst, code and enter in one input, as a whole scan", () => {

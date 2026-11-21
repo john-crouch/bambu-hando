@@ -15,7 +15,9 @@ export interface CopyableFilament {
 }
 
 function spoolName(spool: SpoolRecord): string {
-  return [spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ") || spool.slicerFilament;
+  return (
+    [spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ") || spool.slicerFilament
+  );
 }
 
 /**
@@ -23,7 +25,10 @@ function spoolName(spool: SpoolRecord): string {
  * the spool's brand, material and color. Spools without a slicer filament code are left out, because
  * nothing would link a copy to a BambuStudio preset.
  */
-export function copyableFilaments(spools: SpoolRecord[], names: ReadonlyMap<string, CustomFilament>): CopyableFilament[] {
+export function copyableFilaments(
+  spools: SpoolRecord[],
+  names: ReadonlyMap<string, CustomFilament>,
+): CopyableFilament[] {
   const byCode = new Map<string, CopyableFilament>();
   for (const spool of spools) {
     if (!spool.slicerFilament) continue;
@@ -36,7 +41,10 @@ export function copyableFilaments(spools: SpoolRecord[], names: ReadonlyMap<stri
     if (Number(spool.id) > Number(found.spool.id)) found.spool = spool;
   }
   return [...byCode.values()]
-    .map((filament) => ({ ...filament, name: names.get(filament.code)?.name || spoolName(filament.spool) }))
+    .map((filament) => ({
+      ...filament,
+      name: names.get(filament.code)?.name || spoolName(filament.spool),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 

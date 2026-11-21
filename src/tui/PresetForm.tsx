@@ -2,9 +2,16 @@
 // ABOUTME: Key handling is pure (presetFormInput, and lineInput for the value being typed, shared with All settings).
 
 import { Box, type Key, Text } from "ink";
-
-import { type EditField, EDIT_FIELDS, type Edits, fieldText, parseField, type Preset, shownValue } from "../presetEdit.js";
 import { tildePath } from "../paths.js";
+import {
+  EDIT_FIELDS,
+  type EditField,
+  type Edits,
+  fieldText,
+  type Preset,
+  parseField,
+  shownValue,
+} from "../presetEdit.js";
 import type { UserPreset } from "../syncCheck.js";
 import { listMove } from "./menu.js";
 import { visibleRange } from "./Picker.js";
@@ -23,7 +30,11 @@ export function presetFormRows(height?: number): number {
   return listRows(height, CHROME, ROWS);
 }
 
-export type LineAction = { type: "update"; text: string } | { type: "commit"; text: string } | { type: "cancel" } | { type: "none" };
+export type LineAction =
+  | { type: "update"; text: string }
+  | { type: "commit"; text: string }
+  | { type: "cancel" }
+  | { type: "none" };
 
 /** A value being typed on one line: enter sets it, esc leaves the value as it was. */
 export function lineInput(text: string, input: string, key: Key): LineAction {
@@ -63,8 +74,17 @@ export function presetFormTyping(state: PresetFormState): boolean {
 }
 
 /** `edited`: the preset with the edits so far, whose values the fields start from. */
-export function presetFormInput(state: PresetFormState, input: string, key: Key, edited: Preset, rows: number = ROWS): PresetFormAction {
-  const next = (changes: Partial<PresetFormState>): PresetFormAction => ({ type: "update", state: { ...state, error: "", ...changes } });
+export function presetFormInput(
+  state: PresetFormState,
+  input: string,
+  key: Key,
+  edited: Preset,
+  rows: number = ROWS,
+): PresetFormAction {
+  const next = (changes: Partial<PresetFormState>): PresetFormAction => ({
+    type: "update",
+    state: { ...state, error: "", ...changes },
+  });
   const field = EDIT_FIELDS[state.cursor];
 
   if (state.editing !== null) {
@@ -74,8 +94,14 @@ export function presetFormInput(state: PresetFormState, input: string, key: Key,
     if (line.type === "update") return next({ editing: line.text });
     if (line.type === "none") return { type: "none" };
     const parsed = parseField(field, line.text);
-    if ("error" in parsed) return { type: "update", state: { ...state, editing: line.text, error: parsed.error } };
-    return { type: "set", key: field.key, edit: { every: parsed.value }, state: { ...state, editing: null, error: "" } };
+    if ("error" in parsed)
+      return { type: "update", state: { ...state, editing: line.text, error: parsed.error } };
+    return {
+      type: "set",
+      key: field.key,
+      edit: { every: parsed.value },
+      state: { ...state, editing: null, error: "" },
+    };
   }
 
   if (key.escape) return { type: "back" };
@@ -87,11 +113,17 @@ export function presetFormInput(state: PresetFormState, input: string, key: Key,
     if (!field) return { type: "none" };
     if (field.kind === "switch") {
       const on = fieldText(field, edited[field.key]) === "1";
-      return { type: "set", key: field.key, edit: { every: on ? "0" : "1" }, state: { ...state, error: "" } };
+      return {
+        type: "set",
+        key: field.key,
+        edit: { every: on ? "0" : "1" },
+        state: { ...state, error: "" },
+      };
     }
     return next({ editing: fieldText(field, edited[field.key]) });
   }
-  if (field && (input === "u" || (key.ctrl && input === "u")) && !key.meta) return { type: "undo", key: field.key };
+  if (field && (input === "u" || (key.ctrl && input === "u")) && !key.meta)
+    return { type: "undo", key: field.key };
   return { type: "none" };
 }
 
@@ -113,10 +145,24 @@ function hint(field: EditField): string {
 
 /** A name plus its printer, as the edit screens title it. */
 export function presetTitle(preset: UserPreset): string {
-  return preset.printer ? `${preset.name} @ ${preset.printer.replace(/^Bambu Lab /, "")}` : preset.name;
+  return preset.printer
+    ? `${preset.name} @ ${preset.printer.replace(/^Bambu Lab /, "")}`
+    : preset.name;
 }
 
-function Cell({ width, children, color, dim, bold }: { width: number; children: React.ReactNode; color?: string; dim?: boolean; bold?: boolean }) {
+function Cell({
+  width,
+  children,
+  color,
+  dim,
+  bold,
+}: {
+  width: number;
+  children: React.ReactNode;
+  color?: string;
+  dim?: boolean;
+  bold?: boolean;
+}) {
   return (
     <Box width={width} flexShrink={0} paddingRight={1}>
       <Text wrap="truncate-end" color={color} dimColor={dim} bold={bold}>
@@ -140,7 +186,15 @@ interface Props {
   height?: number;
 }
 
-export function PresetForm({ preset, original, edited, edits, state, planned = false, height }: Props) {
+export function PresetForm({
+  preset,
+  original,
+  edited,
+  edits,
+  state,
+  planned = false,
+  height,
+}: Props) {
   const rows = presetFormRows(height);
   const [start, end] = visibleRange(state.cursor, SAVE_ROW + 1, rows);
   const unsaved = edits.size;
@@ -151,8 +205,14 @@ export function PresetForm({ preset, original, edited, edits, state, planned = f
     const active = index === state.cursor;
     const marker = <Cell width={COLUMNS.cursor}>{active ? "›" : ""}</Cell>;
     if (index >= ALL_ROW) {
-      const label = index === ALL_ROW ? "All settings…" : planned ? "Back to the plan" : "Review and save";
-      const detail = index === ALL_ROW ? "every key in the preset, as text" : unsaved ? `${unsaved} change${unsaved === 1 ? "" : "s"}` : "nothing changed yet";
+      const label =
+        index === ALL_ROW ? "All settings…" : planned ? "Back to the plan" : "Review and save";
+      const detail =
+        index === ALL_ROW
+          ? "every key in the preset, as text"
+          : unsaved
+            ? `${unsaved} change${unsaved === 1 ? "" : "s"}`
+            : "nothing changed yet";
       return (
         <Box key={label} marginTop={index === ALL_ROW ? 1 : 0}>
           {marker}

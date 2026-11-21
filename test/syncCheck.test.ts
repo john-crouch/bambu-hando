@@ -45,21 +45,50 @@ describe("readUserPresets", () => {
     // A "null" filament_id is no ID at all; it was seen in real presets made outside BambuStudio's Create filament.
     const base = baseFilamentDir(home);
     await mkdir(base, { recursive: true });
-    await writeFile(join(base, "Acme PLA Red @Printer A.json"), JSON.stringify({ name: "Acme PLA Red @Printer A", inherits: "", filament_id: "PA000001" }));
+    await writeFile(
+      join(base, "Acme PLA Red @Printer A.json"),
+      JSON.stringify({ name: "Acme PLA Red @Printer A", inherits: "", filament_id: "PA000001" }),
+    );
     await writeFile(join(base, "Acme PLA Red @Printer A.info"), "sync_info = \n");
     await writeFile(join(base, "broken.json"), "{");
-    await writeFile(join(base, "Rock @Printer A.json"), JSON.stringify({ name: "Rock @Printer A", inherits: "", filament_id: "null" }));
-    await writeFile(join(base, "..", "Bambu PLA Basic - Mine.json"), JSON.stringify({ name: "Bambu PLA Basic - Mine", inherits: "Bambu PLA Basic" }));
-    await writeFile(join(base, "..", "Own @Printer B.json"), JSON.stringify({ inherits: "", filament_id: "PA000002" }));
+    await writeFile(
+      join(base, "Rock @Printer A.json"),
+      JSON.stringify({ name: "Rock @Printer A", inherits: "", filament_id: "null" }),
+    );
+    await writeFile(
+      join(base, "..", "Bambu PLA Basic - Mine.json"),
+      JSON.stringify({ name: "Bambu PLA Basic - Mine", inherits: "Bambu PLA Basic" }),
+    );
+    await writeFile(
+      join(base, "..", "Own @Printer B.json"),
+      JSON.stringify({ inherits: "", filament_id: "PA000002" }),
+    );
 
     const { presets, warnings } = await readUserPresets("default");
 
     expect(presets).toEqual([
-      { name: "Acme PLA Red", filamentId: "PA000001", printer: "Printer A", path: join(base, "Acme PLA Red @Printer A.json") },
-      { name: "Rock", filamentId: "", printer: "Printer A", path: join(base, "Rock @Printer A.json") },
-      { name: "Own", filamentId: "PA000002", printer: "Printer B", path: join(base, "..", "Own @Printer B.json") },
+      {
+        name: "Acme PLA Red",
+        filamentId: "PA000001",
+        printer: "Printer A",
+        path: join(base, "Acme PLA Red @Printer A.json"),
+      },
+      {
+        name: "Rock",
+        filamentId: "",
+        printer: "Printer A",
+        path: join(base, "Rock @Printer A.json"),
+      },
+      {
+        name: "Own",
+        filamentId: "PA000002",
+        printer: "Printer B",
+        path: join(base, "..", "Own @Printer B.json"),
+      },
     ]);
-    expect(warnings).toEqual([expect.stringMatching(/^Couldn't read BambuStudio preset .*broken\.json: /)]);
+    expect(warnings).toEqual([
+      expect.stringMatching(/^Couldn't read BambuStudio preset .*broken\.json: /),
+    ]);
   });
 
   it("finds no presets in a folder that doesn't exist", async () => {
@@ -80,7 +109,11 @@ describe("checkSync", () => {
   }
 
   it("finds nothing to report when the three agree", () => {
-    const report = checkSync({ presets: presets.slice(0, 2), csv: csv.split("\r\n")[0]!, spools: [spool({ slicerFilament: "PA000001" })] });
+    const report = checkSync({
+      presets: presets.slice(0, 2),
+      csv: csv.split("\r\n")[0]!,
+      spools: [spool({ slicerFilament: "PA000001" })],
+    });
 
     expect(report.map((s) => [s.key, s.items])).toEqual([
       ["csvOnly", []],
@@ -97,14 +130,26 @@ describe("checkSync", () => {
   });
 
   it("lists presets SpoolEase doesn't know once per filament, as notes", () => {
-    expect(section("presetsOnly")).toMatchObject({ problem: false, items: ["Studio Only (PA000009) · Printer A"] });
+    expect(section("presetsOnly")).toMatchObject({
+      problem: false,
+      items: ["Studio Only (PA000009) · Printer A"],
+    });
   });
 
   it("lists presets without a filament ID once per filament, as notes", () => {
-    const noId = [...presets, { name: "Rock", filamentId: "", printer: "Printer A", path: "" }, { name: "Rock", filamentId: "", printer: "Printer B", path: "" }];
+    const noId = [
+      ...presets,
+      { name: "Rock", filamentId: "", printer: "Printer A", path: "" },
+      { name: "Rock", filamentId: "", printer: "Printer B", path: "" },
+    ];
 
-    expect(section("presetsNoId", checkSync({ presets: noId, csv, spools: [] }))).toMatchObject({ problem: false, items: ["Rock · Printer A, Printer B"] });
-    expect(section("presetsOnly", checkSync({ presets: noId, csv, spools: [] })).items).toEqual(["Studio Only (PA000009) · Printer A"]);
+    expect(section("presetsNoId", checkSync({ presets: noId, csv, spools: [] }))).toMatchObject({
+      problem: false,
+      items: ["Rock · Printer A, Printer B"],
+    });
+    expect(section("presetsOnly", checkSync({ presets: noId, csv, spools: [] })).items).toEqual([
+      "Studio Only (PA000009) · Printer A",
+    ]);
   });
 
   it("lists spools whose code is neither a custom filament nor a Bambu Lab one, newest first", () => {
@@ -122,11 +167,14 @@ describe("checkSync", () => {
   });
 
   it("lists spools without a filament code, as notes", () => {
-    expect(section("noCode", checkSync({ presets, csv, spools: [spool({ id: "5" })] }))).toMatchObject({ problem: false, items: ["#5 Acme PLA Red"] });
+    expect(
+      section("noCode", checkSync({ presets, csv, spools: [spool({ id: "5" })] })),
+    ).toMatchObject({ problem: false, items: ["#5 Acme PLA Red"] });
   });
 
   it("lists custom filament rows SpoolEase would misread, and repeated codes", () => {
-    const rows = "PA000001,Acme PLA Red,200,220,PLA\r\n\r\nPA000003,Silk, Gold,200,220,PLA\r\nPA000004,Short,200\r\nPA000001,Again,200,220,PLA";
+    const rows =
+      "PA000001,Acme PLA Red,200,220,PLA\r\n\r\nPA000003,Silk, Gold,200,220,PLA\r\nPA000004,Short,200\r\nPA000001,Again,200,220,PLA";
 
     expect(section("badRows", checkSync({ presets, csv: rows, spools: [] })).items).toEqual([
       "row 2: PA000003,Silk, Gold,200,220,PLA",

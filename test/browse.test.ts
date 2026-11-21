@@ -5,13 +5,24 @@ import type { Key } from "ink";
 import { describe, expect, it } from "vitest";
 
 import type { FilamentProfile } from "../src/models.js";
-import { type BrowseAction, browseInput, browseRows, type BrowseState, initialBrowseState } from "../src/tui/Browse.js";
+import {
+  type BrowseAction,
+  type BrowseState,
+  browseInput,
+  browseRows,
+  initialBrowseState,
+} from "../src/tui/Browse.js";
 
 function key(overrides: Partial<Key> = {}): Key {
   return overrides as Key;
 }
 
-function profile(brand: string, material: string, color: string, filamentId: string): FilamentProfile {
+function profile(
+  brand: string,
+  material: string,
+  color: string,
+  filamentId: string,
+): FilamentProfile {
   return {
     name: `${brand} ${material} ${color}`,
     brand,
@@ -39,11 +50,21 @@ const CATALOG = [
 const none: ReadonlySet<string> = new Set();
 const start = initialBrowseState();
 
-function act(state: BrowseState, input: string, k: Partial<Key> = {}, selected = none): BrowseAction {
+function act(
+  state: BrowseState,
+  input: string,
+  k: Partial<Key> = {},
+  selected = none,
+): BrowseAction {
   return browseInput(state, input, key(k), CATALOG, selected);
 }
 
-function update(state: BrowseState, input: string, k: Partial<Key> = {}, selected = none): { state: BrowseState; selected: ReadonlySet<string> } {
+function update(
+  state: BrowseState,
+  input: string,
+  k: Partial<Key> = {},
+  selected = none,
+): { state: BrowseState; selected: ReadonlySet<string> } {
   const action = act(state, input, k, selected);
   if (action.type !== "update") throw new Error(`expected an update, got ${action.type}`);
   return { state: action.state, selected: action.selected ?? selected };
@@ -66,7 +87,11 @@ describe("browseRows", () => {
       { kind: "material", label: "PETG", count: 1, selected: 0 },
       { kind: "material", label: "PLA", count: 2, selected: 0 },
     ]);
-    expect(browseRows(atAcmePla, CATALOG, none).map((r) => r.label)).toEqual(["Blue", "Red", "Other color…"]);
+    expect(browseRows(atAcmePla, CATALOG, none).map((r) => r.label)).toEqual([
+      "Blue",
+      "Red",
+      "Other color…",
+    ]);
   });
 });
 
@@ -80,17 +105,33 @@ describe("browseInput", () => {
     expect(brand).toMatchObject({ brand: "acme", material: null, cursor: 0, brandCursor: 1 });
 
     const material = update({ ...brand, cursor: 1 }, "", { return: true }).state;
-    expect(material).toMatchObject({ brand: "acme", material: "PLA", cursor: 0, materialCursor: 1 });
+    expect(material).toMatchObject({
+      brand: "acme",
+      material: "PLA",
+      cursor: 0,
+      materialCursor: 1,
+    });
   });
 
   it("goes straight to the colors of a brand with one material", () => {
-    expect(update({ ...start, cursor: 2 }, "", { return: true }).state).toMatchObject({ brand: "Zeta", material: "PLA", cursor: 0 });
+    expect(update({ ...start, cursor: 2 }, "", { return: true }).state).toMatchObject({
+      brand: "Zeta",
+      material: "PLA",
+      cursor: 0,
+    });
   });
 
   it("goes back up a level with escape, to where the cursor was, and out from the brands", () => {
-    expect(update(atAcmePla, "", { escape: true }).state).toMatchObject({ brand: "acme", material: null, cursor: 1 });
+    expect(update(atAcmePla, "", { escape: true }).state).toMatchObject({
+      brand: "acme",
+      material: null,
+      cursor: 1,
+    });
     expect(update(atAcme, "", { escape: true }).state).toMatchObject({ brand: null, cursor: 1 });
-    expect(update({ ...start, brand: "Zeta", material: "PLA", brandCursor: 2 }, "", { escape: true }).state).toMatchObject({ brand: null, cursor: 2 });
+    expect(
+      update({ ...start, brand: "Zeta", material: "PLA", brandCursor: 2 }, "", { escape: true })
+        .state,
+    ).toMatchObject({ brand: null, cursor: 2 });
     expect(act(start, "", { escape: true })).toEqual({ type: "back" });
   });
 
@@ -113,12 +154,20 @@ describe("browseInput", () => {
   });
 
   it("continues with the selection, or with the highlighted color when nothing is selected", () => {
-    expect(act({ ...atAcmePla, cursor: 1 }, "", { return: true })).toEqual({ type: "done", selected: new Set(["A1"]) });
-    expect(act(atAcmePla, "", { return: true }, new Set(["Z1"]))).toEqual({ type: "done", selected: new Set(["Z1"]) });
+    expect(act({ ...atAcmePla, cursor: 1 }, "", { return: true })).toEqual({
+      type: "done",
+      selected: new Set(["A1"]),
+    });
+    expect(act(atAcmePla, "", { return: true }, new Set(["Z1"]))).toEqual({
+      type: "done",
+      selected: new Set(["Z1"]),
+    });
   });
 
   it("jumps to a brand by the first letters typed quickly", () => {
-    const brands = ["Siddament", "Snapmaker", "Sunlu"].map((b, i) => profile(b, "PLA", "Black", `B${i}`));
+    const brands = ["Siddament", "Snapmaker", "Sunlu"].map((b, i) =>
+      profile(b, "PLA", "Black", `B${i}`),
+    );
     const s = browseInput(start, "s", key(), brands, none, 0);
     if (s.type !== "update") throw new Error("expected an update");
     const su = browseInput(s.state, "u", key(), brands, none, 100);

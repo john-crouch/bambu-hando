@@ -75,9 +75,13 @@ export async function previewPlan(
 ): Promise<ProfilePlan[]> {
   return Promise.all(
     profiles.map(async (profile): Promise<ProfilePlan> => {
-      const paths = target.printers.map((printer) => presetPath(profile, target.presetFolder, printer));
+      const paths = target.printers.map((printer) =>
+        presetPath(profile, target.presetFolder, printer),
+      );
       const found = await Promise.all(paths.map(exists));
-      const kept = overwrite ? [] : await Promise.all(paths.filter((_, i) => found[i]).map(readPreset));
+      const kept = overwrite
+        ? []
+        : await Promise.all(paths.filter((_, i) => found[i]).map(readPreset));
       const range = syncedRange(
         profile,
         kept.filter((p) => p !== null),
@@ -89,7 +93,12 @@ export async function previewPlan(
         existingPresets: found.filter(Boolean).length,
         nozzleRange: range,
         filament: spoolease ? filamentPlan(synced, spoolease.csv) : null,
-        spool: spoolease && createSpools ? (spoolease.spooledIds.has(profile.filamentId) ? "exists" : "create") : null,
+        spool:
+          spoolease && createSpools
+            ? spoolease.spooledIds.has(profile.filamentId)
+              ? "exists"
+              : "create"
+            : null,
       };
     }),
   );

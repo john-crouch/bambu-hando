@@ -34,7 +34,16 @@ interface Props {
   running: boolean;
 }
 
-export function PresetReview({ preset, changes, targets, spoolease, warning, results, spooleaseResult, running }: Props) {
+export function PresetReview({
+  preset,
+  changes,
+  targets,
+  spoolease,
+  warning,
+  results,
+  spooleaseResult,
+  running,
+}: Props) {
   // Indent, the longest entry, and a gap.
   const labelWidth = Math.min(32, 2 + Math.max(...changes.map((c) => c.label.length)) + 2);
   const targetWidth = Math.min(60, 2 + Math.max(...targets.map((t) => presetTitle(t).length)) + 2);
@@ -66,7 +75,10 @@ export function PresetReview({ preset, changes, targets, spoolease, warning, res
                 <Text wrap="truncate-end">{presetTitle(target)}</Text>
               </Box>
               {result ? (
-                <Text color={result.ok ? (result.detail ? "yellow" : "green") : "red"} wrap="truncate-end">
+                <Text
+                  color={result.ok ? (result.detail ? "yellow" : "green") : "red"}
+                  wrap="truncate-end"
+                >
                   {result.ok ? `✓ ${result.detail || "saved"}` : `✗ ${result.detail}`}
                 </Text>
               ) : null}
@@ -76,7 +88,8 @@ export function PresetReview({ preset, changes, targets, spoolease, warning, res
       </Box>
       {spoolease ? (
         <Text wrap="truncate-end">
-          SpoolEase: custom filament {spoolease.code}'s nozzle range {spoolease.from} → <Text color="yellow">{spoolease.to}</Text>
+          SpoolEase: custom filament {spoolease.code}'s nozzle range {spoolease.from} →{" "}
+          <Text color="yellow">{spoolease.to}</Text>
         </Text>
       ) : null}
       {spooleaseResult ? (
@@ -91,7 +104,9 @@ export function PresetReview({ preset, changes, targets, spoolease, warning, res
       ) : null}
       {results === null ? (
         <Box flexDirection="column">
-          <Text dimColor>Close BambuStudio first: it may save its own copy over these presets.</Text>
+          <Text dimColor>
+            Close BambuStudio first: it may save its own copy over these presets.
+          </Text>
           <Text dimColor>Logged in to Bambu, BambuStudio uploads the change on its next sync.</Text>
         </Box>
       ) : null}

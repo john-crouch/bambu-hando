@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { loadLinks, saveLinks, type SpoolLink } from "../src/spoolLinks.js";
+import { loadLinks, type SpoolLink, saveLinks } from "../src/spoolLinks.js";
 
 const link = (overrides: Partial<SpoolLink> = {}): SpoolLink => ({
   spoolease: "1",
@@ -56,16 +56,25 @@ describe("spool links", () => {
     await writeFile(path, "{not json", "utf-8");
     const loaded = await loadLinks(path, "acct1", "console-a");
     expect(loaded.links).toEqual([]);
-    expect(loaded.warning).toMatch(/^the spool link file .* can't be read: starting with no links; it will be set aside, not overwritten$/);
+    expect(loaded.warning).toMatch(
+      /^the spool link file .* can't be read: starting with no links; it will be set aside, not overwritten$/,
+    );
   });
 
   it("sets a damaged file aside instead of overwriting the other books in it", async () => {
     await saveLinks(path, "acct2", "console-a", [link()]);
-    await writeFile(path, '{"books": [{"account": "acct2", "console": "console-a", "links": [', "utf-8");
+    await writeFile(
+      path,
+      '{"books": [{"account": "acct2", "console": "console-a", "links": [',
+      "utf-8",
+    );
     const kept = await saveLinks(path, "acct1", "console-a", [link({ tdfp: "XYZ789" })]);
     expect(kept).toMatch(/3dfp-links\.json\.damaged-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d/);
     expect(await readFile(kept ?? "", "utf-8")).toContain('"account": "acct2"');
-    expect(await loadLinks(path, "acct1", "console-a")).toEqual({ links: [link({ tdfp: "XYZ789" })], warning: null });
+    expect(await loadLinks(path, "acct1", "console-a")).toEqual({
+      links: [link({ tdfp: "XYZ789" })],
+      warning: null,
+    });
   });
 
   it("treats a file it can't open as damaged, not as missing", async () => {
@@ -75,13 +84,27 @@ describe("spool links", () => {
     const kept = await saveLinks(path, "acct1", "console-a", []);
     expect(kept).not.toBeNull();
     await chmod(kept ?? "", 0o600);
-    expect(JSON.parse(await readFile(kept ?? "", "utf-8")).books).toEqual([{ account: "acct2", console: "console-a", links: [link()] }]);
+    expect(JSON.parse(await readFile(kept ?? "", "utf-8")).books).toEqual([
+      { account: "acct2", console: "console-a", links: [link()] },
+    ]);
   });
 
   it("drops entries that aren't links", async () => {
-    const book = { account: "acct1", console: "console-a", links: [link(), { spoolease: 3 }, null, link({ spoolease: "2", agreed: { spoolease: "x" } as never })] };
+    const book = {
+      account: "acct1",
+      console: "console-a",
+      links: [
+        link(),
+        { spoolease: 3 },
+        null,
+        link({ spoolease: "2", agreed: { spoolease: "x" } as never }),
+      ],
+    };
     await saveLinks(path, "acct1", "console-a", []);
     await writeFile(path, JSON.stringify({ version: 1, books: [book] }), "utf-8");
-    expect((await loadLinks(path, "acct1", "console-a")).links).toEqual([link(), link({ spoolease: "2", agreed: null })]);
+    expect((await loadLinks(path, "acct1", "console-a")).links).toEqual([
+      link(),
+      link({ spoolease: "2", agreed: null }),
+    ]);
   });
 });

@@ -12,7 +12,11 @@ export const MIN_LIST_ROWS = 3;
  * line, since Ink redraws a screen as tall as the terminal from the top every frame). `fallback` when the
  * height is unknown, as when the output isn't a terminal.
  */
-export function listRows(terminalRows: number | undefined, chrome: number, fallback: number): number {
+export function listRows(
+  terminalRows: number | undefined,
+  chrome: number,
+  fallback: number,
+): number {
   if (!terminalRows) return fallback;
   return Math.max(MIN_LIST_ROWS, terminalRows - chrome);
 }
