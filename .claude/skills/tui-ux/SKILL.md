@@ -25,10 +25,11 @@ The TUI is for adding a spool without typing. Every screen offers choices; text 
 ## Code rules
 
 - `App.tsx` is a screen state machine with one `useInput` that is always active and branches on `screen.name`. Never toggle `isActive`: re-attaching the listener after a screen change drops keys pressed right away.
+- Use only display components from `@inkjs/ui` (`Badge`, `Spinner`, `ProgressBar`, `StatusMessage`, styled through `theme.ts`): its inputs (`Select`, `TextInput`, `ConfirmInput`…) register their own `useInput`.
 - A screen's key handling is a pure function returning an action (`pickerInput`, `weightInput`, `labelFormInput`); its component only renders. Unit-test the pure function without rendering.
 - Columns: give each cell a fixed width with `paddingRight={1}` and `wrap="truncate-end"`, so a cut value ends in `…` and keeps a gap. Size label columns from the longest label, not a constant.
 - Ambiguous-width characters (`™`, `°`, `·`, `…`) are measured as two columns by Ink and drawn as one by most terminals. Leave a spare column wherever a header or value may contain one.
-- **Every fixed-width box gets `flexShrink={0}`** (cursor, marks, swatches, label columns). A row cut with `…` is measured a column too wide and Yoga takes the difference from whichever box can shrink, so a row starts a column early. Let exactly one column shrink on a narrow terminal (a name), and cut it with `truncate-end`.
+- **Every fixed-width box gets `flexShrink={0}`** (cursor, marks, swatches, label columns). A row cut with `…` is measured a column too wide and Yoga takes the difference from whichever box can shrink, so a row starts a column early. Let exactly one column shrink on a narrow terminal (a name), and cut it with `truncate-end`. When two must give way, compute whole widths from the terminal's columns (`fitColumns`, `useTerminalColumns`) instead of letting Yoga split the shrink.
 - **Size scrolling lists from the terminal** (`screenSize.ts` `listRows`, `useTerminalRows`): count the screen's other lines as its `CHROME`, plus a spare one, pass `height` to the component and the same rows to its input function for paging, and add the screen to `test/screenFit.test.tsx`.
 - **Keys that arrive together reach the app as one input** (`"s\r"`, a scanner's `"00150603Z\r"`): Ink splits only at escape sequences and backspaces. Text entry that may get a burst splits it at `\r`/`\n` (`scanInput`); tests and PTY tests send one key per write (`pressEach`) unless testing a burst.
 
