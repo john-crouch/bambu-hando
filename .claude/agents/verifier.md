@@ -18,7 +18,7 @@ Inputs (from your prompt): the spec or acceptance criteria, and the base ref (de
    - Every new code file has the 2-line `ABOUTME:` header.
    - No unrelated changes, no removed comments, no mock modes, no names like "new", "improved" or "enhanced".
    - No temporal comments.
-5. **Hunt edge cases:** empty, missing or huge input, errors from external calls, concurrency, paths with spaces. Use ast-grep (`sg --pattern '...' --lang <lang>`) for structural searches and `grep` only for plain text.
+5. **Hunt edge cases:** empty, missing or huge input, errors from external calls, concurrency, paths with spaces. Use `ast-grep --pattern '...' --lang <lang>` for structural searches and `grep` only for plain text.
 
 Reply with:
 - **Verdict:** PASS or FAIL
