@@ -3,8 +3,8 @@
 
 import { errorMessage } from "../../errors.js";
 import { checkCounts } from "../../syncCheck.js";
-import { isCtrl, type KeyPress } from "../core/keys.js";
-import type { Cmd } from "../core/program.js";
+import { isCtrl, type KeyPress, press } from "../core/keys.js";
+import { type Cmd, send } from "../core/program.js";
 import {
   type AppMsg,
   type CheckData,
@@ -98,6 +98,9 @@ const GLOBAL_HINTS: Hint[] = [
   { keys: "?", label: "help", primary: true },
   { keys: "q", label: "quit" },
 ];
+
+/** Keys a text field moves or deletes by word with meta: kept whole while text is being typed. */
+const WORD_KEYS = new Set(["left", "right", "backspace"]);
 
 const RESOURCE_TITLES: Record<ResourceId, string> = {
   console: "Reload spools from the console",
@@ -349,6 +352,22 @@ export function createShell(deps: ShellDeps) {
     return tab(model).modal?.(model.tabs[model.active]) ?? false;
   }
 
+  /** True while keys may be editing text: the tab takes text, or an overlay (which may have a field) is open. */
+  function typing(model: ShellModel): boolean {
+    return model.overlay !== null || capturing(model);
+  }
+
+  /**
+   * The keys a key event stands for. Ink holds a lone ESC for 20 ms and reads it together with the
+   * next key's bytes when they arrive in one chunk (a busy event loop), reporting meta+key: esc and
+   * the key, unless it's a word move (meta ←→ backspace) in a text field. Nothing binds alt+key.
+   */
+  function unmerged(model: ShellModel, key: KeyPress): KeyPress[] {
+    if (!key.meta || key.ctrl) return [key];
+    if (typing(model) && WORD_KEYS.has(key.name ?? "")) return [key];
+    return [press("esc"), { ...key, meta: false }];
+  }
+
   function onKey(model: ShellModel, key: KeyPress): Step {
     const msg: AppMsg = { type: "key", key };
     if (model.overlay) return toOverlay(model, msg);
@@ -409,9 +428,16 @@ export function createShell(deps: ShellDeps) {
   function update(model: ShellModel, msg: ShellMsg): Step {
     if (model.exit !== null) return [model, []];
     switch (msg.type) {
-      case "key":
+      case "key": {
         // Any key dismisses the error banner, and still does what it does.
-        return onKey(model.error ? { ...model, error: null } : model, msg.key);
+        const current = model.error ? { ...model, error: null } : model;
+        const [first, second] = unmerged(current, msg.key);
+        const [next, cmds] = onKey(current, first as KeyPress);
+        // After esc's own commands (an overlay closing), so the key lands where esc left things.
+        return second
+          ? [next, [...cmds, send<ShellMsg>({ type: "key", key: second })]]
+          : [next, cmds];
+      }
       case "paste":
         // Text only lands where text is being taken: the overlay, or a tab with a field focused.
         if (model.overlay) return toOverlay(model, msg);

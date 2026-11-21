@@ -41,10 +41,14 @@ tab, and every action shows its consequence before it writes.
   printer the next run writes for.
 - **Body**: the tab. Most tabs are a list panel and a detail panel side by side; below 90 columns the
   detail panel moves under the list or opens with `enter`.
-- **Footer** (1 line): the keys for the focused context, `key` in accent and its meaning dim. A toast
-  ("✓ 3 labels sent to DYMO") takes the footer's right end for a few seconds.
+- **Footer** (1 line): the keys for the focused context, `key` in accent and its meaning dim: the
+  tab's at the left, the global ones at the right end. When narrow the tab's keys give way first; `?
+  help` is never dropped. A toast ("✓ 3 labels sent to DYMO") draws over the body's last line (a
+  panel's bottom border), two columns in, for a few seconds, so it never pushes keys out.
 - **Overlays**: help (`?`), the command palette (`ctrl+k`), confirm dialogs and small forms (a count, a
-  barcode, an unlisted color, labels) draw as a centered bordered panel over the body.
+  barcode, an unlisted color, labels) draw as a centered bordered panel over the body, which goes gray
+  and dim behind it. A dialog whose margins would be under 6 columns a side (`dialogWidth`) takes the
+  body's whole width instead, so no sliver of the body shows beside it.
 
 ## Keys
 
@@ -64,6 +68,20 @@ tab, and every action shows its consequence before it writes.
 | `q` | quit (outside text fields) · `ctrl+c` quits from anywhere |
 
 Text fields take every printable key, so `q`, `?` and letters type there; the footer says so.
+
+A tab's own dialog (`modal`) and an overlay take every key but ctrl+c, `q` and `tab` included; the
+footer then shows only their keys, and dialogs draw no key line of their own (one place for keys).
+`q` with unsaved changes in any tab (`unsaved`) asks "Quit and drop N unsaved changes?" (`q`/`a` quit,
+`esc` stays); a write in progress (`busy`) still refuses to quit.
+
+**Escape merged with the next key.** Ink 8 holds a lone ESC for 20 ms to tell it from the start of an
+escape sequence; when the next key's bytes are read in the same chunk (a busy event loop, a fast
+typist), it reports one meta key: `ESC q` is meta+q, `ESC ESC[B` is meta+down, and the esc is gone.
+Nothing in the TUI binds alt+key, so the shell splits any meta key back into `esc` and the key (sent
+after esc's own commands, so an overlay esc closes is gone before the key lands). The exception is a
+word move in a text field (meta ←, →, backspace), kept whole while a tab takes text or an overlay is
+open. Two merged keys in one read can still land out of order; that takes a stall long enough for
+both, and hasn't been seen.
 
 ## Tabs
 

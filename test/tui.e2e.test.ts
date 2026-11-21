@@ -261,6 +261,17 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     await t.waitFor("Help · Settings");
   });
 
+  it("keeps both keys when esc and the next key arrive in one read", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    await t.pressEach("?");
+    await t.waitFor("Help · Spools");
+    // One write: Ink reads it as meta+tab. The shell splits it: esc closes help, tab goes to Add.
+    await t.pressEach(ESC + TAB, "?");
+    await t.waitFor("Help · Add");
+  });
+
   it("opens help with ?, which lists the global keys, and closes on any key", async () => {
     const t = start(consoleFlags());
     await t.waitFor("Spools");

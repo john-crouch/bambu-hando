@@ -396,6 +396,44 @@ describe("global keys", () => {
   });
 });
 
+describe("escape merged with the next key", () => {
+  // Ink holds a lone ESC 20 ms; when the next key's bytes are read with it, it reports one meta key.
+  it("splits a meta key back into esc and the key, so neither is lost", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("m"), key("q", { meta: true }));
+    expect(seen(model, "spools")).toEqual(["key:m", "key:esc"]);
+    expect(model.exit).toBe(0);
+  });
+
+  it("lets esc close an overlay before the key that came with it lands", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("k", { ctrl: true }), key("down", { meta: true }));
+    expect(model.overlay).toBeNull();
+    expect(seen(model, "spools")).toEqual(["key:down"]);
+  });
+
+  it("splits meta arrows, tab and enter too", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("down", { meta: true }));
+    model = await drive(shell, model, key("enter", { meta: true }));
+    expect(seen(model, "spools")).toEqual(["key:esc", "key:down", "key:esc", "key:enter"]);
+    model = await drive(shell, model, key("tab", { meta: true }));
+    expect(model.active).toBe("add");
+  });
+
+  it("keeps word moves (meta ←→ backspace) whole while the tab takes text", async () => {
+    let { shell, model } = start();
+    model = await drive(
+      shell,
+      model,
+      key("t"),
+      key("left", { meta: true }),
+      key("backspace", { meta: true }),
+    );
+    expect(seen(model, "spools")).toEqual(["key:t", "key:left", "key:backspace"]);
+  });
+});
+
 describe("ctx", () => {
   it("reads the clock for every key, so tabs can time type-ahead", async () => {
     let clock = 1_000;
