@@ -9,6 +9,7 @@ import {
   COLORS,
   Dialog,
   dialogInner,
+  dialogWidth,
   Line,
   listWindow,
   type Segment,
@@ -124,10 +125,10 @@ export function paletteInput(model: PaletteModel, key: KeyPress, pageRows: numbe
 /** Dialog width and list height from the terminal. */
 export function paletteSize(ctx: Ctx, items: number): { width: number; rows: number } {
   return {
-    width: Math.max(30, Math.min(72, ctx.columns - 4)),
+    width: dialogWidth(ctx.bodyColumns, 72),
     // As tall as every command (so it doesn't jump while typing), within the body. The dialog's
-    // borders, padding and key line take 6, the query line and its gap 2.
-    rows: Math.max(3, Math.min(12, items, ctx.bodyRows - 8)),
+    // borders and padding take 4, the query line and its gap 2.
+    rows: Math.max(3, Math.min(12, items, ctx.bodyRows - 6)),
   };
 }
 
@@ -192,7 +193,7 @@ function PaletteView({ model, ctx }: { model: PaletteModel; ctx: Ctx }) {
   const { start, end } = listWindow(model.cursor, rows.length, height);
   const shown = rows.slice(start, end);
   return (
-    <Dialog title="Commands" width={width} hints={HINTS}>
+    <Dialog title="Commands" width={width}>
       <Line segments={queryLine(model, rows.length, inner)} width={inner} />
       <Box flexDirection="column" marginTop={1} height={height}>
         {shown.length === 0 ? (

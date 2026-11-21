@@ -5,7 +5,7 @@ export { Bar, barCells, barSegments } from "./Bar.js";
 export { Busy } from "./Busy.js";
 export { consoleUrl, LinkedText, partsText, type TextPart } from "./ConsoleLink.js";
 export { Detail, type DetailRow, labelColumn } from "./Detail.js";
-export { DIALOG_WIDTH, Dialog, dialogInner } from "./Dialog.js";
+export { DIALOG_WIDTH, Dialog, dialogInner, dialogWidth } from "./Dialog.js";
 export { Empty } from "./Empty.js";
 export { Footer, footerSegments } from "./Footer.js";
 export { FRAME_CHROME, Frame, frameBody } from "./Frame.js";

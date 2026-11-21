@@ -4,7 +4,7 @@
 import { Box } from "ink";
 
 import type { ConfirmRequest, Ctx, Hint } from "../core/types.js";
-import { Dialog, dialogInner, Line, textWidth } from "../ui/index.js";
+import { Dialog, dialogInner, dialogWidth, Line, textWidth } from "../ui/index.js";
 import { closeThen, type ShellMsg, type ShellOverlay } from "./messages.js";
 
 /** The shell's own questions also take other apply keys (quit with q as well as a) and name what esc does. */
@@ -42,14 +42,14 @@ export function confirmWidth(request: ShellConfirmRequest, columns: number): num
     ...request.lines.map((line) => textWidth(line)),
   );
   // The dialog's border and padding take 3 columns a side.
-  return Math.max(30, Math.min(longest + 6, 80, columns - 4));
+  return dialogWidth(columns, Math.min(Math.max(30, longest + 6), 80));
 }
 
 function ConfirmView({ model, ctx }: { model: ConfirmModel; ctx: Ctx }) {
   const { request } = model;
   const width = confirmWidth(request, ctx.columns);
   return (
-    <Dialog title={request.title} width={width} hints={confirmHints(model)}>
+    <Dialog title={request.title} width={width}>
       <Box flexDirection="column">
         {request.lines.map((line, index) => (
           // Lines may repeat (two blank ones), so the index keeps keys unique.

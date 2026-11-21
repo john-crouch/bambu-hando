@@ -4,6 +4,7 @@
 import { Box } from "ink";
 import type { ReactNode } from "react";
 
+import { Backdrop } from "./backdrop.js";
 import { type Toast, ToastLine } from "./Toast.js";
 
 /** Rows the header and footer take. */
@@ -44,7 +45,8 @@ export function Frame({ columns, rows, header, footer, overlay, toast, children 
         flexDirection="row"
         overflow="hidden"
       >
-        {children}
+        {/* Behind an overlay the body is a backdrop: gray and dim, so the dialog stands out. */}
+        <Backdrop.Provider value={Boolean(overlay)}>{children}</Backdrop.Provider>
       </Box>
       <Box height={1} width={body.columns} flexShrink={0} overflow="hidden">
         {footer}

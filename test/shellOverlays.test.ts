@@ -4,7 +4,15 @@
 import { describe, expect, it } from "vitest";
 
 import { CONFIRM, confirmWidth } from "../src/tui/app/confirm.js";
-import { GLOBAL_HELP, HELP, type HelpRequest, helpLines, wrap } from "../src/tui/app/help.js";
+import {
+  GLOBAL_HELP,
+  HELP,
+  type HelpRequest,
+  helpLines,
+  helpNote,
+  helpSize,
+  wrap,
+} from "../src/tui/app/help.js";
 import type { PaletteItem, ShellMsg } from "../src/tui/app/messages.js";
 import {
   fuzzyMatch,
@@ -176,6 +184,22 @@ describe("help", () => {
     expect(HELP.hints(m, small).map((h) => h.keys)).toEqual(["↑↓", "any key"]);
     expect(HELP.hints(m, ctx(120, 60)).map((h) => h.keys)).toEqual(["any key"]);
   });
+
+  it("says in its bottom border which way there's more, nothing when it all fits", () => {
+    const small = ctx(80, 14);
+    const [m] = HELP.init(request, small);
+    expect(helpNote(m, small)).toBe("↓ more");
+    const [down] = HELP.update(m, { type: "key", key: press("down") }, small);
+    expect(helpNote(down, small)).toBe("↑↓ more");
+    const [end] = HELP.update(m, { type: "key", key: press("end") }, small);
+    expect(helpNote(end, small)).toBe("↑ more");
+    expect(helpNote(m, ctx(120, 60))).toBe("");
+  });
+
+  it("takes the body's full width when narrow, and every row but its border and padding", () => {
+    expect(helpSize(ctx(80, 24))).toEqual({ width: 80, rows: 18 });
+    expect(helpSize(ctx(120, 36))).toEqual({ width: 76, rows: 30 });
+  });
 });
 
 describe("confirm", () => {
@@ -205,6 +229,8 @@ describe("confirm", () => {
   it("is as wide as its longest line, within the terminal", () => {
     expect(confirmWidth(request, 120)).toBe(30);
     expect(confirmWidth({ ...request, lines: ["x".repeat(100)] }, 120)).toBe(80);
-    expect(confirmWidth({ ...request, lines: ["x".repeat(100)] }, 60)).toBe(56);
+    // Narrow: the whole width, never a sliver of the body at each side.
+    expect(confirmWidth({ ...request, lines: ["x".repeat(100)] }, 60)).toBe(60);
+    expect(confirmWidth({ ...request, lines: ["x".repeat(70)] }, 80)).toBe(80);
   });
 });

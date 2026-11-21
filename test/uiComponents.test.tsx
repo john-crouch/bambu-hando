@@ -16,12 +16,13 @@ import type { Hint } from "../src/tui/core/types.js";
 import { Bar, barCells } from "../src/tui/ui/Bar.js";
 import { Busy } from "../src/tui/ui/Busy.js";
 import { Detail } from "../src/tui/ui/Detail.js";
-import { Dialog, dialogInner } from "../src/tui/ui/Dialog.js";
+import { Dialog, dialogInner, dialogWidth } from "../src/tui/ui/Dialog.js";
 import { Empty } from "../src/tui/ui/Empty.js";
 import { Footer, footerSegments } from "../src/tui/ui/Footer.js";
 import { Frame, frameBody } from "../src/tui/ui/Frame.js";
 import { Header, type HeaderStatus, headerLayout } from "../src/tui/ui/Header.js";
 import { fitHints } from "../src/tui/ui/hints.js";
+import { Line } from "../src/tui/ui/Line.js";
 import { List } from "../src/tui/ui/List.js";
 import type { ListRow } from "../src/tui/ui/list.js";
 import { type Page, PageBar } from "../src/tui/ui/PageBar.js";
@@ -791,7 +792,40 @@ describe("Empty", () => {
 });
 
 describe("Dialog", () => {
-  it("draws an accent box with the title in its border, content, and its own key line", () => {
+  it("draws an accent box with the title in its border and its content; its keys go in the footer", () => {
+    const frame = draw(
+      <Dialog title="More spools like #14" width={36}>
+        <Text>How many?</Text>
+      </Dialog>,
+    );
+    expect(plain(frame)).toEqual([
+      "╭ More spools like #14 ────────────╮",
+      "│                                  │",
+      "│  How many?                       │",
+      "│                                  │",
+      "╰──────────────────────────────────╯",
+    ]);
+    expect(cells(frame.split("\n")[0] ?? "")[0]?.fg).toBe(COLORS.accent);
+  });
+
+  it("is as wide as it wants, or the whole width when that would leave slivers at the sides", () => {
+    expect(dialogWidth(120, 76)).toBe(76);
+    expect(dialogWidth(80, 40)).toBe(40);
+    expect(dialogWidth(80, 76)).toBe(80);
+    expect(dialogWidth(60, 56)).toBe(60);
+    expect(dialogWidth(30, 56)).toBe(30);
+  });
+
+  it("sets a note into its bottom border", () => {
+    const frame = draw(
+      <Dialog title="Help" width={24} note="↓ more">
+        <Text>Keys</Text>
+      </Dialog>,
+    );
+    expect(plain(frame).at(-1)).toBe(`╰${"─".repeat(13)} ↓ more ─╯`);
+  });
+
+  it("still draws a key line when it's given hints", () => {
     const frame = draw(
       <Dialog
         title="More spools like #14"
@@ -888,6 +922,49 @@ describe("Frame", () => {
     );
     expect(lines[4]).toBe(`╰─ ✓ Saved ${"─".repeat(28)}`);
     expect(lines[5]).toBe("foot");
+  });
+
+  it("dims the body behind an overlay: gray, no colors or backgrounds, the dialog untouched", () => {
+    const frame = draw(
+      <Frame
+        columns={40}
+        rows={12}
+        header={<Text>head</Text>}
+        footer={<Text>foot</Text>}
+        overlay={<Dialog title="Hi" width={20} />}
+      >
+        <Box flexDirection="column">
+          <Line
+            segments={[{ text: "green on purple", color: COLORS.ok, backgroundColor: "#3B2F5C" }]}
+            width={40}
+          />
+          <Panel title="Box" focused width={40} height={3} />
+        </Box>
+      </Frame>,
+      40,
+    );
+    const lines = frame.split("\n");
+    const body = cells(lines[1] ?? "").slice(0, 15);
+    expect(body.map((c) => c.ch).join("")).toBe("green on purple");
+    expect(body.every((c) => c.fg === GRAY && c.dim && c.bg === undefined)).toBe(true);
+    const border = cells(lines[2] ?? "");
+    expect(border[0]).toMatchObject({ ch: "╭", fg: GRAY, dim: true });
+    expect(border.slice(2, 5).every((c) => c.fg === GRAY && !c.bold)).toBe(true);
+    const dialogTop = lines.findIndex((line) => stripVTControlCharacters(line).includes("╭ Hi"));
+    const corner = cells(lines[dialogTop] ?? "").find(
+      (c) => c.ch === "╭" && c.fg === COLORS.accent,
+    );
+    expect(corner).toBeDefined();
+  });
+
+  it("doesn't dim the body without an overlay", () => {
+    const frame = draw(
+      <Frame columns={40} rows={4} header={<Text>head</Text>} footer={<Text>foot</Text>}>
+        <Line segments={[{ text: "green", color: COLORS.ok }]} width={40} />
+      </Frame>,
+      40,
+    );
+    expect(cells(frame.split("\n")[1] ?? "")[0]).toMatchObject({ fg: COLORS.ok, dim: false });
   });
 
   it("centers an overlay over the body", () => {

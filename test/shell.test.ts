@@ -380,12 +380,19 @@ describe("global keys", () => {
     expect(footer.global.map((h) => h.keys)).toEqual(["tab", "ctrl+k", "?", "q"]);
   });
 
-  it("drops q and ? from the footer while the tab takes text, and leaves it to an open overlay", async () => {
+  it("drops q and ? from the footer while the tab takes text, and shows only an open overlay's keys", async () => {
     let { shell, model } = start();
     model = await drive(shell, model, key("t"));
     expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "tab", "ctrl+k"]);
     model = await drive(shell, model, key("k", { ctrl: true }));
-    expect(shell.hints(model)).toEqual([]);
+    expect(shell.footer(model)).toEqual({
+      hints: [
+        { keys: "↑↓", label: "move", primary: true },
+        { keys: "enter", label: "run", primary: true },
+        { keys: "esc", label: "close", primary: true },
+      ],
+      global: [],
+    });
   });
 });
 
