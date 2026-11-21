@@ -365,6 +365,39 @@ describe.each([
     expect(warning).toBeLessThan(into);
   });
 
+  it("keeps the review's targets beside their names", () => {
+    const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
+    const row = lines(review, ctx).find((line) => line.includes("the one you edited")) ?? "";
+    expect(row).toMatch(/\[✓\] X1C 0\.4 the one you edited/);
+  });
+
+  it("says once that everything saved, and what to do next", () => {
+    const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
+    const [saving] = presetsTab.update(review, { type: "key", key: press("a") }, ctx);
+    const results = (PRESETS.slice(0, 2) as UserPreset[]).map((p) => ({
+      path: p.path,
+      ok: true,
+      detail: "",
+    }));
+    const [done] = presetsTab.update(
+      saving,
+      {
+        type: "presets/saved",
+        path: results[0]?.path,
+        results,
+        spoolease: null,
+        setupError: false,
+      },
+      ctx,
+    );
+    const screen = lines(done, ctx);
+    expectExact(screen, ctx);
+    const text = screen.join("\n");
+    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
+    expect(text).toContain("Restart BambuStudio to load the change");
+    expect(text).not.toMatch(/presets? saved/);
+  });
+
   it("shows each preset's result once saved", () => {
     const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
     const [saving] = presetsTab.update(review, { type: "key", key: press("a") }, ctx);
@@ -387,10 +420,13 @@ describe.each([
     const screen = lines(done, ctx);
     expectExact(screen, ctx);
     const text = screen.join("\n");
-    expect(screen[0]).toMatch(/^╭ Saved · /);
-    expect(text).toContain("✓ saved");
-    expect(text).toContain("✗ couldn't write it: EACCES");
-    expect(text).toContain("✗ 1 preset saved, 1 failed: restart BambuStudio to load it");
+    expect(screen[0]).toMatch(/^╭ Save changes · /);
+    // Each preset's result right after its name; the line under them says what's next, once.
+    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
+    expect(text).toMatch(/ X1C 0\.6 +✗ couldn't write it: EACCES +same filament ID/);
+    expect(text).not.toContain("[✓]");
+    expect(text).toContain("✗ 1 of 2 presets failed: restart BambuStudio to load the saved one");
+    expect(text.match(/saved/g)).toHaveLength(2);
     expect(text).not.toContain("Close BambuStudio first");
   });
 });
