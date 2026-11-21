@@ -83,7 +83,7 @@ describe("init", () => {
         { keys: "enter", label: "set up SpoolEase in Settings", primary: true },
       ]);
       await h.press("r", "f", "enter");
-      expect(h.sent).toEqual([{ type: "app/switchTab", tab: "settings" }]);
+      expect(h.sent).toEqual([expect.objectContaining({ type: "app/switchTab", tab: "settings" })]);
     }
   });
 
@@ -111,7 +111,7 @@ describe("the report", () => {
   it("sums up what it compared, without the key", () => {
     const ctx = ctxWith(ready(data()));
     expect(checkHeadline(data().sections, ctx)).toEqual({
-      text: "2 problems, 2 notes",
+      text: "2 problems · 2 notes",
       tone: "problem",
       compared: "BambuStudio default · http://10.0.0.5",
     });
@@ -142,7 +142,7 @@ describe("the report", () => {
     expect(h.model.section).toBe(0);
   });
 
-  it("scrolls a long section's items after enter, and esc goes back to the sections", async () => {
+  it("moves through a long section's items after enter, and esc goes back to the sections", async () => {
     const presets = Array.from({ length: 40 }, (_, i) => ({
       name: `Preset ${String(i).padStart(2, "0")}`,
       filamentId: `P${String(i).padStart(7, "0")}`,
@@ -157,17 +157,17 @@ describe("the report", () => {
     await h.press("enter");
     expect(h.model.focus).toBe("items");
     await h.press("down", "down");
-    expect(h.model.scroll).toBe(2);
+    expect(h.model.item).toBe(2);
     const shown = itemRows(h.ctx, value, value.sections[index]!);
     expect(shown).toBeGreaterThan(5);
     await h.press("end");
-    expect(h.model.scroll).toBe(40 - shown);
+    expect(h.model.item).toBe(39);
     await h.press("pageUp");
-    expect(h.model.scroll).toBe(Math.max(0, 40 - 2 * shown));
+    expect(h.model.item).toBe(39 - shown);
     await h.press("esc");
     expect(h.model.focus).toBe("sections");
     await h.press("down");
-    expect(h.model.scroll).toBe(0);
+    expect(h.model.item).toBe(0);
   });
 
   it("doesn't open a section with nothing in it", async () => {
@@ -208,7 +208,13 @@ describe("the report", () => {
       "r check again",
     ]);
     await h.press("enter");
-    expect(keys()).toEqual(["↑↓ scroll", "esc sections", "f give 1 preset an ID", "r check again"]);
+    expect(keys()).toEqual([
+      "↑↓ move",
+      "enter sync it in Add",
+      "esc sections",
+      "f give 1 preset an ID",
+      "r check again",
+    ]);
     const empty = checkSync({ presets: [], csv: "", spools: [] });
     const clean = await loaded({ sections: empty, warnings: [], presets: [] });
     expect(checkLogic.hints(clean.model, clean.ctx).map((x) => x.keys)).toEqual(["↑↓", "r"]);
@@ -253,7 +259,7 @@ describe("giving presets a filament ID", () => {
     ]);
     expect(h.sent.filter((m) => m.type !== "app/load")).toEqual([]);
     expect(checkLogic.hints(h.model, h.ctx).map((x) => `${x.keys} ${x.label}`)).toEqual([
-      "a write 2 filament IDs",
+      "a write 2 files",
       "esc back",
     ]);
 
@@ -273,7 +279,7 @@ describe("giving presets a filament ID", () => {
         type: "app/runFinished",
         summary: {
           ok: true,
-          lines: ["2 BambuStudio presets given a filament ID: restart BambuStudio to load"],
+          lines: ["1 BambuStudio preset given a filament ID: restart BambuStudio to load"],
         },
       },
     ]);
@@ -282,7 +288,7 @@ describe("giving presets a filament ID", () => {
       { type: "app/load", resource: "check", force: true },
     ]);
     expect(h.of("app/toast")).toEqual([
-      { type: "app/toast", text: "2 presets given a filament ID: restart BambuStudio", tone: "ok" },
+      { type: "app/toast", text: "1 preset given a filament ID: restart BambuStudio", tone: "ok" },
     ]);
     expect(checkLogic.hints(h.model, h.ctx).map((x) => `${x.keys} ${x.label}`)).toEqual([
       "esc back to the check",
@@ -309,7 +315,7 @@ describe("giving presets a filament ID", () => {
           ok: false,
           exitCode: 1,
           lines: [
-            "0 BambuStudio presets given a filament ID, 1 failed: restart BambuStudio to load",
+            "1 BambuStudio preset not given a filament ID",
             expect.stringMatching(/^Rock @X1C\.json: couldn't read it: /),
           ],
         },

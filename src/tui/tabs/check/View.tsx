@@ -17,10 +17,13 @@ import {
   Line,
   List,
   type ListRow,
+  listPosition,
   PageBar,
   Panel,
   panelInner,
+  plural,
   type Segment,
+  textWidth,
   truncate,
 } from "../../ui/index.js";
 import type { CheckModel, IdsPage } from "./model.js";
@@ -28,26 +31,32 @@ import {
   checkHeadline,
   checkLayout,
   checkView,
+  type ItemView,
   idsLayout,
   itemRows,
+  itemsTitle,
+  itemViews,
+  needsConsole,
+  offlineLines,
   PAD,
-  SHORT_TITLES,
   sectionRows,
+  sectionTitles,
   warningLines,
   whyLines,
 } from "./report.js";
 
-const TONE_COLOR = { ok: COLORS.ok, problem: COLORS.failed, note: COLORS.warning } as const;
-const TONE_ICON = { ok: ICONS.ok, problem: ICONS.failed, note: ICONS.warning } as const;
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-/** An item as people read it: printers without the vendor, as everywhere else in the TUI. */
-function shownItem(item: string): string {
-  return item.replaceAll("Bambu Lab ", "");
-}
+const TONE_COLOR = {
+  ok: COLORS.ok,
+  problem: COLORS.failed,
+  note: COLORS.warning,
+  offline: COLORS.muted,
+} as const;
+const TONE_ICON = {
+  ok: ICONS.ok,
+  problem: ICONS.failed,
+  note: ICONS.warning,
+  offline: "–",
+} as const;
 
 const pad = (segments: Segment[]): Segment[] => [{ text: " ".repeat(PAD) }, ...segments];
 
@@ -68,34 +77,42 @@ function Centered({
   );
 }
 
-function Headline({ model: _model, ctx, data }: { model: CheckModel; ctx: Ctx; data: CheckData }) {
+function headlineSegments(ctx: Ctx, data: CheckData): Segment[] {
   const view = checkView(ctx);
-  const width = ctx.bodyColumns;
   const headline = checkHeadline(data.sections, ctx);
   const compared: Segment = { text: `  ${headline.compared}`, color: COLORS.muted };
+  if (view.offline)
+    return [
+      { text: `${ICONS.failed} Couldn't check the console`, color: COLORS.failed, bold: true },
+      { text: " · BambuStudio presets only", color: COLORS.muted },
+    ];
+  if (view.kind === "failed")
+    return [
+      { text: `${ICONS.failed} Couldn't check again: ${view.error}`, color: COLORS.failed },
+      { text: " · showing the last check", color: COLORS.muted },
+    ];
+  return [
+    {
+      text: `${headline.tone === "ok" ? ICONS.ok : ICONS.failed} ${headline.text}`,
+      color: headline.tone === "ok" ? COLORS.ok : COLORS.failed,
+      bold: true,
+    },
+    compared,
+  ];
+}
+
+function Headline({ ctx, data }: { ctx: Ctx; data: CheckData }) {
+  const view = checkView(ctx);
+  const width = ctx.bodyColumns;
   if (view.kind === "loading")
     return (
       <Box width={width} height={1} flexShrink={0} paddingLeft={PAD}>
-        <Busy message={`Checking again… ${headline.compared}`} />
+        <Busy message={`Checking again… ${checkHeadline(data.sections, ctx).compared}`} />
       </Box>
     );
-  const first: Segment[] =
-    view.kind === "failed"
-      ? [
-          { text: `${ICONS.failed} Couldn't check again: ${view.error}`, color: COLORS.failed },
-          { text: " · showing the last check", color: COLORS.muted },
-        ]
-      : [
-          {
-            text: `${TONE_ICON[headline.tone]} ${headline.text}`,
-            color: TONE_COLOR[headline.tone],
-            bold: true,
-          },
-          compared,
-        ];
   return (
     <Box flexDirection="column" flexShrink={0}>
-      <Line segments={pad(first)} width={width} />
+      <Line segments={pad(headlineSegments(ctx, data))} width={width} />
       {warningLines(data.warnings).map((warning) => (
         <Line
           key={warning}
@@ -107,111 +124,174 @@ function Headline({ model: _model, ctx, data }: { model: CheckModel; ctx: Ctx; d
   );
 }
 
-function sectionListRows(sections: CheckSection[]): ListRow[] {
-  return sectionRows(sections).map((row) => ({
-    key: row.key,
+function sectionListRows(ctx: Ctx, sections: CheckSection[], offline: boolean): ListRow[] {
+  const titles = sectionTitles(ctx);
+  return sectionRows(sections, offline).map((row) => {
+    const quiet = row.tone === "ok" || row.tone === "offline";
+    return {
+      key: row.key,
+      cells: [
+        { text: TONE_ICON[row.tone], width: 1, color: TONE_COLOR[row.tone] },
+        { text: titles[row.key], grow: true, ...(quiet ? { dim: true } : {}) },
+        {
+          text: row.tone === "offline" ? "–" : String(row.count),
+          width: 3,
+          align: "right" as const,
+          ...(quiet ? { dim: true } : { color: TONE_COLOR[row.tone] }),
+        },
+      ],
+    };
+  });
+}
+
+/** The legend under the sections, long where it fits; none where the list needs the rows. */
+function legendLines(width: number, rows: number, offline: boolean): Segment[][] {
+  const long = width >= 2 * PAD + 2 + textWidth("spools lose their preset");
+  const entries: [string, string, string][] = [
+    [ICONS.failed, COLORS.failed, long ? "spools lose their preset" : "problem"],
+    [ICONS.warning, COLORS.warning, long ? "worth knowing" : "note"],
+    ...(offline ? [["–", COLORS.muted, "not checked"] as [string, string, string]] : []),
+  ];
+  if (rows < entries.length + 1) return [];
+  return entries.map(([icon, color, text]) =>
+    pad([
+      { text: `${icon} `, color },
+      { text, color: COLORS.muted },
+    ]),
+  );
+}
+
+/** Which of an item's columns to show: the name keeps its whole width before codes, then printers, go. */
+function itemColumns(items: readonly ItemView[], width: number) {
+  const widest = (pick: (item: ItemView) => string | undefined) =>
+    Math.max(0, ...items.map((item) => textWidth(pick(item) ?? "")));
+  const spool = widest((item) => (item.spool ? `#${item.spool}` : undefined));
+  const name = widest((item) => item.name);
+  let printers = widest((item) => item.printers);
+  let code = widest((item) => item.code);
+  const total = () =>
+    [spool, name, printers, code]
+      .filter((w) => w > 0)
+      .reduce((sum, w, i) => sum + w + (i ? 1 : 0), 0);
+  if (total() > width) code = 0;
+  if (total() > width) printers = 0;
+  return { spool, printers, code };
+}
+
+function itemListRows(items: readonly ItemView[], width: number): ListRow[] {
+  // The list's gutter and its scroll column.
+  const columns = itemColumns(items, width - 2);
+  return items.map((item, index) => ({
+    key: `${index}`,
     cells: [
-      { text: TONE_ICON[row.tone], width: 1, color: TONE_COLOR[row.tone] },
-      { text: SHORT_TITLES[row.key], grow: true, ...(row.tone === "ok" ? { dim: true } : {}) },
-      {
-        text: String(row.count),
-        width: 3,
-        align: "right" as const,
-        ...(row.tone === "ok" ? { dim: true } : { color: TONE_COLOR[row.tone] }),
-      },
+      ...(columns.spool
+        ? [{ text: item.spool ? `#${item.spool}` : "", width: columns.spool, dim: true }]
+        : []),
+      { text: item.name, grow: true },
+      ...(columns.printers
+        ? [{ text: item.printers ?? "", width: columns.printers, color: COLORS.muted }]
+        : []),
+      ...(columns.code ? [{ text: item.code ?? "", width: columns.code, dim: true }] : []),
     ],
   }));
 }
 
 function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: CheckData }) {
-  const layout = checkLayout(ctx, data);
+  const view = checkView(ctx);
+  const offline = Boolean(view.offline);
+  const layout = checkLayout(ctx, data, model.focus);
   const leftInner = panelInner(layout.left, layout.height);
   const rightInner = panelInner(layout.right, layout.height);
   const section = data.sections[model.section];
-  const items = section?.items ?? [];
-  const shown = section ? itemRows(ctx, data, section) : 0;
-  const visible = items.slice(model.scroll, model.scroll + shown);
-  const position =
-    items.length > shown
-      ? `${model.scroll + 1}–${model.scroll + visible.length} of ${items.length}`
-      : "";
+  const notChecked = Boolean(offline && section && needsConsole(section.key));
+  const items = section && !notChecked ? itemViews(section, data) : [];
+  const shown = section ? itemRows(ctx, data, section, model.focus) : 0;
+  const position = items.length > shown ? listPosition(model.item, items.length) : "";
   const tone = section ? (items.length === 0 ? "ok" : section.problem ? "problem" : "note") : "ok";
+  const subtitle = notChecked
+    ? "not checked"
+    : items.length === 0
+      ? "none"
+      : plural(items.length, tone === "problem" ? "problem" : "note");
+  const legend = legendLines(leftInner.width, leftInner.height - data.sections.length - 1, offline);
+  const explain = notChecked
+    ? offlineLines(ctx, data, view.error ?? "").map((line) =>
+        pad([{ text: line, color: COLORS.failed }]),
+      )
+    : section
+      ? whyLines(ctx, data, section, model.focus).map((line) =>
+          pad([{ text: line, color: COLORS.muted }]),
+        )
+      : [];
   return (
     <Box flexDirection="column" flexShrink={0}>
-      <Headline model={model} ctx={ctx} data={data} />
+      <Headline ctx={ctx} data={data} />
       <Box flexDirection="row" flexShrink={0}>
-        <Panel
-          title="Sections"
-          focused={model.focus === "sections"}
-          width={layout.left}
-          height={layout.height}
-        >
-          <List
-            rows={sectionListRows(data.sections)}
-            cursor={model.section}
-            height={leftInner.height}
-            width={leftInner.width}
+        {layout.left > 0 ? (
+          <Panel
+            title="Sections"
             focused={model.focus === "sections"}
-          />
-          {leftInner.height >= data.sections.length + 4 ? (
-            <>
-              {Array.from({ length: leftInner.height - data.sections.length - 3 }, (_, index) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: blank filler lines.
-                <Line key={`gap${index}`} segments={[]} width={leftInner.width} />
-              ))}
-              <Line
-                segments={pad([
-                  { text: `${ICONS.failed} `, color: COLORS.failed },
-                  { text: "spools lose their preset", color: COLORS.muted },
-                ])}
-                width={leftInner.width}
-              />
-              <Line
-                segments={pad([
-                  { text: `${ICONS.warning} `, color: COLORS.warning },
-                  { text: "worth knowing", color: COLORS.muted },
-                ])}
-                width={leftInner.width}
-              />
-            </>
-          ) : null}
-        </Panel>
+            width={layout.left}
+            height={layout.height}
+          >
+            <List
+              rows={sectionListRows(ctx, data.sections, offline)}
+              cursor={model.section}
+              height={Math.min(leftInner.height, data.sections.length)}
+              width={leftInner.width}
+              focused={model.focus === "sections"}
+            />
+            {legend.length ? (
+              <>
+                {Array.from(
+                  { length: leftInner.height - data.sections.length - legend.length },
+                  (_, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: blank filler lines.
+                    <Line key={`gap${index}`} segments={[]} width={leftInner.width} />
+                  ),
+                )}
+                {legend.map((segments, index) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: the legend's lines, in order.
+                  <Line key={`legend${index}`} segments={segments} width={leftInner.width} />
+                ))}
+              </>
+            ) : null}
+          </Panel>
+        ) : null}
         <Panel
-          title={section?.title ?? ""}
-          subtitle={
-            items.length === 0
-              ? "none"
-              : `${plural(items.length, tone === "problem" ? "problem" : "note")}`
-          }
+          title={section ? itemsTitle(ctx, section, subtitle, layout.right) : ""}
+          subtitle={subtitle}
           focused={model.focus === "items"}
           width={layout.right}
           height={layout.height}
           {...(position ? { footerRight: position } : {})}
         >
-          {section
-            ? whyLines(ctx, data, section).map((line) => (
-                <Line
-                  key={line}
-                  segments={pad([{ text: line, color: COLORS.muted }])}
-                  width={rightInner.width}
-                />
-              ))
-            : null}
+          {explain.map((segments, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: wrapped lines, in order.
+            <Line key={index} segments={segments} width={rightInner.width} />
+          ))}
           <Line segments={[]} width={rightInner.width} />
-          {items.length === 0 ? (
+          {notChecked ? (
+            <Line
+              segments={pad([
+                { text: "enter", color: COLORS.accent2, bold: true },
+                { text: " open Settings", color: COLORS.muted },
+              ])}
+              width={rightInner.width}
+            />
+          ) : items.length === 0 ? (
             <Line
               segments={pad([{ text: `${ICONS.ok} Nothing here`, color: COLORS.ok }])}
               width={rightInner.width}
             />
           ) : (
-            visible.map((item, index) => (
-              <Line
-                // biome-ignore lint/suspicious/noArrayIndexKey: an item's position in the section is its identity; items can repeat text.
-                key={model.scroll + index}
-                segments={pad([{ text: shownItem(item) }])}
-                width={rightInner.width}
-              />
-            ))
+            <List
+              rows={itemListRows(items, rightInner.width)}
+              cursor={model.item}
+              height={shown}
+              width={rightInner.width}
+              focused={model.focus === "items"}
+            />
           )}
         </Panel>
       </Box>
@@ -263,6 +343,7 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
   const shown = ids.fixes.slice(ids.scroll, ids.scroll + layout.rows);
   const failed = ids.results?.filter((r) => !r.ok).length ?? 0;
   const written = (ids.results?.length ?? 0) - failed;
+  const presets = new Set(ids.fixes.map((fix) => fix.name)).size;
   const position =
     ids.fixes.length > layout.rows
       ? `${ids.scroll + 1}–${ids.scroll + shown.length} of ${ids.fixes.length}`
@@ -275,7 +356,7 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
     <Box flexDirection="column" flexShrink={0}>
       <PageBar pages={pages} width={ctx.bodyColumns} />
       <Panel
-        title={`Give ${plural(ids.fixes.length, "preset")} a filament ID`}
+        title={`Give ${plural(presets, "preset")} a filament ID`}
         subtitle={`BambuStudio ${ctx.values.presetFolder.trim()}`}
         focused
         width={ctx.bodyColumns}
@@ -312,20 +393,24 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
             segments={pad(
               ids.results === null
                 ? [
-                    { text: "Nothing is written until you press ", color: COLORS.muted },
-                    { text: "a", color: COLORS.accent2, bold: true },
+                    {
+                      text: `${plural(ids.fixes.length, "file")} to write`,
+                      color: COLORS.muted,
+                    },
                   ]
                 : failed
                   ? [
                       {
-                        text: `${ICONS.failed} ${plural(written, "preset")} given an ID, ${failed} failed`,
+                        text: written
+                          ? `${ICONS.failed} ${plural(written, "file")} given an ID, ${failed} failed`
+                          : `${ICONS.failed} ${plural(failed, "file")} not given an ID`,
                         color: COLORS.failed,
                         bold: true,
                       },
                     ]
                   : [
                       {
-                        text: `${ICONS.ok} ${plural(written, "preset")} given an ID`,
+                        text: `${ICONS.ok} ${plural(presets, "preset")} given an ID`,
                         color: COLORS.ok,
                         bold: true,
                       },
