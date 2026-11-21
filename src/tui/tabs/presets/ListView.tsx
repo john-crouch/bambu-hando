@@ -9,6 +9,7 @@ import { tildePath } from "../../../paths.js";
 import { type Preset, presetFamily } from "../../../presetEdit.js";
 import type { UserPreset } from "../../../syncCheck.js";
 import type { Ctx } from "../../core/types.js";
+import { plural } from "../../ui/format.js";
 import {
   Busy,
   Detail,
@@ -28,18 +29,26 @@ import {
 } from "../../ui/index.js";
 import { textFieldSegments } from "../../ui/TextField.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
-import { compactDetail, presetDetail, printerLabel } from "./detail.js";
-import { type FileState, type PresetsModel, visiblePresets } from "./model.js";
+import {
+  compactDetail,
+  groupKey,
+  type ListCells,
+  listColumns,
+  type PresetGroup,
+  presetDetail,
+  presetGroups,
+  presetTitle,
+  printerLabel,
+  printersText,
+  statusCells,
+} from "./detail.js";
+import { type FileState, type PresetsModel, visibleGroups } from "./model.js";
 
 /** From this many columns the detail panel sits beside the list. */
 export const SIDE_BY_SIDE = 90;
 
 /** The compact detail's height under the list, borders included. */
 const COMPACT_DETAIL = 9;
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
 
 function presetsOf(ctx: Ctx): { presets: UserPreset[]; warnings: string[] } {
   const resource = ctx.resources.presets;
@@ -49,24 +58,39 @@ function presetsOf(ctx: Ctx): { presets: UserPreset[]; warnings: string[] } {
   return { presets: [], warnings: [] };
 }
 
-function listRows(model: PresetsModel, rows: UserPreset[], printerWidth: number): ListRow[] {
-  return rows.map((preset, index) => {
-    const previous = rows[index - 1];
-    // Presets of one filament sit together; its name shows once, on the first.
-    const repeat =
-      previous !== undefined &&
-      preset.filamentId !== "" &&
-      previous.filamentId === preset.filamentId &&
-      previous.name === preset.name;
+/** What a group's row says: its name, printers, whether it has unsaved edits, and its filament ID. */
+function groupCells(model: PresetsModel, group: PresetGroup): ListCells {
+  return {
+    name: group.name,
+    printers: printersText(group.presets.map((p) => p.printer)),
+    edited: group.presets.some((p) => model.drafts.has(p.path)),
+    id: group.presets[0]?.filamentId ?? "",
+  };
+}
+
+function listRows(model: PresetsModel, groups: PresetGroup[], width: number): ListRow[] {
+  const cells = groups.map((group) => groupCells(model, group));
+  const widths = listColumns(width, cells);
+  return groups.map((group, index) => {
+    const row = cells[index] as ListCells;
+    const { status, id } = statusCells(row, widths);
+    const printers = printersText(
+      group.presets.map((p) => p.printer),
+      widths.printers,
+    );
     return {
-      key: preset.path,
+      key: group.key,
       cells: [
-        { text: preset.name, grow: true, ...(repeat ? { dim: true } : {}) },
-        { text: printerLabel(preset.printer), width: printerWidth, dim: true },
-        preset.filamentId
-          ? { text: preset.filamentId, width: 8, dim: true }
-          : { text: "no ID", width: 8, color: COLORS.warning },
-        { text: model.drafts.has(preset.path) ? "edited" : "", width: 6, color: COLORS.warning },
+        { text: row.name, grow: true },
+        ...(widths.printers ? [{ text: printers, width: widths.printers, dim: true }] : []),
+        ...(widths.status ? [{ text: status, width: widths.status, color: COLORS.warning }] : []),
+        ...(widths.id
+          ? [
+              row.id
+                ? { text: id, width: widths.id, dim: true }
+                : { text: id, width: widths.id, color: COLORS.warning },
+            ]
+          : []),
       ],
     };
   });
@@ -103,10 +127,10 @@ function PresetList({
   height: number;
 }) {
   const { presets, warnings } = presetsOf(ctx);
-  const rows = visiblePresets(model, ctx);
+  const groups = visibleGroups(model, ctx);
   const cursor = Math.max(
     0,
-    rows.findIndex((p) => p.path === model.path),
+    groups.findIndex((g) => g.presets.some((p) => p.path === model.path)),
   );
   const inner = panelInner(width, height);
   const filtering = model.filter.focused || model.filter.text.value !== "";
@@ -115,13 +139,10 @@ function PresetList({
     1,
     inner.height - (filtering ? 2 : 0) - (shownWarnings.length ? shownWarnings.length + 1 : 0),
   );
-  const printerWidth = Math.min(
-    22,
-    Math.max(0, ...presets.map((p) => textWidth(printerLabel(p.printer)))),
-  );
+  const filaments = presetGroups(presets, "").length;
   const subtitle = model.filter.text.value
-    ? `${rows.length} of ${presets.length}`
-    : `${presets.length} in folder ${ctx.values.presetFolder.trim() || "default"}`;
+    ? `${groups.length} of ${filaments}`
+    : `${plural(filaments, "filament")}${filaments === presets.length ? "" : ` (${plural(presets.length, "preset")})`} in folder ${ctx.values.presetFolder.trim() || "default"}`;
   return (
     <Panel
       title="Presets"
@@ -129,7 +150,7 @@ function PresetList({
       focused
       width={width}
       height={height}
-      footerRight={listPosition(cursor, rows.length)}
+      footerRight={listPosition(cursor, groups.length)}
     >
       {shownWarnings.map((warning) => (
         <Line
@@ -141,14 +162,14 @@ function PresetList({
       {shownWarnings.length ? <Line segments={[]} width={inner.width} /> : null}
       {filtering ? <FilterLine model={model} width={inner.width} /> : null}
       {filtering ? <Line segments={[]} width={inner.width} /> : null}
-      {rows.length === 0 ? (
+      {groups.length === 0 ? (
         <Line
           segments={[{ text: " No preset has every word of the filter", color: COLORS.muted }]}
           width={inner.width}
         />
       ) : (
         <List
-          rows={listRows(model, rows, printerWidth)}
+          rows={listRows(model, groups, inner.width)}
           cursor={cursor}
           height={listHeight}
           width={inner.width}
@@ -174,20 +195,30 @@ function truncateStart(text: string, width: number): string {
   return `…${out}`;
 }
 
-/** The rows under the swatch: identity, settings, file and the presets sharing the filament ID. */
+/** The preset's printer; with ‹ › and its place when ←→ pick among the row's printers. */
+function printerRow(preset: UserPreset, group: PresetGroup | undefined): DetailRow {
+  const short = printerLabel(preset.printer) || "any";
+  const count = group?.presets.length ?? 1;
+  if (!group || count < 2) return { label: "Printer", value: short };
+  const at = group.presets.indexOf(preset) + 1;
+  return { label: "Printer", value: `‹ ${short} ›  ${at} of ${count}`, tone: "accent" };
+}
+
+/** The rows under the swatch: identity, settings, file and the presets of other rows sharing the filament ID. */
 function detailRows(
   preset: UserPreset,
   file: Preset,
-  family: UserPreset[],
+  group: PresetGroup | undefined,
+  others: UserPreset[],
   drafted: number,
   compact: boolean,
 ): DetailRow[] {
   const id: DetailRow = preset.filamentId
     ? { label: "Filament ID", value: preset.filamentId, dim: true }
-    : { label: "Filament ID", value: "none: the Check tab gives it one", tone: "warning" };
-  const shared: DetailRow[] = family.map((other, index) => ({
+    : { label: "Filament ID", value: "none: f fixes it in Check", tone: "warning" };
+  const shared: DetailRow[] = others.map((other, index) => ({
     label: index === 0 ? "Same ID" : "",
-    value: printerLabel(other.printer) || other.name,
+    value: presetTitle(other),
   }));
   const swatch = presetDetail(file).swatch;
   const color: DetailRow = swatch
@@ -199,20 +230,17 @@ function detailRows(
   if (compact)
     return [
       ...draft,
+      printerRow(preset, group),
       id,
       ...compactDetail(file),
-      {
-        label: "Same ID",
-        value: family.length
-          ? family.map((p) => printerLabel(p.printer)).join(", ")
-          : "only this one",
-        ...(family.length ? {} : { dim: true }),
-      },
+      ...(others.length
+        ? [{ label: "Same ID", value: others.map((p) => presetTitle(p)).join(", ") }]
+        : []),
     ];
   return [
     ...draft,
     ...(draft.length ? [{ label: "", value: "" }] : []),
-    { label: "Printer", value: printerLabel(preset.printer) || "any" },
+    printerRow(preset, group),
     id,
     color,
     { label: "", value: "" },
@@ -220,7 +248,7 @@ function detailRows(
     { label: "", value: "" },
     { label: "File", value: basename(preset.path), dim: true },
     { label: "Folder", value: FOLDER, dim: true },
-    ...(shared.length ? shared : [{ label: "Same ID", value: "only this one", dim: true }]),
+    ...shared,
   ];
 }
 
@@ -255,14 +283,15 @@ function PresetDetail({
   compact: boolean;
 }) {
   const inner = panelInner(width, height);
-  const preset = visiblePresets(model, ctx).find((p) => p.path === model.path);
+  const group = visibleGroups(model, ctx).find((g) => g.presets.some((p) => p.path === model.path));
+  const preset = group?.presets.find((p) => p.path === model.path);
   if (!preset) return <Panel title="Preset" width={width} height={height} />;
   const file = model.files.get(preset.path);
-  const family = presetFamily(presetsOf(ctx).presets, preset).slice(1);
+  const others = presetFamily(presetsOf(ctx).presets, preset)
+    .slice(1)
+    .filter((p) => groupKey(p) !== groupKey(preset));
   const drafted = model.drafts.get(preset.path)?.size ?? 0;
-  const title = compact
-    ? `${preset.name}${preset.printer ? ` @ ${printerLabel(preset.printer)}` : ""}`
-    : preset.name;
+  const title = preset.name;
   if (file?.state !== "ready")
     return (
       <Panel title={title} width={width} height={height}>
@@ -270,7 +299,7 @@ function PresetDetail({
       </Panel>
     );
   const swatch = presetDetail(file.preset).swatch;
-  const listed = detailRows(preset, file.preset, family, drafted, compact);
+  const listed = detailRows(preset, file.preset, group, others, drafted, compact);
   // Detail's value column: what's left of the inside after a margin, the labels, a gap and a margin.
   const valueRoom = inner.width - 1 - labelColumn(listed) - 2 - 1;
   const rows = listed.map((row) =>
@@ -326,7 +355,7 @@ export function ListView({ model, ctx }: { model: PresetsModel; ctx: Ctx }) {
           <Empty
             title="Couldn't read BambuStudio's presets"
             lines={[resource.error]}
-            action={{ keys: "ctrl+k", label: "reload presets" }}
+            action={{ keys: "r", label: "reload" }}
             width={inner.width}
             height={inner.height}
           />
@@ -337,7 +366,7 @@ export function ListView({ model, ctx }: { model: PresetsModel; ctx: Ctx }) {
               `BambuStudio folder: ${folder}`,
               "Presets you make in BambuStudio, or add with the Add tab, show up here.",
             ]}
-            action={{ keys: "tab", label: "go to another tab" }}
+            action={{ keys: "enter", label: "add one in Add" }}
             width={inner.width}
             height={inner.height}
           />

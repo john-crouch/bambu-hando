@@ -4,6 +4,7 @@
 import { Box } from "ink";
 
 import type { Ctx } from "../../core/types.js";
+import { plural } from "../../ui/format.js";
 import {
   Busy,
   Line,
@@ -14,13 +15,58 @@ import {
   type Segment,
   textWidth,
 } from "../../ui/index.js";
+import { spaces } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
 import { presetTitle, printerLabel } from "./detail.js";
 import type { ReviewModel } from "./model.js";
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+/** Words in lines of at most width columns: a note is never cut mid-sentence. */
+function wrapWords(text: string, width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && textWidth(next) > width) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  return [...lines, line];
 }
+
+/** A note's lines, indented, its icon (if any) hanging in front of the first. */
+function Note({
+  text,
+  icon,
+  color,
+  width,
+}: {
+  text: string;
+  icon?: string;
+  color: string;
+  width: number;
+}) {
+  const lead = icon ? `${icon} ` : "";
+  const lines = wrapWords(text, Math.max(8, width - 2 - textWidth(lead)));
+  return (
+    <>
+      {lines.map((line, index) => (
+        <Line
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one note.
+          key={index}
+          segments={[{ text: ` ${index === 0 ? lead : spaces(textWidth(lead))}${line}`, color }]}
+          width={width}
+        />
+      ))}
+    </>
+  );
+}
+
+/** The targets list's widest before saving: a printer's note stays near its name on a wide terminal. */
+const TARGETS_MAX = 72;
+
+const CLOSE_FIRST = "Close BambuStudio first: it may save its own copy over these presets.";
+const UPLOADS = "Logged in to Bambu, BambuStudio uploads the change on its next sync.";
 
 function Heading({ text, width }: { text: string; width: number }) {
   return <Line segments={[{ text: ` ${text}`, bold: true }]} width={width} />;
@@ -90,7 +136,9 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
   const failed = (review.results?.length ?? 0) - saved;
   const spoolease = spooleaseLine(review);
   const checking = review.range.state === "checking" && review.phase === "review";
-  const notes = review.phase === "review" ? 2 : 0;
+  const noteLines = (text: string, lead: number) =>
+    wrapWords(text, Math.max(8, w - 2 - lead)).length;
+  const notes = review.phase === "review" ? noteLines(CLOSE_FIRST, 2) + noteLines(UPLOADS, 0) : 0;
   // Headings, gaps, the targets, SpoolEase's line, the notes and the status line take what they need.
   const fixed =
     5 + review.targets.length + (spoolease.length || checking ? 2 : 0) + notes + (notes ? 1 : 0);
@@ -101,7 +149,7 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
     : review.phase === "done"
       ? [
           {
-            text: ` ${failed || review.spoolease?.ok === false ? ICONS.failed : ICONS.ok} ${plural(saved, "preset")} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load them`,
+            text: ` ${failed || review.spoolease?.ok === false ? ICONS.failed : ICONS.ok} ${plural(saved, "preset")} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load ${saved === 1 ? "it" : "them"}`,
             color: failed || review.spoolease?.ok === false ? COLORS.failed : COLORS.ok,
             bold: true,
           },
@@ -138,6 +186,9 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
         />
       ) : null}
       <Blank width={w} />
+      {notes ? (
+        <Note text={CLOSE_FIRST} icon={ICONS.warning} color={COLORS.warning} width={w} />
+      ) : null}
       <Heading
         text={
           review.phase === "review"
@@ -151,7 +202,7 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
           rows={targetRows(review)}
           cursor={review.cursor}
           height={review.targets.length}
-          width={w - 2}
+          width={review.results ? w - 2 : Math.min(w - 2, TARGETS_MAX)}
           marker="check"
           focused={review.phase === "review"}
         />
@@ -167,24 +218,7 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
       {spoolease.length || checking ? <Blank width={w} /> : null}
       {notes ? (
         <>
-          <Line
-            segments={[
-              {
-                text: " Close BambuStudio first: it may save its own copy over these presets.",
-                color: COLORS.muted,
-              },
-            ]}
-            width={w}
-          />
-          <Line
-            segments={[
-              {
-                text: " Logged in to Bambu, BambuStudio uploads the change on its next sync.",
-                color: COLORS.muted,
-              },
-            ]}
-            width={w}
-          />
+          <Note text={UPLOADS} color={COLORS.muted} width={w} />
           <Blank width={w} />
         </>
       ) : null}

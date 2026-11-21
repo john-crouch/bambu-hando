@@ -4,12 +4,13 @@
 import { Box } from "ink";
 
 import { tildePath } from "../../../paths.js";
-import { editChanges } from "../../../presetEdit.js";
+import { plural } from "../../ui/format.js";
 import {
   Detail,
   type DetailRow,
   Line,
   type ListRow,
+  labelColumn,
   listPosition,
   listWindow,
   type Page,
@@ -22,18 +23,20 @@ import {
 } from "../../ui/index.js";
 import { rowSegments } from "../../ui/List.js";
 import { textFieldSegments } from "../../ui/TextField.js";
-import { padSegments, spaces } from "../../ui/text.js";
+import { padSegments, spaces, truncate } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
 import { printerLabel } from "./detail.js";
 import {
   ALL_SETTINGS,
   type EditorModel,
   type EditorRow,
+  editorChanges,
   editorCurrentRow,
   editorPages,
   editorRows,
   editorTakes,
   editorTypingHint,
+  tidyUnits,
 } from "./editor.js";
 
 /** Wide enough for the changes beside the settings. */
@@ -47,15 +50,15 @@ export function editorListRows(height: number): number {
   return Math.max(1, panelInner(0, height).height - EDITOR_CHROME);
 }
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 /** The columns of a settings row: label, value, and (group pages) what it was. */
 function columns(model: EditorModel, rows: readonly EditorRow[], width: number) {
   const widest = Math.max(0, ...rows.map((row) => textWidth(row.label)));
   if (model.page === ALL_SETTINGS) {
-    const key = Math.min(widest, Math.max(12, Math.floor(width * 0.45)));
+    // Keys take what they need while the values keep what theirs need, up to 40% of the row.
+    const cells = width - 2;
+    const values = Math.max(0, ...rows.map((row) => textWidth(row.value)));
+    const keep = Math.min(values, Math.floor(cells * 0.4));
+    const key = Math.max(12, Math.min(widest, cells - 1 - keep));
     return { label: key, value: 0 };
   }
   return { label: Math.min(widest, 28), value: 18 };
@@ -75,27 +78,56 @@ function cellsOf(row: EditorRow, all: boolean, widths: { label: number; value: n
   ];
 }
 
-/** The row being typed: its label, then the text field across the rest of the row. */
+/** The value being typed: selected (typing replaces it) as one highlighted run, else a text field. */
+function fieldSegments(model: EditorModel, width: number): Segment[] {
+  const text = model.text ?? { value: "", cursor: 0 };
+  if (model.selected && text.value !== "")
+    return [
+      {
+        text: truncate(text.value, Math.max(1, width - 1)),
+        backgroundColor: COLORS.accent,
+        color: COLORS.selectionText,
+        bold: true,
+      },
+      { text: " ", inverse: true },
+    ];
+  return textFieldSegments({ value: text.value, cursor: text.cursor, focused: true, width });
+}
+
+/** A number being typed, as a stepper: ‹ 245°C ›, ←→ step it. */
+function stepperSegments(model: EditorModel, unit: string, width: number): Segment[] {
+  const value = model.text?.value ?? "";
+  const tail = unit === "°C" ? unit : unit ? ` ${unit}` : "";
+  const room = Math.max(1, width - 4 - textWidth(tail));
+  const field = fieldSegments(model, Math.min(room, textWidth(value) + 1));
+  // The cursor's cell sits after the value; while selected the unit follows the value at once.
+  const shown = model.selected && value !== "" ? field.slice(0, 1) : field;
+  return [
+    { text: "‹ ", color: COLORS.accent2, bold: true },
+    ...shown,
+    { text: tail },
+    { text: " ›", color: COLORS.accent2, bold: true },
+  ];
+}
+
+/** The row being typed: its label, then the field (a stepper for numbers) across the rest of the row. */
 function typingSegments(
   model: EditorModel,
   row: EditorRow,
   width: number,
   labelWidth: number,
 ): Segment[] {
-  const text = model.text ?? { value: "", cursor: 0 };
   const label = padSegments([{ text: row.label, bold: true }], labelWidth);
   const fieldWidth = Math.max(1, width - 1 - labelWidth - 1 - 1);
+  const numeric = row.field?.kind === "int" || row.field?.kind === "decimal";
   return padSegments(
     [
       { text: "▌", color: COLORS.accent },
       ...label,
       { text: " " },
-      ...textFieldSegments({
-        value: text.value,
-        cursor: text.cursor,
-        focused: true,
-        width: fieldWidth,
-      }),
+      ...(numeric
+        ? stepperSegments(model, row.field?.unit ?? "", fieldWidth)
+        : fieldSegments(model, fieldWidth)),
     ],
     width,
   );
@@ -103,7 +135,8 @@ function typingSegments(
 
 /** The line under the settings: an error, what's being typed takes, a locked key's reason, or the file. */
 function noteSegments(model: EditorModel, row: EditorRow | undefined, narrow: boolean): Segment[] {
-  if (model.error) return [{ text: `${ICONS.failed} ${model.error}`, color: COLORS.failed }];
+  if (model.error)
+    return [{ text: `${ICONS.failed} ${tidyUnits(model.error)}`, color: COLORS.failed }];
   const typing = editorTypingHint(model);
   if (typing) return [{ text: typing, color: COLORS.muted }];
   if (row?.locked) return [{ text: `Locked: ${row.locked}`, color: COLORS.muted }];
@@ -201,7 +234,7 @@ function SidePanel({
   const w = inner.width;
   const row = editorCurrentRow(model);
   const takes = editorTakes(model);
-  const about: DetailRow[] = row
+  const facts: DetailRow[] = row
     ? [
         { label: "Key", value: row.key, dim: true },
         { label: "Now", value: row.value, ...(row.changed ? { tone: "accent" as const } : {}) },
@@ -213,12 +246,27 @@ function SidePanel({
           : []),
       ]
     : [];
-  const changes = editChanges(model.original, model.edits);
+  // Detail's value column: what's left after a margin, the labels, a gap and a margin.
+  const keyRoom = Math.max(8, w - 1 - labelColumn(facts) - 2 - 1);
+  const about: DetailRow[] = facts.flatMap((fact) =>
+    fact.label === "Key"
+      ? wrapKey(fact.value, keyRoom).map((part, index) => ({
+          ...fact,
+          label: index === 0 ? "Key" : "",
+          value: part,
+        }))
+      : [fact],
+  );
+  const changes = editorChanges(model);
   // Two lines a change, under the setting's rows, a gap and the heading.
   const fit = Math.max(0, Math.floor((inner.height - about.length - 3) / 2));
   const shown = changes.length > fit ? Math.max(0, fit - 1) : changes.length;
   return (
-    <Panel title={row?.label ?? "Setting"} width={width} height={height}>
+    <Panel
+      title={row && model.page !== ALL_SETTINGS ? row.label : "Setting"}
+      width={width}
+      height={height}
+    >
       <Detail rows={about} width={w} />
       <Line segments={[]} width={w} />
       <Line
@@ -253,6 +301,19 @@ function SidePanel({
       ) : null}
     </Panel>
   );
+}
+
+/** A key in lines of at most width columns, broken after underscores where it can be. */
+function wrapKey(key: string, width: number): string[] {
+  const lines: string[] = [];
+  let rest = key;
+  while (textWidth(rest) > width) {
+    const cut = rest.lastIndexOf("_", width - 1);
+    const at = cut > 0 ? cut + 1 : width;
+    lines.push(rest.slice(0, at));
+    rest = rest.slice(at);
+  }
+  return [...lines, rest];
 }
 
 export interface EditorViewProps {

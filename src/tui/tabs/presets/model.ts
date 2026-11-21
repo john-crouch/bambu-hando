@@ -6,7 +6,6 @@ import {
   type EditChange,
   type EditResult,
   type Edits,
-  editChanges,
   nozzleRange,
   type Preset,
   presetFamily,
@@ -26,6 +25,7 @@ import {
   type TabMsg,
   toTab,
 } from "../../core/types.js";
+import { plural } from "../../ui/format.js";
 import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
 import {
   type PresetFileMsg,
@@ -38,10 +38,11 @@ import {
   saveCmd,
   spooleaseConnection,
 } from "./cmds.js";
-import { presetRows, presetTitle } from "./detail.js";
+import { type PresetGroup, presetGroups, presetRows, presetTitle } from "./detail.js";
 import {
   type EditorModel,
   editorCapturesText,
+  editorChanges,
   editorHints,
   initEditor,
   updateEditor,
@@ -84,6 +85,8 @@ export interface PresetsModel {
   drafts: ReadonlyMap<string, Edits>;
   editor: { preset: UserPreset; model: EditorModel } | null;
   review: ReviewModel | null;
+  /** A deep link's preset path that wasn't listed yet: highlighted once the presets load. */
+  focus: string | undefined;
 }
 
 type OwnMsg =
@@ -95,10 +98,6 @@ type OwnMsg =
 
 const EMPTY_TEXT: TextState = { value: "", cursor: 0 };
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 function presetsIn(resource: Resource<PresetsData>): UserPreset[] {
   if (resource.state === "ready") return resource.value.presets;
   if (resource.state === "loading" || resource.state === "failed")
@@ -109,6 +108,11 @@ function presetsIn(resource: Resource<PresetsData>): UserPreset[] {
 /** The presets the list shows now, in order, filtered. */
 export function visiblePresets(model: PresetsModel, ctx: Ctx): UserPreset[] {
   return presetRows(presetsIn(ctx.resources.presets), model.filter.text.value);
+}
+
+/** The list's rows now: a filament each, filtered. */
+export function visibleGroups(model: PresetsModel, ctx: Ctx): PresetGroup[] {
+  return presetGroups(presetsIn(ctx.resources.presets), model.filter.text.value);
 }
 
 /** Rows a page key moves by: the body less the panel's border, summary and margins. */
@@ -138,6 +142,7 @@ export function init(ctx: Ctx, _start: StartOptions): Step<PresetsModel> {
     drafts: new Map(),
     editor: null,
     review: null,
+    focus: undefined,
   };
   const [next, cmds] = normalize(model, presetsIn(ctx.resources.presets));
   return [next, [send<AppMsg>({ type: "app/load", resource: "presets" }), ...cmds]];
@@ -151,27 +156,36 @@ function open(model: PresetsModel, preset: UserPreset): Step<PresetsModel> {
   return [{ ...model, path: preset.path, opening: preset, files }, [readPresetCmd(preset.path)]];
 }
 
+/** The group's preset for printer, else its first: moving between filaments keeps the printer. */
+function onPrinter(group: PresetGroup, printer: string | undefined): UserPreset | undefined {
+  return group.presets.find((p) => p.printer === printer) ?? group.presets[0];
+}
+
 function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsModel> {
   const presets = presetsIn(ctx.resources.presets);
-  const rows = presetRows(presets, model.filter.text.value);
+  const groups = presetGroups(presets, model.filter.text.value);
   const cursor = Math.max(
     0,
-    rows.findIndex((p) => p.path === model.path),
+    groups.findIndex((g) => g.presets.some((p) => p.path === model.path)),
   );
-  const highlighted = rows[cursor];
+  const group = groups[cursor];
+  const highlighted = group?.presets.find((p) => p.path === model.path) ?? group?.presets[0];
   // Moving on cancels a preset still being read to open.
-  const moveTo = (index: number) =>
-    normalize({ ...model, path: rows[index]?.path, opening: undefined }, presets);
-  const moved = (keys: KeyPress) => moveCursor(cursor, keys, rows.length, pageRows(ctx));
+  const select = (preset: UserPreset | undefined) =>
+    normalize({ ...model, path: preset?.path, opening: undefined }, presets);
+  const moveTo = (index: number) => {
+    const to = groups[index];
+    return select(to ? onPrinter(to, highlighted?.printer) : undefined);
+  };
+  const moved = (keys: KeyPress) => moveCursor(cursor, keys, groups.length, pageRows(ctx));
   const clearFilter = () =>
     normalize({ ...model, filter: { text: EMPTY_TEXT, focused: false } }, presets);
 
   if (model.filter.focused) {
     if (key.name === "esc") return clearFilter();
-    if (key.name === "enter") {
-      const unfocused = { ...model, filter: { ...model.filter, focused: false } };
-      return highlighted ? open(unfocused, highlighted) : [unfocused, []];
-    }
+    // enter keeps the filter and leaves the field; enter again opens.
+    if (key.name === "enter")
+      return [{ ...model, filter: { ...model.filter, focused: false } }, []];
     if (
       key.name === "up" ||
       key.name === "down" ||
@@ -182,19 +196,36 @@ function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsMode
     const edited = editText(model.filter.text, key);
     if (!edited) return [model, []];
     const text = { value: edited.value, cursor: edited.cursor };
+    if (edited.submit) return normalize({ ...model, filter: { text, focused: false } }, presets);
     return normalize({ ...model, filter: { text, focused: true } }, presets);
   }
 
   if (key.name === "esc") return model.filter.text.value ? clearFilter() : [model, []];
-  if (key.name === "enter") return highlighted ? open(model, highlighted) : [model, []];
+  if (key.name === "enter") {
+    if (highlighted) return open(model, highlighted);
+    if (presets.length === 0) return [model, [send<AppMsg>({ type: "app/switchTab", tab: "add" })]];
+    return [model, []];
+  }
+  if ((key.name === "left" || key.name === "right") && group && highlighted) {
+    const at = group.presets.indexOf(highlighted) + (key.name === "left" ? -1 : 1);
+    const to = group.presets[Math.min(group.presets.length - 1, Math.max(0, at))];
+    return to === highlighted ? [model, []] : select(to);
+  }
   const to = moved(key);
   if (to !== null) return moveTo(to);
-  if (typed(key) === "/") return [{ ...model, filter: { ...model.filter, focused: true } }, []];
+  const text = typed(key);
+  if (text === "/") return [{ ...model, filter: { ...model.filter, focused: true } }, []];
+  if (text === "f")
+    return highlighted && !highlighted.filamentId
+      ? [model, [send<AppMsg>({ type: "app/switchTab", tab: "check", focus: "presetsNoId" })]]
+      : [model, []];
+  if (text === "r")
+    return [model, [send<AppMsg>({ type: "app/load", resource: "presets", force: true })]];
   const jump = letter(key);
   if (jump)
     return moveTo(
       typeAhead(
-        rows.map((p) => p.name),
+        groups.map((g) => g.name),
         cursor,
         jump,
       ),
@@ -210,7 +241,7 @@ function startReview(
   ctx: Ctx,
 ): Step<PresetsModel> {
   const edits = editor.edits;
-  const changes = editChanges(editor.original, edits);
+  const changes = editorChanges(editor);
   const targets = presetFamily(presetsIn(ctx.resources.presets), preset);
   const range = nozzleRange(applyEdits(editor.original, edits).preset);
   const connection = spooleaseConnection(ctx.values);
@@ -348,7 +379,7 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   const failed = msg.results.length - saved;
   const name = review.preset.name;
   const lines = [
-    `${plural(saved, "BambuStudio preset")} of ${name} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load`,
+    `${plural(saved, "BambuStudio preset")} of ${name} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load ${saved === 1 ? "it" : "them"}`,
     ...msg.results
       .filter((r) => !r.ok)
       .map((r) => {
@@ -391,6 +422,22 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   ];
 }
 
+/** Back on the list with path listed: the editor left (its draft kept), a filter that hides path cleared. */
+function leaveTo(model: PresetsModel, path: string, presets: UserPreset[]): PresetsModel {
+  const editor = model.review?.phase === "done" ? null : model.editor;
+  return {
+    ...model,
+    view: "list",
+    editor: null,
+    review: null,
+    focus: undefined,
+    drafts: editor ? withDraft(model.drafts, editor.preset.path, editor.model.edits) : model.drafts,
+    filter: presetRows(presets, model.filter.text.value).some((p) => p.path === path)
+      ? model.filter
+      : { text: EMPTY_TEXT, focused: false },
+  };
+}
+
 /** Opens a preset by path from anywhere (the command palette): leaves the editor, keeping its draft. */
 function onOpen(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel> {
   const switchTab: Cmd<AppMsg> = send({ type: "app/switchTab", tab: "presets" });
@@ -398,19 +445,16 @@ function onOpen(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel>
   const presets = presetsIn(ctx.resources.presets);
   const preset = presets.find((p) => p.path === path);
   if (!preset) return [model, [switchTab]];
-  const editor = model.editor;
-  const left: PresetsModel = {
-    ...model,
-    view: "list",
-    editor: null,
-    review: null,
-    drafts: editor ? withDraft(model.drafts, editor.preset.path, editor.model.edits) : model.drafts,
-    filter: presetRows(presets, model.filter.text.value).some((p) => p.path === path)
-      ? model.filter
-      : { text: EMPTY_TEXT, focused: false },
-  };
-  const [opened, cmds] = open(left, preset);
+  const [opened, cmds] = open(leaveTo(model, path, presets), preset);
   return [opened, [switchTab, ...cmds]];
+}
+
+/** A deep link (app/switchTab focus): the list, on that preset; kept for later while presets load. */
+function onFocus(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel> {
+  if (model.review?.phase === "saving") return [model, []];
+  const presets = presetsIn(ctx.resources.presets);
+  if (!presets.some((p) => p.path === path)) return [{ ...model, focus: path }, []];
+  return normalize({ ...leaveTo(model, path, presets), path, opening: undefined }, presets);
 }
 
 export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<PresetsModel> {
@@ -427,10 +471,18 @@ export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Ste
     case "app/loaded": {
       const loaded = msg as Extract<AppMsg, { type: "app/loaded" }>;
       if (loaded.resource !== "presets") return [model, []];
-      return normalize(
-        { ...model, files: new Map() },
-        presetsIn(loaded.result as Resource<PresetsData>),
-      );
+      const listed = presetsIn(loaded.result as Resource<PresetsData>);
+      const focus = model.focus;
+      if (focus && listed.some((p) => p.path === focus))
+        return normalize(
+          { ...leaveTo(model, focus, listed), path: focus, opening: undefined, files: new Map() },
+          listed,
+        );
+      return normalize({ ...model, files: new Map() }, listed);
+    }
+    case "app/switchTab": {
+      const focus = (msg as Extract<AppMsg, { type: "app/switchTab" }>).focus;
+      return focus ? onFocus(model, focus, ctx) : [model, []];
     }
     case "presets/read":
       return onRead(model, own as PresetFileMsg);
@@ -455,44 +507,80 @@ export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Ste
   }
 }
 
+/** What's being written, for the shell's quit guard. */
+export function busy(model: PresetsModel): string | null {
+  const review = model.review;
+  if (review?.phase !== "saving") return null;
+  return `Saving ${plural(review.ticked.size, "preset")} of ${review.preset.name}`;
+}
+
+/** Edits quitting would drop: every draft, the open editor's edits in place of its own draft. */
+export function unsaved(model: PresetsModel): number {
+  const drafts = new Map(model.drafts);
+  const editor = model.review?.phase === "done" ? null : model.editor;
+  if (editor) drafts.set(editor.preset.path, editor.model.edits);
+  let count = 0;
+  for (const edits of drafts.values()) count += edits.size;
+  return count;
+}
+
 export function capturesText(model: PresetsModel): boolean {
   if (model.view === "editor") return model.editor ? editorCapturesText(model.editor.model) : false;
   if (model.view === "review") return false;
   return model.filter.focused;
 }
 
-export function hints(model: PresetsModel, _ctx: Ctx): Hint[] {
+export function hints(model: PresetsModel, ctx: Ctx): Hint[] {
   if (model.view === "editor" && model.editor) return editorHints(model.editor.model);
   if (model.view === "review" && model.review) {
     if (model.review.phase === "saving") return [];
     if (model.review.phase === "done")
       return [{ keys: "esc", label: "back to presets", primary: true }];
     return [
-      { keys: "a", label: "save", primary: true },
-      { keys: "space", label: "tick", primary: true },
-      { keys: "esc", label: "back", primary: true },
       { keys: "↑↓", label: "move" },
+      { keys: "space", label: "tick", primary: true },
+      { keys: "a", label: "save", primary: true },
+      { keys: "esc", label: "back", primary: true },
     ];
   }
   if (model.filter.focused)
     return [
-      { keys: "enter", label: "edit", primary: true },
-      { keys: "esc", label: "clear", primary: true },
       { keys: "↑↓", label: "move" },
+      { keys: "enter", label: "done", primary: true },
+      { keys: "esc", label: "clear", primary: true },
     ];
+  const presets = presetsIn(ctx.resources.presets);
+  const groups = presetGroups(presets, model.filter.text.value);
+  const group = groups.find((g) => g.presets.some((p) => p.path === model.path));
+  const highlighted = group?.presets.find((p) => p.path === model.path);
+  if (!highlighted)
+    return presets.length === 0 && ctx.resources.presets.state === "ready"
+      ? [
+          { keys: "enter", label: "add one in Add", primary: true },
+          { keys: "r", label: "reload", primary: true },
+        ]
+      : [{ keys: "r", label: "reload", primary: true }];
   return [
+    { keys: "↑↓", label: "move" },
+    ...(group && group.presets.length > 1 ? [{ keys: "←→", label: "printer", primary: true }] : []),
     { keys: "enter", label: "edit", primary: true },
     { keys: "/", label: "filter", primary: true },
+    ...(highlighted.filamentId ? [] : [{ keys: "f", label: "fix in Check", primary: true }]),
     ...(model.filter.text.value ? [{ keys: "esc", label: "clear filter", primary: true }] : []),
-    { keys: "↑↓", label: "move" },
-    { keys: "a–z", label: "jump" },
+    { keys: "a-z", label: "jump" },
+    { keys: "r", label: "reload" },
   ];
 }
 
 export function commands(_model: PresetsModel, ctx: Ctx): PaletteCommand[] {
   const detail = "Presets";
   return [
-    { title: "Filter presets", detail, msg: toTab("presets", { type: "presets/filter" }) },
+    {
+      title: "Filter presets",
+      detail,
+      keys: "/",
+      msg: toTab("presets", { type: "presets/filter" }),
+    },
     ...presetRows(presetsIn(ctx.resources.presets), "").map((preset) => ({
       title: `Edit ${presetTitle(preset)}`,
       detail,
