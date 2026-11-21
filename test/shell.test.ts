@@ -475,7 +475,8 @@ describe("overlays", () => {
   it("palette lists commands under title-case groups with their shortcuts", async () => {
     let { shell, model } = start();
     model = await drive(shell, model, key("k", { ctrl: true }));
-    const items = (model.overlay?.model as { items: PaletteItem[] }).items;
+    if (model.overlay?.id !== "palette") throw new Error("no palette open");
+    const items = (model.overlay.model as { items: PaletteItem[] }).items;
     const find = (title: string) => items.find((i) => i.title === title);
     expect(find("spools thing")).toMatchObject({ detail: "Spools", keys: "z" });
     expect(find("Go to Add")).toMatchObject({ detail: "Tab" });
