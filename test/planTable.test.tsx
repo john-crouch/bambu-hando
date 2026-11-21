@@ -26,7 +26,9 @@ const LONG: FilamentProfile = {
 
 describe("PlanTable", () => {
   it("keeps a gap after a value truncated to its column", () => {
-    const { lastFrame } = render(<PlanTable profiles={[LONG]} progress={[]} activePresets={false} activeSpools={false} />);
+    const { lastFrame } = render(
+      <PlanTable profiles={[LONG]} progress={[]} activePresets={false} activeSpools={false} />,
+    );
 
     const frame = lastFrame() ?? "";
     expect(frame).toMatch(/Acme Extraordinar\S*… +Acmecorp\S*… +PETG +230-240/);
@@ -53,56 +55,157 @@ describe("the plan, before a run", () => {
   });
 
   it("says what SpoolEase gets: the custom filament row and the spool", () => {
-    const update = { state: "update" as const, listed: "Old 190-210 °C", becomes: "New 200-220 °C" };
-    expect(spoolEasePlanText(plan({ filament: { state: "new", listed: "", becomes: "" }, spool: "create" }))?.text).toBe("add + spool");
-    expect(spoolEasePlanText(plan({ filament: update, spool: "create" }))?.text).toBe("update + spool");
-    expect(spoolEasePlanText(plan({ filament: { state: "same", listed: "", becomes: "" }, spool: "create" }))?.text).toBe("spool");
-    expect(spoolEasePlanText(plan({ filament: { state: "same", listed: "", becomes: "" }, spool: "exists" }))?.text).toBe("has spool");
-    expect(spoolEasePlanText(plan({ filament: { state: "same", listed: "", becomes: "" } }))?.text).toBe("listed");
+    const update = {
+      state: "update" as const,
+      listed: "Old 190-210 °C",
+      becomes: "New 200-220 °C",
+    };
+    expect(
+      spoolEasePlanText(
+        plan({ filament: { state: "new", listed: "", becomes: "" }, spool: "create" }),
+      )?.text,
+    ).toBe("add + spool");
+    expect(spoolEasePlanText(plan({ filament: update, spool: "create" }))?.text).toBe(
+      "update + spool",
+    );
+    expect(
+      spoolEasePlanText(
+        plan({ filament: { state: "same", listed: "", becomes: "" }, spool: "create" }),
+      )?.text,
+    ).toBe("spool");
+    expect(
+      spoolEasePlanText(
+        plan({ filament: { state: "same", listed: "", becomes: "" }, spool: "exists" }),
+      )?.text,
+    ).toBe("has spool");
+    expect(
+      spoolEasePlanText(plan({ filament: { state: "same", listed: "", becomes: "" } }))?.text,
+    ).toBe("listed");
     expect(spoolEasePlanText(plan({ filament: update }))?.text).toBe("update");
     expect(spoolEasePlanText(plan({}))).toBeNull();
   });
 
   it("shows the plan in the status columns until the run reports", () => {
-    const plans = [plan({ existingPresets: 1, filament: { state: "new", listed: "", becomes: "" }, spool: "create" })];
-    const { lastFrame } = render(<PlanTable profiles={[LONG]} progress={[]} plans={plans} overwrite={false} activePresets={false} activeSpools={false} />);
+    const plans = [
+      plan({
+        existingPresets: 1,
+        filament: { state: "new", listed: "", becomes: "" },
+        spool: "create",
+      }),
+    ];
+    const { lastFrame } = render(
+      <PlanTable
+        profiles={[LONG]}
+        progress={[]}
+        plans={plans}
+        overwrite={false}
+        activePresets={false}
+        activeSpools={false}
+      />,
+    );
     expect(lastFrame()).toMatch(/= kept +add \+ spool/);
 
-    const running = render(<PlanTable profiles={[LONG]} progress={[{ preset: "skipped" }]} plans={plans} overwrite={false} activePresets={false} activeSpools />);
+    const running = render(
+      <PlanTable
+        profiles={[LONG]}
+        progress={[{ preset: "skipped" }]}
+        plans={plans}
+        overwrite={false}
+        activePresets={false}
+        activeSpools
+      />,
+    );
     expect(running.lastFrame()).toContain("– skipped");
     expect(running.lastFrame()).not.toContain("add + spool");
   });
 
   it("shows the nozzle range the run gives SpoolEase, while it runs too", () => {
     const plans = [plan({ nozzleRange: { low: 235, high: 250 } })];
-    const { lastFrame } = render(<PlanTable profiles={[LONG]} progress={[]} plans={plans} activePresets={false} activeSpools={false} />);
+    const { lastFrame } = render(
+      <PlanTable
+        profiles={[LONG]}
+        progress={[]}
+        plans={plans}
+        activePresets={false}
+        activeSpools={false}
+      />,
+    );
     expect(lastFrame()).toMatch(/PETG +235-250/);
 
-    const running = render(<PlanTable profiles={[LONG]} progress={[{ preset: "written" }]} plans={plans} activePresets={false} activeSpools />);
+    const running = render(
+      <PlanTable
+        profiles={[LONG]}
+        progress={[{ preset: "written" }]}
+        plans={plans}
+        activePresets={false}
+        activeSpools
+      />,
+    );
     expect(running.lastFrame()).toMatch(/PETG +235-250/);
   });
 
   it("says which presets the plan's edits go into", () => {
     const edits = new Map([["P1234567", new Map([["filament_flow_ratio", { every: "0.95" }]])]]);
 
-    const written = render(<PlanNotes profiles={[LONG]} plans={[plan({ presets: 2, existingPresets: 1 })]} overwrite={false} edits={edits} />);
-    expect(written.lastFrame()).toContain("✎ P1234567: 1 change goes into the 1 preset the run writes");
+    const written = render(
+      <PlanNotes
+        profiles={[LONG]}
+        plans={[plan({ presets: 2, existingPresets: 1 })]}
+        overwrite={false}
+        edits={edits}
+      />,
+    );
+    expect(written.lastFrame()).toContain(
+      "✎ P1234567: 1 change goes into the 1 preset the run writes",
+    );
 
-    const replaced = render(<PlanNotes profiles={[LONG]} plans={[plan({ presets: 2, existingPresets: 1 })]} overwrite edits={edits} />);
-    expect(replaced.lastFrame()).toContain("✎ P1234567: 1 change goes into the 2 presets the run writes");
+    const replaced = render(
+      <PlanNotes
+        profiles={[LONG]}
+        plans={[plan({ presets: 2, existingPresets: 1 })]}
+        overwrite
+        edits={edits}
+      />,
+    );
+    expect(replaced.lastFrame()).toContain(
+      "✎ P1234567: 1 change goes into the 2 presets the run writes",
+    );
 
-    const kept = render(<PlanNotes profiles={[LONG]} plans={[plan({ existingPresets: 1 })]} overwrite={false} edits={edits} />);
-    expect(kept.lastFrame()).toContain("✎ P1234567: the run keeps its presets, so its 1 change goes nowhere");
+    const kept = render(
+      <PlanNotes
+        profiles={[LONG]}
+        plans={[plan({ existingPresets: 1 })]}
+        overwrite={false}
+        edits={edits}
+      />,
+    );
+    expect(kept.lastFrame()).toContain(
+      "✎ P1234567: the run keeps its presets, so its 1 change goes nowhere",
+    );
   });
 
   it("explains updates, kept presets and existing spools under the table", () => {
     const plans = [
-      plan({ existingPresets: 1, filament: { state: "update", listed: "Acme Black 200-220 °C", becomes: "Acme Black 230-240 °C" }, spool: "exists" }),
+      plan({
+        existingPresets: 1,
+        filament: {
+          state: "update",
+          listed: "Acme Black 200-220 °C",
+          becomes: "Acme Black 230-240 °C",
+        },
+        spool: "exists",
+      }),
     ];
     const { lastFrame } = render(<PlanNotes profiles={[LONG]} plans={plans} overwrite={false} />);
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("↻ P1234567 is Acme Black 200-220 °C on SpoolEase; the run changes it to Acme Black 230-240 °C");
-    expect(frame).toContain("= kept: 1 preset is there already and stays as it is (Overwrite presets in Settings replaces it)");
-    expect(frame).toContain("has spool: the console has a spool of 1 filament already, so it gets no new one");
+    expect(frame).toContain(
+      "↻ P1234567 is Acme Black 200-220 °C on SpoolEase; the run changes it to Acme Black 230-240 °C",
+    );
+    expect(frame).toContain(
+      "= kept: 1 preset is there already and stays as it is (Overwrite presets in Settings replaces it)",
+    );
+    expect(frame).toContain(
+      "has spool: the console has a spool of 1 filament already, so it gets no new one",
+    );
   });
 });

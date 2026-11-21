@@ -5,7 +5,9 @@ import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const SYSTEM_FIXTURE = fileURLToPath(new URL("./fixtures/bambustudio/system", import.meta.url));
+export const SYSTEM_FIXTURE = fileURLToPath(
+  new URL("./fixtures/bambustudio/system", import.meta.url),
+);
 export const X1C_04 = "Bambu Lab X1 Carbon 0.4 nozzle";
 export const X1C_06 = "Bambu Lab X1 Carbon 0.6 nozzle";
 
@@ -38,8 +40,15 @@ export async function installBambuStudio(
 }
 
 /** Write the SpoolEase console settings the SpoolEase build of BambuStudio keeps in spoolease/config.json. */
-export async function installSpoolEaseConfig(home: string, console: Record<string, unknown>): Promise<void> {
+export async function installSpoolEaseConfig(
+  home: string,
+  console: Record<string, unknown>,
+): Promise<void> {
   const dir = join(bambuConfigDir(home), "spoolease");
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "config.json"), `${JSON.stringify({ console, version: 1 }, null, 4)}\n`, "utf-8");
+  await writeFile(
+    join(dir, "config.json"),
+    `${JSON.stringify({ console, version: 1 }, null, 4)}\n`,
+    "utf-8",
+  );
 }

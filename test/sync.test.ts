@@ -7,10 +7,20 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { KeyCheckError, runSync, SetupError, type SyncEvent, type SyncOptions } from "../src/sync.js";
+import {
+  KeyCheckError,
+  runSync,
+  SetupError,
+  type SyncEvent,
+  type SyncOptions,
+} from "../src/sync.js";
 import { baseFilamentDir, installBambuStudio, X1C_04 } from "./bambuStudioSetup.js";
 import { profileAt } from "./parity.js";
-import { startSpoolEaseServer, type SpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
+import {
+  type SpoolEaseServer,
+  startSpoolEaseServer,
+  TEST_SECURITY_KEY,
+} from "./spooleaseServer.js";
 
 describe("runSync", () => {
   let server: SpoolEaseServer;
@@ -36,7 +46,12 @@ describe("runSync", () => {
       presetFolder: "default",
       printers: [X1C_04],
       dryRun: false,
-      spoolease: { host: "127.0.0.1", port: server.port, securityKey: TEST_SECURITY_KEY, https: false },
+      spoolease: {
+        host: "127.0.0.1",
+        port: server.port,
+        securityKey: TEST_SECURITY_KEY,
+        https: false,
+      },
       createSpools: false,
       ...overrides,
     };
@@ -46,7 +61,8 @@ describe("runSync", () => {
     events.push(event);
   };
 
-  const describeEvents = (): string[] => events.map((e) => (e.type === "stage" ? e.stage : `${e.type}:${"index" in e ? e.index : ""}`));
+  const describeEvents = (): string[] =>
+    events.map((e) => (e.type === "stage" ? e.stage : `${e.type}:${"index" in e ? e.index : ""}`));
   const requestLines = (): string[] => server.requests.map((r) => `${r.method} ${r.path}`);
 
   it("writes presets and registers filaments without creating spools by default", async () => {
@@ -58,8 +74,20 @@ describe("runSync", () => {
     ]);
     expect(presets.map((p) => p.error)).toEqual(["", ""]);
     expect(await readdir(filamentDir)).toHaveLength(2);
-    expect(describeEvents()).toEqual(["presets", "preset:0", "preset:1", "key-check", "custom-filaments", "spool:0", "spool:1"]);
-    expect(requestLines()).toEqual(["POST /api/test-key", "GET /api/filaments-config", "POST /api/filaments-config"]);
+    expect(describeEvents()).toEqual([
+      "presets",
+      "preset:0",
+      "preset:1",
+      "key-check",
+      "custom-filaments",
+      "spool:0",
+      "spool:1",
+    ]);
+    expect(requestLines()).toEqual([
+      "POST /api/test-key",
+      "GET /api/filaments-config",
+      "POST /api/filaments-config",
+    ]);
     expect(server.spools).toEqual([]);
   });
 
@@ -70,7 +98,16 @@ describe("runSync", () => {
       ["written", "registered PABC1234; spool 1 created"],
       ["written", "registered Pb1a2a16; spool 2 created"],
     ]);
-    expect(describeEvents()).toEqual(["presets", "preset:0", "preset:1", "key-check", "custom-filaments", "spools", "spool:0", "spool:1"]);
+    expect(describeEvents()).toEqual([
+      "presets",
+      "preset:0",
+      "preset:1",
+      "key-check",
+      "custom-filaments",
+      "spools",
+      "spool:0",
+      "spool:1",
+    ]);
     expect(requestLines()).toEqual([
       "POST /api/test-key",
       "GET /api/filaments-config",
@@ -85,7 +122,11 @@ describe("runSync", () => {
   it("does not duplicate spools on re-runs or for repeated filaments in one source", async () => {
     await runSync(options({ createSpools: true }), record);
     const { results } = await runSync(
-      options({ createSpools: true, overwritePresets: true, profiles: [profileAt(0), profileAt(2), profileAt(2)] }),
+      options({
+        createSpools: true,
+        overwritePresets: true,
+        profiles: [profileAt(0), profileAt(2), profileAt(2)],
+      }),
       record,
     );
 
@@ -94,7 +135,11 @@ describe("runSync", () => {
       "registered Pd73077d; spool 3 created",
       "registered Pd73077d; spool already exists",
     ]);
-    expect(server.spools.map((s) => s.slicer_filament)).toEqual(["PABC1234", "Pb1a2a16", "Pd73077d"]);
+    expect(server.spools.map((s) => s.slicer_filament)).toEqual([
+      "PABC1234",
+      "Pb1a2a16",
+      "Pd73077d",
+    ]);
   });
 
   it("fails spool creation without creating anything when spools can't be listed", async () => {
@@ -102,7 +147,13 @@ describe("runSync", () => {
 
     const { results } = await runSync(options({ createSpools: true }), record);
 
-    expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "registered " + r.filamentId + "; listing spools failed: HTTP 500: db locked")).toBe(true);
+    expect(
+      results.every(
+        (r) =>
+          r.spooleaseStatus === "failed" &&
+          r.detail === `registered ${r.filamentId}; listing spools failed: HTTP 500: db locked`,
+      ),
+    ).toBe(true);
     expect(server.spools).toEqual([]);
   });
 
@@ -140,7 +191,10 @@ describe("runSync", () => {
   });
 
   it("reports the empty spool weight only when spools are created, 0 meaning unspecified", async () => {
-    const profiles = [{ ...profileAt(0), coreWeight: 165 }, { ...profileAt(1), coreWeight: 0 }];
+    const profiles = [
+      { ...profileAt(0), coreWeight: 165 },
+      { ...profileAt(1), coreWeight: 0 },
+    ];
 
     const planned = await runSync(options({ profiles, createSpools: true, dryRun: true }));
     const filamentsOnly = await runSync(options({ profiles, createSpools: false, dryRun: true }));
@@ -153,14 +207,18 @@ describe("runSync", () => {
     const opts = options();
     opts.spoolease = { host: "127.0.0.1", port: server.port, securityKey: "WRONG", https: false };
 
-    await expect(runSync(opts, record)).rejects.toThrow(new KeyCheckError("SpoolEase key validation failed"));
+    await expect(runSync(opts, record)).rejects.toThrow(
+      new KeyCheckError("SpoolEase key validation failed"),
+    );
   });
 
   it("throws KeyCheckError when SpoolEase is unreachable", async () => {
     await server.close();
 
     await expect(runSync(options(), record)).rejects.toThrow(KeyCheckError);
-    await expect(runSync(options(), record)).rejects.toThrow(/SpoolEase unreachable at http:\/\/127\.0\.0\.1:\d+/);
+    await expect(runSync(options(), record)).rejects.toThrow(
+      /SpoolEase unreachable at http:\/\/127\.0\.0\.1:\d+/,
+    );
   });
 
   it("fails every profile and skips spools when the CSV upload fails", async () => {
@@ -168,13 +226,21 @@ describe("runSync", () => {
 
     const { results } = await runSync(options(), record);
 
-    expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: HTTP 500: boom")).toBe(true);
+    expect(
+      results.every(
+        (r) =>
+          r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: HTTP 500: boom",
+      ),
+    ).toBe(true);
     expect(server.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       "POST /api/test-key",
       "GET /api/filaments-config",
       "POST /api/filaments-config",
     ]);
-    expect(events).toContainEqual({ type: "warning", message: "Failed to set custom filaments CSV: HTTP 500: boom" });
+    expect(events).toContainEqual({
+      type: "warning",
+      message: "Failed to set custom filaments CSV: HTTP 500: boom",
+    });
   });
 
   it("merges into custom filaments from earlier runs instead of replacing them", async () => {
@@ -194,7 +260,14 @@ describe("runSync", () => {
     await runSync(options({ profiles: [profileAt(0)], spoolease: null }), record);
     const path = join(filamentDir, `PETG Red @${X1C_04}.json`);
     const preset = JSON.parse(await readFile(path, "utf-8"));
-    await writeFile(path, JSON.stringify({ ...preset, nozzle_temperature_range_low: ["235"], nozzle_temperature_range_high: ["250"] }));
+    await writeFile(
+      path,
+      JSON.stringify({
+        ...preset,
+        nozzle_temperature_range_low: ["235"],
+        nozzle_temperature_range_high: ["250"],
+      }),
+    );
 
     await runSync(options({ profiles: [profileAt(0)] }), record);
 
@@ -207,21 +280,47 @@ describe("runSync", () => {
       ["filament_flow_ratio", { every: "0.95" }],
     ]);
 
-    await runSync(options({ profiles: [profileAt(0), profileAt(2)], presetEdits: new Map([["PABC1234", edits]]) }), record);
+    await runSync(
+      options({
+        profiles: [profileAt(0), profileAt(2)],
+        presetEdits: new Map([["PABC1234", edits]]),
+      }),
+      record,
+    );
 
-    const edited = JSON.parse(await readFile(join(filamentDir, `PETG Red @${X1C_04}.json`), "utf-8"));
-    expect(edited).toMatchObject({ nozzle_temperature_range_high: ["245"], filament_flow_ratio: ["0.95"] });
-    const other = JSON.parse(await readFile(join(filamentDir, `Mystery Spool @${X1C_04}.json`), "utf-8"));
+    const edited = JSON.parse(
+      await readFile(join(filamentDir, `PETG Red @${X1C_04}.json`), "utf-8"),
+    );
+    expect(edited).toMatchObject({
+      nozzle_temperature_range_high: ["245"],
+      filament_flow_ratio: ["0.95"],
+    });
+    const other = JSON.parse(
+      await readFile(join(filamentDir, `Mystery Spool @${X1C_04}.json`), "utf-8"),
+    );
     expect(other.filament_flow_ratio).not.toEqual(["0.95"]);
-    expect(server.customFilaments?.split("\r\n")).toEqual(["PABC1234,Polymaker PETG Red,230,245,PETG", "Pd73077d,Generic Mystery Spool,200,220,PLA"]);
+    expect(server.customFilaments?.split("\r\n")).toEqual([
+      "PABC1234,Polymaker PETG Red,230,245,PETG",
+      "Pd73077d,Generic Mystery Spool,200,220,PLA",
+    ]);
   });
 
   it("warns about an edit that doesn't fit a preset it writes", async () => {
     const edits = new Map([["filament_flow_ratio", { each: ["0.9", "0.95", "1"] }]]);
 
-    await runSync(options({ profiles: [profileAt(0)], spoolease: null, presetEdits: new Map([["PABC1234", edits]]) }), record);
+    await runSync(
+      options({
+        profiles: [profileAt(0)],
+        spoolease: null,
+        presetEdits: new Map([["PABC1234", edits]]),
+      }),
+      record,
+    );
 
-    expect(events).toContainEqual({ type: "warning", message: `PETG Red @${X1C_04}: filament_flow_ratio left as it is: it has 1 variant, not 3` });
+    expect(events).toContainEqual({
+      type: "warning",
+      message: `PETG Red @${X1C_04}: filament_flow_ratio left as it is: it has 1 variant, not 3`,
+    });
   });
 
   it("leaves the custom filaments untouched when the current list can't be read", async () => {
@@ -231,8 +330,16 @@ describe("runSync", () => {
     const { results } = await runSync(options(), record);
 
     expect(server.customFilaments).toBe("GFX01,Hand Made,190,230,PLA");
-    expect(server.requests.some((r) => r.method === "POST" && r.path === "/api/filaments-config")).toBe(false);
-    expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: reading current list failed: HTTP 500: flash busy")).toBe(true);
+    expect(
+      server.requests.some((r) => r.method === "POST" && r.path === "/api/filaments-config"),
+    ).toBe(false);
+    expect(
+      results.every(
+        (r) =>
+          r.spooleaseStatus === "failed" &&
+          r.detail === "custom filaments CSV: reading current list failed: HTTP 500: flash busy",
+      ),
+    ).toBe(true);
   });
 
   it("skips presets that already exist unless asked to overwrite them", async () => {
@@ -243,27 +350,44 @@ describe("runSync", () => {
       ["skipped", "BambuStudio preset exists (overwrite to replace it); SpoolEase skipped"],
       ["skipped", "BambuStudio preset exists (overwrite to replace it); SpoolEase skipped"],
     ]);
-    expect(events).toContainEqual(expect.objectContaining({ type: "preset", index: 0, status: "skipped" }));
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "preset", index: 0, status: "skipped" }),
+    );
 
     const replaced = await runSync(options({ spoolease: null, overwritePresets: true }), record);
     expect(replaced.results.map((r) => r.bambuStatus)).toEqual(["written", "written"]);
   });
 
   it("fails every profile and skips spools when SpoolEase refuses the custom filaments", async () => {
-    server.replies["POST /api/filaments-config"] = { status: 200, body: '{"error_text":"Invalid line 2"}' };
+    server.replies["POST /api/filaments-config"] = {
+      status: 200,
+      body: '{"error_text":"Invalid line 2"}',
+    };
 
     const { results } = await runSync(options({ createSpools: true }), record);
 
-    expect(results.every((r) => r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: Invalid line 2")).toBe(true);
+    expect(
+      results.every(
+        (r) =>
+          r.spooleaseStatus === "failed" && r.detail === "custom filaments CSV: Invalid line 2",
+      ),
+    ).toBe(true);
     expect(server.requests.some((r) => r.path === "/api/spools/add-edit")).toBe(false);
   });
 
   it("fails a spool SpoolEase couldn't store even though it answered HTTP 200", async () => {
-    server.replies["/api/spools/add-edit"] = { status: 200, body: "Failed to add spool : storage full", plain: true };
+    server.replies["/api/spools/add-edit"] = {
+      status: 200,
+      body: "Failed to add spool : storage full",
+      plain: true,
+    };
 
     const { results } = await runSync(options({ createSpools: true }), record);
 
-    expect(results[0]).toMatchObject({ spooleaseStatus: "failed", detail: "registered PABC1234; spool rejected: Failed to add spool : storage full" });
+    expect(results[0]).toMatchObject({
+      spooleaseStatus: "failed",
+      detail: "registered PABC1234; spool rejected: Failed to add spool : storage full",
+    });
   });
 
   it("fails only the profile whose spool request is rejected", async () => {
@@ -271,7 +395,10 @@ describe("runSync", () => {
 
     const { results } = await runSync(options({ createSpools: true }), record);
 
-    expect(results[0]).toMatchObject({ spooleaseStatus: "failed", detail: "registered PABC1234; spool rejected: HTTP 500: nope" });
+    expect(results[0]).toMatchObject({
+      spooleaseStatus: "failed",
+      detail: "registered PABC1234; spool rejected: HTTP 500: nope",
+    });
   });
 
   it("reports preset write failures alongside SpoolEase results", async () => {
@@ -285,8 +412,12 @@ describe("runSync", () => {
   });
 
   it("refuses unknown printers before writing or sending anything", async () => {
-    await expect(runSync(options({ printers: ["Bambu Lab X1C 0.4 nozzle"] }), record)).rejects.toThrow(
-      new SetupError(`unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"; known printers: ${X1C_04}, Bambu Lab X1 Carbon 0.6 nozzle`),
+    await expect(
+      runSync(options({ printers: ["Bambu Lab X1C 0.4 nozzle"] }), record),
+    ).rejects.toThrow(
+      new SetupError(
+        `unknown BambuStudio printer "Bambu Lab X1C 0.4 nozzle"; known printers: ${X1C_04}, Bambu Lab X1 Carbon 0.6 nozzle`,
+      ),
     );
     expect(events).toEqual([]);
     expect(server.requests).toEqual([]);

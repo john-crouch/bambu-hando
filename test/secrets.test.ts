@@ -3,7 +3,17 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { InvalidSecretError, keyringName, loadSecret, removeSecret, SECRETS, secretByName, storedSecret, storeSecret, validateSecret } from "../src/secrets.js";
+import {
+  InvalidSecretError,
+  keyringName,
+  loadSecret,
+  removeSecret,
+  SECRETS,
+  secretByName,
+  storedSecret,
+  storeSecret,
+  validateSecret,
+} from "../src/secrets.js";
 import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
 
 const TDFP = SECRETS["3dfp"];
@@ -31,7 +41,9 @@ describe("validateSecret with a key's prefix", () => {
   });
 
   it("rejects something else pasted by mistake, without echoing it", () => {
-    expect(() => validateSecret("sk_live_abc123", TDFP)).toThrow("3DFilamentProfiles API keys start with 3dfp_: that doesn't look like one");
+    expect(() => validateSecret("sk_live_abc123", TDFP)).toThrow(
+      "3DFilamentProfiles API keys start with 3dfp_: that doesn't look like one",
+    );
   });
 });
 
@@ -40,7 +52,9 @@ describe("loadSecret from the environment", () => {
     for (const value of ["3dfp_LEAK\nME", "sk_live_LEAKME"]) {
       const err: unknown = await loadSecret(TDFP, { [TDFP.env]: value }).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(InvalidSecretError);
-      expect((err as Error).message).toMatch(/^FILAMENTPROFILES_API_KEY doesn't hold a usable 3DFilamentProfiles API key: /);
+      expect((err as Error).message).toMatch(
+        /^FILAMENTPROFILES_API_KEY doesn't hold a usable 3DFilamentProfiles API key: /,
+      );
       expect((err as Error).message).not.toContain("LEAK");
     }
   });
@@ -103,19 +117,27 @@ describe.skipIf(!privateKeyringSupported)("secrets in the system keyring", () =>
 
   it("lets the environment variable override the keyring", async () => {
     await storeSecret(TDFP, "3dfp_from_keyring");
-    expect(await loadSecret(TDFP, { [TDFP.env]: "3dfp_from_env" })).toEqual({ value: "3dfp_from_env", from: "env" });
+    expect(await loadSecret(TDFP, { [TDFP.env]: "3dfp_from_env" })).toEqual({
+      value: "3dfp_from_env",
+      from: "env",
+    });
   });
 
   it("ignores an empty environment variable", async () => {
     await storeSecret(TDFP, "3dfp_from_keyring");
-    expect(await loadSecret(TDFP, { [TDFP.env]: "  " })).toEqual({ value: "3dfp_from_keyring", from: "keyring" });
+    expect(await loadSecret(TDFP, { [TDFP.env]: "  " })).toEqual({
+      value: "3dfp_from_keyring",
+      from: "keyring",
+    });
   });
 
   it("refuses a mangled key in the keyring, says how to replace it, and never echoes it", async () => {
     await storeSecret(TDFP, "3dfp_LEAK\nME");
     const err: unknown = await loadSecret(TDFP, {}).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(InvalidSecretError);
-    expect((err as Error).message).toMatch(/^the 3DFilamentProfiles API key stored in the system keyring \(Secret Service\) isn't usable: .*bambu-hando key set 3dfp/);
+    expect((err as Error).message).toMatch(
+      /^the 3DFilamentProfiles API key stored in the system keyring \(Secret Service\) isn't usable: .*bambu-hando key set 3dfp/,
+    );
     expect((err as Error).message).not.toContain("LEAK");
   });
 });

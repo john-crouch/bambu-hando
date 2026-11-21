@@ -32,7 +32,8 @@ export function linksPath(): string {
   return join(configDir(), "3dfp-links.json");
 }
 
-const isGrams = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+const isGrams = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
 
 function parseLink(raw: unknown): SpoolLink | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -42,7 +43,10 @@ function parseLink(raw: unknown): SpoolLink | null {
   return {
     spoolease: link.spoolease,
     tdfp: link.tdfp,
-    agreed: agreed && isGrams(agreed.spoolease) && isGrams(agreed.tdfp) ? { spoolease: agreed.spoolease, tdfp: agreed.tdfp } : null,
+    agreed:
+      agreed && isGrams(agreed.spoolease) && isGrams(agreed.tdfp)
+        ? { spoolease: agreed.spoolease, tdfp: agreed.tdfp }
+        : null,
     tag: typeof link.tag === "string" && link.tag ? link.tag : null,
     linkedAt: typeof link.linkedAt === "string" ? link.linkedAt : "",
   };
@@ -65,7 +69,9 @@ async function readBooks(path: string): Promise<LinkBook[] | null> {
       .map((book) => ({
         account: String(book.account),
         console: String(book.console),
-        links: (Array.isArray(book.links) ? book.links : []).map(parseLink).filter((link): link is SpoolLink => link !== null),
+        links: (Array.isArray(book.links) ? book.links : [])
+          .map(parseLink)
+          .filter((link): link is SpoolLink => link !== null),
       }));
   } catch {
     return null;
@@ -73,24 +79,42 @@ async function readBooks(path: string): Promise<LinkBook[] | null> {
 }
 
 /** The links of one 3DFP account and SpoolEase console; a damaged file reads as none, with a warning. */
-export async function loadLinks(path: string, account: string, console: string): Promise<{ links: SpoolLink[]; warning: string | null }> {
+export async function loadLinks(
+  path: string,
+  account: string,
+  console: string,
+): Promise<{ links: SpoolLink[]; warning: string | null }> {
   const books = await readBooks(path);
-  if (books === null) return { links: [], warning: `the spool link file ${tildePath(path)} can't be read: starting with no links; it will be set aside, not overwritten` };
-  return { links: books.find((book) => book.account === account && book.console === console)?.links ?? [], warning: null };
+  if (books === null)
+    return {
+      links: [],
+      warning: `the spool link file ${tildePath(path)} can't be read: starting with no links; it will be set aside, not overwritten`,
+    };
+  return {
+    links: books.find((book) => book.account === account && book.console === console)?.links ?? [],
+    warning: null,
+  };
 }
 
 /**
  * Replaces one account and console's links, keeping every other book in the file.
  * A file that can't be read is renamed aside first, since it may hold other books; returns that copy's path, else null.
  */
-export async function saveLinks(path: string, account: string, console: string, links: SpoolLink[]): Promise<string | null> {
+export async function saveLinks(
+  path: string,
+  account: string,
+  console: string,
+  links: SpoolLink[],
+): Promise<string | null> {
   const read = await readBooks(path);
   let setAside: string | null = null;
   if (read === null) {
     setAside = `${path}.damaged-${new Date().toISOString().replaceAll(":", "-")}`;
     await rename(path, setAside);
   }
-  const others = (read ?? []).filter((book) => book.account !== account || book.console !== console);
+  const others = (read ?? []).filter(
+    (book) => book.account !== account || book.console !== console,
+  );
   const books = [...others, { account, console, links }];
   await writeAtomic(path, `${JSON.stringify({ version: 1, books }, null, 2)}\n`, { mode: 0o600 });
   return setAside;

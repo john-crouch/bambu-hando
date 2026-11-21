@@ -32,7 +32,8 @@ export function derivedFilamentId(name: string): string {
 function integer(value: unknown, fallback: number, field: string, idx: number): number {
   if (value === undefined || value === null) return fallback;
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && /^\s*[+-]?\d+\s*$/.test(value)) return Number.parseInt(value, 10);
+  if (typeof value === "string" && /^\s*[+-]?\d+\s*$/.test(value))
+    return Number.parseInt(value, 10);
   throw new Error(`Profile entry at index ${idx} has invalid ${field}: ${JSON.stringify(value)}`);
 }
 

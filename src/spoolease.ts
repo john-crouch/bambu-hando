@@ -1,7 +1,13 @@
 // ABOUTME: SpoolEase encrypted API client for spool and custom filament updates.
 // ABOUTME: Uses documented endpoint behavior from SpoolEase docs and source references.
 
-import { DEFAULT_ITERATIONS, DEFAULT_SALT, decryptText, deriveKey, encryptText } from "./encryption.js";
+import {
+  DEFAULT_ITERATIONS,
+  DEFAULT_SALT,
+  decryptText,
+  deriveKey,
+  encryptText,
+} from "./encryption.js";
 import type { FilamentProfile } from "./models.js";
 
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -158,10 +164,17 @@ export class SpoolEaseClient {
 
   constructor(conn: SpoolEaseConnection) {
     this.baseUrl = `${conn.https ? "https" : "http"}://${conn.host}:${conn.port}`;
-    this.key = deriveKey(conn.securityKey, conn.salt ?? DEFAULT_SALT, conn.iterations ?? DEFAULT_ITERATIONS);
+    this.key = deriveKey(
+      conn.securityKey,
+      conn.salt ?? DEFAULT_SALT,
+      conn.iterations ?? DEFAULT_ITERATIONS,
+    );
   }
 
-  private postEncrypted(path: string, payload: unknown): Promise<SpoolEaseResponse & { decrypted: boolean }> {
+  private postEncrypted(
+    path: string,
+    payload: unknown,
+  ): Promise<SpoolEaseResponse & { decrypted: boolean }> {
     return this.request(path, {
       method: "POST",
       headers: { "Content-Type": "application/text" },
@@ -169,8 +182,14 @@ export class SpoolEaseClient {
     });
   }
 
-  private async request(path: string, init: RequestInit = {}): Promise<SpoolEaseResponse & { decrypted: boolean }> {
-    const resp = await fetch(`${this.baseUrl}${path}`, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  private async request(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<SpoolEaseResponse & { decrypted: boolean }> {
+    const resp = await fetch(`${this.baseUrl}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
     const body = await resp.text();
     if (resp.status >= 400) return { status: resp.status, body, decrypted: false };
     try {
@@ -203,7 +222,8 @@ export class SpoolEaseClient {
     } catch {
       return { ok: false, error: `unexpected reply: ${body}` };
     }
-    if (typeof reply.error_text === "string" && reply.error_text) return { ok: false, error: reply.error_text };
+    if (typeof reply.error_text === "string" && reply.error_text)
+      return { ok: false, error: reply.error_text };
     return { ok: true, id: typeof reply.id === "string" ? reply.id : "" };
   }
 
@@ -228,7 +248,9 @@ export class SpoolEaseClient {
 
   /** The stored custom-filaments CSV ("" when unset); throws when it can't be read. */
   async getCustomFilamentsCsv(): Promise<string> {
-    const parsed: { custom_filaments?: unknown } = JSON.parse(await this.getDecrypted("/api/filaments-config"));
+    const parsed: { custom_filaments?: unknown } = JSON.parse(
+      await this.getDecrypted("/api/filaments-config"),
+    );
     return typeof parsed.custom_filaments === "string" ? parsed.custom_filaments : "";
   }
 
@@ -263,7 +285,11 @@ export class SpoolEaseClient {
     for (const line of (await this.getCustomFilamentsCsv()).split(/\r?\n/)) {
       const [code, name, low, high] = line.split(",");
       if (!code || name === undefined) continue;
-      filaments.set(code, { name, nozzleTempMin: optionalInt(low), nozzleTempMax: optionalInt(high) });
+      filaments.set(code, {
+        name,
+        nozzleTempMin: optionalInt(low),
+        nozzleTempMax: optionalInt(high),
+      });
     }
     return filaments;
   }
@@ -299,13 +325,18 @@ function csvSafe(value: string): string {
 
 // SpoolEase shows only this name, so it carries the brand; names from SpoolmanDB already start with it.
 function displayName(profile: FilamentProfile): string {
-  return profile.name.toLowerCase().startsWith(profile.brand.toLowerCase()) ? profile.name : `${profile.brand} ${profile.name}`;
+  return profile.name.toLowerCase().startsWith(profile.brand.toLowerCase())
+    ? profile.name
+    : `${profile.brand} ${profile.name}`;
 }
 
 /** Generate SpoolEase custom-filaments CSV lines: code,name,nozzle_temp_low,nozzle_temp_high,material */
 export function buildCustomFilamentsCsv(profiles: FilamentProfile[]): string {
   return profiles
-    .map((p) => `${p.filamentId},${csvSafe(displayName(p))},${p.nozzleTempMin},${p.nozzleTempMax},${csvSafe(p.material)}`)
+    .map(
+      (p) =>
+        `${p.filamentId},${csvSafe(displayName(p))},${p.nozzleTempMin},${p.nozzleTempMax},${csvSafe(p.material)}`,
+    )
     .join("\r\n");
 }
 
@@ -314,7 +345,12 @@ function csvCode(line: string): string {
 }
 
 /** The CSV with the nozzle temperature range of the row for `code` changed, every other field and row kept; null when no row has the code. */
-export function withNozzleRange(csv: string, code: string, low: number, high: number): string | null {
+export function withNozzleRange(
+  csv: string,
+  code: string,
+  low: number,
+  high: number,
+): string | null {
   let found = false;
   const lines = csv.split(/\r?\n/).map((line) => {
     if (!line.trim() || csvCode(line) !== code) return line;

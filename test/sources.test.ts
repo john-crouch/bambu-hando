@@ -1,8 +1,8 @@
 // ABOUTME: Tests profile source ingestion and normalization from files and URLs.
 // ABOUTME: Ensures imported data maps to the same normalized profiles as the Python original.
 
-import { createServer, type Server } from "node:http";
 import { mkdtemp, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -102,6 +102,8 @@ describe("loadProfiles", () => {
 
   it("rejects non-integer temperatures", async () => {
     const path = await writeSource([{ name: "Hot", nozzle_temp_max: "hot" }]);
-    await expect(loadProfiles(path)).rejects.toThrow("Profile entry at index 0 has invalid nozzle_temp_max");
+    await expect(loadProfiles(path)).rejects.toThrow(
+      "Profile entry at index 0 has invalid nozzle_temp_max",
+    );
   });
 });

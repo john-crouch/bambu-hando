@@ -1,0 +1,5 @@
+# ABOUTME: Commits git blame should skip: whole-codebase mechanical reformatting.
+# ABOUTME: Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: format the codebase with Biome and sort imports
+641e2627955e75460272ea4a1e9efd3c7b76542d

@@ -2,10 +2,9 @@
 // ABOUTME: Rendering only; App drives the keys and the SpoolEase writes.
 
 import { Box, Text } from "ink";
-
+import type { CopyableFilament } from "../spoolCopies.js";
 import type { SpoolEaseWrite } from "../spoolease.js";
 import { Busy } from "./Busy.js";
-import type { CopyableFilament } from "../spoolCopies.js";
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -42,23 +41,32 @@ export function SpoolCopies({ filament, count, target, results, running, outcome
         Add {plural(count, "spool")} of {filament.name}
       </Text>
       <Text>
-        SpoolEase: {target} · copies of spool #{spool.id} ({plural(filament.count, "spool")} of it now)
+        SpoolEase: {target} · copies of spool #{spool.id} ({plural(filament.count, "spool")} of it
+        now)
       </Text>
       <Box marginY={1}>
         {color ? <Text backgroundColor={`#${color}`}>{"  "}</Text> : null}
         <Text>
           {color ? " " : ""}
-          {[spool.brand, spool.material, spool.colorName].filter(Boolean).join(" · ")} · {weightSummary(spool.labelWeight, spool.coreWeight)} ·{" "}
-          {filament.code}
+          {[spool.brand, spool.material, spool.colorName].filter(Boolean).join(" · ")} ·{" "}
+          {weightSummary(spool.labelWeight, spool.coreWeight)} · {filament.code}
         </Text>
       </Box>
       {(results ?? []).map((result, index) =>
         result.ok ? (
-          <Text key={index} color="green">
+          <Text
+            // biome-ignore lint/suspicious/noArrayIndexKey: SpoolEase can reply without an id (write returns ""), so the copy number is the row's identity; results only grow, in order.
+            key={`added-${index}`}
+            color="green"
+          >
             ✓ spool #{result.id} added
           </Text>
         ) : (
-          <Text key={index} color="red">
+          <Text
+            // biome-ignore lint/suspicious/noArrayIndexKey: a failed copy has no spool ID; its copy number (index + 1, shown in the row) is its identity, and results only grow, in order.
+            key={`failed-${index}`}
+            color="red"
+          >
             ✗ spool {index + 1} of {count}: {result.error}
           </Text>
         ),
@@ -74,9 +82,15 @@ export function SpoolCopies({ filament, count, target, results, running, outcome
           {outcome.ok ? "✓" : "✗"} {line}
         </Text>
       ))}
-      {results === null ? <Text dimColor>[a] add · [b] back to how many · [q] quit · ? help</Text> : null}
+      {results === null ? (
+        <Text dimColor>[a] add · [b] back to how many · [q] quit · ? help</Text>
+      ) : null}
       {done ? (
-        <Text dimColor>{created.length > 0 ? `[l] labels for ${plural(created.length, "new spool")} · [m] menu · [q] quit · ? help` : "[m] menu · [q] quit · ? help"}</Text>
+        <Text dimColor>
+          {created.length > 0
+            ? `[l] labels for ${plural(created.length, "new spool")} · [m] menu · [q] quit · ? help`
+            : "[m] menu · [q] quit · ? help"}
+        </Text>
       ) : null}
     </Box>
   );

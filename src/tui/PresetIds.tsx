@@ -20,13 +20,20 @@ interface Props {
 }
 
 export function PresetIds({ fixes, results, running }: Props) {
-  const fileWidth = Math.min(64, 2 + Math.max(...fixes.map((fix) => basename(fix.path).length))) + 1;
+  const fileWidth =
+    Math.min(64, 2 + Math.max(...fixes.map((fix) => basename(fix.path).length))) + 1;
   const failed = results?.filter((r) => !r.ok) ?? [];
   return (
     <Box flexDirection="column">
       <Text bold>Give {plural(fixes.length, "BambuStudio preset")} a filament ID</Text>
-      <Text dimColor>Each gets the ID BambuStudio's Create filament gives a filament of that name, so spools can find it.</Text>
-      <Text dimColor>Logged in to Bambu, BambuStudio uploads the change on its next sync; restart it to load the change.</Text>
+      <Text dimColor>
+        Each gets the ID BambuStudio's Create filament gives a filament of that name, so spools can
+        find it.
+      </Text>
+      <Text dimColor>
+        Logged in to Bambu, BambuStudio uploads the change on its next sync; restart it to load the
+        change.
+      </Text>
       <Box flexDirection="column" marginY={1}>
         {fixes.map((fix, index) => {
           const result = results?.[index];
@@ -50,7 +57,8 @@ export function PresetIds({ fixes, results, running }: Props) {
       {running ? <Busy color="cyan" message="Writing presets…" /> : null}
       {results && !running ? (
         <Text bold color={failed.length ? "red" : "green"}>
-          Done: {plural(results.length - failed.length, "preset")} given an ID, {failed.length} failed
+          Done: {plural(results.length - failed.length, "preset")} given an ID, {failed.length}{" "}
+          failed
         </Text>
       ) : null}
       {results === null ? (

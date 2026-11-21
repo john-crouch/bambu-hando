@@ -9,10 +9,18 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { catalogProfiles, filterProfiles, loadSpoolmanDb } from "../src/spoolmanDb.js";
-import { SPOOLMANDB_FIXTURE_DIR, startSpoolmanDbServer, type SpoolmanDbServer } from "./spoolmanDbServer.js";
+import {
+  SPOOLMANDB_FIXTURE_DIR,
+  type SpoolmanDbServer,
+  startSpoolmanDbServer,
+} from "./spoolmanDbServer.js";
 
-const filaments: unknown = JSON.parse(readFileSync(new URL("filaments.json", SPOOLMANDB_FIXTURE_DIR), "utf-8"));
-const materials: unknown = JSON.parse(readFileSync(new URL("materials.json", SPOOLMANDB_FIXTURE_DIR), "utf-8"));
+const filaments: unknown = JSON.parse(
+  readFileSync(new URL("filaments.json", SPOOLMANDB_FIXTURE_DIR), "utf-8"),
+);
+const materials: unknown = JSON.parse(
+  readFileSync(new URL("materials.json", SPOOLMANDB_FIXTURE_DIR), "utf-8"),
+);
 
 // filamentId values computed independently: "P" + first 7 hex of `printf '%s' "<name>" | md5sum`.
 const EXPECTED_175 = [
@@ -53,25 +61,38 @@ describe("catalogProfiles", () => {
   });
 
   it("names products by manufacturer and material, keeps one per name, and skips Bambu Lab", () => {
-    expect(catalogProfiles(filaments, materials, 1.75).map((p) => [p.filamentId, p.name])).toEqual(EXPECTED_175);
+    expect(catalogProfiles(filaments, materials, 1.75).map((p) => [p.filamentId, p.name])).toEqual(
+      EXPECTED_175,
+    );
   });
 
   it("only includes the requested diameter", () => {
     const profiles = catalogProfiles(filaments, materials, 2.85);
-    expect(profiles.map((p) => [p.name, p.diameter])).toEqual([["Polymaker PolyLite™ PETG Black", 2.85]]);
+    expect(profiles.map((p) => [p.name, p.diameter])).toEqual([
+      ["Polymaker PolyLite™ PETG Black", 2.85],
+    ]);
   });
 
   it("uses a single extruder temperature as both ends of the range", () => {
-    expect(byName("RatRig ABS Punkfil Brute Black")).toMatchObject({ nozzleTempMin: 245, nozzleTempMax: 245 });
+    expect(byName("RatRig ABS Punkfil Brute Black")).toMatchObject({
+      nozzleTempMin: 245,
+      nozzleTempMax: 245,
+    });
   });
 
   it("falls back to the material's temperature, then to 190-240", () => {
-    expect(byName("3D Printing Canada PLA Budget Latte")).toMatchObject({ nozzleTempMin: 210, nozzleTempMax: 210 });
+    expect(byName("3D Printing Canada PLA Budget Latte")).toMatchObject({
+      nozzleTempMin: 210,
+      nozzleTempMax: 210,
+    });
     expect(byName("3DO PETG Black")).toMatchObject({ nozzleTempMin: 190, nozzleTempMax: 240 });
   });
 
   it("rounds spool weights to whole grams and sends 0 when the spool weight is unknown", () => {
-    expect(byName("RatRig ABS Punkfil Brute Black")).toMatchObject({ labelWeight: 1000, coreWeight: 219 });
+    expect(byName("RatRig ABS Punkfil Brute Black")).toMatchObject({
+      labelWeight: 1000,
+      coreWeight: 219,
+    });
     expect(byName("3DO PETG Black")).toMatchObject({ labelWeight: 1000, coreWeight: 0 });
   });
 
@@ -81,12 +102,19 @@ describe("catalogProfiles", () => {
   });
 
   it("skips malformed entries", () => {
-    const entries = [null, "PLA", { manufacturer: "Acme", material: "PLA", diameter: 1.75 }, { manufacturer: "Acme", name: "Red", material: "PLA", diameter: 1.75 }];
+    const entries = [
+      null,
+      "PLA",
+      { manufacturer: "Acme", material: "PLA", diameter: 1.75 },
+      { manufacturer: "Acme", name: "Red", material: "PLA", diameter: 1.75 },
+    ];
     expect(catalogProfiles(entries, materials, 1.75).map((p) => p.name)).toEqual(["Acme PLA Red"]);
   });
 
   it("rejects a catalog that isn't a list", () => {
-    expect(() => catalogProfiles({ filaments: [] }, materials, 1.75)).toThrow("SpoolmanDB filaments.json is not a list");
+    expect(() => catalogProfiles({ filaments: [] }, materials, 1.75)).toThrow(
+      "SpoolmanDB filaments.json is not a list",
+    );
   });
 });
 
@@ -96,7 +124,9 @@ describe("filterProfiles", () => {
     filterProfiles(all, { brand: "", material: "", match: "", ...filters }).map((p) => p.name);
 
   it("matches brand and material case-insensitively and exactly", () => {
-    expect(names({ brand: "3dhojor", material: "pla" })).toEqual(["3DHoJor PLA Crystal Rainbow Flame"]);
+    expect(names({ brand: "3dhojor", material: "pla" })).toEqual([
+      "3DHoJor PLA Crystal Rainbow Flame",
+    ]);
   });
 
   it("requires every --match word somewhere in the name", () => {
@@ -129,8 +159,12 @@ describe("loadSpoolmanDb", () => {
 
     expect(profiles.map((p) => p.filamentId)).toEqual(EXPECTED_175.map(([id]) => id));
     expect(warnings).toEqual([]);
-    expect(await readFile(join(cacheDir, "filaments.json"), "utf-8")).toBe(server.files.get("/filaments.json"));
-    expect(await readFile(join(cacheDir, "materials.json"), "utf-8")).toBe(server.files.get("/materials.json"));
+    expect(await readFile(join(cacheDir, "filaments.json"), "utf-8")).toBe(
+      server.files.get("/filaments.json"),
+    );
+    expect(await readFile(join(cacheDir, "materials.json"), "utf-8")).toBe(
+      server.files.get("/materials.json"),
+    );
   });
 
   it("revalidates with the cached ETag and reuses the cache on 304", async () => {
@@ -141,13 +175,19 @@ describe("loadSpoolmanDb", () => {
 
     expect(profiles).toHaveLength(EXPECTED_175.length);
     expect(warnings).toEqual([]);
-    expect(server.requests.map((r) => r.path).sort()).toEqual(["/filaments.json", "/materials.json"]);
+    expect(server.requests.map((r) => r.path).sort()).toEqual([
+      "/filaments.json",
+      "/materials.json",
+    ]);
     expect(server.requests.every((r) => typeof r.headers["if-none-match"] === "string")).toBe(true);
   });
 
   it("replaces the cache when the catalog changed", async () => {
     await load();
-    server.files.set("/filaments.json", JSON.stringify([{ manufacturer: "Acme", name: "Red", material: "PLA", diameter: 1.75 }]));
+    server.files.set(
+      "/filaments.json",
+      JSON.stringify([{ manufacturer: "Acme", name: "Red", material: "PLA", diameter: 1.75 }]),
+    );
 
     const { profiles } = await load();
 
@@ -162,7 +202,9 @@ describe("loadSpoolmanDb", () => {
 
     expect(profiles).toHaveLength(EXPECTED_175.length);
     expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toMatch(/^SpoolmanDB filaments\.json could not be refreshed \(HTTP 503\); using the copy cached on \d{4}-\d{2}-\d{2}$/);
+    expect(warnings[0]).toMatch(
+      /^SpoolmanDB filaments\.json could not be refreshed \(HTTP 503\); using the copy cached on \d{4}-\d{2}-\d{2}$/,
+    );
   });
 
   it("falls back to the cache when SpoolmanDB is unreachable", async () => {
@@ -177,6 +219,8 @@ describe("loadSpoolmanDb", () => {
 
   it("fails without a cache when SpoolmanDB fails", async () => {
     server.failWith = 503;
-    await expect(load()).rejects.toThrow(`Failed to download ${server.url}/filaments.json: HTTP 503`);
+    await expect(load()).rejects.toThrow(
+      `Failed to download ${server.url}/filaments.json: HTTP 503`,
+    );
   });
 });

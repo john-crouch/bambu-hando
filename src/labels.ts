@@ -4,7 +4,11 @@
 import type { CustomFilament, SpoolRecord } from "./spoolease.js";
 
 export const LABEL_FIELDS = [
-  { key: "qr", description: "QR code with SpoolEase's link for the spool (ID, brand, material, color, weights)" },
+  {
+    key: "qr",
+    description:
+      "QR code with SpoolEase's link for the spool (ID, brand, material, color, weights)",
+  },
   { key: "brand", description: "Brand" },
   { key: "material", description: "Material and subtype, e.g. PETG HF" },
   { key: "name", description: "Filament name from SpoolEase's custom filaments" },
@@ -22,7 +26,15 @@ export const LABEL_FIELDS = [
 
 export type LabelField = (typeof LABEL_FIELDS)[number]["key"];
 
-export const DEFAULT_LABEL_FIELDS: LabelField[] = ["qr", "brand", "material", "color", "temps", "weight", "id"];
+export const DEFAULT_LABEL_FIELDS: LabelField[] = [
+  "qr",
+  "brand",
+  "material",
+  "color",
+  "temps",
+  "weight",
+  "id",
+];
 
 /** The common 2.25x1.25 in thermal label, in whole millimeters as thermal label drivers take sizes. */
 export const DEFAULT_LABEL_SIZE = "57x32mm";
@@ -57,9 +69,14 @@ export function parseLabelSize(text: string): LabelSize {
   const m = /^\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(in|mm)?\s*$/i.exec(text);
   const width = Number(m?.[1]);
   const height = Number(m?.[2]);
-  if (!m || !(width > 0) || !(height > 0)) throw new Error(`label size must look like 2.5x1.5in or 40x30mm, got "${text}"`);
+  if (!m || !(width > 0) || !(height > 0))
+    throw new Error(`label size must look like 2.5x1.5in or 40x30mm, got "${text}"`);
   const unit = (m[3]?.toLowerCase() ?? "in") as keyof typeof POINTS_PER_UNIT;
-  return { width: width * POINTS_PER_UNIT[unit], height: height * POINTS_PER_UNIT[unit], media: `Custom.${m[1]}x${m[2]}${unit}` };
+  return {
+    width: width * POINTS_PER_UNIT[unit],
+    height: height * POINTS_PER_UNIT[unit],
+    media: `Custom.${m[1]}x${m[2]}${unit}`,
+  };
 }
 
 /** Comma-separated field keys, returned in label order. */
@@ -71,7 +88,8 @@ export function parseLabelFields(text: string): LabelField[] {
     .filter(Boolean);
   if (wanted.length === 0) throw new Error("no label fields given");
   for (const key of wanted) {
-    if (!keys.includes(key)) throw new Error(`unknown label field "${key}"; fields: ${keys.join(", ")}`);
+    if (!keys.includes(key))
+      throw new Error(`unknown label field "${key}"; fields: ${keys.join(", ")}`);
   }
   return LABEL_FIELDS.map((f) => f.key).filter((key) => wanted.includes(key));
 }
@@ -81,7 +99,11 @@ const TAG_URL_PREFIX_S1 = "https://tag.spoolease.io/S1/";
 // SpoolEase percent-encodes every byte but ASCII letters, digits and ";" (spool_record.rs ENCODE_SET).
 function encodeTagValue(value: string): string {
   return [...Buffer.from(value, "utf-8")]
-    .map((b) => (/[A-Za-z0-9;]/.test(String.fromCharCode(b)) ? String.fromCharCode(b) : `%${b.toString(16).toUpperCase().padStart(2, "0")}`))
+    .map((b) =>
+      /[A-Za-z0-9;]/.test(String.fromCharCode(b))
+        ? String.fromCharCode(b)
+        : `%${b.toString(16).toUpperCase().padStart(2, "0")}`,
+    )
     .join("");
 }
 
@@ -124,7 +146,11 @@ function addedDate(seconds: number | null): string {
 }
 
 /** The label for one spool: the chosen fields that have a value, in label order. */
-export function labelContent(spool: SpoolRecord, filaments: Map<string, CustomFilament>, fields: LabelField[]): LabelContent {
+export function labelContent(
+  spool: SpoolRecord,
+  filaments: Map<string, CustomFilament>,
+  fields: LabelField[],
+): LabelContent {
   const filament = filaments.get(spool.slicerFilament);
   const values: Record<Exclude<LabelField, "qr">, [string, LineStyle]> = {
     brand: [spool.brand, "title"],
@@ -164,12 +190,22 @@ export interface SpoolFilters {
   match: string;
 }
 
-export function filterSpools(spools: SpoolRecord[], filaments: Map<string, CustomFilament>, filters: SpoolFilters): SpoolRecord[] {
+export function filterSpools(
+  spools: SpoolRecord[],
+  filaments: Map<string, CustomFilament>,
+  filters: SpoolFilters,
+): SpoolRecord[] {
   let chosen = spools;
   if (filters.ids.length > 0) {
-    const missing = filters.ids.filter((id) => !spools.some((s) => s.id === id));
+    const found: SpoolRecord[] = [];
+    const missing: string[] = [];
+    for (const id of filters.ids) {
+      const spool = spools.find((s) => s.id === id);
+      if (spool) found.push(spool);
+      else missing.push(id);
+    }
     if (missing.length > 0) throw new Error(`SpoolEase has no spool with ID ${missing.join(", ")}`);
-    chosen = filters.ids.map((id) => spools.find((s) => s.id === id)!);
+    chosen = found;
   }
   const brand = filters.brand.toLowerCase();
   const material = filters.material.toLowerCase();
@@ -177,7 +213,8 @@ export function filterSpools(spools: SpoolRecord[], filaments: Map<string, Custo
   return chosen.filter((spool) => {
     if (brand && spool.brand.toLowerCase() !== brand) return false;
     if (material && spool.material.toLowerCase() !== material) return false;
-    const haystack = `${describeSpool(spool)} ${filaments.get(spool.slicerFilament)?.name ?? ""}`.toLowerCase();
+    const haystack =
+      `${describeSpool(spool)} ${filaments.get(spool.slicerFilament)?.name ?? ""}`.toLowerCase();
     return words.every((word) => haystack.includes(word));
   });
 }

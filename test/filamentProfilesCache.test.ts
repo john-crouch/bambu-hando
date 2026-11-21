@@ -10,7 +10,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { QuotaLedger } from "../src/apiQuota.js";
 import { FilamentProfilesClient } from "../src/filamentProfiles.js";
 import { accountId, forgetSpools, mySpools } from "../src/filamentProfilesCache.js";
-import { type FilamentProfilesServer, serverSpool, startFilamentProfilesServer, TEST_API_KEY } from "./filamentProfilesServer.js";
+import {
+  type FilamentProfilesServer,
+  serverSpool,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
 
 const T0 = new Date("2026-11-15T13:00:00Z");
 const minutes = (n: number) => new Date(T0.getTime() + n * 60_000);
@@ -34,7 +39,11 @@ describe("mySpools", () => {
     server.spools = [serverSpool()];
     const dir = await mkdtemp(join(tmpdir(), "bh-3dfp-cache-"));
     path = join(dir, "3dfp", "spools.json");
-    client = new FilamentProfilesClient({ key: TEST_API_KEY, base: server.url, ledger: new QuotaLedger(join(dir, "quota.json"), account) });
+    client = new FilamentProfilesClient({
+      key: TEST_API_KEY,
+      base: server.url,
+      ledger: new QuotaLedger(join(dir, "quota.json"), account),
+    });
   });
 
   afterEach(async () => {
@@ -45,7 +54,10 @@ describe("mySpools", () => {
     const result = await mySpools(client, { account, path, now: () => T0 });
     expect(result).toMatchObject({ fromCache: false, fetchedAt: T0 });
     expect(result.spools.map((s) => s.shortCode)).toEqual(["ABC123"]);
-    expect(JSON.parse(await readFile(path, "utf-8"))).toMatchObject({ account, fetchedAt: T0.toISOString() });
+    expect(JSON.parse(await readFile(path, "utf-8"))).toMatchObject({
+      account,
+      fetchedAt: T0.toISOString(),
+    });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
@@ -60,33 +72,47 @@ describe("mySpools", () => {
 
   it("fetches again once the list is an hour old, or on refresh", async () => {
     await mySpools(client, { account, path, now: () => T0 });
-    expect(await mySpools(client, { account, path, now: () => minutes(60) })).toMatchObject({ fromCache: false });
-    expect(await mySpools(client, { account, path, refresh: true, now: () => minutes(61) })).toMatchObject({ fromCache: false });
+    expect(await mySpools(client, { account, path, now: () => minutes(60) })).toMatchObject({
+      fromCache: false,
+    });
+    expect(
+      await mySpools(client, { account, path, refresh: true, now: () => minutes(61) }),
+    ).toMatchObject({ fromCache: false });
     expect(server.requests).toHaveLength(3);
   });
 
   it("fetches again after the cache is forgotten, which a write to the spools does", async () => {
     await mySpools(client, { account, path, now: () => T0 });
     await forgetSpools(path);
-    expect(await mySpools(client, { account, path, now: () => minutes(1) })).toMatchObject({ fromCache: false });
+    expect(await mySpools(client, { account, path, now: () => minutes(1) })).toMatchObject({
+      fromCache: false,
+    });
     await forgetSpools(path);
     await forgetSpools(path);
   });
 
   it("takes a shorter or longer reuse window", async () => {
     await mySpools(client, { account, path, now: () => T0 });
-    expect(await mySpools(client, { account, path, maxAgeMs: 5 * 60_000, now: () => minutes(6) })).toMatchObject({ fromCache: false });
+    expect(
+      await mySpools(client, { account, path, maxAgeMs: 5 * 60_000, now: () => minutes(6) }),
+    ).toMatchObject({ fromCache: false });
   });
 
   it("ignores another account's list", async () => {
     await mySpools(client, { account: "someone-else", path, now: () => T0 });
-    expect(await mySpools(client, { account, path, now: () => minutes(1) })).toMatchObject({ fromCache: false });
+    expect(await mySpools(client, { account, path, now: () => minutes(1) })).toMatchObject({
+      fromCache: false,
+    });
   });
 
   it("ignores a damaged cache, or one dated in the future", async () => {
     await mySpools(client, { account, path, now: () => T0 });
     await writeFile(path, "{oops", "utf-8");
-    expect(await mySpools(client, { account, path, now: () => minutes(1) })).toMatchObject({ fromCache: false });
-    expect(await mySpools(client, { account, path, now: () => minutes(-30) })).toMatchObject({ fromCache: false });
+    expect(await mySpools(client, { account, path, now: () => minutes(1) })).toMatchObject({
+      fromCache: false,
+    });
+    expect(await mySpools(client, { account, path, now: () => minutes(-30) })).toMatchObject({
+      fromCache: false,
+    });
   });
 });

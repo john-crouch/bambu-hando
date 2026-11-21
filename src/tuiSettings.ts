@@ -22,12 +22,17 @@ export async function loadTuiSettings(path = tuiSettingsPath()): Promise<TuiSett
   } catch {
     return { printers: [] };
   }
-  const printers = Array.isArray(saved.printers) ? saved.printers.filter((p): p is string => typeof p === "string" && p.trim() !== "") : [];
+  const printers = Array.isArray(saved.printers)
+    ? saved.printers.filter((p): p is string => typeof p === "string" && p.trim() !== "")
+    : [];
   return { printers };
 }
 
 /** Written atomically, so an interrupted save never leaves a half-written file. */
-export async function saveTuiSettings(settings: TuiSettings, path = tuiSettingsPath()): Promise<void> {
+export async function saveTuiSettings(
+  settings: TuiSettings,
+  path = tuiSettingsPath(),
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(`${path}.tmp`, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
   await rename(`${path}.tmp`, path);

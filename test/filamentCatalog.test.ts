@@ -70,7 +70,12 @@ describe("FilamentCatalog", () => {
     catalog.saveSummaries([summary(), summary({ id: 102, color: "Black" })], T0);
     catalog.close();
     catalog = FilamentCatalog.open(path);
-    expect(catalog.get(102)).toEqual({ filament: summary({ id: 102, color: "Black" }), summaryAt: T0, record: null, recordAt: null });
+    expect(catalog.get(102)).toEqual({
+      filament: summary({ id: 102, color: "Black" }),
+      summaryAt: T0,
+      record: null,
+      recordAt: null,
+    });
     expect(catalog.get(999)).toBeNull();
   });
 
@@ -112,7 +117,16 @@ describe("FilamentCatalog", () => {
       [
         summary(),
         summary({ id: 102, color: "Black" }),
-        summary({ id: 103, brandKey: "esun", brandName: "eSUN", materialKey: "pla", material: "PLA", materialTypeKey: "matte", materialType: "Matte", color: "Light Khaki" }),
+        summary({
+          id: 103,
+          brandKey: "esun",
+          brandName: "eSUN",
+          materialKey: "pla",
+          material: "PLA",
+          materialTypeKey: "matte",
+          materialType: "Matte",
+          color: "Light Khaki",
+        }),
       ],
       T0,
     );
@@ -126,17 +140,59 @@ describe("FilamentCatalog", () => {
 
   it("tracks how far each fill search got, counting complete brands", () => {
     expect(catalog.fill("brand:sunlu")).toBeNull();
-    catalog.saveFill({ key: "brand:sunlu", nextPage: 4, complete: false, truncated: false, updatedAt: T0 });
-    catalog.saveFill({ key: "brand:esun", nextPage: 1, complete: true, truncated: true, updatedAt: days(1) });
-    catalog.saveFill({ key: "brand:esun,material:pla", nextPage: 1, complete: true, truncated: false, updatedAt: days(1) });
-    catalog.saveFill({ key: "all", nextPage: 21, complete: true, truncated: true, updatedAt: days(1) });
-    expect(catalog.fill("brand:sunlu")).toEqual({ key: "brand:sunlu", nextPage: 4, complete: false, truncated: false, updatedAt: T0 });
-    expect(catalog.fills().map((f) => f.key)).toEqual(["all", "brand:esun", "brand:esun,material:pla", "brand:sunlu"]);
+    catalog.saveFill({
+      key: "brand:sunlu",
+      nextPage: 4,
+      complete: false,
+      truncated: false,
+      updatedAt: T0,
+    });
+    catalog.saveFill({
+      key: "brand:esun",
+      nextPage: 1,
+      complete: true,
+      truncated: true,
+      updatedAt: days(1),
+    });
+    catalog.saveFill({
+      key: "brand:esun,material:pla",
+      nextPage: 1,
+      complete: true,
+      truncated: false,
+      updatedAt: days(1),
+    });
+    catalog.saveFill({
+      key: "all",
+      nextPage: 21,
+      complete: true,
+      truncated: true,
+      updatedAt: days(1),
+    });
+    expect(catalog.fill("brand:sunlu")).toEqual({
+      key: "brand:sunlu",
+      nextPage: 4,
+      complete: false,
+      truncated: false,
+      updatedAt: T0,
+    });
+    expect(catalog.fills().map((f) => f.key)).toEqual([
+      "all",
+      "brand:esun",
+      "brand:esun,material:pla",
+      "brand:sunlu",
+    ]);
     expect(catalog.stats()).toMatchObject({ completeBrands: 1 });
   });
 
   it("lists the material keys its filaments use, for one brand or all", () => {
-    catalog.saveSummaries([summary(), summary({ id: 103, brandKey: "esun", materialKey: "pla" }), summary({ id: 104, brandKey: "esun", materialKey: "abs" })], T0);
+    catalog.saveSummaries(
+      [
+        summary(),
+        summary({ id: 103, brandKey: "esun", materialKey: "pla" }),
+        summary({ id: 104, brandKey: "esun", materialKey: "abs" }),
+      ],
+      T0,
+    );
     expect(catalog.materialKeys()).toEqual(["abs", "petg", "pla"]);
     expect(catalog.materialKeys("esun")).toEqual(["abs", "pla"]);
   });

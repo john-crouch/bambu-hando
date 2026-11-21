@@ -5,7 +5,7 @@ import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
 
 import { colorFormTyping, HEX_ROW, initialColorForm, NAME_ROW } from "../src/tui/ColorForm.js";
-import { Help, HELP_TOPICS, helpPage } from "../src/tui/Help.js";
+import { HELP_TOPICS, Help, helpPage } from "../src/tui/Help.js";
 import { initialLabelForm, labelFormTyping, OUTPUT_ROW, SIZE_ROW } from "../src/tui/LabelForm.js";
 import { formTyping } from "../src/tui/SetupForm.js";
 
@@ -15,12 +15,18 @@ describe("helpPage", () => {
       const page = helpPage(topic);
       expect(page.title, topic).not.toBe("");
       expect(page.keys.length, topic).toBeGreaterThan(0);
-      expect(page.keys.some(([keys]) => /esc|\[b\]|\[m\]|\[q\]|ctrl\+c/.test(keys)), topic).toBe(true);
+      expect(
+        page.keys.some(([keys]) => /esc|\[b\]|\[m\]|\[q\]|ctrl\+c/.test(keys)),
+        topic,
+      ).toBe(true);
     }
   });
 
   it("lists the keys the hint lines leave out: type-ahead, paging, select all", () => {
-    const keysOf = (topic: (typeof HELP_TOPICS)[number], multi = false) => helpPage(topic, multi).keys.map(([keys]) => keys).join(" ");
+    const keysOf = (topic: (typeof HELP_TOPICS)[number], multi = false) =>
+      helpPage(topic, multi)
+        .keys.map(([keys]) => keys)
+        .join(" ");
     expect(keysOf("choose")).toMatch(/letters/);
     expect(keysOf("choose")).toMatch(/pgup\/pgdn/);
     expect(keysOf("choose")).not.toMatch(/space/);
@@ -36,7 +42,8 @@ describe("helpPage", () => {
         const page = helpPage(topic, multi);
         expect(page.about.length, page.about).toBeLessThanOrEqual(79);
         const keysWidth = 2 + Math.max(...page.keys.map(([keys]) => keys.length)) + 2;
-        for (const [keys, what] of page.keys) expect(keysWidth + what.length, `${topic}: ${keys}`).toBeLessThanOrEqual(79);
+        for (const [keys, what] of page.keys)
+          expect(keysWidth + what.length, `${topic}: ${keys}`).toBeLessThanOrEqual(79);
       }
     }
   });

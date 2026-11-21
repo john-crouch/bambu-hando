@@ -5,7 +5,12 @@ import type { Key } from "ink";
 import { describe, expect, it } from "vitest";
 
 import type { FilamentProfile } from "../src/models.js";
-import { initialPickerState, type PickerState, pickerInput, visibleRange } from "../src/tui/Picker.js";
+import {
+  initialPickerState,
+  type PickerState,
+  pickerInput,
+  visibleRange,
+} from "../src/tui/Picker.js";
 
 function key(overrides: Partial<Key> = {}): Key {
   return overrides as Key;
@@ -83,11 +88,15 @@ describe("pickerInput", () => {
   });
 
   it("asks for a selection before continuing", () => {
-    expect(update(start, "", { return: true }).error).toBe("Select filaments with tab (ctrl+a selects every match)");
+    expect(update(start, "", { return: true }).error).toBe(
+      "Select filaments with tab (ctrl+a selects every match)",
+    );
   });
 
   it("continues with a selection, even when it is filtered out of view", () => {
-    expect(pickerInput({ ...start, selected: new Set(["OTHER"]) }, "", key({ return: true }), matches)).toEqual({ type: "done" });
+    expect(
+      pickerInput({ ...start, selected: new Set(["OTHER"]) }, "", key({ return: true }), matches),
+    ).toEqual({ type: "done" });
   });
 
   it("goes back with escape", () => {

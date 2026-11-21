@@ -3,7 +3,12 @@
 
 import { QuotaError } from "./apiQuota.js";
 import { errorMessage } from "./errors.js";
-import type { FilamentProfilesClient, SpoolPatch, TdfpFilament, TdfpSpool } from "./filamentProfiles.js";
+import type {
+  FilamentProfilesClient,
+  SpoolPatch,
+  TdfpFilament,
+  TdfpSpool,
+} from "./filamentProfiles.js";
 import type { SpoolRecord } from "./spoolease.js";
 import { remainingGrams } from "./spoolInventory.js";
 import type { SpoolLink } from "./spoolLinks.js";
@@ -28,7 +33,11 @@ export type WeightVerdict =
  * the lower weight wins, since filament only gets used up. Before they ever agreed, SpoolEase's scale wins: lower
  * wins would ask forever for a weigh that can't change a correct reading whenever 3DFP's number is lower.
  */
-export function weightVerdict(agreed: SpoolLink["agreed"], spoolease: number | null, tdfp: number): WeightVerdict {
+export function weightVerdict(
+  agreed: SpoolLink["agreed"],
+  spoolease: number | null,
+  tdfp: number,
+): WeightVerdict {
   if (spoolease === null) return { kind: "unweighed" };
   const grams = Math.min(MAX_GRAMS, spoolease);
   if (Math.abs(grams - tdfp) < WEIGHT_TOLERANCE_G) return { kind: "agree" };
@@ -42,7 +51,8 @@ export function weightVerdict(agreed: SpoolLink["agreed"], spoolease: number | n
 }
 
 /** Letters and digits only, lower case: "Sunlu" = "SUNLU", "2.0 Vivid Yellow" = "20vividyellow". */
-const squash = (text: string | null | undefined): string => (text ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const squash = (text: string | null | undefined): string =>
+  (text ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /** How far apart (per RGB channel, 0-255) two color codes may be and still be the same color. */
 export const COLOR_TOLERANCE = 24;
@@ -59,7 +69,9 @@ function codesAgree(spool: SpoolRecord, rgb: string | null): boolean {
   if (!theirs) return false;
   return spool.colorCodes.some((code) => {
     const ours = rgbOf(code);
-    return ours !== null && ours.every((channel, i) => Math.abs(channel - (theirs[i] ?? 0)) <= COLOR_TOLERANCE);
+    return (
+      ours?.every((channel, i) => Math.abs(channel - (theirs[i] ?? 0)) <= COLOR_TOLERANCE) === true
+    );
   });
 }
 
@@ -69,25 +81,40 @@ function codesAgree(spool: SpoolRecord, rgb: string | null): boolean {
  * line while 3DFP's spool list often has no type, but only when the color codes agree too: names alone can't tell
  * "2.0 Vivid Yellow" from "Matte Black" vs "Black". Extra words on 3DFP's side never fit, so "Black" isn't "Matte Black".
  */
-function colorsFit(spool: SpoolRecord, color: string, materialType: string | null, rgb: string | null): boolean {
+function colorsFit(
+  spool: SpoolRecord,
+  color: string,
+  materialType: string | null,
+  rgb: string | null,
+): boolean {
   const theirs = squash(color);
   const ours = squash(spool.colorName);
   if (!theirs || !ours) return false;
   const oursNamed = [ours, squash(`${spool.subtype} ${spool.colorName}`)];
   const theirsNamed = [theirs, squash(`${materialType ?? ""} ${color}`)];
   if (theirsNamed.some((name) => oursNamed.includes(name))) return true;
-  return oursNamed.some((name) => theirsNamed.some((other) => name.includes(other))) && codesAgree(spool, rgb);
+  return (
+    oursNamed.some((name) => theirsNamed.some((other) => name.includes(other))) &&
+    codesAgree(spool, rgb)
+  );
 }
 
 /** Same brand, material and color, by name. */
 export function spoolsMatch(spool: SpoolRecord, tdfp: TdfpSpool): boolean {
-  return squash(spool.brand) === squash(tdfp.brand) && squash(spool.material) === squash(tdfp.material) && colorsFit(spool, tdfp.color, tdfp.materialType, tdfp.rgb);
+  return (
+    squash(spool.brand) === squash(tdfp.brand) &&
+    squash(spool.material) === squash(tdfp.material) &&
+    colorsFit(spool, tdfp.color, tdfp.materialType, tdfp.rgb)
+  );
 }
 
 /** The filaments a SpoolEase spool could be added to 3DFP as: same brand, material and color. */
 export function addCandidates(spool: SpoolRecord, filaments: TdfpFilament[]): TdfpFilament[] {
   return filaments.filter(
-    (f) => squash(spool.brand) === squash(f.brandName) && squash(spool.material) === squash(f.material) && colorsFit(spool, f.color, f.materialType, f.rgb),
+    (f) =>
+      squash(spool.brand) === squash(f.brandName) &&
+      squash(spool.material) === squash(f.material) &&
+      colorsFit(spool, f.color, f.materialType, f.rgb),
   );
 }
 
@@ -104,8 +131,22 @@ export type SyncRow =
       patch: SpoolPatch | null;
     }
   /** A new 3DFP spool for a SpoolEase one; grams null leaves it at the filament's own weight. */
-  | { kind: "add"; spool: SpoolRecord; chosen: boolean; filamentId: number; filament: TdfpFilament | null; grams: number | null; tag: string | null }
-  | { kind: "unlinked"; link: SpoolLink; spool: SpoolRecord | null; tdfp: TdfpSpool | null; reason: "asked" | "replaced" | "spoolease-gone" | "tdfp-gone" }
+  | {
+      kind: "add";
+      spool: SpoolRecord;
+      chosen: boolean;
+      filamentId: number;
+      filament: TdfpFilament | null;
+      grams: number | null;
+      tag: string | null;
+    }
+  | {
+      kind: "unlinked";
+      link: SpoolLink;
+      spool: SpoolRecord | null;
+      tdfp: TdfpSpool | null;
+      reason: "asked" | "replaced" | "spoolease-gone" | "tdfp-gone";
+    }
   /** Several 3DFP spools fit, or the one that fits fits other SpoolEase spools too. */
   | { kind: "ambiguous"; spool: SpoolRecord; candidates: TdfpSpool[] }
   /** No 3DFP spool fits, and the catalog has none or several filaments to add it as. */
@@ -153,12 +194,23 @@ export function rowCalls(row: SyncRow): number {
 }
 
 function rowChanges(row: SyncRow): boolean {
-  return (row.kind === "linked" && (row.before === null || row.patch !== null)) || row.kind === "add" || row.kind === "unlinked";
+  return (
+    (row.kind === "linked" && (row.before === null || row.patch !== null)) ||
+    row.kind === "add" ||
+    row.kind === "unlinked"
+  );
 }
 
-const byId = (a: SpoolRecord, b: SpoolRecord) => Number(a.id) - Number(b.id) || a.id.localeCompare(b.id);
+const byId = (a: SpoolRecord, b: SpoolRecord) =>
+  Number(a.id) - Number(b.id) || a.id.localeCompare(b.id);
 
-function linkedRow(spool: SpoolRecord, tdfp: TdfpSpool, before: SpoolLink | null, how: "kept" | "matched" | "chosen", now: Date): SyncRow {
+function linkedRow(
+  spool: SpoolRecord,
+  tdfp: TdfpSpool,
+  before: SpoolLink | null,
+  how: "kept" | "matched" | "chosen",
+  now: Date,
+): SyncRow {
   const left = remainingGrams(spool);
   const weight = weightVerdict(before?.agreed ?? null, left, tdfp.remainingGrams);
   const patch: SpoolPatch = {};
@@ -174,13 +226,41 @@ function linkedRow(spool: SpoolRecord, tdfp: TdfpSpool, before: SpoolLink | null
     patch.bambuTagId = spool.tagId;
     tag = spool.tagId;
   }
-  const after: SpoolLink = { spoolease: spool.id, tdfp: tdfp.shortCode, agreed, tag, linkedAt: before?.linkedAt ?? now.toISOString() };
-  return { kind: "linked", how, spool, tdfp, before, after, weight, patch: Object.keys(patch).length ? patch : null };
+  const after: SpoolLink = {
+    spoolease: spool.id,
+    tdfp: tdfp.shortCode,
+    agreed,
+    tag,
+    linkedAt: before?.linkedAt ?? now.toISOString(),
+  };
+  return {
+    kind: "linked",
+    how,
+    spool,
+    tdfp,
+    before,
+    after,
+    weight,
+    patch: Object.keys(patch).length ? patch : null,
+  };
 }
 
-function addRow(spool: SpoolRecord, filamentId: number, filament: TdfpFilament | null, chosen: boolean): SyncRow {
+function addRow(
+  spool: SpoolRecord,
+  filamentId: number,
+  filament: TdfpFilament | null,
+  chosen: boolean,
+): SyncRow {
   const left = remainingGrams(spool);
-  return { kind: "add", spool, chosen, filamentId, filament, grams: left === null ? null : Math.min(MAX_GRAMS, left), tag: spool.tagId || null };
+  return {
+    kind: "add",
+    spool,
+    chosen,
+    filamentId,
+    filament,
+    grams: left === null ? null : Math.min(MAX_GRAMS, left),
+    tag: spool.tagId || null,
+  };
 }
 
 /** What a sync would do, row by row: dropped links first, then SpoolEase spools by id, then 3DFP spools nothing fits. */
@@ -195,16 +275,22 @@ export function planSync(input: SyncInput): SyncPlan {
   for (const [id, code] of chosenLinks) {
     if (!seById.has(id)) throw new SyncPlanError(`SpoolEase has no spool #${id}`);
     if (!tdByCode.has(code)) throw new SyncPlanError(`3DFilamentProfiles has no spool ${code}`);
-    if (chosenCodes.has(code)) throw new SyncPlanError(`3DFilamentProfiles spool ${code} can't be linked to two SpoolEase spools`);
+    if (chosenCodes.has(code))
+      throw new SyncPlanError(
+        `3DFilamentProfiles spool ${code} can't be linked to two SpoolEase spools`,
+      );
     chosenCodes.add(code);
   }
   for (const id of chosenAdds.keys()) {
     if (!seById.has(id)) throw new SyncPlanError(`SpoolEase has no spool #${id}`);
     if (chosenLinks.has(id)) throw new SyncPlanError(`#${id} can't be both linked and added`);
     const linked = input.links.find((link) => link.spoolease === id);
-    if (linked && !unlinks.has(id)) throw new SyncPlanError(`#${id} is already linked to ${linked.tdfp}: --unlink ${id} first`);
+    if (linked && !unlinks.has(id))
+      throw new SyncPlanError(`#${id} is already linked to ${linked.tdfp}: --unlink ${id} first`);
   }
-  for (const id of unlinks) if (!input.links.some((link) => link.spoolease === id)) throw new SyncPlanError(`#${id} isn't linked`);
+  for (const id of unlinks)
+    if (!input.links.some((link) => link.spoolease === id))
+      throw new SyncPlanError(`#${id} isn't linked`);
 
   const dropped: SyncRow[] = [];
   const bySpool = new Map<string, SyncRow>();
@@ -228,7 +314,13 @@ export function planSync(input: SyncInput): SyncPlan {
       takenCodes.add(tdfp.shortCode);
       continue;
     }
-    dropped.push({ kind: "unlinked", link, spool: null, tdfp: null, reason: reason ?? "spoolease-gone" });
+    dropped.push({
+      kind: "unlinked",
+      link,
+      spool: null,
+      tdfp: null,
+      reason: reason ?? "spoolease-gone",
+    });
     if (reason === "asked") settled.add(link.spoolease);
   }
   for (const [id, code] of chosenLinks) {
@@ -240,14 +332,19 @@ export function planSync(input: SyncInput): SyncPlan {
   }
   for (const [id, filamentId] of chosenAdds) {
     const spool = seById.get(id);
-    if (spool) bySpool.set(id, addRow(spool, filamentId, input.filamentById?.(filamentId) ?? null, true));
+    if (spool)
+      bySpool.set(id, addRow(spool, filamentId, input.filamentById?.(filamentId) ?? null, true));
   }
 
   const open = input.spoolease.filter((spool) => !bySpool.has(spool.id) && !settled.has(spool.id));
   const freeTdfp = input.tdfp.filter((spool) => !takenCodes.has(spool.shortCode));
-  const fits = new Map(open.map((spool) => [spool.id, freeTdfp.filter((tdfp) => spoolsMatch(spool, tdfp))]));
+  const fits = new Map(
+    open.map((spool) => [spool.id, freeTdfp.filter((tdfp) => spoolsMatch(spool, tdfp))]),
+  );
   const wanted = new Map<string, number>();
-  for (const candidates of fits.values()) for (const tdfp of candidates) wanted.set(tdfp.shortCode, (wanted.get(tdfp.shortCode) ?? 0) + 1);
+  for (const candidates of fits.values())
+    for (const tdfp of candidates)
+      wanted.set(tdfp.shortCode, (wanted.get(tdfp.shortCode) ?? 0) + 1);
   const claimed = new Set<string>();
   for (const spool of open) {
     const candidates = fits.get(spool.id) ?? [];
@@ -261,7 +358,12 @@ export function planSync(input: SyncInput): SyncPlan {
     } else {
       const filaments = addCandidates(spool, input.filamentsFor?.(spool) ?? []);
       const one = filaments[0];
-      bySpool.set(spool.id, filaments.length === 1 && one ? addRow(spool, one.id, one, false) : { kind: "suggest", spool, filaments });
+      bySpool.set(
+        spool.id,
+        filaments.length === 1 && one
+          ? addRow(spool, one.id, one, false)
+          : { kind: "suggest", spool, filaments },
+      );
     }
   }
 
@@ -269,9 +371,16 @@ export function planSync(input: SyncInput): SyncPlan {
     .sort(byId)
     .map((spool) => bySpool.get(spool.id))
     .filter((row): row is SyncRow => row !== undefined);
-  const tdfpOnly: SyncRow[] = freeTdfp.filter((tdfp) => !claimed.has(tdfp.shortCode)).map((tdfp) => ({ kind: "tdfp-only", tdfp }));
+  const tdfpOnly: SyncRow[] = freeTdfp
+    .filter((tdfp) => !claimed.has(tdfp.shortCode))
+    .map((tdfp) => ({ kind: "tdfp-only", tdfp }));
   const rows = [...dropped, ...spoolRows, ...tdfpOnly];
-  return { rows, calls: rows.reduce((sum, row) => sum + rowCalls(row), 0), changes: rows.filter(rowChanges).length, now: input.now };
+  return {
+    rows,
+    calls: rows.reduce((sum, row) => sum + rowCalls(row), 0),
+    changes: rows.filter(rowChanges).length,
+    now: input.now,
+  };
 }
 
 export interface RowOutcome {
@@ -290,7 +399,11 @@ export interface AppliedSync {
 }
 
 /** Sends the plan's 3DFP writes one at a time; a failed row doesn't stop the others, a used-up quota stops all calls. */
-export async function applySync(plan: SyncPlan, client: FilamentProfilesClient, onRow: (outcome: RowOutcome) => void = () => {}): Promise<AppliedSync> {
+export async function applySync(
+  plan: SyncPlan,
+  client: FilamentProfilesClient,
+  onRow: (outcome: RowOutcome) => void = () => {},
+): Promise<AppliedSync> {
   const links: SpoolLink[] = [];
   const outcomes: RowOutcome[] = [];
   let quotaGone: string | null = null;
@@ -310,7 +423,11 @@ export async function applySync(plan: SyncPlan, client: FilamentProfilesClient, 
         continue;
       }
       if (quotaGone) {
-        links.push({ ...row.after, agreed: row.before?.agreed ?? null, tag: row.before?.tag ?? null });
+        links.push({
+          ...row.after,
+          agreed: row.before?.agreed ?? null,
+          tag: row.before?.tag ?? null,
+        });
         report({ row, ok: false, error: quotaGone });
         continue;
       }
@@ -319,7 +436,11 @@ export async function applySync(plan: SyncPlan, client: FilamentProfilesClient, 
         links.push(row.after);
         report({ row, ok: true, error: null });
       } catch (err) {
-        links.push({ ...row.after, agreed: row.before?.agreed ?? null, tag: row.before?.tag ?? null });
+        links.push({
+          ...row.after,
+          agreed: row.before?.agreed ?? null,
+          tag: row.before?.tag ?? null,
+        });
         report({ row, ok: false, error: failed(err) });
       }
     } else if (row.kind === "add") {
@@ -329,7 +450,10 @@ export async function applySync(plan: SyncPlan, client: FilamentProfilesClient, 
       }
       let code: string;
       try {
-        const added = await client.addSpool({ filamentId: row.filamentId, ...(row.grams === null ? {} : { remainingGrams: row.grams }) });
+        const added = await client.addSpool({
+          filamentId: row.filamentId,
+          ...(row.grams === null ? {} : { remainingGrams: row.grams }),
+        });
         if (!added.created) throw new Error("3DFilamentProfiles created no spool");
         code = added.spool.shortCode;
       } catch (err) {

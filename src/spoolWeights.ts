@@ -24,7 +24,10 @@ export interface WeightGroup {
 }
 
 /** grams: a weight from a list or typed in; source: keep the source's (SpoolmanDB's) weight; unspecified: 0. */
-export type WeightChoice = { kind: "grams"; grams: number } | { kind: "source" } | { kind: "unspecified" };
+export type WeightChoice =
+  | { kind: "grams"; grams: number }
+  | { kind: "source" }
+  | { kind: "unspecified" };
 
 const DEFAULT_SIZE_G = 1000;
 
@@ -59,7 +62,10 @@ function entrySize(label: string): number {
   return Number(size[1]) * (size[2]?.toLowerCase() === "kg" ? 1000 : 1);
 }
 
-export function weightGroups(profiles: FilamentProfile[], entries: SpoolWeightEntry[]): WeightGroup[] {
+export function weightGroups(
+  profiles: FilamentProfile[],
+  entries: SpoolWeightEntry[],
+): WeightGroup[] {
   const groups = new Map<string, WeightGroup>();
   for (const [index, profile] of profiles.entries()) {
     const key = brandKey(profile.brand);
@@ -74,7 +80,12 @@ export function weightGroups(profiles: FilamentProfile[], entries: SpoolWeightEn
     const sizes = new Set(group.profiles.map((i) => profiles[i]?.labelWeight || DEFAULT_SIZE_G));
     const seen = new Set<number>();
     for (const entry of ordered) {
-      if (!brandKey(entry.label).startsWith(group.key) || !sizes.has(entrySize(entry.label)) || seen.has(entry.grams)) continue;
+      if (
+        !brandKey(entry.label).startsWith(group.key) ||
+        !sizes.has(entrySize(entry.label)) ||
+        seen.has(entry.grams)
+      )
+        continue;
       seen.add(entry.grams);
       group.options.push(entry);
     }
@@ -84,8 +95,9 @@ export function weightGroups(profiles: FilamentProfile[], entries: SpoolWeightEn
 
 /** A single row is taken as is and no row keeps the source's weight; several rows need a choice (null). */
 export function defaultChoice(group: WeightGroup): WeightChoice | null {
-  if (group.options.length === 0) return { kind: "source" };
-  if (group.options.length === 1) return { kind: "grams", grams: group.options[0]!.grams };
+  const [first, second] = group.options;
+  if (!first) return { kind: "source" };
+  if (!second) return { kind: "grams", grams: first.grams };
   return null;
 }
 
@@ -101,7 +113,8 @@ export function applyWeights(
     if (choice.kind === "source") continue;
     for (const index of group.profiles) {
       const profile = result[index];
-      if (profile) result[index] = { ...profile, coreWeight: choice.kind === "grams" ? choice.grams : 0 };
+      if (profile)
+        result[index] = { ...profile, coreWeight: choice.kind === "grams" ? choice.grams : 0 };
     }
   }
   return result;
@@ -117,10 +130,17 @@ export function describeSourceWeights(profiles: FilamentProfile[], group: Weight
 }
 
 /** Parses a --spool-weight value: <brand>=<grams|spoolmandb|unspecified>. */
-export function parseSpoolWeightArg(arg: string): { key: string; brand: string; choice: WeightChoice } {
+export function parseSpoolWeightArg(arg: string): {
+  key: string;
+  brand: string;
+  choice: WeightChoice;
+} {
   const at = arg.lastIndexOf("=");
   const brand = arg.slice(0, at).trim();
-  const value = arg.slice(at + 1).trim().toLowerCase();
+  const value = arg
+    .slice(at + 1)
+    .trim()
+    .toLowerCase();
   let choice: WeightChoice | null = null;
   if (value === "spoolmandb") choice = { kind: "source" };
   else if (value === "unspecified") choice = { kind: "unspecified" };
@@ -132,7 +152,9 @@ export function parseSpoolWeightArg(arg: string): { key: string; brand: string; 
 }
 
 /** SpoolEase's catalog plus the user's own list; a list that can't be read becomes a warning. */
-export async function readSpoolWeights(client: SpoolEaseClient): Promise<{ entries: SpoolWeightEntry[]; warnings: string[] }> {
+export async function readSpoolWeights(
+  client: SpoolEaseClient,
+): Promise<{ entries: SpoolWeightEntry[]; warnings: string[] }> {
   const entries: SpoolWeightEntry[] = [];
   const warnings: string[] = [];
   try {

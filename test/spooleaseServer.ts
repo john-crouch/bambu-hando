@@ -11,7 +11,10 @@ import { decryptText, deriveKey, encryptText } from "../src/encryption.js";
 export const TEST_SECURITY_KEY = "TESTKEY";
 
 /** A trimmed copy of the spool catalog a real SpoolEase 0.7 console serves at /spools-catalog. */
-export const SPOOLS_CATALOG = readFileSync(join(import.meta.dirname, "fixtures", "spoolease", "spools-catalog.txt"), "utf-8");
+export const SPOOLS_CATALOG = readFileSync(
+  join(import.meta.dirname, "fixtures", "spoolease", "spools-catalog.txt"),
+  "utf-8",
+);
 
 export interface RecordedRequest {
   method: string;
@@ -91,7 +94,9 @@ function csvField(value: string): string {
 }
 
 function spoolsCsv(spools: Record<string, string>[]): string {
-  return spools.map((spool) => `${SPOOL_COLUMNS.map((col) => csvField(spool[col] ?? "")).join(",")}\n`).join("");
+  return spools
+    .map((spool) => `${SPOOL_COLUMNS.map((col) => csvField(spool[col] ?? "")).join(",")}\n`)
+    .join("");
 }
 
 export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
@@ -110,7 +115,8 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
 
   // Mirrors web_app.rs: trim, normalize to CRLF, and treat empty as unset.
   function storeCustomFilaments(csv: unknown): void {
-    const text = typeof csv === "string" ? csv.trim().replace(/\r\n/g, "\n").replace(/\n/g, "\r\n") : "";
+    const text =
+      typeof csv === "string" ? csv.trim().replace(/\r\n/g, "\n").replace(/\n/g, "\r\n") : "";
     state.customFilaments = text || null;
   }
 
@@ -148,7 +154,11 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
         actual_location: String(add.actual_location ?? ""),
         spools_count: String(add.spools_count ?? ""),
       });
-      return JSON.stringify({ id, changed_records: spoolsCsv(state.spools.slice(-1)).split("\n").filter(Boolean), ids_hash: "test" });
+      return JSON.stringify({
+        id,
+        changed_records: spoolsCsv(state.spools.slice(-1)).split("\n").filter(Boolean),
+        ids_hash: "test",
+      });
     }
     return "{}";
   }
@@ -185,7 +195,9 @@ export async function startSpoolEaseServer(): Promise<SpoolEaseServer> {
         return;
       }
       if (method === "POST" && path === "/api/spools/add-edit") {
-        const missing = ADD_SPOOL_REQUIRED.find((field) => !(field in (body as Record<string, unknown>)));
+        const missing = ADD_SPOOL_REQUIRED.find(
+          (field) => !(field in (body as Record<string, unknown>)),
+        );
         if (missing) {
           res.writeHead(400);
           res.end(`Failed to parse JSON body: missing field \`${missing}\``);

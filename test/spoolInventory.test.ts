@@ -31,30 +31,57 @@ function spool(overrides: Partial<SpoolRecord>): SpoolRecord {
 describe("remainingGrams", () => {
   it("is the last weight less the core and what was printed since, as SpoolEase works it out", () => {
     expect(remainingGrams(spool({ currentWeight: 753, coreWeight: 189 }))).toBe(564);
-    expect(remainingGrams(spool({ currentWeight: 753, coreWeight: 189, consumedSinceWeighed: 12.4 }))).toBe(552);
+    expect(
+      remainingGrams(spool({ currentWeight: 753, coreWeight: 189, consumedSinceWeighed: 12.4 })),
+    ).toBe(552);
   });
 
   it("uses the full weight less the label weight as the core when the core is unknown", () => {
-    expect(remainingGrams(spool({ currentWeight: 900, coreWeight: null, fullWeight: 1180, labelWeight: 1000 }))).toBe(720);
+    expect(
+      remainingGrams(
+        spool({ currentWeight: 900, coreWeight: null, fullWeight: 1180, labelWeight: 1000 }),
+      ),
+    ).toBe(720);
   });
 
   it("is unknown until the spool is weighed, or without a core or full weight", () => {
     expect(remainingGrams(spool({ currentWeight: null }))).toBeNull();
-    expect(remainingGrams(spool({ currentWeight: 900, coreWeight: null, fullWeight: null }))).toBeNull();
+    expect(
+      remainingGrams(spool({ currentWeight: 900, coreWeight: null, fullWeight: null })),
+    ).toBeNull();
   });
 
   it("never goes below zero", () => {
-    expect(remainingGrams(spool({ currentWeight: 210, coreWeight: 200, consumedSinceWeighed: 30 }))).toBe(0);
+    expect(
+      remainingGrams(spool({ currentWeight: 210, coreWeight: 200, consumedSinceWeighed: 30 })),
+    ).toBe(0);
   });
 });
 
 describe("inventoryRows", () => {
   const SPOOLS = [
-    spool({ id: "1", brand: "Sunlu", material: "PETG", colorName: "Red", currentWeight: 700, location: "Shelf B", slicerFilament: "PA000001" }),
-    spool({ id: "2", brand: "Acme", material: "PLA", colorName: "Blue", currentWeight: 400, location: "AMS 1" }),
+    spool({
+      id: "1",
+      brand: "Sunlu",
+      material: "PETG",
+      colorName: "Red",
+      currentWeight: 700,
+      location: "Shelf B",
+      slicerFilament: "PA000001",
+    }),
+    spool({
+      id: "2",
+      brand: "Acme",
+      material: "PLA",
+      colorName: "Blue",
+      currentWeight: 400,
+      location: "AMS 1",
+    }),
     spool({ id: "10", brand: "Acme", material: "PLA", colorName: "Green", location: "" }),
   ];
-  const names = new Map([["PA000001", { name: "Sunlu PETG Elite Red", nozzleTempMin: 240, nozzleTempMax: 260 }]]);
+  const names = new Map([
+    ["PA000001", { name: "Sunlu PETG Elite Red", nozzleTempMin: 240, nozzleTempMax: 260 }],
+  ]);
   const ids = (rows: { spool: SpoolRecord }[]) => rows.map((r) => r.spool.id);
 
   it("names each spool from its custom filament, else brand, material and color, with what's left", () => {

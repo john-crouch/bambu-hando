@@ -35,12 +35,22 @@ function spool(overrides: Partial<SpoolRecord> = {}): SpoolRecord {
   };
 }
 
-const filaments = new Map<string, CustomFilament>([["P4840583", { name: "Sunlu PETG 2.0 Vivid Yellow", nozzleTempMin: 230, nozzleTempMax: 250 }]]);
+const filaments = new Map<string, CustomFilament>([
+  ["P4840583", { name: "Sunlu PETG 2.0 Vivid Yellow", nozzleTempMin: 230, nozzleTempMax: 250 }],
+]);
 
 describe("parseLabelSize", () => {
   it("reads inches by default and converts to PDF points", () => {
-    expect(parseLabelSize("2.5x1.5")).toEqual({ width: 180, height: 108, media: "Custom.2.5x1.5in" });
-    expect(parseLabelSize("2.5x1.5in")).toEqual({ width: 180, height: 108, media: "Custom.2.5x1.5in" });
+    expect(parseLabelSize("2.5x1.5")).toEqual({
+      width: 180,
+      height: 108,
+      media: "Custom.2.5x1.5in",
+    });
+    expect(parseLabelSize("2.5x1.5in")).toEqual({
+      width: 180,
+      height: 108,
+      media: "Custom.2.5x1.5in",
+    });
   });
 
   it("reads millimeters", () => {
@@ -52,7 +62,9 @@ describe("parseLabelSize", () => {
 
   it("rejects sizes it can't read", () => {
     for (const bad of ["", "2.5", "2.5x", "0x1in", "2.5x1.5cm", "axb"]) {
-      expect(() => parseLabelSize(bad)).toThrow(`label size must look like 2.5x1.5in or 40x30mm, got "${bad}"`);
+      expect(() => parseLabelSize(bad)).toThrow(
+        `label size must look like 2.5x1.5in or 40x30mm, got "${bad}"`,
+      );
     }
   });
 });
@@ -63,18 +75,30 @@ describe("parseLabelFields", () => {
   });
 
   it("rejects unknown and empty field lists", () => {
-    expect(() => parseLabelFields("brand,price")).toThrow('unknown label field "price"; fields: qr, brand, material, name, color, hex, temps, weight, empty, code, location, added, note, id');
+    expect(() => parseLabelFields("brand,price")).toThrow(
+      'unknown label field "price"; fields: qr, brand, material, name, color, hex, temps, weight, empty, code, location, added, note, id',
+    );
     expect(() => parseLabelFields(" , ")).toThrow("no label fields given");
   });
 
   it("defaults to the fields that identify a spool at a glance", () => {
-    expect(DEFAULT_LABEL_FIELDS).toEqual(["qr", "brand", "material", "color", "temps", "weight", "id"]);
+    expect(DEFAULT_LABEL_FIELDS).toEqual([
+      "qr",
+      "brand",
+      "material",
+      "color",
+      "temps",
+      "weight",
+      "id",
+    ]);
   });
 });
 
 describe("spoolTagUrl", () => {
   it("builds SpoolEase's own S1 spool link, without a tag id since a label has no NFC tag", () => {
-    expect(spoolTagUrl(spool())).toBe("https://tag.spoolease.io/S1/?ID=1&M=PETG&CC=F1C400FF&CN=2%2E0%20Vivid%20Yellow&B=Sunlu&WL=1000&WE=189&SC=P4840583");
+    expect(spoolTagUrl(spool())).toBe(
+      "https://tag.spoolease.io/S1/?ID=1&M=PETG&CC=F1C400FF&CN=2%2E0%20Vivid%20Yellow&B=Sunlu&WL=1000&WE=189&SC=P4840583",
+    );
   });
 
   it("leaves out zero weights, as SpoolEase leaves out every value equal to its default", () => {
@@ -98,7 +122,9 @@ describe("spoolTagUrl", () => {
         addedTime: 1761955200,
       }),
     );
-    expect(url).toBe("https://tag.spoolease.io/S1/?ID=1&DA=1761955200&M=PLA&MS=Silk%2B&CC=D4AF37FF;C0C0C0FF&CN=Gold%E2%84%A2&B=Polymaker&WL=1000&WF=1140&SC=P4840583");
+    expect(url).toBe(
+      "https://tag.spoolease.io/S1/?ID=1&DA=1761955200&M=PLA&MS=Silk%2B&CC=D4AF37FF;C0C0C0FF&CN=Gold%E2%84%A2&B=Polymaker&WL=1000&WF=1140&SC=P4840583",
+    );
   });
 });
 
@@ -118,7 +144,13 @@ describe("labelContent", () => {
   });
 
   it("formats every optional field", () => {
-    const record = spool({ subtype: "HF", colorCodes: ["F1C400FF", "000000FF"], note: "Dry first", location: "Shelf A", addedTime: 1761955200 });
+    const record = spool({
+      subtype: "HF",
+      colorCodes: ["F1C400FF", "000000FF"],
+      note: "Dry first",
+      location: "Shelf A",
+      addedTime: 1761955200,
+    });
     const fields = parseLabelFields("name,material,hex,empty,code,location,added,note");
 
     expect(labelContent(record, filaments, fields)).toEqual({
@@ -137,27 +169,56 @@ describe("labelContent", () => {
   });
 
   it("leaves out fields the spool has no value for", () => {
-    const record = spool({ slicerFilament: "GFL99", labelWeight: null, coreWeight: null, colorName: "" });
+    const record = spool({
+      slicerFilament: "GFL99",
+      labelWeight: null,
+      coreWeight: null,
+      colorName: "",
+    });
     const fields = parseLabelFields("color,name,temps,weight,empty,location,added,note,id");
 
-    expect(labelContent(record, filaments, fields).lines).toEqual([{ field: "id", text: "Spool #1", style: "small" }]);
+    expect(labelContent(record, filaments, fields).lines).toEqual([
+      { field: "id", text: "Spool #1", style: "small" },
+    ]);
   });
 });
 
 describe("filterSpools", () => {
   const spools = [
     spool(),
-    spool({ id: "2", brand: "Polymaker", material: "PLA", colorName: "Black", slicerFilament: "Pabcdef0" }),
-    spool({ id: "3", brand: "polymaker", material: "PETG", colorName: "Galaxy Black", slicerFilament: "" }),
+    spool({
+      id: "2",
+      brand: "Polymaker",
+      material: "PLA",
+      colorName: "Black",
+      slicerFilament: "Pabcdef0",
+    }),
+    spool({
+      id: "3",
+      brand: "polymaker",
+      material: "PETG",
+      colorName: "Galaxy Black",
+      slicerFilament: "",
+    }),
   ];
 
   it("selects spools by id, in the order given", () => {
-    expect(filterSpools(spools, filaments, { ids: ["3", "1"], brand: "", material: "", match: "" }).map((s) => s.id)).toEqual(["3", "1"]);
+    expect(
+      filterSpools(spools, filaments, { ids: ["3", "1"], brand: "", material: "", match: "" }).map(
+        (s) => s.id,
+      ),
+    ).toEqual(["3", "1"]);
   });
 
   it("filters by brand and material ignoring case, and by words in the spool's description", () => {
     const pick = (filters: { brand?: string; material?: string; match?: string }) =>
-      filterSpools(spools, filaments, { ids: [], brand: "", material: "", match: "", ...filters }).map((s) => s.id);
+      filterSpools(spools, filaments, {
+        ids: [],
+        brand: "",
+        material: "",
+        match: "",
+        ...filters,
+      }).map((s) => s.id);
 
     expect(pick({ brand: "POLYMAKER" })).toEqual(["2", "3"]);
     expect(pick({ brand: "polymaker", material: "petg" })).toEqual(["3"]);
@@ -167,6 +228,13 @@ describe("filterSpools", () => {
   });
 
   it("throws for ids SpoolEase doesn't have", () => {
-    expect(() => filterSpools(spools, filaments, { ids: ["1", "9", "12"], brand: "", material: "", match: "" })).toThrow("SpoolEase has no spool with ID 9, 12");
+    expect(() =>
+      filterSpools(spools, filaments, {
+        ids: ["1", "9", "12"],
+        brand: "",
+        material: "",
+        match: "",
+      }),
+    ).toThrow("SpoolEase has no spool with ID 9, 12");
   });
 });

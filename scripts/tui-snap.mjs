@@ -49,8 +49,18 @@ const KEYS = {
 };
 
 // Ink switches to non-interactive rendering under CI-like variables, so the TUI gets only these.
-const PASSED_ENV = ["PATH", "HOME", "LANG", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "SPOOLMANDB_URL", "SPOOLEASE_HOST", "SPOOLEASE_SECURITY_KEY"];
+const PASSED_ENV = [
+  "PATH",
+  "HOME",
+  "LANG",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "SPOOLMANDB_URL",
+  "SPOOLEASE_HOST",
+  "SPOOLEASE_SECURITY_KEY",
+];
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC and BEL delimit the escape sequences this strips.
 const ANSI = /\u001B\[[0-9;?]*[ -/]*[@-~]|\u001B\][^\u0007]*\u0007/g;
 
 function usageError(message) {
@@ -81,8 +91,13 @@ function parseArgs(argv) {
     const [name, ...rest] = arg.split("=");
     const value = rest.join("=");
     if (name === "key" && !(value in KEYS)) usageError(`unknown key "${value}"`);
-    if (name === "sleep" && !(Number(value) >= 0)) usageError(`sleep needs milliseconds, got "${value}"`);
-    if (!["wait", "key", "type", "snap", "sleep"].includes(name) || (name !== "snap" && rest.length === 0)) usageError(`unknown step "${arg}"`);
+    if (name === "sleep" && !(Number(value) >= 0))
+      usageError(`sleep needs milliseconds, got "${value}"`);
+    if (
+      !["wait", "key", "type", "snap", "sleep"].includes(name) ||
+      (name !== "snap" && rest.length === 0)
+    )
+      usageError(`unknown step "${arg}"`);
     steps.push({ name, value });
   }
   return { options, steps, tuiArgs };
@@ -93,13 +108,23 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Ink draws before raw mode is on; a key sent before then is lost in the cooked line discipline. */
 function rawModeOn(ptsName) {
   const flag = process.platform === "darwin" ? "-f" : "-F";
-  return new Promise((resolve) => execFile("stty", [flag, ptsName, "-a"], (err, stdout) => resolve(!err && /(^|\s)-icanon(\s|$)/.test(stdout))));
+  return new Promise((resolve) =>
+    execFile("stty", [flag, ptsName, "-a"], (err, stdout) =>
+      resolve(!err && /(^|\s)-icanon(\s|$)/.test(stdout)),
+    ),
+  );
 }
 
 async function main() {
   const { options, steps, tuiArgs } = parseArgs(process.argv.slice(2));
-  const env = Object.fromEntries(PASSED_ENV.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
-  const term = new xterm.Terminal({ cols: options.cols, rows: options.rows, allowProposedApi: true });
+  const env = Object.fromEntries(
+    PASSED_ENV.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]),
+  );
+  const term = new xterm.Terminal({
+    cols: options.cols,
+    rows: options.rows,
+    allowProposedApi: true,
+  });
   const pty = spawn(process.execPath, [BIN, "tui", ...tuiArgs], {
     name: "xterm-256color",
     cols: options.cols,
@@ -130,7 +155,8 @@ async function main() {
   function screen() {
     const buffer = term.buffer.active;
     const lines = [];
-    for (let row = 0; row < options.rows; row++) lines.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "");
+    for (let row = 0; row < options.rows; row++)
+      lines.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "");
     while (lines.length > 0 && !lines.at(-1).trim()) lines.pop();
     return lines.join("\n");
   }
@@ -140,11 +166,17 @@ async function main() {
   for (const step of steps) {
     if (step.name === "wait") {
       const deadline = Date.now() + options.timeout;
-      let index = -1;
-      while ((index = raw.replace(ANSI, "").indexOf(step.value, cursor)) === -1 && Date.now() < deadline && exitCode === null) await sleep(25);
+      const find = () => raw.replace(ANSI, "").indexOf(step.value, cursor);
+      let index = find();
+      while (index === -1 && Date.now() < deadline && exitCode === null) {
+        await sleep(25);
+        index = find();
+      }
       if (index === -1) {
         await settled();
-        process.stdout.write(`!! timed out waiting for ${JSON.stringify(step.value)}\n--- screen ---\n${screen()}\n`);
+        process.stdout.write(
+          `!! timed out waiting for ${JSON.stringify(step.value)}\n--- screen ---\n${screen()}\n`,
+        );
         if (exitCode === null) pty.kill();
         process.exit(1);
       }

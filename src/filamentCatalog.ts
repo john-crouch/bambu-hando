@@ -38,8 +38,8 @@ export interface FillProgress {
 
 export interface CatalogSearch {
   words?: string;
-  brand?: string;
-  material?: string;
+  brand?: string | undefined;
+  material?: string | undefined;
 }
 
 /** Whole days since the full record was fetched; null when there is none. */
@@ -77,12 +77,39 @@ create table if not exists fills (
 
 type Row = Record<string, unknown>;
 
-const searchName = (f: TdfpFilament): string => [f.brandName, f.material, f.materialType, f.color].filter(Boolean).join(" ").toLowerCase();
+const searchName = (f: TdfpFilament): string =>
+  [f.brandName, f.material, f.materialType, f.color].filter(Boolean).join(" ").toLowerCase();
 const escapeLike = (word: string): string => word.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 function summaryOf(filament: TdfpFilament): TdfpFilament {
-  const { id, brandKey, brandName, materialKey, material, materialTypeKey, materialType, color, rgb, tdValue, discontinued, url } = filament;
-  return { id, brandKey, brandName, materialKey, material, materialTypeKey, materialType, color, rgb, tdValue, discontinued, url };
+  const {
+    id,
+    brandKey,
+    brandName,
+    materialKey,
+    material,
+    materialTypeKey,
+    materialType,
+    color,
+    rgb,
+    tdValue,
+    discontinued,
+    url,
+  } = filament;
+  return {
+    id,
+    brandKey,
+    brandName,
+    materialKey,
+    material,
+    materialTypeKey,
+    materialType,
+    color,
+    rgb,
+    tdValue,
+    discontinued,
+    url,
+  };
 }
 
 export class FilamentCatalog {
@@ -107,7 +134,14 @@ export class FilamentCatalog {
          on conflict (id) do update set brand_key = excluded.brand_key, material_key = excluded.material_key,
            name = excluded.name, summary = excluded.summary, summary_at = excluded.summary_at`,
       )
-      .run(summary.id, summary.brandKey, summary.materialKey, searchName(summary), JSON.stringify(summary), at.toISOString());
+      .run(
+        summary.id,
+        summary.brandKey,
+        summary.materialKey,
+        searchName(summary),
+        JSON.stringify(summary),
+        at.toISOString(),
+      );
   }
 
   saveSummaries(filaments: TdfpFilament[], at: Date): void {
@@ -126,10 +160,16 @@ export class FilamentCatalog {
     this.db.exec("begin");
     try {
       this.upsertSummary(record, at);
-      this.db.prepare("update filaments set record = ?, record_at = ? where id = ?").run(JSON.stringify(record), at.toISOString(), record.id);
+      this.db
+        .prepare("update filaments set record = ?, record_at = ? where id = ?")
+        .run(JSON.stringify(record), at.toISOString(), record.id);
       if (requestedId !== record.id) {
         this.db.prepare("delete from filaments where id = ?").run(requestedId);
-        this.db.prepare("insert into aliases (old_id, id) values (?, ?) on conflict (old_id) do update set id = excluded.id").run(requestedId, record.id);
+        this.db
+          .prepare(
+            "insert into aliases (old_id, id) values (?, ?) on conflict (old_id) do update set id = excluded.id",
+          )
+          .run(requestedId, record.id);
       }
       this.db.exec("commit");
     } catch (err) {
@@ -139,8 +179,12 @@ export class FilamentCatalog {
   }
 
   get(id: number): CatalogEntry | null {
-    const alias = this.db.prepare("select id from aliases where old_id = ?").get(id) as Row | undefined;
-    const row = this.db.prepare("select * from filaments where id = ?").get(alias ? Number(alias.id) : id) as Row | undefined;
+    const alias = this.db.prepare("select id from aliases where old_id = ?").get(id) as
+      | Row
+      | undefined;
+    const row = this.db
+      .prepare("select * from filaments where id = ?")
+      .get(alias ? Number(alias.id) : id) as Row | undefined;
     if (!row) return null;
     return {
       filament: JSON.parse(String(row.summary)) as TdfpFilament,
@@ -167,19 +211,29 @@ export class FilamentCatalog {
       params.push(filters.material);
     }
     const where = clauses.length ? `where ${clauses.join(" and ")}` : "";
-    const rows = this.db.prepare(`select summary from filaments ${where} order by name, id limit ${Math.max(0, Math.floor(limit))}`).all(...params) as Row[];
+    const rows = this.db
+      .prepare(
+        `select summary from filaments ${where} order by name, id limit ${Math.max(0, Math.floor(limit))}`,
+      )
+      .all(...params) as Row[];
     return rows.map((row) => JSON.parse(String(row.summary)) as TdfpFilament);
   }
 
   brandKeys(): string[] {
-    return (this.db.prepare("select distinct brand_key from filaments order by brand_key").all() as Row[]).map((row) => String(row.brand_key));
+    return (
+      this.db.prepare("select distinct brand_key from filaments order by brand_key").all() as Row[]
+    ).map((row) => String(row.brand_key));
   }
 
   materialKeys(brandKey?: string): string[] {
     const rows = (
       brandKey === undefined
         ? this.db.prepare("select distinct material_key from filaments order by material_key").all()
-        : this.db.prepare("select distinct material_key from filaments where brand_key = ? order by material_key").all(brandKey)
+        : this.db
+            .prepare(
+              "select distinct material_key from filaments where brand_key = ? order by material_key",
+            )
+            .all(brandKey)
     ) as Row[];
     return rows.map((row) => String(row.material_key));
   }
@@ -200,7 +254,13 @@ export class FilamentCatalog {
          on conflict (key) do update set next_page = excluded.next_page, complete = excluded.complete,
            truncated = excluded.truncated, updated_at = excluded.updated_at`,
       )
-      .run(progress.key, progress.nextPage, progress.complete ? 1 : 0, progress.truncated ? 1 : 0, progress.updatedAt.toISOString());
+      .run(
+        progress.key,
+        progress.nextPage,
+        progress.complete ? 1 : 0,
+        progress.truncated ? 1 : 0,
+        progress.updatedAt.toISOString(),
+      );
   }
 
   stats(): { filaments: number; records: number; brands: number; completeBrands: number } {
@@ -209,7 +269,9 @@ export class FilamentCatalog {
       filaments: count("select count(*) as n from filaments"),
       records: count("select count(*) as n from filaments where record is not null"),
       brands: count("select count(distinct brand_key) as n from filaments"),
-      completeBrands: count("select count(*) as n from fills where complete = 1 and key like 'brand:%' and key not like '%,%'"),
+      completeBrands: count(
+        "select count(*) as n from fills where complete = 1 and key like 'brand:%' and key not like '%,%'",
+      ),
     };
   }
 }

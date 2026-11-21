@@ -12,7 +12,16 @@ import type { FilamentProfile } from "./models.js";
 import { bambuBaseFilamentDir } from "./paths.js";
 
 // Keys that describe the system preset itself rather than filament settings.
-const SYSTEM_ONLY_KEYS = ["type", "setting_id", "instantiation", "description", "inherits", "name", "from", "filament_id"];
+const SYSTEM_ONLY_KEYS = [
+  "type",
+  "setting_id",
+  "instantiation",
+  "description",
+  "inherits",
+  "name",
+  "from",
+  "filament_id",
+];
 
 /** BambuStudio names custom filaments "<name> @<printer>" and replaces "/" (CreatePresetsDialog / clone_presets). */
 export function presetName(profile: FilamentProfile, printer: string): string {
@@ -34,7 +43,12 @@ function everyVariant(value: unknown, replacement: (current: string) => string):
  * color, density and temperature range. Like BambuStudio's own custom filaments it inherits nothing
  * and carries its own filament_id, which is what links it to SpoolEase.
  */
-export function buildPreset(profile: FilamentProfile, printer: string, template: Template, version: string): PresetConfig {
+export function buildPreset(
+  profile: FilamentProfile,
+  printer: string,
+  template: Template,
+  version: string,
+): PresetConfig {
   const name = presetName(profile, printer);
   const preset: PresetConfig = { ...template.config };
   for (const key of SYSTEM_ONLY_KEYS) delete preset[key];
@@ -42,7 +56,11 @@ export function buildPreset(profile: FilamentProfile, printer: string, template:
   // Keep Bambu's tuned print temperature unless the manufacturer's range excludes it.
   const nozzle = (current: string) => {
     const tuned = Number.parseInt(current, 10);
-    return String(Number.isFinite(tuned) ? clamp(tuned, profile.nozzleTempMin, profile.nozzleTempMax) : profile.nozzleTempMax);
+    return String(
+      Number.isFinite(tuned)
+        ? clamp(tuned, profile.nozzleTempMin, profile.nozzleTempMax)
+        : profile.nozzleTempMax,
+    );
   };
 
   return {
@@ -83,7 +101,11 @@ export function presetJson(preset: PresetConfig): string {
 }
 
 /** BambuStudio loads a user preset by file name, so the file is named exactly after the preset. */
-export function presetPath(profile: FilamentProfile, presetFolder: string, printer: string): string {
+export function presetPath(
+  profile: FilamentProfile,
+  presetFolder: string,
+  printer: string,
+): string {
   return join(bambuBaseFilamentDir(presetFolder), `${presetName(profile, printer)}.json`);
 }
 
@@ -127,13 +149,16 @@ export async function writeMany(
 ): Promise<PresetOutcome[]> {
   const outcomes: PresetOutcome[] = [];
   for (const [index, profile] of profiles.entries()) {
-    const paths = target.printers.map((printer) => presetPath(profile, target.presetFolder, printer));
+    const paths = target.printers.map((printer) =>
+      presetPath(profile, target.presetFolder, printer),
+    );
     const kept: string[] = [];
     let error = "";
     try {
       const presets = target.printers.map((printer) => {
         const template = target.system.template(profile.material, printer);
-        if (!template) throw new Error(`no Generic ${profile.material} preset in BambuStudio for ${printer}`);
+        if (!template)
+          throw new Error(`no Generic ${profile.material} preset in BambuStudio for ${printer}`);
         return buildPreset(profile, printer, template, target.system.version);
       });
       for (const [i, preset] of presets.entries()) {

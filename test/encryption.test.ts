@@ -15,7 +15,9 @@ describe("encryption", () => {
 
   it("produces the Python ciphertext for a fixed nonce", () => {
     const key = deriveKey(vector.security_key);
-    expect(encryptText(key, vector.plaintext, Buffer.from(vector.nonce_hex, "hex"))).toBe(vector.encrypted_fixed_nonce);
+    expect(encryptText(key, vector.plaintext, Buffer.from(vector.nonce_hex, "hex"))).toBe(
+      vector.encrypted_fixed_nonce,
+    );
   });
 
   it("decrypts ciphertext produced by the Python implementation", () => {

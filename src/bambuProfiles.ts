@@ -36,7 +36,9 @@ function first(value: unknown): string {
 
 // "02.08.00.09" -> "2.8.0.9"; BambuStudio skips user presets whose version doesn't parse.
 function normalizeVersion(value: unknown): string {
-  const parts = String(value ?? "").split(".").map((part) => Number.parseInt(part, 10));
+  const parts = String(value ?? "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
   return parts.length >= 3 && parts.every(Number.isFinite) ? parts.join(".") : "1.0.0.0";
 }
 
@@ -60,10 +62,17 @@ export class SystemProfiles {
     try {
       index = await readJson(join(systemDir, `${VENDOR}.json`));
     } catch {
-      throw new Error(`BambuStudio system profiles not found in ${systemDir}: start BambuStudio once so it installs them`);
+      throw new Error(
+        `BambuStudio system profiles not found in ${systemDir}: start BambuStudio once so it installs them`,
+      );
     }
 
-    const paths = new Map((index.filament_list ?? []).map((entry) => [entry.name, join(systemDir, VENDOR, entry.sub_path)]));
+    const paths = new Map(
+      (index.filament_list ?? []).map((entry) => [
+        entry.name,
+        join(systemDir, VENDOR, entry.sub_path),
+      ]),
+    );
     const filaments = new Map<string, PresetConfig>();
     const loadChain = async (name: string): Promise<void> => {
       const path = paths.get(name);
@@ -71,12 +80,15 @@ export class SystemProfiles {
       try {
         const preset = await readJson(path);
         filaments.set(name, preset);
-        if (typeof preset.inherits === "string" && preset.inherits) await loadChain(preset.inherits);
+        if (typeof preset.inherits === "string" && preset.inherits)
+          await loadChain(preset.inherits);
       } catch (err) {
         throw new Error(`Failed to read BambuStudio system preset ${path}: ${errorMessage(err)}`);
       }
     };
-    await Promise.all([...paths.keys()].filter((name) => name.startsWith("Generic ")).map(loadChain));
+    await Promise.all(
+      [...paths.keys()].filter((name) => name.startsWith("Generic ")).map(loadChain),
+    );
 
     const printerNames: string[] = [];
     for (const entry of index.machine_list ?? []) {
@@ -98,7 +110,8 @@ export class SystemProfiles {
     if (cached) return { ...cached };
     const preset = this.filaments.get(name);
     if (!preset) throw new Error(`unknown BambuStudio system preset ${name}`);
-    const parent = typeof preset.inherits === "string" && preset.inherits ? this.resolve(preset.inherits) : {};
+    const parent =
+      typeof preset.inherits === "string" && preset.inherits ? this.resolve(preset.inherits) : {};
     const config = { ...parent, ...preset };
     this.resolved.set(name, config);
     return { ...config };
@@ -117,7 +130,12 @@ export class SystemProfiles {
         if (!name.startsWith("Generic ") || preset.instantiation !== "true") continue;
         const config = this.resolve(name);
         const printers = config.compatible_printers;
-        if (first(config.filament_type) === type && Array.isArray(printers) && printers.includes(printer)) candidates.push({ name, config });
+        if (
+          first(config.filament_type) === type &&
+          Array.isArray(printers) &&
+          printers.includes(printer)
+        )
+          candidates.push({ name, config });
       }
       candidates.sort((a, b) => a.name.length - b.name.length || a.name.localeCompare(b.name));
       if (candidates[0]) return candidates[0];
@@ -127,7 +145,9 @@ export class SystemProfiles {
 }
 
 /** The logged-in preset folder and selected printer from BambuStudio.conf; nulls when unknown. */
-export async function readBambuStudioConf(configDir: string): Promise<{ presetFolder: string | null; printer: string | null }> {
+export async function readBambuStudioConf(
+  configDir: string,
+): Promise<{ presetFolder: string | null; printer: string | null }> {
   try {
     const conf = await readJson(join(configDir, "BambuStudio.conf"));
     const app = conf.app as Record<string, unknown> | undefined;
@@ -140,7 +160,9 @@ export async function readBambuStudioConf(configDir: string): Promise<{ presetFo
 }
 
 /** Where presets go when not given: BambuStudio's current preset folder and printer, else "default" and DEFAULT_PRINTER. */
-export async function bambuDefaults(configDir: string = bambuConfigDir()): Promise<{ presetFolder: string; printer: string }> {
+export async function bambuDefaults(
+  configDir: string = bambuConfigDir(),
+): Promise<{ presetFolder: string; printer: string }> {
   const conf = await readBambuStudioConf(configDir);
   return { presetFolder: conf.presetFolder ?? "default", printer: conf.printer ?? DEFAULT_PRINTER };
 }

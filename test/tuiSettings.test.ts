@@ -29,8 +29,12 @@ describe("TUI settings", () => {
   it("saves and loads the printers", async () => {
     await saveTuiSettings({ printers: ["Printer A 0.4 nozzle", "Printer A 0.6 nozzle"] });
 
-    expect(await loadTuiSettings()).toEqual({ printers: ["Printer A 0.4 nozzle", "Printer A 0.6 nozzle"] });
-    expect(JSON.parse(await readFile(tuiSettingsPath(), "utf-8"))).toEqual({ printers: ["Printer A 0.4 nozzle", "Printer A 0.6 nozzle"] });
+    expect(await loadTuiSettings()).toEqual({
+      printers: ["Printer A 0.4 nozzle", "Printer A 0.6 nozzle"],
+    });
+    expect(JSON.parse(await readFile(tuiSettingsPath(), "utf-8"))).toEqual({
+      printers: ["Printer A 0.4 nozzle", "Printer A 0.6 nozzle"],
+    });
   });
 
   it("falls back to no printers for damaged files and values it doesn't know", async () => {
@@ -38,7 +42,11 @@ describe("TUI settings", () => {
     await writeFile(tuiSettingsPath(), "{ not json", "utf-8");
     expect(await loadTuiSettings()).toEqual({ printers: [] });
 
-    await writeFile(tuiSettingsPath(), JSON.stringify({ printers: ["Printer A 0.4 nozzle", 7, "  "] }), "utf-8");
+    await writeFile(
+      tuiSettingsPath(),
+      JSON.stringify({ printers: ["Printer A 0.4 nozzle", 7, "  "] }),
+      "utf-8",
+    );
     expect(await loadTuiSettings()).toEqual({ printers: ["Printer A 0.4 nozzle"] });
   });
 });

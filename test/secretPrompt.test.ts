@@ -5,7 +5,7 @@ import { Readable } from "node:stream";
 
 import { describe, expect, it } from "vitest";
 
-import { readPiped, secretKeys, type SecretEntry } from "../src/secretPrompt.js";
+import { readPiped, type SecretEntry, secretKeys } from "../src/secretPrompt.js";
 
 const START: SecretEntry = { value: "", done: false, cancelled: false };
 
@@ -16,7 +16,11 @@ describe("secretKeys", () => {
   });
 
   it("takes a pasted key in one burst", () => {
-    expect(secretKeys(START, "tdfp_0123456789abcdef\r")).toEqual({ value: "tdfp_0123456789abcdef", done: true, cancelled: false });
+    expect(secretKeys(START, "tdfp_0123456789abcdef\r")).toEqual({
+      value: "tdfp_0123456789abcdef",
+      done: true,
+      cancelled: false,
+    });
   });
 
   it("accepts a newline as enter", () => {
@@ -39,11 +43,17 @@ describe("secretKeys", () => {
   });
 
   it("finishes on ctrl+d once something is typed", () => {
-    expect(secretKeys(START, "abc\u0004")).toMatchObject({ value: "abc", done: true, cancelled: false });
+    expect(secretKeys(START, "abc\u0004")).toMatchObject({
+      value: "abc",
+      done: true,
+      cancelled: false,
+    });
   });
 
   it("drops arrow keys and other escape sequences instead of storing them", () => {
-    expect(secretKeys(START, "a\u001b[Db\u001b[200~c\u001b[201~\u001bOA")).toMatchObject({ value: "abc" });
+    expect(secretKeys(START, "a\u001b[Db\u001b[200~c\u001b[201~\u001bOA")).toMatchObject({
+      value: "abc",
+    });
   });
 
   it("drops other control characters", () => {

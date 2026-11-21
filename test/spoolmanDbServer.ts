@@ -24,7 +24,10 @@ function etag(body: string): string {
 
 export async function startSpoolmanDbServer(): Promise<SpoolmanDbServer> {
   const files = new Map(
-    ["filaments.json", "materials.json"].map((name) => [`/${name}`, readFileSync(new URL(name, SPOOLMANDB_FIXTURE_DIR), "utf-8")]),
+    ["filaments.json", "materials.json"].map((name) => [
+      `/${name}`,
+      readFileSync(new URL(name, SPOOLMANDB_FIXTURE_DIR), "utf-8"),
+    ]),
   );
   const state: Omit<SpoolmanDbServer, "url" | "close"> = { requests: [], files, failWith: null };
 

@@ -12,10 +12,17 @@ import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } fro
 const TDFP = SECRETS["3dfp"];
 const KEY = "3dfp_fake_key_for_tests";
 
-async function run(argv: string[], stdin = ""): Promise<{ code: number; stdout: string; stderr: string }> {
+async function run(
+  argv: string[],
+  stdin = "",
+): Promise<{ code: number; stdout: string; stderr: string }> {
   let stdout = "";
   let stderr = "";
-  const code = await main(argv, { stdout: (s) => (stdout += s), stderr: (s) => (stderr += s), stdin: Readable.from(stdin ? [stdin] : []) });
+  const code = await main(argv, {
+    stdout: (s) => (stdout += s),
+    stderr: (s) => (stderr += s),
+    stdin: Readable.from(stdin ? [stdin] : []),
+  });
   expect(stdout + stderr).not.toContain("fake_key");
   return { code, stdout, stderr };
 }
@@ -52,11 +59,19 @@ describe("bambu-hando key usage", () => {
   it("explains that nothing was piped in when stdin is neither a terminal nor has a key", async () => {
     const { code, stderr } = await run(["key", "set", "3dfp"], "");
     expect(code).toBe(2);
-    expect(stderr).toContain("no key was piped in, and stdin isn't a terminal to prompt on: run this in a terminal, or pipe the key in");
+    expect(stderr).toContain(
+      "no key was piped in, and stdin isn't a terminal to prompt on: run this in a terminal, or pipe the key in",
+    );
   });
 
   it("refuses a key given as an argument, without repeating it", async () => {
-    for (const argv of [["key", "set", "3dfp", KEY], ["key", "set", "3dfp", `--key=${KEY}`], ["key", "set", KEY], ["key", "status", KEY], ["key", KEY]]) {
+    for (const argv of [
+      ["key", "set", "3dfp", KEY],
+      ["key", "set", "3dfp", `--key=${KEY}`],
+      ["key", "set", KEY],
+      ["key", "status", KEY],
+      ["key", KEY],
+    ]) {
       const { code, stderr } = await run(argv);
       expect(code).toBe(2);
       expect(stderr).toContain("never taken as arguments");
@@ -89,7 +104,9 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
   it("stores a piped key in the keyring", async () => {
     const { code, stdout, stderr } = await run(["key", "set", "3dfp"], `${KEY}\n`);
     expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
-    expect(stdout).toBe("Stored the 3DFilamentProfiles API key in the system keyring (Secret Service).\n");
+    expect(stdout).toBe(
+      "Stored the 3DFilamentProfiles API key in the system keyring (Secret Service).\n",
+    );
     expect(await storedSecret(TDFP)).toBe(KEY);
   });
 
@@ -105,7 +122,9 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
     for (const input of ["", "\n", "3dfp_two words", "not-a-3dfp-key"]) {
       const { code, stderr } = await run(["key", "set", "3dfp"], input);
       expect(code).toBe(2);
-      expect(stderr).toMatch(/empty|spaces or control characters|no key was piped in|start with 3dfp_/);
+      expect(stderr).toMatch(
+        /empty|spaces or control characters|no key was piped in|start with 3dfp_/,
+      );
     }
     expect(await storedSecret(TDFP)).toBeNull();
   });
@@ -118,17 +137,23 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
   });
 
   it("reports where each key comes from, never its value", async () => {
-    expect((await run(["key", "status"])).stdout).toBe("3dfp  3DFilamentProfiles API key: not set (bambu-hando key set 3dfp)\n");
+    expect((await run(["key", "status"])).stdout).toBe(
+      "3dfp  3DFilamentProfiles API key: not set (bambu-hando key set 3dfp)\n",
+    );
 
     await storeSecret(TDFP, KEY);
-    expect((await run(["key", "status", "3dfp"])).stdout).toBe("3dfp  3DFilamentProfiles API key: stored in the system keyring (Secret Service)\n");
+    expect((await run(["key", "status", "3dfp"])).stdout).toBe(
+      "3dfp  3DFilamentProfiles API key: stored in the system keyring (Secret Service)\n",
+    );
 
     vi.stubEnv(TDFP.env, "3dfp_env_key");
     expect((await run(["key", "status"])).stdout).toBe(
       "3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY (overrides the one stored in the system keyring (Secret Service))\n",
     );
     await removeSecret(TDFP);
-    expect((await run(["key", "status"])).stdout).toBe("3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY\n");
+    expect((await run(["key", "status"])).stdout).toBe(
+      "3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY\n",
+    );
   });
 
   it("says when the environment's key isn't usable, without printing it", async () => {
@@ -149,8 +174,14 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
 
   it("removes a stored key, and says so when there was none", async () => {
     await storeSecret(TDFP, KEY);
-    expect(await run(["key", "remove", "3dfp"])).toMatchObject({ code: 0, stdout: "Removed the 3DFilamentProfiles API key from the system keyring (Secret Service).\n" });
+    expect(await run(["key", "remove", "3dfp"])).toMatchObject({
+      code: 0,
+      stdout: "Removed the 3DFilamentProfiles API key from the system keyring (Secret Service).\n",
+    });
     expect(await storedSecret(TDFP)).toBeNull();
-    expect(await run(["key", "remove", "3dfp"])).toMatchObject({ code: 0, stdout: "No 3DFilamentProfiles API key was stored.\n" });
+    expect(await run(["key", "remove", "3dfp"])).toMatchObject({
+      code: 0,
+      stdout: "No 3DFilamentProfiles API key was stored.\n",
+    });
   });
 });

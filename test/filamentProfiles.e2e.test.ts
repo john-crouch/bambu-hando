@@ -10,7 +10,12 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { cacheDir, configDir } from "../src/paths.js";
-import { type FilamentProfilesServer, serverSpool, startFilamentProfilesServer, TEST_API_KEY } from "./filamentProfilesServer.js";
+import {
+  type FilamentProfilesServer,
+  serverSpool,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 
@@ -29,9 +34,16 @@ describe("bambu-hando 3dfp (binary)", () => {
   });
 
   function cli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-    const env = { PATH: process.env.PATH ?? "", HOME: home, FILAMENTPROFILES_API_KEY: TEST_API_KEY, FILAMENTPROFILES_API_URL: server.url };
+    const env = {
+      PATH: process.env.PATH ?? "",
+      HOME: home,
+      FILAMENTPROFILES_API_KEY: TEST_API_KEY,
+      FILAMENTPROFILES_API_URL: server.url,
+    };
     return new Promise((resolve) => {
-      execFile(process.execPath, [BIN, ...args], { env }, (err, stdout, stderr) => resolve({ code: err ? Number(err.code) : 0, stdout, stderr }));
+      execFile(process.execPath, [BIN, ...args], { env }, (err, stdout, stderr) =>
+        resolve({ code: err ? Number(err.code) : 0, stdout, stderr }),
+      );
     });
   }
 
@@ -45,10 +57,17 @@ describe("bambu-hando 3dfp (binary)", () => {
     expect(server.requests).toHaveLength(1);
 
     const quotaFile = join(configDir(process.platform, home, {}), "3dfp-quota.json");
-    expect(JSON.parse(await readFile(quotaFile, "utf-8"))).toMatchObject({ remaining: 999, exact: true });
+    expect(JSON.parse(await readFile(quotaFile, "utf-8"))).toMatchObject({
+      remaining: 999,
+      exact: true,
+    });
     expect((await stat(quotaFile)).mode & 0o777).toBe(0o600);
-    const cached = await readFile(join(cacheDir(process.platform, home, {}), "3dfp", "spools.json"), "utf-8");
+    const cached = await readFile(
+      join(cacheDir(process.platform, home, {}), "3dfp", "spools.json"),
+      "utf-8",
+    );
     expect(cached).toContain("ABC123");
-    for (const text of [spools.stdout, usage.stdout, cached, await readFile(quotaFile, "utf-8")]) expect(text).not.toContain(TEST_API_KEY);
+    for (const text of [spools.stdout, usage.stdout, cached, await readFile(quotaFile, "utf-8")])
+      expect(text).not.toContain(TEST_API_KEY);
   });
 });

@@ -28,6 +28,7 @@ export interface PdfPage {
 }
 
 // WinAnsiEncoding bytes that differ from Latin-1, for the characters labels use.
+// biome-ignore lint/complexity/useSimpleNumberKeys: hex keys match the code page table they come from.
 const WIN_ANSI: Record<number, string> = { 0x85: "…", 0x96: "–", 0x99: "™" };
 
 function decodeHex(hex: string): string {
@@ -61,14 +62,25 @@ export function readPdf(raw: Buffer): PdfPage[] {
     const resources = objs.get(Number(/\/Resources (\d+) 0 R/.exec(body)?.[1])) ?? body;
     const fontNames = new Map<string, string>();
     for (const m of resources.matchAll(/\/(F\d+) (\d+) 0 R/g)) {
-      fontNames.set(m[1]!, /\/BaseFont \/([\w-]+)/.exec(objs.get(Number(m[2])) ?? "")?.[1] ?? m[1]!);
+      fontNames.set(
+        m[1]!,
+        /\/BaseFont \/([\w-]+)/.exec(objs.get(Number(m[2])) ?? "")?.[1] ?? m[1]!,
+      );
     }
     const height = Number(box[2]);
     const texts: PdfText[] = [];
-    for (const m of ops.matchAll(/BT\n1 0 0 1 ([\d.-]+) ([\d.-]+) Tm\n\/(F\d+) ([\d.]+) Tf\n\[([^\]]*)\] TJ\nET/g)) {
+    for (const m of ops.matchAll(
+      /BT\n1 0 0 1 ([\d.-]+) ([\d.-]+) Tm\n\/(F\d+) ([\d.]+) Tf\n\[([^\]]*)\] TJ\nET/g,
+    )) {
       const hex = [...m[5]!.matchAll(/<([0-9a-f]*)>/g)].map((h) => h[1]).join("");
       // PDFKit flips the page so y grows downward, then places each run by its baseline.
-      texts.push({ text: decodeHex(hex), x: Number(m[1]), y: height - Number(m[2]), font: fontNames.get(m[3]!) ?? m[3]!, size: Number(m[4]) });
+      texts.push({
+        text: decodeHex(hex),
+        x: Number(m[1]),
+        y: height - Number(m[2]),
+        font: fontNames.get(m[3]!) ?? m[3]!,
+        size: Number(m[4]),
+      });
     }
     const rects = [...ops.matchAll(/([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) re/g)].map((m) => ({
       x: Number(m[1]),

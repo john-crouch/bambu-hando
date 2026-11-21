@@ -68,15 +68,24 @@ describe("readBambuStudioConf", () => {
     const home = await mkdtemp(join(tmpdir(), "bambu-hando-conf-"));
     await installBambuStudio(home, { presetFolder: "1234567890", machine: X1C_06 });
 
-    expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({ presetFolder: "1234567890", printer: X1C_06 });
+    expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({
+      presetFolder: "1234567890",
+      printer: X1C_06,
+    });
   });
 
   it("returns nulls when BambuStudio.conf is missing or unreadable", async () => {
     const home = await mkdtemp(join(tmpdir(), "bambu-hando-conf-"));
-    expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({ presetFolder: null, printer: null });
+    expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({
+      presetFolder: null,
+      printer: null,
+    });
 
     await installBambuStudio(home, null);
     await writeFile(join(bambuConfigDir(home), "BambuStudio.conf"), "{ not json", "utf-8");
-    expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({ presetFolder: null, printer: null });
+    expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({
+      presetFolder: null,
+      printer: null,
+    });
   });
 });

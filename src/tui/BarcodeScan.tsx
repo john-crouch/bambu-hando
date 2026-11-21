@@ -3,11 +3,16 @@
 
 import { Box, type Key, Text } from "ink";
 
-export type ScanAction = { type: "update"; code: string } | { type: "submit"; code: string } | { type: "back" } | { type: "none" };
+export type ScanAction =
+  | { type: "update"; code: string }
+  | { type: "submit"; code: string }
+  | { type: "back" }
+  | { type: "none" };
 
 export function scanInput(code: string, input: string, key: Key): ScanAction {
   if (key.escape) return { type: "back" };
-  const submit = (text: string): ScanAction => (text.trim() ? { type: "submit", code: text.trim() } : { type: "none" });
+  const submit = (text: string): ScanAction =>
+    text.trim() ? { type: "submit", code: text.trim() } : { type: "none" };
   if (key.return) return submit(code);
   if (key.backspace || key.delete) return { type: "update", code: code.slice(0, -1) };
   if (!input || key.ctrl || key.meta) return { type: "none" };
@@ -29,7 +34,11 @@ export function BarcodeScan({ code, error, known }: Props) {
     <Box flexDirection="column">
       <Text bold>Barcode scan: more spools of what you scan</Text>
       <Text>Scan the spool's barcode, or type it and press enter.</Text>
-      <Text dimColor>{known > 0 ? `${known} known so far; a new barcode asks which filament it is, once.` : "A new barcode asks which filament it is, once."}</Text>
+      <Text dimColor>
+        {known > 0
+          ? `${known} known so far; a new barcode asks which filament it is, once.`
+          : "A new barcode asks which filament it is, once."}
+      </Text>
       <Box marginY={1}>
         <Text>Barcode: </Text>
         <Text color="cyan">{code}</Text>

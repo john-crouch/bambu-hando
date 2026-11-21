@@ -12,10 +12,24 @@ const ROWS = 14;
 // Title, the filter line with its margins, the column header, "… more" (or no matches) and the hint line,
 // plus a spare line.
 const CHROME = 8;
-const COLUMNS = { cursor: 2, swatch: 3, id: 6, name: 34, left: 8, bar: 11, location: 16, added: 11 } as const;
+const COLUMNS = {
+  cursor: 2,
+  swatch: 3,
+  id: 6,
+  name: 34,
+  left: 8,
+  bar: 11,
+  location: 16,
+  added: 11,
+} as const;
 const BAR_CELLS = 10;
 
-const SORT_LABELS: Record<InventorySort, string> = { newest: "newest first", name: "by name", left: "least left first", location: "by location" };
+const SORT_LABELS: Record<InventorySort, string> = {
+  newest: "newest first",
+  name: "by name",
+  left: "least left first",
+  location: "by location",
+};
 
 export interface SpoolListState {
   cursor: number;
@@ -23,7 +37,11 @@ export interface SpoolListState {
   sort: InventorySort;
 }
 
-export type SpoolListAction = { type: "update"; state: SpoolListState } | { type: "choose"; index: number } | { type: "back" } | { type: "none" };
+export type SpoolListAction =
+  | { type: "update"; state: SpoolListState }
+  | { type: "choose"; index: number }
+  | { type: "back" }
+  | { type: "none" };
 
 export function initialSpoolList(): SpoolListState {
   return { cursor: 0, filter: "", sort: "newest" };
@@ -34,11 +52,29 @@ export function spoolListRows(height?: number): number {
   return listRows(height, CHROME, ROWS);
 }
 
-export function spoolListInput(state: SpoolListState, input: string, key: Key, count: number, rows: number = ROWS): SpoolListAction {
-  const next = (changes: Partial<SpoolListState>): SpoolListAction => ({ type: "update", state: { ...state, ...changes } });
+export function spoolListInput(
+  state: SpoolListState,
+  input: string,
+  key: Key,
+  count: number,
+  rows: number = ROWS,
+): SpoolListAction {
+  const next = (changes: Partial<SpoolListState>): SpoolListAction => ({
+    type: "update",
+    state: { ...state, ...changes },
+  });
   if (key.escape) return state.filter ? next({ filter: "", cursor: 0 }) : { type: "back" };
-  if (key.return) return count > 0 ? { type: "choose", index: Math.min(state.cursor, count - 1) } : { type: "none" };
-  if (key.tab) return next({ sort: INVENTORY_SORTS[(INVENTORY_SORTS.indexOf(state.sort) + 1) % INVENTORY_SORTS.length]!, cursor: 0 });
+  if (key.return)
+    return count > 0
+      ? { type: "choose", index: Math.min(state.cursor, count - 1) }
+      : { type: "none" };
+  if (key.tab)
+    return next({
+      sort:
+        INVENTORY_SORTS[(INVENTORY_SORTS.indexOf(state.sort) + 1) % INVENTORY_SORTS.length] ??
+        state.sort,
+      cursor: 0,
+    });
   const moved = listMove(state.cursor, key, count, rows);
   if (moved !== null) return next({ cursor: moved });
   if (key.backspace || key.delete) return next({ filter: state.filter.slice(0, -1), cursor: 0 });
@@ -66,10 +102,22 @@ function addedDate(seconds: number | null): string {
 }
 
 /** A column cell, cut to its width; only a `shrink` cell gives up width when the terminal is narrow. */
-function Cell({ width, children, color, dim, shrink }: { width: number; children: string; color?: string; dim?: boolean; shrink?: boolean }) {
+function Cell({
+  width,
+  children,
+  color,
+  dim,
+  shrink,
+}: {
+  width: number;
+  children: string;
+  color?: string | undefined;
+  dim?: boolean;
+  shrink?: boolean;
+}) {
   return (
     <Box width={width} flexShrink={shrink ? 1 : 0} paddingRight={1}>
-      <Text wrap="truncate-end" color={color} dimColor={dim}>
+      <Text wrap="truncate-end" {...(color ? { color } : {})} {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
     </Box>
@@ -83,7 +131,7 @@ interface Props {
   total: number;
   state: SpoolListState;
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function SpoolList({ rows, total, state, height }: Props) {
@@ -91,7 +139,8 @@ export function SpoolList({ rows, total, state, height }: Props) {
   return (
     <Box flexDirection="column">
       <Text bold>
-        Your spools on the console: {state.filter ? `${rows.length} of ${total}` : total} · {SORT_LABELS[state.sort]}
+        Your spools on the console: {state.filter ? `${rows.length} of ${total}` : total} ·{" "}
+        {SORT_LABELS[state.sort]}
       </Text>
       <Box marginY={1}>
         <Text>Filter: </Text>
@@ -126,7 +175,13 @@ export function SpoolList({ rows, total, state, height }: Props) {
           <Box key={row.spool.id}>
             <Cell width={COLUMNS.cursor}>{active ? "›" : ""}</Cell>
             <Box width={COLUMNS.swatch} flexShrink={0}>
-              <Text backgroundColor={swatch && /^[0-9A-F]{6}/i.test(swatch) ? `#${swatch.slice(0, 6)}` : undefined}>{"  "}</Text>
+              <Text
+                {...(swatch && /^[0-9A-F]{6}/i.test(swatch)
+                  ? { backgroundColor: `#${swatch.slice(0, 6)}` }
+                  : {})}
+              >
+                {"  "}
+              </Text>
             </Box>
             <Cell width={COLUMNS.id} dim>{`#${row.spool.id}`}</Cell>
             <Cell width={COLUMNS.name} color={active ? "cyan" : undefined} shrink>
@@ -145,7 +200,10 @@ export function SpoolList({ rows, total, state, height }: Props) {
       })}
       {rows.length === 0 ? <Text dimColor>No spool matches every word of the filter.</Text> : null}
       {rows.length > end ? <Text dimColor>… {rows.length - end} more</Text> : null}
-      <Text dimColor>type to filter · tab sort · enter print or add more · esc {state.filter ? "clear filter" : "menu"} · ? help</Text>
+      <Text dimColor>
+        type to filter · tab sort · enter print or add more · esc{" "}
+        {state.filter ? "clear filter" : "menu"} · ? help
+      </Text>
     </Box>
   );
 }

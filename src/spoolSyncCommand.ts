@@ -9,14 +9,31 @@ import { FilamentCatalog } from "./filamentCatalog.js";
 import { filamentName } from "./filamentCatalogSync.js";
 import { FilamentProfilesError, type TdfpSpool } from "./filamentProfiles.js";
 import { forgetSpools, mySpools } from "./filamentProfilesCache.js";
-import { connectFilamentProfiles, MissingKeyError } from "./filamentProfilesConnect.js";
+import {
+  connectFilamentProfiles,
+  type FilamentProfilesConnection,
+  MissingKeyError,
+} from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
 import { holdsSecret, KEY_ARGUMENT_ERROR } from "./secrets.js";
 import { SpoolEaseClient, type SpoolRecord } from "./spoolease.js";
+import {
+  readSpoolEaseConfig,
+  SPOOLEASE_SETTINGS_HINT,
+  spooleaseConnectionFrom,
+} from "./spooleaseConfig.js";
 import { remainingGrams } from "./spoolInventory.js";
-import { readSpoolEaseConfig, SPOOLEASE_SETTINGS_HINT, spooleaseConnectionFrom } from "./spooleaseConfig.js";
 import { linksPath, loadLinks, saveLinks } from "./spoolLinks.js";
-import { applySync, planSync, rowCalls, type SyncChoices, type SyncPlan, SyncPlanError, type SyncRow, type WeightVerdict } from "./spoolSync.js";
+import {
+  applySync,
+  planSync,
+  rowCalls,
+  type SyncChoices,
+  type SyncPlan,
+  SyncPlanError,
+  type SyncRow,
+  type WeightVerdict,
+} from "./spoolSync.js";
 import { checkKey, KeyCheckError } from "./sync.js";
 
 export interface SyncIo {
@@ -87,7 +104,9 @@ function plural(count: number, noun: string, many = `${noun}s`): string {
 
 /** "898 of 1000 left this month", or null before the first call. */
 function quotaLeft(quota: QuotaState): string | null {
-  return quota.remaining === null || quota.limit === null ? null : `${quota.exact ? "" : "about "}${quota.remaining} of ${quota.limit} left this month`;
+  return quota.remaining === null || quota.limit === null
+    ? null
+    : `${quota.exact ? "" : "about "}${quota.remaining} of ${quota.limit} left this month`;
 }
 
 function parsePairs(values: string[], option: string, value: RegExp): Map<string, string> {
@@ -95,7 +114,9 @@ function parsePairs(values: string[], option: string, value: RegExp): Map<string
   for (const text of values) {
     const [id, other, extra] = text.split("=");
     if (extra !== undefined || !id || !/^\S+$/.test(id) || !other || !value.test(other)) {
-      throw new SyncUsageError(`--${option} takes <SpoolEase id>=<${option === "link" ? "3DFP spool code" : "filament number"}>, not "${text}"`);
+      throw new SyncUsageError(
+        `--${option} takes <SpoolEase id>=<${option === "link" ? "3DFP spool code" : "filament number"}>, not "${text}"`,
+      );
     }
     pairs.set(id.trim(), other.trim());
   }
@@ -103,18 +124,25 @@ function parsePairs(values: string[], option: string, value: RegExp): Map<string
 }
 
 function parseChoices(values: { link: string[]; add: string[]; unlink: string[] }): SyncChoices {
-  const add = new Map([...parsePairs(values.add, "add", /^\d+$/)].map(([id, filament]) => [id, Number(filament)]));
-  for (const id of values.unlink) if (!/^\S+$/.test(id)) throw new SyncUsageError("--unlink takes a SpoolEase spool id");
+  const add = new Map(
+    [...parsePairs(values.add, "add", /^\d+$/)].map(([id, filament]) => [id, Number(filament)]),
+  );
+  for (const id of values.unlink)
+    if (!/^\S+$/.test(id)) throw new SyncUsageError("--unlink takes a SpoolEase spool id");
   return { link: parsePairs(values.link, "link", /^\S+$/), add, unlink: new Set(values.unlink) };
 }
 
-const seName = (spool: SpoolRecord): string => [spool.brand, spool.material, spool.subtype, spool.colorName].filter(Boolean).join(" ");
-const tdName = (spool: TdfpSpool): string => [spool.brand, spool.material, spool.materialType, spool.color].filter(Boolean).join(" ");
+const seName = (spool: SpoolRecord): string =>
+  [spool.brand, spool.material, spool.subtype, spool.colorName].filter(Boolean).join(" ");
+const tdName = (spool: TdfpSpool): string =>
+  [spool.brand, spool.material, spool.materialType, spool.color].filter(Boolean).join(" ");
 const se = (spool: SpoolRecord): string => `#${spool.id} ${seName(spool)}`;
 
 function weightText(weight: WeightVerdict, tdfp: TdfpSpool, left: number | null): string {
-  if (weight.kind === "push") return `weight ${tdfp.remainingGrams} → ${weight.grams} g, from SpoolEase`;
-  if (weight.kind === "weigh") return `SpoolEase ${left} g, 3DFP ${tdfp.remainingGrams} g: put it on SpoolEase's scale (only the scale sets SpoolEase's weight)`;
+  if (weight.kind === "push")
+    return `weight ${tdfp.remainingGrams} → ${weight.grams} g, from SpoolEase`;
+  if (weight.kind === "weigh")
+    return `SpoolEase ${left} g, 3DFP ${tdfp.remainingGrams} g: put it on SpoolEase's scale (only the scale sets SpoolEase's weight)`;
   if (weight.kind === "unweighed") return "SpoolEase hasn't weighed it yet";
   return `weights agree (${left} g)`;
 }
@@ -129,11 +157,17 @@ function rowLines(row: SyncRow): string[] {
     const tag = row.patch?.bambuTagId !== undefined ? "tag written to 3DFP" : null;
     if (row.before === null) {
       const why = row.how === "chosen" ? "as asked" : "same brand, material and color";
-      return [labelled("Link", `${se(row.spool)} ↔ ${row.tdfp.shortCode} ${tdName(row.tdfp)} (${why})`), " ".repeat(LABEL) + [weight, tag].filter(Boolean).join("; ")];
+      return [
+        labelled("Link", `${se(row.spool)} ↔ ${row.tdfp.shortCode} ${tdName(row.tdfp)} (${why})`),
+        " ".repeat(LABEL) + [weight, tag].filter(Boolean).join("; "),
+      ];
     }
     const pair = `${se(row.spool)} ↔ ${row.tdfp.shortCode}`;
     if (row.patch) {
-      const parts = [row.weight.kind === "push" || row.weight.kind === "weigh" ? weight : null, tag].filter(Boolean);
+      const parts = [
+        row.weight.kind === "push" || row.weight.kind === "weigh" ? weight : null,
+        tag,
+      ].filter(Boolean);
       return [labelled("Update", `${pair}: ${parts.join("; ")}`)];
     }
     if (row.weight.kind === "weigh") return [labelled("Weigh", `${pair}: ${weight}`)];
@@ -141,9 +175,16 @@ function rowLines(row: SyncRow): string[] {
     return [labelled("In step", `${pair}: ${left} g`)];
   }
   if (row.kind === "add") {
-    const as = row.filament ? `#${row.filament.id} ${filamentName(row.filament)}` : `filament #${row.filamentId}`;
+    const as = row.filament
+      ? `#${row.filament.id} ${filamentName(row.filament)}`
+      : `filament #${row.filamentId}`;
     const grams = row.grams === null ? "at the filament's own weight" : `at ${row.grams} g`;
-    return [labelled("Add", `${se(row.spool)} to 3DFP as ${as} ${grams}${row.tag ? ", with its tag" : ""}`)];
+    return [
+      labelled(
+        "Add",
+        `${se(row.spool)} to 3DFP as ${as} ${grams}${row.tag ? ", with its tag" : ""}`,
+      ),
+    ];
   }
   if (row.kind === "unlinked") {
     const why = {
@@ -156,11 +197,18 @@ function rowLines(row: SyncRow): string[] {
   }
   if (row.kind === "ambiguous") {
     const codes = row.candidates.map((c) => c.shortCode).join(", ");
-    return [labelled("Choose", `${se(row.spool)}: several 3DFP spools fit (${codes}): pick one with --link ${row.spool.id}=<code>`)];
+    return [
+      labelled(
+        "Choose",
+        `${se(row.spool)}: several 3DFP spools fit (${codes}): pick one with --link ${row.spool.id}=<code>`,
+      ),
+    ];
   }
   if (row.kind === "suggest") {
     if (row.filaments.length === 0) {
-      const words = [row.spool.brand, row.spool.material, row.spool.subtype, row.spool.colorName].filter(Boolean).join(" ");
+      const words = [row.spool.brand, row.spool.material, row.spool.subtype, row.spool.colorName]
+        .filter(Boolean)
+        .join(" ");
       return [
         labelled(
           "Choose",
@@ -169,10 +217,20 @@ function rowLines(row: SyncRow): string[] {
       ];
     }
     const shown = row.filaments.slice(0, SHOWN_FILAMENTS).map((f) => `#${f.id} ${filamentName(f)}`);
-    const more = row.filaments.length > SHOWN_FILAMENTS ? ` and ${row.filaments.length - SHOWN_FILAMENTS} more` : "";
-    return [labelled("Choose", `${se(row.spool)}: not on 3DFP; catalog filaments that fit: ${shown.join(", ")}${more}: pick one with --add ${row.spool.id}=<filament>`)];
+    const more =
+      row.filaments.length > SHOWN_FILAMENTS
+        ? ` and ${row.filaments.length - SHOWN_FILAMENTS} more`
+        : "";
+    return [
+      labelled(
+        "Choose",
+        `${se(row.spool)}: not on 3DFP; catalog filaments that fit: ${shown.join(", ")}${more}: pick one with --add ${row.spool.id}=<filament>`,
+      ),
+    ];
   }
-  return [labelled("3DFP only", `${row.tdfp.shortCode} ${tdName(row.tdfp)}: no SpoolEase spool fits`)];
+  return [
+    labelled("3DFP only", `${row.tdfp.shortCode} ${tdName(row.tdfp)}: no SpoolEase spool fits`),
+  ];
 }
 
 function reportSetAside(setAside: string | null, io: SyncIo): void {
@@ -182,20 +240,34 @@ function reportSetAside(setAside: string | null, io: SyncIo): void {
 async function run(argv: string[], io: SyncIo): Promise<number> {
   // Before parsing: parseArgs quotes an unknown option, and a key typed there would be printed back.
   if (argv.some(holdsSecret)) throw new SyncUsageError(KEY_ARGUMENT_ERROR);
-  const { values, positionals } = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
+  const { values, positionals } = parseArgs({
+    args: argv,
+    options: OPTIONS,
+    allowPositionals: true,
+    strict: true,
+  });
   if (values.help) {
     io.stdout(SYNC_USAGE);
     return 0;
   }
   // Not quoted: a pasted key without its prefix would be printed back.
-  if (positionals.length > 0) throw new SyncUsageError("sync takes options only, no other arguments");
-  const choices = parseChoices({ link: values.link ?? [], add: values.add ?? [], unlink: values.unlink ?? [] });
+  if (positionals.length > 0)
+    throw new SyncUsageError("sync takes options only, no other arguments");
+  const choices = parseChoices({
+    link: values.link ?? [],
+    add: values.add ?? [],
+    unlink: values.unlink ?? [],
+  });
   const port = Number(values["spoolease-port"]);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new SyncUsageError("--spoolease-port must be a port number");
+  if (!Number.isInteger(port) || port < 1 || port > 65_535)
+    throw new SyncUsageError("--spoolease-port must be a port number");
   const connection = spooleaseConnectionFrom(values, port, await readSpoolEaseConfig());
-  if (!connection) throw new SyncUsageError(`SpoolEase host and security key are required: ${SPOOLEASE_SETTINGS_HINT}`);
+  if (!connection)
+    throw new SyncUsageError(
+      `SpoolEase host and security key are required: ${SPOOLEASE_SETTINGS_HINT}`,
+    );
 
-  let api;
+  let api: FilamentProfilesConnection;
   try {
     api = await connectFilamentProfiles();
   } catch (err) {
@@ -216,7 +288,8 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
       tdfp: listed.spools,
       links,
       choices,
-      filamentsFor: (spool) => catalog.search({ words: `${spool.brand} ${spool.material}` }, CATALOG_LOOKUP),
+      filamentsFor: (spool) =>
+        catalog.search({ words: `${spool.brand} ${spool.material}` }, CATALOG_LOOKUP),
       filamentById: (id) => catalog.get(id)?.filament ?? null,
       now: new Date(),
     });
@@ -224,7 +297,9 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     catalog.close();
   }
 
-  const fetched = listed.fromCache ? `list from ${utcMinute(listed.fetchedAt)}: no API call` : "1 API call";
+  const fetched = listed.fromCache
+    ? `list from ${utcMinute(listed.fetchedAt)}: no API call`
+    : "1 API call";
   io.stdout(
     `Spool sync: SpoolEase ${connection.host} (${plural(seSpools.length, "spool")}) · 3DFilamentProfiles (${plural(listed.spools.length, "spool")}, ${fetched})\n\n`,
   );
@@ -232,7 +307,16 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
   if (lines.length) io.stdout(`${lines.join("\n")}\n\n`);
 
   if (plan.changes === 0) {
-    if (!values["dry-run"]) reportSetAside(await saveLinks(linksPath(), api.account, connection.host, (await applySync(plan, api.client)).links), io);
+    if (!values["dry-run"])
+      reportSetAside(
+        await saveLinks(
+          linksPath(),
+          api.account,
+          connection.host,
+          (await applySync(plan, api.client)).links,
+        ),
+        io,
+      );
     io.stdout("Nothing to change.\n");
     return 0;
   }
@@ -260,18 +344,28 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
   const applied = await applySync(plan, api.client, (outcome) => {
     if (outcome.ok) return;
     const row = outcome.row;
-    const what = row.kind === "linked" ? `#${row.spool.id} ↔ ${row.tdfp.shortCode}` : row.kind === "add" ? `#${row.spool.id}` : "";
+    const what =
+      row.kind === "linked"
+        ? `#${row.spool.id} ↔ ${row.tdfp.shortCode}`
+        : row.kind === "add"
+          ? `#${row.spool.id}`
+          : "";
     failures.push(labelled("Failed", `${what}: ${outcome.error}`));
   });
   reportSetAside(await saveLinks(linksPath(), api.account, connection.host, applied.links), io);
   if (applied.outcomes.some((outcome) => outcome.ok || outcome.created)) await forgetSpools();
 
-  const calls = applied.outcomes.reduce((sum, outcome) => sum + (outcome.ok ? rowCalls(outcome.row) : 0), 0);
+  const calls = applied.outcomes.reduce(
+    (sum, outcome) => sum + (outcome.ok ? rowCalls(outcome.row) : 0),
+    0,
+  );
   const done = plan.changes - failures.length;
   if (failures.length) io.stdout(`${failures.join("\n")}\n`);
   const after = quotaLeft(await api.ledger.current());
   const failed = failures.length ? `, ${failures.length} failed` : "";
-  io.stdout(`Done: ${plural(done, "change")} applied${failed} (${plural(calls, "API call")}${after ? `; ${after}` : ""}). Links: ${tildePath(linksPath())}\n`);
+  io.stdout(
+    `Done: ${plural(done, "change")} applied${failed} (${plural(calls, "API call")}${after ? `; ${after}` : ""}). Links: ${tildePath(linksPath())}\n`,
+  );
   return failures.length ? 1 : 0;
 }
 
@@ -279,7 +373,10 @@ export async function spoolSyncCommand(argv: string[], io: SyncIo): Promise<numb
   try {
     return await run(argv, io);
   } catch (err) {
-    if (err instanceof SyncUsageError || (err instanceof TypeError && "code" in err && String(err.code).startsWith("ERR_PARSE_ARGS"))) {
+    if (
+      err instanceof SyncUsageError ||
+      (err instanceof TypeError && "code" in err && String(err.code).startsWith("ERR_PARSE_ARGS"))
+    ) {
       io.stderr(`bambu-hando: error: ${err.message}\n\n${SYNC_USAGE}`);
       return 2;
     }
@@ -288,7 +385,10 @@ export async function spoolSyncCommand(argv: string[], io: SyncIo): Promise<numb
       return 2;
     }
     io.stderr(`bambu-hando: error: ${errorMessage(err)}\n`);
-    const keyOrQuota = err instanceof SyncPlanError || err instanceof QuotaError || (err instanceof FilamentProfilesError && (err.status === 401 || err.status === 402));
+    const keyOrQuota =
+      err instanceof SyncPlanError ||
+      err instanceof QuotaError ||
+      (err instanceof FilamentProfilesError && (err.status === 401 || err.status === 402));
     return keyOrQuota ? 2 : 1;
   }
 }

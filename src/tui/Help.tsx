@@ -3,7 +3,29 @@
 
 import { Box, Text } from "ink";
 
-export const HELP_TOPICS = ["home", "form", "choose", "browse", "pick", "color", "weights", "plan", "done", "copies", "labels", "check", "ids", "spools", "scan", "presets", "edit", "planned", "raw", "save", "error"] as const;
+export const HELP_TOPICS = [
+  "home",
+  "form",
+  "choose",
+  "browse",
+  "pick",
+  "color",
+  "weights",
+  "plan",
+  "done",
+  "copies",
+  "labels",
+  "check",
+  "ids",
+  "spools",
+  "scan",
+  "presets",
+  "edit",
+  "planned",
+  "raw",
+  "save",
+  "error",
+] as const;
 
 export type HelpTopic = (typeof HELP_TOPICS)[number];
 
@@ -31,13 +53,33 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
       return {
         title: "settings",
         about: "Where presets go and how to reach SpoolEase. In a text field, ? is typed.",
-        keys: [["↑/↓ or tab", "move"], ["enter or space", "toggle, or open the list for a folder or printers"], ["typing", "edits a text field"], ["esc", "back to the menu"], QUIT],
+        keys: [
+          ["↑/↓ or tab", "move"],
+          ["enter or space", "toggle, or open the list for a folder or printers"],
+          ["typing", "edits a text field"],
+          ["esc", "back to the menu"],
+          QUIT,
+        ],
       };
     case "choose":
       return {
         title: multi ? "a checklist" : "a list",
-        about: multi ? "Tick as many as you need, then enter." : "Pick one; the current choice is marked (*).",
-        keys: [MOVE, PAGE, LETTERS, ...(multi ? [["space", "tick or untick"] as [string, string], ["enter", "done"] as [string, string]] : [["enter", "choose"] as [string, string]]), ["esc", "cancel, changing nothing"], QUIT],
+        about: multi
+          ? "Tick as many as you need, then enter."
+          : "Pick one; the current choice is marked (*).",
+        keys: [
+          MOVE,
+          PAGE,
+          LETTERS,
+          ...(multi
+            ? [
+                ["space", "tick or untick"] as [string, string],
+                ["enter", "done"] as [string, string],
+              ]
+            : [["enter", "choose"] as [string, string]]),
+          ["esc", "cancel, changing nothing"],
+          QUIT,
+        ],
       };
     case "browse":
       return {
@@ -59,19 +101,40 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
       return {
         title: "search",
         about: "Every word typed must be in the name; selections are kept as you search.",
-        keys: [["typing", "search"], ["backspace", "delete a letter"], MOVE, PAGE, ["tab", "select or unselect"], ["ctrl+a", "select every match, or none"], ["enter", "continue with the selection"], ["esc", "back to browsing"], QUIT],
+        keys: [
+          ["typing", "search"],
+          ["backspace", "delete a letter"],
+          MOVE,
+          PAGE,
+          ["tab", "select or unselect"],
+          ["ctrl+a", "select every match, or none"],
+          ["enter", "continue with the selection"],
+          ["esc", "back to browsing"],
+          QUIT,
+        ],
       };
     case "color":
       return {
         title: "another color",
         about: "A color SpoolmanDB doesn't list, with the settings of a listed one.",
-        keys: [MOVE, ["enter", "choose the listed color, or go to the next row"], ["typing", "edits the name and hex color (? types into the name)"], ["esc", "back to the colors"], QUIT],
+        keys: [
+          MOVE,
+          ["enter", "choose the listed color, or go to the next row"],
+          ["typing", "edits the name and hex color (? types into the name)"],
+          ["esc", "back to the colors"],
+          QUIT,
+        ],
       };
     case "weights":
       return {
         title: "empty spool weight",
         about: "What the empty spool weighs, so SpoolEase knows what's left; once per brand.",
-        keys: [MOVE, ["enter", "choose, and go to the next brand"], ["esc", "the brand before, or back"], QUIT],
+        keys: [
+          MOVE,
+          ["enter", "choose, and go to the next brand"],
+          ["esc", "the brand before, or back"],
+          QUIT,
+        ],
       };
     case "plan":
       return {
@@ -89,25 +152,52 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
       return {
         title: "the run",
         about: "What the run wrote; failures say why.",
-        keys: [["[l]", "labels for the spools it created"], ["[m]", "back to the menu"], ["[q]", "quit"], QUIT],
+        keys: [
+          ["[l]", "labels for the spools it created"],
+          ["[m]", "back to the menu"],
+          ["[q]", "quit"],
+          QUIT,
+        ],
       };
     case "copies":
       return {
         title: "more spools",
         about: "New spools copied from your newest one of this filament; no presets change.",
-        keys: [["[a]", "add them"], ["[b]", "back to how many"], ["[l]", "labels for the new spools"], ["[m]", "back to the menu"], ["[q]", "quit"], QUIT],
+        keys: [
+          ["[a]", "add them"],
+          ["[b]", "back to how many"],
+          ["[l]", "labels for the new spools"],
+          ["[m]", "back to the menu"],
+          ["[q]", "quit"],
+          QUIT,
+        ],
       };
     case "labels":
       return {
         title: "labels",
         about: "Fields to print, label size, printer and PDF; the choices are remembered.",
-        keys: [MOVE, ["space or enter", "tick a field, or open the size and printer lists"], ["typing", "edits the size or the PDF path (? types into the path)"], ["enter on Make labels", "print and/or write the PDF"], ["esc", "back"], QUIT],
+        keys: [
+          MOVE,
+          ["space or enter", "tick a field, or open the size and printer lists"],
+          ["typing", "edits the size or the PDF path (? types into the path)"],
+          ["enter on Make labels", "print and/or write the PDF"],
+          ["esc", "back"],
+          QUIT,
+        ],
       };
     case "check":
       return {
         title: "the sync check",
         about: "Where BambuStudio and SpoolEase disagree, problems first; it changes nothing.",
-        keys: [["↑/↓", "scroll"], PAGE, ["[f]", "give presets without a filament ID one"], ["[r]", "check again"], ["[b] or esc", "back to the menu"], ["[q]", "quit"], QUIT],
+        keys: [
+          ["↑/↓", "scroll"],
+          PAGE,
+          ["[f]", "give presets without a filament ID one"],
+          ["[r]", "check again"],
+          ["[b] or esc", "back to the menu"],
+          ["[q]", "quit"],
+          QUIT,
+        ],
       };
     case "spools":
       return {
@@ -128,19 +218,39 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
       return {
         title: "barcode scan",
         about: "A scanner types like a keyboard. Each barcode is asked about once, then known.",
-        keys: [["scan or type", "the barcode (UPC, EAN, a maker's code)"], ["enter", "look it up"], ["backspace", "delete a character"], ["esc", "back to the menu"], QUIT],
+        keys: [
+          ["scan or type", "the barcode (UPC, EAN, a maker's code)"],
+          ["enter", "look it up"],
+          ["backspace", "delete a character"],
+          ["esc", "back to the menu"],
+          QUIT,
+        ],
       };
     case "ids":
       return {
         title: "filament IDs",
         about: "Presets without a filament ID get the one BambuStudio would give them.",
-        keys: [["[a]", "write the IDs into the presets"], ["[b]", "back to the check, which looks again"], ["[m]", "back to the menu, once written"], ["[q]", "quit"], QUIT],
+        keys: [
+          ["[a]", "write the IDs into the presets"],
+          ["[b]", "back to the check, which looks again"],
+          ["[m]", "back to the menu, once written"],
+          ["[q]", "quit"],
+          QUIT,
+        ],
       };
     case "presets":
       return {
         title: "filament presets",
         about: "BambuStudio filament presets, one per printer; copies of others are left out.",
-        keys: [["typing", "filter: every word in the name, printer or filament ID"], ["backspace", "delete a letter"], MOVE, PAGE, ["enter", "edit the preset"], ["esc", "clear the filter, then back to the menu"], QUIT],
+        keys: [
+          ["typing", "filter: every word in the name, printer or filament ID"],
+          ["backspace", "delete a letter"],
+          MOVE,
+          PAGE,
+          ["enter", "edit the preset"],
+          ["esc", "clear the filter, then back to the menu"],
+          QUIT,
+        ],
       };
     case "edit":
       return {
@@ -177,13 +287,28 @@ export function helpPage(topic: HelpTopic, multi = false): HelpPage {
       return {
         title: "all settings",
         about: "Each value on one line, \\n for a new line; differing variants as a JSON list.",
-        keys: [["typing", "filter the keys"], MOVE, PAGE, ["enter", "edit the value, then enter sets it"], ["ctrl+u", "undo the change to the key"], ["esc", "clear the filter, then back to the form"], QUIT],
+        keys: [
+          ["typing", "filter the keys"],
+          MOVE,
+          PAGE,
+          ["enter", "edit the value, then enter sets it"],
+          ["ctrl+u", "undo the change to the key"],
+          ["esc", "clear the filter, then back to the form"],
+          QUIT,
+        ],
       };
     case "save":
       return {
         title: "saving a preset",
         about: "Each preset is read again and only the changed keys are written.",
-        keys: [["[a]", "save, and the nozzle range on SpoolEase when it changed"], ["[b]", "back to editing"], ["[e]", "edit another preset, once saved"], ["[m]", "back to the menu, once saved"], ["[q]", "quit"], QUIT],
+        keys: [
+          ["[a]", "save, and the nozzle range on SpoolEase when it changed"],
+          ["[b]", "back to editing"],
+          ["[e]", "edit another preset, once saved"],
+          ["[m]", "back to the menu, once saved"],
+          ["[q]", "quit"],
+          QUIT,
+        ],
       };
     case "error":
       return {

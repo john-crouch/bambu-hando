@@ -20,7 +20,11 @@ export interface PresetListState {
   error: string;
 }
 
-export type PresetListAction = { type: "update"; state: PresetListState } | { type: "choose"; index: number } | { type: "back" } | { type: "none" };
+export type PresetListAction =
+  | { type: "update"; state: PresetListState }
+  | { type: "choose"; index: number }
+  | { type: "back" }
+  | { type: "none" };
 
 export function initialPresetList(): PresetListState {
   return { cursor: 0, filter: "", error: "" };
@@ -40,21 +44,46 @@ export function presetMatches(presets: UserPreset[], filter: string): UserPreset
   });
 }
 
-export function presetListInput(state: PresetListState, input: string, key: Key, count: number, rows: number = ROWS): PresetListAction {
-  const next = (changes: Partial<PresetListState>): PresetListAction => ({ type: "update", state: { ...state, error: "", ...changes } });
+export function presetListInput(
+  state: PresetListState,
+  input: string,
+  key: Key,
+  count: number,
+  rows: number = ROWS,
+): PresetListAction {
+  const next = (changes: Partial<PresetListState>): PresetListAction => ({
+    type: "update",
+    state: { ...state, error: "", ...changes },
+  });
   if (key.escape) return state.filter ? next({ filter: "", cursor: 0 }) : { type: "back" };
-  if (key.return) return count > 0 ? { type: "choose", index: Math.min(state.cursor, count - 1) } : { type: "none" };
+  if (key.return)
+    return count > 0
+      ? { type: "choose", index: Math.min(state.cursor, count - 1) }
+      : { type: "none" };
   const moved = listMove(state.cursor, key, count, rows);
   if (moved !== null) return next({ cursor: moved });
   if (key.backspace || key.delete) return next({ filter: state.filter.slice(0, -1), cursor: 0 });
-  if (input && !key.ctrl && !key.meta && !key.tab) return next({ filter: state.filter + input, cursor: 0 });
+  if (input && !key.ctrl && !key.meta && !key.tab)
+    return next({ filter: state.filter + input, cursor: 0 });
   return { type: "none" };
 }
 
-function Cell({ width, children, color, dim, shrink }: { width: number; children: string; color?: string; dim?: boolean; shrink?: boolean }) {
+function Cell({
+  width,
+  children,
+  color,
+  dim,
+  shrink,
+}: {
+  width: number;
+  children: string;
+  color?: string | undefined;
+  dim?: boolean;
+  shrink?: boolean;
+}) {
   return (
     <Box width={width} flexShrink={shrink ? 1 : 0} paddingRight={1}>
-      <Text wrap="truncate-end" color={color} dimColor={dim}>
+      <Text wrap="truncate-end" {...(color ? { color } : {})} {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
     </Box>
@@ -71,11 +100,15 @@ interface Props {
   state: PresetListState;
   warnings: string[];
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function PresetList({ matches, total, folder, drafts, state, warnings, height }: Props) {
-  const [start, end] = visibleRange(state.cursor, matches.length, presetListRows(height, warnings.length));
+  const [start, end] = visibleRange(
+    state.cursor,
+    matches.length,
+    presetListRows(height, warnings.length),
+  );
   return (
     <Box flexDirection="column">
       <Text bold wrap="truncate-end">
@@ -109,10 +142,15 @@ export function PresetList({ matches, total, folder, drafts, state, warnings, he
           </Box>
         );
       })}
-      {matches.length === 0 ? <Text dimColor>No preset matches every word of the filter.</Text> : null}
+      {matches.length === 0 ? (
+        <Text dimColor>No preset matches every word of the filter.</Text>
+      ) : null}
       {matches.length > end ? <Text dimColor>… {matches.length - end} more</Text> : null}
       {state.error ? <Text color="red">{state.error}</Text> : null}
-      <Text dimColor>type to filter · ↑/↓ move · enter edit · esc {state.filter ? "clear filter" : "menu"} · ? help</Text>
+      <Text dimColor>
+        type to filter · ↑/↓ move · enter edit · esc {state.filter ? "clear filter" : "menu"} · ?
+        help
+      </Text>
     </Box>
   );
 }

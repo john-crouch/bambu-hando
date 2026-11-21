@@ -15,7 +15,15 @@ const CHROME = 8;
 export function pickerRows(height: number | undefined, warnings: number): number {
   return listRows(height, CHROME + warnings, ROWS);
 }
-const COLUMNS = { cursor: 2, mark: 4, swatch: 3, name: 46, material: 8, temps: 9, code: 10 } as const;
+const COLUMNS = {
+  cursor: 2,
+  mark: 4,
+  swatch: 3,
+  name: 46,
+  material: 8,
+  temps: 9,
+  code: 10,
+} as const;
 
 export interface PickerState {
   query: string;
@@ -26,7 +34,10 @@ export interface PickerState {
   error: string;
 }
 
-export type PickerAction = { type: "update"; state: PickerState } | { type: "done" } | { type: "back" };
+export type PickerAction =
+  | { type: "update"; state: PickerState }
+  | { type: "done" }
+  | { type: "back" };
 
 export function initialPickerState(query: string): PickerState {
   return { query, cursor: 0, selected: new Set(), error: "" };
@@ -36,13 +47,23 @@ function clamp(value: number, max: number): number {
   return Math.max(0, Math.min(value, max));
 }
 
-export function pickerInput(state: PickerState, input: string, key: Key, matches: FilamentProfile[], rows: number = ROWS): PickerAction {
+export function pickerInput(
+  state: PickerState,
+  input: string,
+  key: Key,
+  matches: FilamentProfile[],
+  rows: number = ROWS,
+): PickerAction {
   const last = matches.length - 1;
-  const next = (changes: Partial<PickerState>): PickerAction => ({ type: "update", state: { ...state, error: "", ...changes } });
+  const next = (changes: Partial<PickerState>): PickerAction => ({
+    type: "update",
+    state: { ...state, error: "", ...changes },
+  });
 
   if (key.escape) return { type: "back" };
   if (key.return) {
-    if (state.selected.size === 0) return next({ error: "Select filaments with tab (ctrl+a selects every match)" });
+    if (state.selected.size === 0)
+      return next({ error: "Select filaments with tab (ctrl+a selects every match)" });
     return { type: "done" };
   }
   if (key.upArrow) return next({ cursor: clamp(state.cursor - 1, last) });
@@ -79,7 +100,7 @@ export function visibleRange(cursor: number, total: number, rows: number): [numb
 function Cell({ width, children, dim }: { width: number; children: string; dim?: boolean }) {
   return (
     <Box width={width}>
-      <Text wrap="truncate-end" dimColor={dim}>
+      <Text wrap="truncate-end" {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
     </Box>
@@ -92,16 +113,21 @@ interface Props {
   state: PickerState;
   warnings: string[];
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function Picker({ catalogSize, matches, state, warnings, height }: Props) {
-  const [start, end] = visibleRange(state.cursor, matches.length, pickerRows(height, warnings.length));
+  const [start, end] = visibleRange(
+    state.cursor,
+    matches.length,
+    pickerRows(height, warnings.length),
+  );
 
   return (
     <Box flexDirection="column">
       <Text bold>
-        SpoolmanDB: {catalogSize} filaments · {matches.length} match · {state.selected.size} selected
+        SpoolmanDB: {catalogSize} filaments · {matches.length} match · {state.selected.size}{" "}
+        selected
       </Text>
       {warnings.map((w) => (
         <Text key={w} color="yellow">
@@ -119,12 +145,14 @@ export function Picker({ catalogSize, matches, state, warnings, height }: Props)
         return (
           <Box key={profile.filamentId}>
             <Cell width={COLUMNS.cursor}>{active ? "›" : ""}</Cell>
-            <Cell width={COLUMNS.mark}>{state.selected.has(profile.filamentId) ? "[x]" : "[ ]"}</Cell>
+            <Cell width={COLUMNS.mark}>
+              {state.selected.has(profile.filamentId) ? "[x]" : "[ ]"}
+            </Cell>
             <Box width={COLUMNS.swatch}>
               <Text backgroundColor={`#${profile.colorRgba.slice(0, 6)}`}>{"  "}</Text>
             </Box>
             <Box width={COLUMNS.name}>
-              <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
+              <Text wrap="truncate-end" {...(active ? { color: "cyan" } : {})}>
                 {profile.name}
               </Text>
             </Box>
@@ -136,10 +164,16 @@ export function Picker({ catalogSize, matches, state, warnings, height }: Props)
           </Box>
         );
       })}
-      {matches.length === 0 ? <Text dimColor>No matches. Bambu Lab filaments are never included: BambuStudio ships its own presets.</Text> : null}
+      {matches.length === 0 ? (
+        <Text dimColor>
+          No matches. Bambu Lab filaments are never included: BambuStudio ships its own presets.
+        </Text>
+      ) : null}
       {matches.length > end ? <Text dimColor>… {matches.length - end} more</Text> : null}
       {state.error ? <Text color="red">{state.error}</Text> : null}
-      <Text dimColor>type to search · ↑/↓ move · tab select · enter continue · esc back · ? help</Text>
+      <Text dimColor>
+        type to search · ↑/↓ move · tab select · enter continue · esc back · ? help
+      </Text>
     </Box>
   );
 }

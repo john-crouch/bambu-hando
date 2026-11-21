@@ -32,11 +32,17 @@ export function remainingGrams(spool: SpoolRecord): number | null {
 }
 
 function spoolName(spool: SpoolRecord, names: ReadonlyMap<string, CustomFilament>): string {
-  return names.get(spool.slicerFilament)?.name || [spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ") || spool.slicerFilament;
+  return (
+    names.get(spool.slicerFilament)?.name ||
+    [spool.brand, spool.material, spool.colorName].filter(Boolean).join(" ") ||
+    spool.slicerFilament
+  );
 }
 
-const byText = (a: string, b: string): number => a.localeCompare(b, undefined, { sensitivity: "base" });
-const newest = (a: InventoryRow, b: InventoryRow): number => Number(b.spool.id) - Number(a.spool.id);
+const byText = (a: string, b: string): number =>
+  a.localeCompare(b, undefined, { sensitivity: "base" });
+const newest = (a: InventoryRow, b: InventoryRow): number =>
+  Number(b.spool.id) - Number(a.spool.id);
 /** Unknowns (null or "") go last whatever the order. */
 function lastIfMissing<T>(a: T | null, b: T | null, compare: (x: T, y: T) => number): number {
   if (a === null || a === "") return b === null || b === "" ? 0 : 1;
@@ -52,16 +58,24 @@ const SORTS: Record<InventorySort, (a: InventoryRow, b: InventoryRow) => number>
 };
 
 /** The spools matching every word of `filter` (name, location, filament code or #id), in `sort` order. */
-export function inventoryRows(spools: SpoolRecord[], names: ReadonlyMap<string, CustomFilament>, filter: string, sort: InventorySort): InventoryRow[] {
+export function inventoryRows(
+  spools: SpoolRecord[],
+  names: ReadonlyMap<string, CustomFilament>,
+  filter: string,
+  sort: InventorySort,
+): InventoryRow[] {
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   return spools
     .map((spool): InventoryRow => {
       const left = remainingGrams(spool);
-      const fraction = left !== null && spool.labelWeight ? Math.min(1, left / spool.labelWeight) : null;
+      const fraction =
+        left !== null && spool.labelWeight ? Math.min(1, left / spool.labelWeight) : null;
       return { spool, name: spoolName(spool, names), left, fraction };
     })
     .filter((row) => {
-      const text = [row.name, row.spool.location, row.spool.slicerFilament, `#${row.spool.id}`].join(" ").toLowerCase();
+      const text = [row.name, row.spool.location, row.spool.slicerFilament, `#${row.spool.id}`]
+        .join(" ")
+        .toLowerCase();
       return words.every((word) => text.includes(word));
     })
     .sort(SORTS[sort]);

@@ -8,7 +8,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "../src/cli.js";
-import { type FilamentProfilesServer, serverFilament, serverSpool, startFilamentProfilesServer, TEST_API_KEY } from "./filamentProfilesServer.js";
+import {
+  type FilamentProfilesServer,
+  serverFilament,
+  serverSpool,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
 
 async function run(argv: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   let stdout = "";
@@ -26,7 +32,15 @@ describe("bambu-hando 3dfp", () => {
     server.quota.remaining = 983;
     server.spools = [
       serverSpool(),
-      serverSpool({ short_code: "XYZ789", brand: "OVERTURE", material: "PLA", material_type: "Matte", color: "Black", remaining_grams: 0, location: "Empty" }),
+      serverSpool({
+        short_code: "XYZ789",
+        brand: "OVERTURE",
+        material: "PLA",
+        material_type: "Matte",
+        color: "Black",
+        remaining_grams: 0,
+        location: "Empty",
+      }),
     ];
     const home = await mkdtemp(join(tmpdir(), "bh-3dfp-cmd-"));
     vi.stubEnv("HOME", home);
@@ -48,19 +62,31 @@ describe("bambu-hando 3dfp", () => {
     for (const argv of [["3dfp"], ["3dfp", "--help"]]) {
       const { code, stdout } = await run(argv);
       expect(code).toBe(0);
-      expect(stdout).toContain("Usage: bambu-hando 3dfp <usage|spools|sync|filament|search|fill|catalog> [options]");
+      expect(stdout).toContain(
+        "Usage: bambu-hando 3dfp <usage|spools|sync|filament|search|fill|catalog> [options]",
+      );
     }
   });
 
   it("rejects an unknown action or option", async () => {
     const unknown = await run(["3dfp", "frobnicate"]);
-    expect(unknown).toMatchObject({ code: 2, stderr: expect.stringContaining("unknown action (usage, spools, sync, filament, search, fill or catalog)") });
+    expect(unknown).toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining(
+        "unknown action (usage, spools, sync, filament, search, fill or catalog)",
+      ),
+    });
     expect(unknown.stderr).not.toContain("frobnicate");
     expect((await run(["3dfp", "spools", "--fast"])).code).toBe(2);
   });
 
   it("refuses a key typed as an argument, without repeating it", async () => {
-    for (const argv of [["3dfp", "3dfp_LEAKME"], ["3dfp", "search", "3dfp_LEAKME"], ["3dfp", "spools", "--3dfp_LEAKME"], ["3dfp", "spools", "--brand=3dfp_LEAKME"]]) {
+    for (const argv of [
+      ["3dfp", "3dfp_LEAKME"],
+      ["3dfp", "search", "3dfp_LEAKME"],
+      ["3dfp", "spools", "--3dfp_LEAKME"],
+      ["3dfp", "spools", "--brand=3dfp_LEAKME"],
+    ]) {
       const { code, stderr } = await run(argv);
       expect(code).toBe(2);
       expect(stderr).toContain("shell history");
@@ -83,7 +109,9 @@ describe("bambu-hando 3dfp", () => {
 
     vi.setSystemTime(new Date("2026-11-15T13:20:00Z"));
     const second = await run(["3dfp", "spools"]);
-    expect(second.stdout).toContain("2 spools from the cache, fetched 2026-11-15 13:00 UTC (no API call; --refresh fetches again)");
+    expect(second.stdout).toContain(
+      "2 spools from the cache, fetched 2026-11-15 13:00 UTC (no API call; --refresh fetches again)",
+    );
     expect(server.requests).toHaveLength(1);
 
     await run(["3dfp", "spools", "--refresh"]);
@@ -99,7 +127,13 @@ describe("bambu-hando 3dfp", () => {
       from_cache: false,
       quota: { limit: 1000, remaining: 982, exact: true, resets_at: "2026-12-01T00:00:00.000Z" },
     });
-    expect(report.spools[0]).toMatchObject({ short_code: "ABC123", filament_id: 101, remaining_grams: 740, empty_spool_weight: 189, location: "Shelf A" });
+    expect(report.spools[0]).toMatchObject({
+      short_code: "ABC123",
+      filament_id: 101,
+      remaining_grams: 740,
+      empty_spool_weight: 189,
+      location: "Shelf A",
+    });
   });
 
   it("reports the quota without a call", async () => {
@@ -130,23 +164,37 @@ describe("bambu-hando 3dfp", () => {
     vi.stubEnv("FILAMENTPROFILES_API_KEY", "3dfp_LEAK ME");
     const { code, stderr } = await run(["3dfp", "spools"]);
     expect(code).toBe(2);
-    expect(stderr).toContain("FILAMENTPROFILES_API_KEY doesn't hold a usable 3DFilamentProfiles API key");
+    expect(stderr).toContain(
+      "FILAMENTPROFILES_API_KEY doesn't hold a usable 3DFilamentProfiles API key",
+    );
     expect(stderr).not.toContain("LEAK");
     expect(server.requests).toHaveLength(0);
   });
 
   it("exits 2 when the key is rejected or the quota is used up", async () => {
     vi.stubEnv("FILAMENTPROFILES_API_KEY", "3dfp_wrong");
-    expect(await run(["3dfp", "spools"])).toMatchObject({ code: 2, stderr: expect.stringContaining("bambu-hando key set 3dfp") });
+    expect(await run(["3dfp", "spools"])).toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining("bambu-hando key set 3dfp"),
+    });
 
     vi.stubEnv("FILAMENTPROFILES_API_KEY", TEST_API_KEY);
     server.quota.remaining = 0;
-    expect(await run(["3dfp", "spools"])).toMatchObject({ code: 2, stderr: expect.stringContaining("used up until 2026-12-01 00:00 UTC") });
+    expect(await run(["3dfp", "spools"])).toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining("used up until 2026-12-01 00:00 UTC"),
+    });
   });
 
   it("exits 1 when the API fails", async () => {
-    server.replies["/api/v1/my/spools"] = { status: 500, body: { error: { code: "internal", message: "An unexpected error occurred" } } };
-    expect(await run(["3dfp", "spools"])).toMatchObject({ code: 1, stderr: expect.stringContaining("An unexpected error occurred (internal)") });
+    server.replies["/api/v1/my/spools"] = {
+      status: 500,
+      body: { error: { code: "internal", message: "An unexpected error occurred" } },
+    };
+    expect(await run(["3dfp", "spools"])).toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("An unexpected error occurred (internal)"),
+    });
   });
 
   describe("the local catalog", () => {
@@ -154,7 +202,15 @@ describe("bambu-hando 3dfp", () => {
       server.filaments = [
         serverFilament(),
         serverFilament({ id: 102, color: "Black", discontinued: true }),
-        serverFilament({ id: 103, brand_key: "esun", brand_name: "eSUN", material_key: "pla", material: "PLA", material_type: "Matte", color: "Light Khaki" }),
+        serverFilament({
+          id: 103,
+          brand_key: "esun",
+          brand_name: "eSUN",
+          material_key: "pla",
+          material: "PLA",
+          material_type: "Matte",
+          color: "Light Khaki",
+        }),
       ];
     });
 
@@ -184,7 +240,9 @@ describe("bambu-hando 3dfp", () => {
       vi.setSystemTime(new Date("2026-12-20T10:00:00Z"));
       const kept = await run(["3dfp", "filament", "101"]);
       expect(kept.stdout).toContain("Flow ratio 0.95");
-      expect(kept.stdout).toContain("From the catalog, fetched 2026-11-15 (34 days old; --refresh-stale fetches it again: 1 API call).");
+      expect(kept.stdout).toContain(
+        "From the catalog, fetched 2026-11-15 (34 days old; --refresh-stale fetches it again: 1 API call).",
+      );
       expect(server.requests).toHaveLength(1);
 
       const refreshed = await run(["3dfp", "filament", "101", "--refresh-stale"]);
@@ -194,8 +252,19 @@ describe("bambu-hando 3dfp", () => {
 
     it("prints a record as snake_case JSON", async () => {
       const report = JSON.parse((await run(["3dfp", "filament", "101", "--json"])).stdout);
-      expect(report).toMatchObject({ fetched: true, stale: false, age_days: 0, record_at: "2026-11-15T13:00:00.000Z" });
-      expect(report.filament).toMatchObject({ id: 101, brand_key: "sunlu", temp_min: 230, flow_ratio: 0.95, k_value: 0.04 });
+      expect(report).toMatchObject({
+        fetched: true,
+        stale: false,
+        age_days: 0,
+        record_at: "2026-11-15T13:00:00.000Z",
+      });
+      expect(report.filament).toMatchObject({
+        id: 101,
+        brand_key: "sunlu",
+        temp_min: 230,
+        flow_ratio: 0.95,
+        k_value: 0.04,
+      });
     });
 
     it("rejects an id that isn't a whole number without a call", async () => {
@@ -206,7 +275,9 @@ describe("bambu-hando 3dfp", () => {
 
     it("searches the catalog locally, or online with --online", async () => {
       const empty = await run(["3dfp", "search", "sunlu"]);
-      expect(empty.stdout).toBe("No matches in the catalog (no API call; --online searches 3DFilamentProfiles: 1 call).\n");
+      expect(empty.stdout).toBe(
+        "No matches in the catalog (no API call; --online searches 3DFilamentProfiles: 1 call).\n",
+      );
 
       const online = await run(["3dfp", "search", "--online", "--brand", "sunlu"]);
       expect(online.stdout).toBe(
@@ -219,7 +290,11 @@ describe("bambu-hando 3dfp", () => {
       );
 
       const local = await run(["3dfp", "search", "black"]);
-      expect(local.stdout).toBe(["#102  Sunlu PETG Black (discontinued)", "1 match in the catalog (no API call).", ""].join("\n"));
+      expect(local.stdout).toBe(
+        ["#102  Sunlu PETG Black (discontinued)", "1 match in the catalog (no API call).", ""].join(
+          "\n",
+        ),
+      );
       expect(server.requests).toHaveLength(1);
     });
 
@@ -229,8 +304,14 @@ describe("bambu-hando 3dfp", () => {
       vi.stubEnv("FILAMENTPROFILES_API_KEY", undefined);
       vi.stubEnv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/bus");
 
-      expect(await run(["3dfp", "search", "black"])).toMatchObject({ code: 0, stdout: expect.stringContaining("1 match in the catalog (no API call).") });
-      expect(await run(["3dfp", "filament", "101"])).toMatchObject({ code: 0, stdout: expect.stringContaining("From the catalog, fetched 2026-11-15 (no API call).") });
+      expect(await run(["3dfp", "search", "black"])).toMatchObject({
+        code: 0,
+        stdout: expect.stringContaining("1 match in the catalog (no API call)."),
+      });
+      expect(await run(["3dfp", "filament", "101"])).toMatchObject({
+        code: 0,
+        stdout: expect.stringContaining("From the catalog, fetched 2026-11-15 (no API call)."),
+      });
       // A record it would have to fetch still needs the key.
       const fetching = await run(["3dfp", "filament", "102"]);
       expect(fetching.code).not.toBe(0);
@@ -243,12 +324,17 @@ describe("bambu-hando 3dfp", () => {
 
     it("waits for the month-end fill unless --now, and keeps the reserve", async () => {
       const early = await run(["3dfp", "fill"]);
-      expect(early).toMatchObject({ code: 0, stdout: "Nothing to do: the month-end fill starts on 2026-11-28 (UTC); --now fills now.\n" });
+      expect(early).toMatchObject({
+        code: 0,
+        stdout: "Nothing to do: the month-end fill starts on 2026-11-28 (UTC); --now fills now.\n",
+      });
       expect(server.requests).toHaveLength(0);
 
       const filled = await run(["3dfp", "fill", "--now", "--reserve", "970"]);
       expect(filled.code).toBe(0);
-      expect(filled.stdout).toMatch(/^Filled the catalog: \d+ API calls, 1 full record; 3 filaments from 2 brands\. Stopped: .*kept in reserve\n$/);
+      expect(filled.stdout).toMatch(
+        /^Filled the catalog: \d+ API calls, 1 full record; 3 filaments from 2 brands\. Stopped: .*kept in reserve\n$/,
+      );
       expect(server.requests[0]?.path).toBe("/api/v1/my/spools");
       expect(server.requests[1]?.path).toBe("/api/v1/filaments/101");
       expect(server.quota.remaining).toBe(970);
@@ -268,7 +354,9 @@ describe("bambu-hando 3dfp", () => {
     it("reports what the catalog holds without a call", async () => {
       await run(["3dfp", "filament", "101"]);
       const { stdout } = await run(["3dfp", "catalog"]);
-      expect(stdout).toBe("3DFilamentProfiles catalog: 1 filament (1 full record) from 1 brand, 0 brands filled; ~/.local/share/bambu-hando/3dfp-catalog.sqlite\n");
+      expect(stdout).toBe(
+        "3DFilamentProfiles catalog: 1 filament (1 full record) from 1 brand, 0 brands filled; ~/.local/share/bambu-hando/3dfp-catalog.sqlite\n",
+      );
       expect(server.requests).toHaveLength(1);
     });
   });

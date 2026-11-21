@@ -106,11 +106,19 @@ describe("weightGroups", () => {
 });
 
 describe("choices", () => {
-  const profiles = [profile("Sunlu"), profile("Flashforge", { coreWeight: 120 }), profile("Acme", { coreWeight: 0 })];
+  const profiles = [
+    profile("Sunlu"),
+    profile("Flashforge", { coreWeight: 120 }),
+    profile("Acme", { coreWeight: 0 }),
+  ];
   const groups = weightGroups(profiles, entries);
 
   it("defaults a single catalog row to its weight, no row to the source's, and asks otherwise", () => {
-    expect(groups.map(defaultChoice)).toEqual([null, { kind: "grams", grams: 167 }, { kind: "source" }]);
+    expect(groups.map(defaultChoice)).toEqual([
+      null,
+      { kind: "grams", grams: 167 },
+      { kind: "source" },
+    ]);
   });
 
   it("applies chosen weights to every profile of the brand, defaults to the rest", () => {
@@ -127,19 +135,29 @@ describe("choices", () => {
   });
 
   it("describes the source's weights for a brand", () => {
-    const mixed = [profile("Acme", { coreWeight: 170 }), profile("Acme", { coreWeight: 120 }), profile("Acme", { coreWeight: 0 })];
+    const mixed = [
+      profile("Acme", { coreWeight: 170 }),
+      profile("Acme", { coreWeight: 120 }),
+      profile("Acme", { coreWeight: 0 }),
+    ];
     const [acme] = weightGroups(mixed, entries);
     const [unknown] = weightGroups([profile("Acme", { coreWeight: 0 })], entries);
 
     expect(describeSourceWeights(mixed, acme!)).toBe("120–170 g");
-    expect(describeSourceWeights(mixed.slice(0, 1), weightGroups(mixed.slice(0, 1), entries)[0]!)).toBe("170 g");
+    expect(
+      describeSourceWeights(mixed.slice(0, 1), weightGroups(mixed.slice(0, 1), entries)[0]!),
+    ).toBe("170 g");
     expect(describeSourceWeights([profile("Acme", { coreWeight: 0 })], unknown!)).toBe("unknown");
   });
 });
 
 describe("parseSpoolWeightArg", () => {
   it("reads brand=grams, brand=spoolmandb and brand=unspecified", () => {
-    expect(parseSpoolWeightArg("Sunlu=165")).toEqual({ key: "sunlu", brand: "Sunlu", choice: { kind: "grams", grams: 165 } });
+    expect(parseSpoolWeightArg("Sunlu=165")).toEqual({
+      key: "sunlu",
+      brand: "Sunlu",
+      choice: { kind: "grams", grams: 165 },
+    });
     expect(parseSpoolWeightArg("Das Filament = spoolmandb")).toEqual({
       key: "dasfilament",
       brand: "Das Filament",

@@ -6,18 +6,23 @@ import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
 
 import type { FilamentProfile } from "../src/models.js";
+import { EDIT_FIELDS } from "../src/presetEdit.js";
+import { inventoryRows } from "../src/spoolInventory.js";
 import type { CheckSection } from "../src/syncCheck.js";
 import { Browse, browseInput, initialBrowseState } from "../src/tui/Browse.js";
 import { ChoiceList, choiceInput, initialChoiceState } from "../src/tui/ChoiceList.js";
 import { HomeMenu } from "../src/tui/HomeMenu.js";
 import { initialPickerState, Picker, pickerInput } from "../src/tui/Picker.js";
-import { inventoryRows } from "../src/spoolInventory.js";
+import {
+  initialPresetForm,
+  PresetForm,
+  presetFormInput,
+  presetFormRows,
+} from "../src/tui/PresetForm.js";
+import { initialPresetList, PresetList, presetListInput } from "../src/tui/PresetList.js";
+import { initialRawSettings, RawSettings, rawInput, rawKeys } from "../src/tui/RawSettings.js";
 import { initialSpoolList, SpoolList, spoolListInput } from "../src/tui/SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "../src/tui/SyncCheck.js";
-import { EDIT_FIELDS } from "../src/presetEdit.js";
-import { initialPresetForm, PresetForm, presetFormInput, presetFormRows } from "../src/tui/PresetForm.js";
-import { initialPresetList, PresetList, presetListInput } from "../src/tui/PresetList.js";
-import { initialRawSettings, rawInput, rawKeys, RawSettings } from "../src/tui/RawSettings.js";
 import { WeightMenu, weightItems } from "../src/tui/WeightMenu.js";
 
 function key(overrides: Partial<Key> = {}): Key {
@@ -59,7 +64,9 @@ describe("lists sized to the terminal", () => {
   it("ChoiceList shows as many items as fit and pages by that many", () => {
     const items = PROFILES.map((p) => ({ value: p.filamentId, label: p.name }));
     const state = { ...initialChoiceState(items, []), error: "Tick at least one with space" };
-    const { lastFrame } = render(<ChoiceList title="Spools to label" items={items} state={state} multi height={HEIGHT} />);
+    const { lastFrame } = render(
+      <ChoiceList title="Spools to label" items={items} state={state} multi height={HEIGHT} />,
+    );
     expectFits(lastFrame());
     const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
     expect(lastFrame()).toContain(`… ${40 - shown} more`);
@@ -70,18 +77,32 @@ describe("lists sized to the terminal", () => {
 
   it("Browse fills the height below its warnings", () => {
     const state = { ...initialBrowseState(), brand: "Acme", material: "PLA" };
-    const { lastFrame } = render(<Browse state={state} profiles={PROFILES} selected={new Set()} warnings={["Using the cached SpoolmanDB"]} height={HEIGHT} />);
+    const { lastFrame } = render(
+      <Browse
+        state={state}
+        profiles={PROFILES}
+        selected={new Set()}
+        warnings={["Using the cached SpoolmanDB"]}
+        height={HEIGHT}
+      />,
+    );
     expectFits(lastFrame());
     const shown = lines(lastFrame()).filter((line) => line.includes("Color ")).length;
-    expect(browseInput(state, "", key({ pageDown: true }), PROFILES, new Set(), 0, shown)).toMatchObject({ state: { cursor: shown } });
+    expect(
+      browseInput(state, "", key({ pageDown: true }), PROFILES, new Set(), 0, shown),
+    ).toMatchObject({ state: { cursor: shown } });
   });
 
   it("Picker fills the height below the search line", () => {
     const state = { ...initialPickerState("acme"), error: "Select filaments with tab" };
-    const { lastFrame } = render(<Picker catalogSize={40} matches={PROFILES} state={state} warnings={[]} height={HEIGHT} />);
+    const { lastFrame } = render(
+      <Picker catalogSize={40} matches={PROFILES} state={state} warnings={[]} height={HEIGHT} />,
+    );
     expectFits(lastFrame());
     const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
-    expect(pickerInput(state, "", key({ pageDown: true }), PROFILES, shown)).toMatchObject({ state: { cursor: shown } });
+    expect(pickerInput(state, "", key({ pageDown: true }), PROFILES, shown)).toMatchObject({
+      state: { cursor: shown },
+    });
   });
 
   it("WeightMenu fills the height", () => {
@@ -89,11 +110,25 @@ describe("lists sized to the terminal", () => {
       key: "acme",
       brand: "Acme",
       profiles: [0],
-      options: Array.from({ length: 30 }, (_, i) => ({ label: `Acme spool ${i}`, grams: 100 + i, mine: false })),
+      options: Array.from({ length: 30 }, (_, i) => ({
+        label: `Acme spool ${i}`,
+        grams: 100 + i,
+        mine: false,
+      })),
     };
     const items = weightItems(group, PROFILES, "SpoolmanDB");
     const { lastFrame } = render(
-      <WeightMenu group={group} profiles={PROFILES} items={items} cursor={0} step={0} steps={1} sourceName="SpoolmanDB" warnings={[]} height={HEIGHT} />,
+      <WeightMenu
+        group={group}
+        profiles={PROFILES}
+        items={items}
+        cursor={0}
+        step={0}
+        steps={1}
+        sourceName="SpoolmanDB"
+        warnings={[]}
+        height={HEIGHT}
+      />,
     );
     expectFits(lastFrame());
   });
@@ -118,28 +153,64 @@ describe("lists sized to the terminal", () => {
       location: "",
     }));
     const rows = inventoryRows(spools, new Map(), "", "newest");
-    const { lastFrame } = render(<SpoolList rows={rows} total={40} state={initialSpoolList()} height={HEIGHT} />);
-    expectFits(lastFrame());
-    const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
-    expect(spoolListInput(initialSpoolList(), "", key({ pageDown: true }), 40, shown)).toMatchObject({ state: { cursor: shown } });
-  });
-
-  it("PresetList fills the height below its warnings and filter", () => {
-    const presets = PROFILES.map((p) => ({ name: p.name, filamentId: p.filamentId, printer: "Bambu Lab X1 Carbon 0.4 nozzle", path: `/p/${p.name}.json` }));
-    const warnings = ["Couldn't read BambuStudio preset broken.json"];
     const { lastFrame } = render(
-      <PresetList matches={presets} total={40} folder="BambuStudio folder default" drafts={new Set()} state={initialPresetList()} warnings={warnings} height={HEIGHT} />,
+      <SpoolList rows={rows} total={40} state={initialSpoolList()} height={HEIGHT} />,
     );
     expectFits(lastFrame());
     const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
-    expect(presetListInput(initialPresetList(), "", key({ pageDown: true }), 40, shown)).toMatchObject({ state: { cursor: shown } });
+    expect(
+      spoolListInput(initialSpoolList(), "", key({ pageDown: true }), 40, shown),
+    ).toMatchObject({ state: { cursor: shown } });
   });
 
-  const PRESET = { name: "Acme PLA Red @Bambu Lab X1 Carbon 0.4 nozzle", ...Object.fromEntries(PROFILES.map((p) => [`setting_${p.filamentId}`, ["1"]])) };
-  const OPENED = { name: "Acme PLA Red", filamentId: "PA000001", printer: "Bambu Lab X1 Carbon 0.4 nozzle", path: "/p/Acme PLA Red.json" };
+  it("PresetList fills the height below its warnings and filter", () => {
+    const presets = PROFILES.map((p) => ({
+      name: p.name,
+      filamentId: p.filamentId,
+      printer: "Bambu Lab X1 Carbon 0.4 nozzle",
+      path: `/p/${p.name}.json`,
+    }));
+    const warnings = ["Couldn't read BambuStudio preset broken.json"];
+    const { lastFrame } = render(
+      <PresetList
+        matches={presets}
+        total={40}
+        folder="BambuStudio folder default"
+        drafts={new Set()}
+        state={initialPresetList()}
+        warnings={warnings}
+        height={HEIGHT}
+      />,
+    );
+    expectFits(lastFrame());
+    const shown = lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length;
+    expect(
+      presetListInput(initialPresetList(), "", key({ pageDown: true }), 40, shown),
+    ).toMatchObject({ state: { cursor: shown } });
+  });
+
+  const PRESET = {
+    name: "Acme PLA Red @Bambu Lab X1 Carbon 0.4 nozzle",
+    ...Object.fromEntries(PROFILES.map((p) => [`setting_${p.filamentId}`, ["1"]])),
+  };
+  const OPENED = {
+    name: "Acme PLA Red",
+    filamentId: "PA000001",
+    printer: "Bambu Lab X1 Carbon 0.4 nozzle",
+    path: "/p/Acme PLA Red.json",
+  };
 
   it("PresetForm fills the height and pages by as many fields as it shows", () => {
-    const { lastFrame } = render(<PresetForm preset={OPENED} original={PRESET} edited={PRESET} edits={new Map()} state={initialPresetForm()} height={HEIGHT} />);
+    const { lastFrame } = render(
+      <PresetForm
+        preset={OPENED}
+        original={PRESET}
+        edited={PRESET}
+        edits={new Map()}
+        state={initialPresetForm()}
+        height={HEIGHT}
+      />,
+    );
     expectFits(lastFrame());
     // The curated fields, then All settings and Review and save.
     const shown = presetFormRows(HEIGHT);
@@ -149,29 +220,57 @@ describe("lists sized to the terminal", () => {
   });
 
   it("RawSettings fills the height below its filter", () => {
-    const { lastFrame } = render(<RawSettings preset={OPENED} edited={PRESET} edits={new Map()} state={initialRawSettings()} height={HEIGHT} />);
+    const { lastFrame } = render(
+      <RawSettings
+        preset={OPENED}
+        edited={PRESET}
+        edits={new Map()}
+        state={initialRawSettings()}
+        height={HEIGHT}
+      />,
+    );
     expectFits(lastFrame());
     const shown = lines(lastFrame()).filter((line) => line.includes("setting_")).length;
     const keys = rawKeys(PRESET, "");
-    expect(rawInput(initialRawSettings(), "", key({ pageDown: true }), keys, PRESET, shown)).toMatchObject({ state: { cursor: shown } });
+    expect(
+      rawInput(initialRawSettings(), "", key({ pageDown: true }), keys, PRESET, shown),
+    ).toMatchObject({ state: { cursor: shown } });
   });
 
   it("SyncCheck fills the height, scrolled into the middle", () => {
     const sections: CheckSection[] = [
-      { key: "presetsOnly", title: "Presets only", why: "Fine.", problem: false, items: PROFILES.map((p) => p.name) },
+      {
+        key: "presetsOnly",
+        title: "Presets only",
+        why: "Fine.",
+        problem: false,
+        items: PROFILES.map((p) => p.name),
+      },
     ];
     const warnings = ["Couldn't read BambuStudio preset broken.json"];
-    const { lastFrame } = render(<SyncCheck sections={sections} top={5} compared="BambuStudio default" warnings={warnings} height={HEIGHT} />);
+    const { lastFrame } = render(
+      <SyncCheck
+        sections={sections}
+        top={5}
+        compared="BambuStudio default"
+        warnings={warnings}
+        height={HEIGHT}
+      />,
+    );
     expectFits(lastFrame());
     const rows = checkRows(HEIGHT, warnings.length);
     expect(lines(lastFrame()).filter((line) => line.includes("Acme PLA")).length).toBe(rows);
-    expect(checkInput(0, "", key({ pageDown: true }), 42, rows)).toEqual({ type: "scroll", top: rows });
+    expect(checkInput(0, "", key({ pageDown: true }), 42, rows)).toEqual({
+      type: "scroll",
+      top: rows,
+    });
   });
 });
 
 describe("rows too wide for the terminal", () => {
   // ink-testing-library renders 100 columns wide.
-  const LONG = "a detail long enough to run past the right edge of a 100-column terminal and wrap if it could";
+  const LONG =
+    "a detail long enough to run past the right edge of a 100-column terminal and wrap if it could";
 
   it("keep the menu's labels in one column and cut the detail", () => {
     const items = [
@@ -181,7 +280,10 @@ describe("rows too wide for the terminal", () => {
     const { lastFrame } = render(<HomeMenu items={items} cursor={0} context={[]} outcome={null} />);
     const rows = lines(lastFrame()).filter((line) => line.includes("a detail"));
     expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.indexOf("a detail"))).toEqual([rows[0]!.indexOf("a detail"), rows[0]!.indexOf("a detail")]);
+    expect(rows.map((row) => row.indexOf("a detail"))).toEqual([
+      rows[0]!.indexOf("a detail"),
+      rows[0]!.indexOf("a detail"),
+    ]);
     // The cursor column keeps its width too: Ink measures the cut detail's "…" a column wide.
     expect(rows[0]).toMatch(/^› Add spools/);
     expect(rows[1]).toMatch(/^ {2}Settings/);
@@ -193,7 +295,9 @@ describe("rows too wide for the terminal", () => {
       { value: "1", label: "Acme PLA Red", detail: LONG },
       { value: "2", label: "Acme PLA Blue", detail: LONG },
     ];
-    const { lastFrame } = render(<ChoiceList title="Pick" items={items} state={initialChoiceState(items, [])} multi={false} />);
+    const { lastFrame } = render(
+      <ChoiceList title="Pick" items={items} state={initialChoiceState(items, [])} multi={false} />,
+    );
     const rows = lines(lastFrame()).filter((line) => line.includes("a detail"));
     expect(rows).toHaveLength(2);
     expect(rows[0]!.indexOf("a detail")).toBe(rows[1]!.indexOf("a detail"));

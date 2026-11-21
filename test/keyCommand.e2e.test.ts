@@ -4,7 +4,7 @@
 import { execFile, spawn as spawnProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { spawn, type IPty } from "node-pty";
+import { type IPty, spawn } from "node-pty";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { removeSecret, SECRETS, storedSecret } from "../src/secrets.js";
@@ -17,7 +17,11 @@ const WAIT_MS = 8_000;
 
 function rawModeOn(ptsName: string): Promise<boolean> {
   const flag = process.platform === "darwin" ? "-f" : "-F";
-  return new Promise((resolve) => execFile("stty", [flag, ptsName, "-a"], (err, stdout) => resolve(!err && /(^|\s)-icanon(\s|$)/.test(stdout))));
+  return new Promise((resolve) =>
+    execFile("stty", [flag, ptsName, "-a"], (err, stdout) =>
+      resolve(!err && /(^|\s)-icanon(\s|$)/.test(stdout)),
+    ),
+  );
 }
 
 async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
@@ -41,7 +45,12 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key set (binary)", () => 
   });
 
   beforeEach(() => {
-    env = { PATH: process.env.PATH ?? "", TERM: "xterm-256color", HOME: process.env.TMPDIR ?? "/tmp", ...keyring.env };
+    env = {
+      PATH: process.env.PATH ?? "",
+      TERM: "xterm-256color",
+      HOME: process.env.TMPDIR ?? "/tmp",
+      ...keyring.env,
+    };
     for (const [name, value] of Object.entries(keyring.env)) vi.stubEnv(name, value);
   });
 
@@ -51,10 +60,17 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key set (binary)", () => 
   });
 
   async function prompted(): Promise<{ pty: IPty; output: () => string; exited: Promise<number> }> {
-    const pty = spawn(process.execPath, [BIN, "key", "set", "3dfp"], { name: "xterm-256color", cols: 100, rows: 10, env });
+    const pty = spawn(process.execPath, [BIN, "key", "set", "3dfp"], {
+      name: "xterm-256color",
+      cols: 100,
+      rows: 10,
+      env,
+    });
     let raw = "";
     pty.onData((data) => (raw += data));
-    const exited = new Promise<number>((resolve) => pty.onExit(({ exitCode }) => resolve(exitCode)));
+    const exited = new Promise<number>((resolve) =>
+      pty.onExit(({ exitCode }) => resolve(exitCode)),
+    );
     await until(() => raw.includes("3DFilamentProfiles API key (input hidden): "), "the prompt");
     // node-pty's UnixTerminal has ptsName at runtime, but its typings leave it out.
     await until(() => rawModeOn((pty as unknown as { ptsName: string }).ptsName), "raw mode");
@@ -80,42 +96,69 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key set (binary)", () => 
   });
 
   it("stores a key piped to stdin", async () => {
-    const child = spawnProcess(process.execPath, [BIN, "key", "set", "3dfp"], { env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawnProcess(process.execPath, [BIN, "key", "set", "3dfp"], {
+      env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     let out = "";
     child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => (out += chunk.toString()));
     child.stdin.end(`${KEY}\n`);
     const code = await new Promise<number | null>((resolve) => child.on("exit", resolve));
     expect(code).toBe(0);
-    expect(out).toBe("Stored the 3DFilamentProfiles API key in the system keyring (Secret Service).\n");
+    expect(out).toBe(
+      "Stored the 3DFilamentProfiles API key in the system keyring (Secret Service).\n",
+    );
     expect(await storedSecret(TDFP)).toBe(KEY);
   });
 });
 
 describe("bambu-hando key without a reachable keyring (binary)", () => {
   // A fresh process per run: the keyring module keeps its first D-Bus connection for the process's life.
-  const noKeyring = { PATH: process.env.PATH ?? "", HOME: process.env.TMPDIR ?? "/tmp", DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent/bus" };
+  const noKeyring = {
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.TMPDIR ?? "/tmp",
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent/bus",
+  };
 
-  function cli(args: string[], env: Record<string, string>, stdin = ""): Promise<{ code: number; stdout: string; stderr: string }> {
+  function cli(
+    args: string[],
+    env: Record<string, string>,
+    stdin = "",
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
-      const child = execFile(process.execPath, [BIN, ...args], { env }, (err, stdout, stderr) => resolve({ code: err ? Number(err.code) : 0, stdout, stderr }));
+      const child = execFile(process.execPath, [BIN, ...args], { env }, (err, stdout, stderr) =>
+        resolve({ code: err ? Number(err.code) : 0, stdout, stderr }),
+      );
       child.stdin?.end(stdin);
     });
   }
 
-  it.skipIf(process.platform !== "linux")("exits 1 and points at the environment variable", async () => {
-    for (const args of [["key", "set", "3dfp"], ["key", "status"], ["key", "remove", "3dfp"]]) {
-      const { code, stdout, stderr } = await cli(args, noKeyring, KEY);
-      expect(code).toBe(1);
-      expect(stderr).toContain("set FILAMENTPROFILES_API_KEY instead");
-      expect(stdout + stderr).not.toContain("fake_key");
-    }
-  });
+  it.skipIf(process.platform !== "linux")(
+    "exits 1 and points at the environment variable",
+    async () => {
+      for (const args of [
+        ["key", "set", "3dfp"],
+        ["key", "status"],
+        ["key", "remove", "3dfp"],
+      ]) {
+        const { code, stdout, stderr } = await cli(args, noKeyring, KEY);
+        expect(code).toBe(1);
+        expect(stderr).toContain("set FILAMENTPROFILES_API_KEY instead");
+        expect(stdout + stderr).not.toContain("fake_key");
+      }
+    },
+  );
 
-  it.skipIf(process.platform !== "linux")("reports a key from the environment even when the keyring can't be read", async () => {
-    const { code, stdout } = await cli(["key", "status"], { ...noKeyring, [TDFP.env]: KEY });
-    expect(code).toBe(0);
-    expect(stdout).toMatch(/^3dfp {2}3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY \(can't check the system keyring \(Secret Service\)\)\n$/);
-    expect(stdout).not.toContain("fake_key");
-  });
+  it.skipIf(process.platform !== "linux")(
+    "reports a key from the environment even when the keyring can't be read",
+    async () => {
+      const { code, stdout } = await cli(["key", "status"], { ...noKeyring, [TDFP.env]: KEY });
+      expect(code).toBe(0);
+      expect(stdout).toMatch(
+        /^3dfp {2}3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY \(can't check the system keyring \(Secret Service\)\)\n$/,
+      );
+      expect(stdout).not.toContain("fake_key");
+    },
+  );
 });
