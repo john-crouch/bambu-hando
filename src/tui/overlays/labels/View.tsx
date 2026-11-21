@@ -14,6 +14,7 @@ import {
   Line,
   List,
   type ListRow,
+  listPosition,
   plural,
   type Segment,
   TextField,
@@ -190,6 +191,11 @@ export function makeSummary(model: LabelsModel): { ready: boolean; text: string 
   return { ready: true, text: `Save ${count} to ${output}` };
 }
 
+/** Rows the choices get: what's left of the body under the dialog's borders, padding and prose. */
+function pickerHeight(ctx: Ctx, count: number): number {
+  return Math.max(1, Math.min(count, ctx.bodyRows - 8));
+}
+
 /** The Printer or Save PDF choices, in place of the form while open. */
 function Picker({
   model,
@@ -214,7 +220,7 @@ function Picker({
       ...(choice === OTHER_OUTPUT ? [{ text: "type a path", dim: true }] : []),
     ],
   }));
-  const height = Math.max(1, Math.min(rows.length, ctx.bodyRows - 8));
+  const height = pickerHeight(ctx, rows.length);
   return (
     <>
       <Line
@@ -248,15 +254,23 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
         <Busy message={model.phase === "loading" ? "Looking for printers…" : "Making labels…"} />
       </Dialog>
     );
-  if (model.picker)
+  if (model.picker) {
+    const count = (
+      model.picker.row === PRINTER_ROW ? printerChoices(model) : outputChoices(model, ctx)
+    ).length;
+    // Where the cursor is, when the choices scroll.
+    const note =
+      count > pickerHeight(ctx, count) ? listPosition(model.picker.cursor, count) : undefined;
     return (
       <Dialog
         title={`${title} · ${model.picker.row === PRINTER_ROW ? "Printer" : "Save PDF"}`}
         width={width}
+        {...(note ? { note } : {})}
       >
         <Picker model={model} ctx={ctx} picker={model.picker} width={inner} />
       </Dialog>
     );
+  }
 
   const grid = 2 * FIELD_CELL + 1;
   const previewWidth = inner - grid - 2;

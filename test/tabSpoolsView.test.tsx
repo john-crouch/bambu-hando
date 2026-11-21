@@ -336,6 +336,17 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     )[0];
     const text = overlay(model).join("\n");
     expect(text).toContain("Labels for 2 new spools · Printer");
+    const many = labelsOverlay.update(
+      {
+        ...loaded(),
+        focus: PRINTER_ROW,
+        printers: Array.from({ length: 30 }, (_, i) => `Printer ${i}`),
+      },
+      { type: "key", key: press("enter") },
+      ctx,
+    )[0];
+    // A list that scrolls says where the cursor is.
+    expect(overlay(many).join("\n")).toContain(" 1/31 ");
     expect(text).toContain("Don't print");
     expect(text).toContain("DYMO");
   });
