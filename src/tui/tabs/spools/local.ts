@@ -80,3 +80,8 @@ export function editText(state: TextState, key: KeyPress): TextState | null {
     cursor: cursor + text.length,
   };
 }
+
+/** A paste as a typed burst, never a named key: pasting "up" types "up". */
+export function pasted(text: string): KeyPress {
+  return { input: text, ctrl: false, shift: false, meta: false };
+}

@@ -26,7 +26,7 @@ import {
 } from "../../core/types.js";
 import { addCopiesCmd, loadBarcodesCmd, rememberBarcodeCmd } from "./cmds.js";
 import { consoleConnection, consoleUrl, consoleValue } from "./data.js";
-import { editText, moveCursor, type TextState, textState, typeAhead } from "./local.js";
+import { editText, moveCursor, pasted, type TextState, textState, typeAhead } from "./local.js";
 
 /** The most copies one dialog adds. */
 export const MAX_COPIES = 8;
@@ -615,6 +615,9 @@ export function update(model: SpoolsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step
   switch (m.type) {
     case "key":
       return onKey(model, m.key, ctx);
+    case "paste":
+      // The shell only sends a paste while capturesText: it's typed text, a scanner's burst included.
+      return capturesText(model) ? onKey(model, pasted(m.text), ctx) : [model, []];
     case "app/loaded": {
       if (m.resource !== "console") return [model, []];
       const loaded: Ctx = {

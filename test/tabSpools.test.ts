@@ -151,6 +151,13 @@ describe("the list", () => {
     expect(capturesText(model)).toBe(false);
   });
 
+  it("takes a paste into the filter like typing, even one that reads like a key name", () => {
+    const filtering = key(start(), "/")[0];
+    const [model] = update(filtering, { type: "paste", text: "up" }, CTX);
+    expect(model.filter.value).toBe("up");
+    expect(update(start(), { type: "paste", text: "x" }, CTX)[0].filter.value).toBe("");
+  });
+
   it("filters on location, code and #id too, and enter keeps the filter", () => {
     const typed = (text: string) => visibleRows(keys(start(), ["/", text]), CTX);
     expect(typed("shelf").map((r) => r.spool.id)).toEqual(["1"]);
@@ -504,6 +511,11 @@ describe("barcode scan", () => {
       barcode: "0099",
       gone: { code: "P9999999", name: "Old PETG" },
     });
+  });
+
+  it("looks up a pasted barcode that ends in a line break", () => {
+    const [model] = update(scanning(), { type: "paste", text: "0015\n" }, CTX);
+    expect(model.dialog).toMatchObject({ kind: "known", barcode: "0015" });
   });
 
   it("ignores enter on an empty field", () => {
