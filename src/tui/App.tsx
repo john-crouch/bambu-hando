@@ -6,7 +6,7 @@ import { basename } from "node:path";
 
 import { StatusMessage } from "@inkjs/ui";
 import { Box, Text, useInput } from "ink";
-import { useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { SystemProfiles } from "../bambuProfiles.js";
 import { buildPreset, presetPath } from "../bambuStudio.js";
 import {
@@ -141,7 +141,7 @@ import {
   spoolListRows,
 } from "./SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
-import { useTerminalRows } from "./screenSize.js";
+import { useTerminalColumns, useTerminalRows } from "./screenSize.js";
 import { COLORS } from "./theme.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
@@ -333,6 +333,27 @@ function swatchOf(colorCodes: string[]): string | undefined {
   return code && /^[0-9A-F]{6}/i.test(code) ? `#${code.slice(0, 6)}` : undefined;
 }
 
+const STATUS_COLORS = {
+  success: COLORS.ok,
+  error: COLORS.failed,
+  warning: COLORS.warning,
+} as const;
+
+/** A status line: StatusMessage's icon, and the whole line in its color, as the TUI's other screens draw them. */
+function Status({
+  variant,
+  children,
+}: {
+  variant: keyof typeof STATUS_COLORS;
+  children: ReactNode;
+}) {
+  return (
+    <StatusMessage variant={variant}>
+      <Text color={STATUS_COLORS[variant]}>{children}</Text>
+    </StatusMessage>
+  );
+}
+
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
@@ -389,6 +410,7 @@ export function App({ initial, onExit }: Props) {
   const [runFailed, setRunFailed] = useState(false);
   // Lists grow and shrink with the terminal.
   const height = useTerminalRows();
+  const columns = useTerminalColumns();
   const fromSpoolmanDb = activeSource === SPOOLMANDB_SOURCE;
   const sourceName = fromSpoolmanDb ? "SpoolmanDB" : "Source file";
 
@@ -1853,7 +1875,7 @@ export function App({ initial, onExit }: Props) {
   if (screen.name === "error") {
     return (
       <Box flexDirection="column">
-        <StatusMessage variant="error">{screen.message}</StatusMessage>
+        <Status variant="error">{screen.message}</Status>
         <Text dimColor>[b] back to settings · [q] quit · ? help</Text>
       </Box>
     );
@@ -1893,6 +1915,7 @@ export function App({ initial, onExit }: Props) {
           overwrite={values.overwritePresets}
           activePresets={stage === "presets"}
           activeSpools={stage === "spools"}
+          columns={columns}
         />
       </Box>
       {screen.name === "plan" && screen.plans ? (
@@ -1907,16 +1930,16 @@ export function App({ initial, onExit }: Props) {
         <RunProgress progress={progress} total={screen.profiles.length} />
       ) : null}
       {screen.name === "plan" && screen.warning ? (
-        <StatusMessage variant="warning">{screen.warning}</StatusMessage>
+        <Status variant="warning">{screen.warning}</Status>
       ) : null}
       {screen.name === "plan" && screen.error ? (
-        <StatusMessage variant="error">{screen.error}</StatusMessage>
+        <Status variant="error">{screen.error}</Status>
       ) : null}
       {stage ? <Busy color="cyan" message={`${STAGE_LABELS[stage]}…`} /> : null}
       {[...weightWarnings, ...warnings].map((w) => (
-        <StatusMessage key={w} variant="warning">
+        <Status key={w} variant="warning">
           {w}
-        </StatusMessage>
+        </Status>
       ))}
       {screen.name === "plan" ? (
         <Text dimColor>
@@ -1926,20 +1949,20 @@ export function App({ initial, onExit }: Props) {
       ) : null}
       {screen.name === "done" ? (
         <Box flexDirection="column">
-          <StatusMessage variant={failed.length ? "error" : "success"}>
-            <Text bold color={failed.length ? COLORS.failed : COLORS.ok}>
+          <Status variant={failed.length ? "error" : "success"}>
+            <Text bold>
               Done: {screen.results.length - failed.length} written, {failed.length} failed
             </Text>
-          </StatusMessage>
+          </Status>
           {failed.map((r) => (
-            <StatusMessage key={r.profileName} variant="error">
+            <Status key={r.profileName} variant="error">
               {r.profileName}: {r.detail}
-            </StatusMessage>
+            </Status>
           ))}
           {outcome?.lines.map((line) => (
-            <StatusMessage key={line} variant={outcome.ok ? "success" : "error"}>
+            <Status key={line} variant={outcome.ok ? "success" : "error"}>
               {line}
-            </StatusMessage>
+            </Status>
           ))}
           <Text dimColor>
             {created > 0

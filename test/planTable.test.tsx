@@ -1,7 +1,7 @@
 // ABOUTME: Rendering tests for the plan table's columns.
 // ABOUTME: Values longer than their column are truncated and still keep a gap before the next column.
 
-import { Box } from "ink";
+import { ThemeProvider } from "@inkjs/ui";
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,6 +16,7 @@ import {
   RunProgress,
   spoolEasePlanText,
 } from "../src/tui/PlanTable.js";
+import { theme } from "../src/tui/theme.js";
 
 const LONG: FilamentProfile = {
   name: "Acme Extraordinarily Long Filament Name Black",
@@ -88,24 +89,39 @@ describe("statuses, while and after a run", () => {
     expect(first?.indexOf("FAILED")).toBe(second?.indexOf("PLANNED"));
   });
 
-  it("cuts only the name and brand on a narrow terminal, keeping the others whole under their headers", () => {
-    const { lastFrame } = render(
-      <Box width={80}>
+  it.each([80, 85])(
+    "cuts only the name, then the brand, at %i columns, keeping a gap after each and the others whole",
+    (columns) => {
+      const { lastFrame } = render(
         <PlanTable
           profiles={[LONG]}
           progress={[{ preset: "written", spool: "skipped" }]}
           activePresets={false}
           activeSpools={false}
-        />
-      </Box>,
-    );
+          columns={columns}
+        />,
+      );
 
-    const [header, row] = (lastFrame() ?? "").split("\n");
-    expect(row).toMatch(/PETG +230-240 +P1234567 140 g +WRITTEN {5}SKIPPED$/);
-    expect(header).toMatch(/Material +Nozzle°C +Code +Empty +Preset/);
-    expect(row?.indexOf("WRITTEN")).toBe((header?.indexOf("Preset") ?? 0) + 1);
-    expect(row?.indexOf("SKIPPED")).toBe((header?.indexOf("SpoolEase") ?? 0) + 1);
-  });
+      const [header = "", row = ""] = (lastFrame() ?? "").split("\n");
+      expect(header.length).toBeLessThanOrEqual(columns);
+      expect(row.length).toBeLessThanOrEqual(columns);
+      // The name, cut, then a gap, then the brand.
+      const brand = header.indexOf("Br");
+      expect(header.slice(3, brand)).toMatch(/^Name +$/);
+      expect(row.slice(3, brand)).toMatch(/^Acme \S*… $/);
+      // The brand, cut, then a gap, then the material.
+      const material = header.indexOf("Material");
+      expect(header.slice(brand, material)).toMatch(/^Br\S* +$/);
+      expect(row.slice(brand, material)).toMatch(/^Ac\S*… $/);
+      expect(row.indexOf("PETG")).toBe(material);
+      expect(row.slice(material)).toMatch(/^PETG +230-240 +P1234567 140 g +WRITTEN {5}SKIPPED$/);
+      expect(header.slice(material)).toMatch(
+        /^Material +Nozzle°C +Code +Empty +Preset +SpoolEase$/,
+      );
+      expect(row.indexOf("WRITTEN")).toBe(header.indexOf("Preset") + 1);
+      expect(row.indexOf("SKIPPED")).toBe(header.indexOf("SpoolEase") + 1);
+    },
+  );
 
   it("spins in the column a stage is working on, for rows without a status yet", () => {
     const { lastFrame, unmount } = renderStatuses(
@@ -134,21 +150,27 @@ describe("run progress", () => {
 
   it("fills the bar with the share of profiles finished and says how many", async () => {
     const { lastFrame } = render(
-      <RunProgress
-        progress={[{ preset: "written", spool: "written" }, { preset: "written" }, {}]}
-        total={3}
-      />,
+      <ThemeProvider theme={theme}>
+        <RunProgress
+          progress={[{ preset: "written", spool: "written" }, { preset: "written" }, {}]}
+          total={3}
+        />
+      </ThemeProvider>,
     );
 
     await vi.waitFor(() =>
-      expect(lastFrame()).toBe(`${"█".repeat(10)}${"░".repeat(20)} 1/3 profiles finished`),
+      expect(lastFrame()).toBe(`${"▰".repeat(10)}${"▱".repeat(20)} 1/3 profiles finished`),
     );
   });
 
   it("shows an empty bar for a run with no profiles", async () => {
-    const { lastFrame } = render(<RunProgress progress={[]} total={0} />);
+    const { lastFrame } = render(
+      <ThemeProvider theme={theme}>
+        <RunProgress progress={[]} total={0} />
+      </ThemeProvider>,
+    );
 
-    await vi.waitFor(() => expect(lastFrame()).toBe(`${"░".repeat(30)} 0/0 profiles finished`));
+    await vi.waitFor(() => expect(lastFrame()).toBe(`${"▱".repeat(30)} 0/0 profiles finished`));
   });
 });
 

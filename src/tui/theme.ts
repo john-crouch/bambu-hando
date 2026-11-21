@@ -21,14 +21,19 @@ const VARIANT_COLORS: Record<Variant, string> = {
   info: COLORS.accent,
 };
 
-// The same marks as the screens that draw their own ✓/✗ lines, all one column wide.
-// figures' defaults differ (✔ ✘ ⚠ ℹ), and ℹ is an East Asian ambiguous-width character.
+// The same marks as the screens that draw their own ✓/✗ and ! lines, so every status line looks alike
+// (figures' defaults are ✔ ✘ ⚠ ℹ).
 const VARIANT_ICONS: Record<Variant, string> = {
   success: "✓",
   error: "✗",
   warning: "!",
   info: "i",
 };
+
+/** Badge text: black on the bright colors, bright white on gray, where black is hard to read. */
+function badgeText(background: string): string {
+  return background === COLORS.muted ? "whiteBright" : "black";
+}
 
 export const theme = extendTheme(defaultTheme, {
   components: {
@@ -37,14 +42,19 @@ export const theme = extendTheme(defaultTheme, {
         // A badge sits in a fixed-width column: cut it with … rather than wrap it onto a second line.
         container: ({ color }: { color: string }) => ({
           backgroundColor: color,
+          color: badgeText(color),
           wrap: "truncate-end",
         }),
+        // The label takes its color from the container, which knows the background.
+        label: () => ({}),
       },
     },
     ProgressBar: {
       styles: {
         completed: () => ({ color: COLORS.accent }),
       },
+      // East Asian "neutral" characters, one column wide in every terminal; figures' █ is ambiguous-width.
+      config: () => ({ completedCharacter: "▰", remainingCharacter: "▱" }),
     },
     Spinner: {
       styles: {

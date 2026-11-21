@@ -153,7 +153,7 @@ describe("TUI run reports", () => {
 
     await vi.waitFor(() => expect(lastFrame()).toContain("1/3 profiles finished"));
     const frame = lastFrame() ?? "";
-    expect(frame).toContain(`${"█".repeat(10)}${"░".repeat(20)} 1/3 profiles finished`);
+    expect(frame).toContain(`${"▰".repeat(10)}${"▱".repeat(20)} 1/3 profiles finished`);
     expect(frame).toMatch(/PETG Red .* WRITTEN +WRITTEN/);
     expect(frame).toMatch(/Café Crème PLA .* WRITTEN +[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] working/);
 

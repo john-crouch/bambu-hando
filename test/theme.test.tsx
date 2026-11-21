@@ -1,11 +1,11 @@
 // ABOUTME: Tests the TUI's @inkjs/ui theme: status icons, badges that fit a fixed column, the spinner frame.
 // ABOUTME: Renders the library components inside the project's ThemeProvider with ink-testing-library.
 
-import { Badge, Spinner, StatusMessage, ThemeProvider } from "@inkjs/ui";
+import { Badge, ProgressBar, Spinner, StatusMessage, ThemeProvider } from "@inkjs/ui";
 import { Box } from "ink";
 import { render } from "ink-testing-library";
 import type { ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { theme } from "../src/tui/theme.js";
 
@@ -44,6 +44,17 @@ describe("theme", () => {
     );
 
     expect(lastFrame()).toBe(" WRIT…");
+  });
+
+  it("draws the progress bar with narrow, non-ambiguous characters", async () => {
+    const { lastFrame } = themed(
+      <Box width={10}>
+        <ProgressBar value={50} />
+      </Box>,
+    );
+
+    // U+25B0/U+25B1: East Asian "neutral", drawn one column wide everywhere (figures' █ is ambiguous).
+    await vi.waitFor(() => expect(lastFrame()).toBe("▰▰▰▰▰▱▱▱▱▱"));
   });
 
   it("turns the spinner through one-column braille dots", () => {
