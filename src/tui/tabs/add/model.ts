@@ -218,7 +218,8 @@ export function importModel(source: string | null): ImportModel {
 
 /**
  * Whether the app opens on Add: something to add was given, or there's no console to show (the shell's
- * landing rule). Only then is SpoolmanDB loaded right away; elsewhere, on Add's first key.
+ * landing rule). Only then is SpoolmanDB loaded right away; elsewhere, on Add's first visit
+ * (the shell sends no app/switchTab for the tab it lands on).
  */
 export function landsOnAdd(values: FormValues, start: StartOptions): boolean {
   return (
@@ -247,7 +248,7 @@ export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
     notice: "",
     catalogRequested: false,
   };
-  // SpoolmanDB is a download: fetched now only when the app opens on Add, else on Add's first key.
+  // SpoolmanDB is a download: fetched now only when the app opens on Add, else on Add's first visit.
   const [requested, cmds] = landsOnAdd(ctx.values, start)
     ? requestCatalog(model, ctx)
     : [model, []];

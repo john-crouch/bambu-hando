@@ -34,18 +34,22 @@ describe("init", () => {
     expect(d.of("app/load")).toHaveLength(1);
   });
 
-  it("waits for a key before asking when the app lands elsewhere (a console and nothing to add)", async () => {
+  it("asks on its first visit when the app lands elsewhere (a console and nothing to add)", async () => {
     const elsewhere = ctx({
       values: { skipSpoolease: false, host: "10.0.0.5", securityKey: "K" },
       resources: { catalog: { state: "idle" } },
     });
     const d = start(elsewhere);
     d.msg({ type: "app/loaded", resource: "presets", result: { state: "idle" } });
-    await d.settle();
-    expect(d.of("app/load")).toEqual([]);
     d.key(press("down"));
     await d.settle();
+    expect(d.of("app/load")).toEqual([]);
+    d.msg({ type: "app/switchTab", tab: "add" });
+    await d.settle();
     expect(d.of("app/load")).toEqual([{ type: "app/load", resource: "catalog" }]);
+    d.msg({ type: "app/switchTab", tab: "add" });
+    await d.settle();
+    expect(d.of("app/load")).toHaveLength(1);
   });
 
   it("doesn't ask for a catalog that's loading or loaded", async () => {

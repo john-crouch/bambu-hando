@@ -137,16 +137,6 @@ function emptyState(model: AddModel, ctx: Ctx, inner: Area) {
     );
   }
   const catalog = ctx.resources.catalog;
-  if (catalog.state === "idle" && sourcesOf(model, ctx).db.length === 0)
-    return (
-      <Empty
-        title="SpoolmanDB isn't loaded yet"
-        lines={["It's downloaded the first time Add is used."]}
-        action={{ keys: "r", label: "load it now" }}
-        width={inner.width}
-        height={inner.height}
-      />
-    );
   if (catalog.state === "failed" && sourcesOf(model, ctx).db.length === 0)
     return (
       <Empty

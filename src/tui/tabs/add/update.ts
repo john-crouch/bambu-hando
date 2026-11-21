@@ -77,12 +77,8 @@ export function update(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result 
     const wrapped = msg as Extract<AppMsg, { type: "tab" }>;
     return wrapped.tab === "add" ? update(model, wrapped.msg, ctx) : none(model);
   }
-  // Keys and palette commands mean Add is in use: the moment to load SpoolmanDB if nobody has.
-  const used =
-    msg.type === "key" ||
-    msg.type === "paste" ||
-    msg.type === "add/openSearch" ||
-    msg.type === "add/review";
+  // The shell tells a tab each time it's shown: Add's first visit is when SpoolmanDB is needed.
+  const used = msg.type === "app/switchTab" && (msg as { tab: unknown }).tab === "add";
   const [synced, syncCmds] = syncSources(model, ctx, used);
   const [next, cmds] = route(synced, msg, ctx);
   return [next, [...syncCmds, ...cmds]];
