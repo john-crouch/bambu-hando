@@ -199,68 +199,6 @@ describe("consoleSettings", () => {
     ).toMatchObject({ securityKey: "env key" });
   });
 
-  describe.skipIf(!privateKeyringSupported)("with a key in the keyring", () => {
-    beforeEach(async () => {
-      for (const [name, value] of Object.entries(keyring?.env ?? {})) vi.stubEnv(name, value);
-      await storeSecret(SECRETS.spoolease, "FROM-KEYRING");
-    });
-
-    afterEach(async () => {
-      await removeSecret(SECRETS.spoolease);
-    });
-
-    it("uses it for tui.json's host, and for a host from a flag or the environment", async () => {
-      await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
-      expect(await consoleSettings({ "spoolease-host": "h" }, {})).toMatchObject({
-        securityKey: "FROM-KEYRING",
-      });
-      expect(await consoleSettings({}, { SPOOLEASE_HOST: "h" })).toMatchObject({
-        securityKey: "FROM-KEYRING",
-      });
-      await rememberConsole({ host: "10.0.0.5" });
-      expect(await consoleSettings({}, {})).toMatchObject({
-        host: "10.0.0.5",
-        securityKey: "FROM-KEYRING",
-      });
-    });
-
-    it("uses BambuStudio's key for BambuStudio's host, and the keyring's when BambuStudio has none", async () => {
-      await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
-      expect(await consoleSettings({}, {})).toMatchObject({
-        host: "10.0.0.9",
-        securityKey: "FROM-BAMBU",
-      });
-      await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "" });
-      expect(await consoleSettings({}, {})).toMatchObject({
-        host: "10.0.0.9",
-        securityKey: "FROM-KEYRING",
-      });
-    });
-
-    it("never reads it without the keyring, an unusable one included", async () => {
-      await rememberConsole({ host: "10.0.0.5" });
-      expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({ securityKey: "" });
-      await storeSecret(SECRETS.spoolease, "LEAK\tME");
-      expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({ securityKey: "" });
-      await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "" });
-      await rememberConsole({ host: "" });
-      expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({
-        host: "10.0.0.9",
-        securityKey: "",
-      });
-    });
-
-    it("still prefers the flag and SPOOLEASE_SECURITY_KEY to it", async () => {
-      await rememberConsole({ host: "10.0.0.5" });
-      expect(await consoleSettings({}, { SPOOLEASE_SECURITY_KEY: "env key" })).toMatchObject({
-        securityKey: "env key",
-      });
-      expect(await consoleSettings({ "spoolease-security-key": "F" }, {})).toMatchObject({
-        securityKey: "F",
-      });
-    });
-  });
-
   it("refuses an unusable SPOOLEASE_SECURITY_KEY, naming it without quoting it", async () => {
     const err: unknown = await consoleSettings({}, { SPOOLEASE_SECURITY_KEY: "LEAK\nME" }).catch(
       (e: unknown) => e,
@@ -268,6 +206,74 @@ describe("consoleSettings", () => {
     expect(err).toBeInstanceOf(InvalidSecretError);
     expect((err as Error).message).toContain("SPOOLEASE_SECURITY_KEY");
     expect((err as Error).message).not.toContain("LEAK");
+  });
+});
+
+describe.skipIf(!privateKeyringSupported)("consoleSettings with a key in the keyring", () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "bambu-hando-console-keyring-"));
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("XDG_CONFIG_HOME", undefined);
+    for (const [name, value] of Object.entries(keyring?.env ?? {})) vi.stubEnv(name, value);
+    await storeSecret(SECRETS.spoolease, "FROM-KEYRING");
+  });
+
+  afterEach(async () => {
+    await removeSecret(SECRETS.spoolease);
+    vi.unstubAllEnvs();
+  });
+
+  it("uses it for tui.json's host, and for a host from a flag or the environment", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
+    expect(await consoleSettings({ "spoolease-host": "h" }, {})).toMatchObject({
+      securityKey: "FROM-KEYRING",
+    });
+    expect(await consoleSettings({}, { SPOOLEASE_HOST: "h" })).toMatchObject({
+      securityKey: "FROM-KEYRING",
+    });
+    await rememberConsole({ host: "10.0.0.5" });
+    expect(await consoleSettings({}, {})).toMatchObject({
+      host: "10.0.0.5",
+      securityKey: "FROM-KEYRING",
+    });
+  });
+
+  it("uses BambuStudio's key for BambuStudio's host, and the keyring's when BambuStudio has none", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
+    expect(await consoleSettings({}, {})).toMatchObject({
+      host: "10.0.0.9",
+      securityKey: "FROM-BAMBU",
+    });
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "" });
+    expect(await consoleSettings({}, {})).toMatchObject({
+      host: "10.0.0.9",
+      securityKey: "FROM-KEYRING",
+    });
+  });
+
+  it("never reads it without the keyring, an unusable one included", async () => {
+    await rememberConsole({ host: "10.0.0.5" });
+    expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({ securityKey: "" });
+    await storeSecret(SECRETS.spoolease, "LEAK\tME");
+    expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({ securityKey: "" });
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "" });
+    await rememberConsole({ host: "" });
+    expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({
+      host: "10.0.0.9",
+      securityKey: "",
+    });
+  });
+
+  it("still prefers the flag and SPOOLEASE_SECURITY_KEY to it", async () => {
+    await rememberConsole({ host: "10.0.0.5" });
+    expect(await consoleSettings({}, { SPOOLEASE_SECURITY_KEY: "env key" })).toMatchObject({
+      securityKey: "env key",
+    });
+    expect(await consoleSettings({ "spoolease-security-key": "F" }, {})).toMatchObject({
+      securityKey: "F",
+    });
   });
 });
 
