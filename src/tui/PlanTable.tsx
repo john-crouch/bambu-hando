@@ -1,12 +1,13 @@
 // ABOUTME: Per-profile table showing color swatches, plan details, and live sync status.
 // ABOUTME: Used for both the pre-apply plan and the progress/summary views.
 
+import { Badge, ProgressBar, Spinner } from "@inkjs/ui";
 import { Box, Text } from "ink";
-import Spinner from "ink-spinner";
 
 import type { FilamentProfile, Status } from "../models.js";
 import type { ProfilePlan } from "../planPreview.js";
 import type { Edits } from "../presetEdit.js";
+import { COLORS } from "./theme.js";
 
 // The swatch shows the color, so the table leaves its RGBA out and keeps the width for what the run does.
 const COLUMNS = {
@@ -68,25 +69,55 @@ export interface RowProgress {
   spool?: Status;
 }
 
+const STATUS_COLORS: Record<Status, string> = {
+  written: COLORS.ok,
+  failed: COLORS.failed,
+  planned: COLORS.warning,
+  skipped: COLORS.muted,
+};
+
 function StatusCell({ status, active }: { status: Status | undefined; active: boolean }) {
-  if (status === "written") return <Text color="green">✓ written</Text>;
-  if (status === "failed") return <Text color="red">✗ failed</Text>;
-  if (status === "planned") return <Text color="yellow">○ planned</Text>;
-  if (status === "skipped") return <Text dimColor>– skipped</Text>;
-  if (active) {
-    return (
-      <Text color="cyan">
-        <Spinner type="dots" /> working
-      </Text>
-    );
-  }
+  if (status) return <Badge color={STATUS_COLORS[status]}>{status}</Badge>;
+  if (active) return <Spinner type="dots" label="working" />;
   return <Text dimColor>·</Text>;
 }
 
-/** A column cell: truncated to its width, keeping one blank column before the next cell. */
-function Cell({ width, children, dim }: { width: number; children: string; dim?: boolean }) {
+/** Profiles the run is done with: both their preset and their SpoolEase status are in. */
+export function finishedProfiles(progress: RowProgress[]): number {
+  return progress.filter((row) => row.preset && row.spool).length;
+}
+
+const PROGRESS_WIDTH = 30;
+
+/** A bar of the profiles finished out of the run's total, with the count beside it. */
+export function RunProgress({ progress, total }: { progress: RowProgress[]; total: number }) {
+  const finished = finishedProfiles(progress);
   return (
-    <Box width={width} paddingRight={1}>
+    <Box gap={1}>
+      <Box width={PROGRESS_WIDTH} flexShrink={0}>
+        <ProgressBar value={total > 0 ? (finished / total) * 100 : 0} />
+      </Box>
+      <Text wrap="truncate-end">
+        {finished}/{total} profiles finished
+      </Text>
+    </Box>
+  );
+}
+
+/** A column cell: truncated to its width, keeping one blank column before the next cell; fixed ones never shrink. */
+function Cell({
+  width,
+  children,
+  dim,
+  fixed,
+}: {
+  width: number;
+  children: string;
+  dim?: boolean;
+  fixed?: boolean;
+}) {
+  return (
+    <Box width={width} paddingRight={1} {...(fixed ? { flexShrink: 0 } : {})}>
       <Text wrap="truncate-end" {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
@@ -138,10 +169,10 @@ export function PlanTable({
         <Cell width={COLUMNS.empty} dim>
           Empty
         </Cell>
-        <Cell width={COLUMNS.preset} dim>
+        <Cell width={COLUMNS.preset} dim fixed>
           Preset
         </Cell>
-        <Cell width={COLUMNS.spool} dim>
+        <Cell width={COLUMNS.spool} dim fixed>
           SpoolEase
         </Cell>
       </Box>
@@ -168,14 +199,14 @@ export function PlanTable({
             <Cell width={COLUMNS.empty}>
               {profile.coreWeight ? `${profile.coreWeight} g` : "–"}
             </Cell>
-            <Box width={COLUMNS.preset} paddingRight={1}>
+            <Box width={COLUMNS.preset} paddingRight={1} flexShrink={0}>
               {plan ? (
                 <PlanCell plan={presetPlanText(plan, overwrite)} />
               ) : (
                 <StatusCell status={row.preset} active={activePresets} />
               )}
             </Box>
-            <Box width={COLUMNS.spool}>
+            <Box width={COLUMNS.spool} flexShrink={0}>
               {plan ? (
                 <PlanCell plan={spoolEasePlanText(plan)} />
               ) : (

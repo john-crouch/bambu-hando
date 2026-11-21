@@ -1,12 +1,21 @@
 // ABOUTME: Rendering tests for the plan table's columns.
 // ABOUTME: Values longer than their column are truncated and still keep a gap before the next column.
 
+import { Box } from "ink";
 import { render } from "ink-testing-library";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { FilamentProfile } from "../src/models.js";
+import type { FilamentProfile, Status } from "../src/models.js";
 import type { ProfilePlan } from "../src/planPreview.js";
-import { PlanNotes, PlanTable, presetPlanText, spoolEasePlanText } from "../src/tui/PlanTable.js";
+import {
+  finishedProfiles,
+  PlanNotes,
+  PlanTable,
+  presetPlanText,
+  type RowProgress,
+  RunProgress,
+  spoolEasePlanText,
+} from "../src/tui/PlanTable.js";
 
 const LONG: FilamentProfile = {
   name: "Acme Extraordinarily Long Filament Name Black",
@@ -33,6 +42,112 @@ describe("PlanTable", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toMatch(/Acme Extraordinar\S*… +Acmecorp\S*… +PETG +230-240/);
     expect(frame).toContain("Nozzle°C");
+  });
+});
+
+describe("statuses, while and after a run", () => {
+  const renderStatuses = (
+    profiles: FilamentProfile[],
+    progress: RowProgress[],
+    activeSpools = false,
+  ) =>
+    render(
+      <PlanTable
+        profiles={profiles}
+        progress={progress}
+        activePresets={false}
+        activeSpools={activeSpools}
+      />,
+    );
+
+  it("shows each status as a badge in its column", () => {
+    const statuses: Status[] = ["written", "planned", "skipped", "failed"];
+    const { lastFrame } = renderStatuses(
+      statuses.map(() => LONG),
+      statuses.map((status) => ({ preset: status, spool: status })),
+    );
+
+    const rows = (lastFrame() ?? "").split("\n").slice(1);
+    for (const [index, status] of statuses.entries()) {
+      const label = status.toUpperCase();
+      expect(rows[index]).toMatch(new RegExp(`230-240 +P1234567 +140 g +${label} +${label}$`));
+    }
+  });
+
+  it("starts the badges in the same column on every row", () => {
+    const { lastFrame } = renderStatuses(
+      [LONG, LONG],
+      [
+        { preset: "written", spool: "failed" },
+        { preset: "skipped", spool: "planned" },
+      ],
+    );
+
+    const [, first, second] = (lastFrame() ?? "").split("\n");
+    expect(first?.indexOf("WRITTEN")).toBe(second?.indexOf("SKIPPED"));
+    expect(first?.indexOf("FAILED")).toBe(second?.indexOf("PLANNED"));
+  });
+
+  it("keeps the status columns whole, under their headers, when the terminal is narrow", () => {
+    const { lastFrame } = render(
+      <Box width={80}>
+        <PlanTable
+          profiles={[LONG]}
+          progress={[{ preset: "written", spool: "skipped" }]}
+          activePresets={false}
+          activeSpools={false}
+        />
+      </Box>,
+    );
+
+    const [header, row] = (lastFrame() ?? "").split("\n");
+    expect(row).toMatch(/ WRITTEN {5}SKIPPED$/);
+    expect(row?.indexOf("WRITTEN")).toBe((header?.indexOf("Preset") ?? 0) + 1);
+    expect(row?.indexOf("SKIPPED")).toBe((header?.indexOf("SpoolEase") ?? 0) + 1);
+  });
+
+  it("spins in the column a stage is working on, for rows without a status yet", () => {
+    const { lastFrame, unmount } = renderStatuses(
+      [LONG, LONG],
+      [{ preset: "written", spool: "written" }, { preset: "written" }],
+      true,
+    );
+
+    const [, done, working] = (lastFrame() ?? "").split("\n");
+    expect(done).toMatch(/WRITTEN +WRITTEN$/);
+    expect(working).toMatch(/WRITTEN +⠋ working$/);
+    unmount();
+  });
+});
+
+describe("run progress", () => {
+  it("counts a profile finished once both its preset and its SpoolEase status are in", () => {
+    const progress: RowProgress[] = [];
+    progress[0] = { preset: "written", spool: "written" };
+    progress[2] = { preset: "failed" };
+    progress[3] = { preset: "skipped", spool: "failed" };
+
+    expect(finishedProfiles(progress)).toBe(2);
+    expect(finishedProfiles([])).toBe(0);
+  });
+
+  it("fills the bar with the share of profiles finished and says how many", async () => {
+    const { lastFrame } = render(
+      <RunProgress
+        progress={[{ preset: "written", spool: "written" }, { preset: "written" }, {}]}
+        total={3}
+      />,
+    );
+
+    await vi.waitFor(() =>
+      expect(lastFrame()).toBe(`${"█".repeat(10)}${"░".repeat(20)} 1/3 profiles finished`),
+    );
+  });
+
+  it("shows an empty bar for a run with no profiles", async () => {
+    const { lastFrame } = render(<RunProgress progress={[]} total={0} />);
+
+    await vi.waitFor(() => expect(lastFrame()).toBe(`${"░".repeat(30)} 0/0 profiles finished`));
   });
 });
 
@@ -115,7 +230,7 @@ describe("the plan, before a run", () => {
         activeSpools
       />,
     );
-    expect(running.lastFrame()).toContain("– skipped");
+    expect(running.lastFrame()).toContain("SKIPPED");
     expect(running.lastFrame()).not.toContain("add + spool");
   });
 
