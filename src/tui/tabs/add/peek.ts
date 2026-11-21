@@ -12,7 +12,6 @@ import { type AddModel, emptyPeek, findRow, sourcesOf } from "./model.js";
 import {
   consoleOf,
   createsSpools,
-  type PlanBasis,
   planBasis,
   printersOf,
   sameBasis,
