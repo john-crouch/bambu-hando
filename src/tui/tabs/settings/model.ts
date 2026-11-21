@@ -1,6 +1,7 @@
 // ABOUTME: The Settings tab's model and pure update: pages of rows, the list or text field a row opens, and the test.
-// ABOUTME: Every change applies at once through app/values (label settings are saved instead); the key is never shown.
+// ABOUTME: Every change applies at once through app/values; label settings, the console and its key (keyring) are saved too.
 
+import type { SavedConsole } from "../../../tuiSettings.js";
 import { type KeyPress, letter } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type {
@@ -13,13 +14,17 @@ import type {
   TabMsg,
 } from "../../core/types.js";
 import { toTab } from "../../core/types.js";
+import type { FormValues } from "../../core/values.js";
 import { editText, moveCursor, type TextEdit } from "../../ui/index.js";
 import {
+  forgetKey,
   type LoadWhat,
   loadFolders,
   loadLabelPrinters,
   loadLabels,
   loadPrinters,
+  saveConsole,
+  saveKey,
   saveLabels,
   savePrinters,
   testConnection,
@@ -126,6 +131,8 @@ function apply(model: SettingsModel, change: Change, ctx: Ctx): Step<SettingsMod
   const cmds: Step<SettingsModel>[1] = [send<AppMsg>({ type: "app/values", values })];
   if (values.printerPreset !== undefined && values.printerPreset !== ctx.values.printerPreset)
     cmds.push(savePrinters(printerList(values.printerPreset)));
+  const console = consoleChange(values, ctx);
+  if (console) cmds.push(saveConsole(console));
   const connectionChanged = CONNECTION_FIELDS.some(
     (key) => key in values && values[key] !== ctx.values[key],
   );
@@ -133,6 +140,16 @@ function apply(model: SettingsModel, change: Change, ctx: Ctx): Step<SettingsMod
     ? { ...model, test: { state: "idle" } as TestState, testSeq: model.testSeq + 1 }
     : model;
   return [next, cmds];
+}
+
+/** The host, port or HTTPS a change sets anew, for tui.json; null when it sets none of them. */
+function consoleChange(values: Partial<FormValues>, ctx: Ctx): SavedConsole | null {
+  const change: SavedConsole = {};
+  if (values.host !== undefined && values.host !== ctx.values.host) change.host = values.host;
+  if (values.port !== undefined && values.port !== ctx.values.port)
+    change.port = Number(values.port.trim());
+  if (values.https !== undefined && values.https !== ctx.values.https) change.https = values.https;
+  return Object.keys(change).length > 0 ? change : null;
 }
 
 function openRow(model: SettingsModel, ctx: Ctx): Step<SettingsModel> {
@@ -285,7 +302,11 @@ function textEdited(
   if (!next.submit) return step(edited);
   const result = commitText(open.field, next.value);
   if ("error" in result) return step({ ...edited, error: result.error });
-  return apply({ ...edited, open: null }, result.change, ctx);
+  const [applied, cmds] = apply({ ...edited, open: null }, result.change, ctx);
+  if (open.field !== "securityKey" || !("values" in result.change)) return [applied, cmds];
+  // Saved on every commit, changed or not, so a key that came from BambuStudio or a flag can be kept.
+  const key = result.change.values.securityKey ?? "";
+  return [applied, [...cmds, key ? saveKey(key) : forgetKey()]];
 }
 
 function keyStep(model: SettingsModel, key: KeyPress, ctx: Ctx): Step<SettingsModel> {

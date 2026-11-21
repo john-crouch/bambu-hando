@@ -1,5 +1,5 @@
-// ABOUTME: Remembers the TUI's last choices (the printers presets are written for, empty spool weights per brand).
-// ABOUTME: Stored as JSON in bambu-hando's config directory; damaged or unknown values are ignored.
+// ABOUTME: Remembers the TUI's last choices (printers presets are written for, empty spool weights per brand, the console).
+// ABOUTME: Stored as JSON in bambu-hando's config directory; damaged or unknown values are ignored; never a key.
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -13,6 +13,15 @@ export interface TuiSettings {
   printers: string[];
   /** The empty spool weight last chosen per brand, by brand key (spoolWeights.ts brandKey); left out when none is. */
   weights?: Record<string, WeightChoice>;
+  /** The SpoolEase console last set in Settings; its security key is kept in the keyring, never here. */
+  console?: SavedConsole;
+}
+
+/** Where the SpoolEase console is; each part left out when none was saved. */
+export interface SavedConsole {
+  host?: string;
+  port?: number;
+  https?: boolean;
 }
 
 export function tuiSettingsPath(): string {
@@ -39,6 +48,19 @@ function weightsOf(value: unknown): Record<string, WeightChoice> {
   return weights;
 }
 
+/** The good parts of a saved console, by name, so nothing else (a key handed in by mistake) is ever kept. */
+function consoleOf(value: unknown): SavedConsole {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const { host, port, https } = value as Record<string, unknown>;
+  return {
+    ...(typeof host === "string" && host.trim() ? { host: host.trim() } : {}),
+    ...(typeof port === "number" && Number.isInteger(port) && port >= 1 && port <= 65_535
+      ? { port }
+      : {}),
+    ...(typeof https === "boolean" ? { https } : {}),
+  };
+}
+
 export async function loadTuiSettings(path = tuiSettingsPath()): Promise<TuiSettings> {
   let saved: Record<string, unknown>;
   try {
@@ -50,7 +72,12 @@ export async function loadTuiSettings(path = tuiSettingsPath()): Promise<TuiSett
     ? saved.printers.filter((p): p is string => typeof p === "string" && p.trim() !== "")
     : [];
   const weights = weightsOf(saved.weights);
-  return Object.keys(weights).length > 0 ? { printers, weights } : { printers };
+  const console = consoleOf(saved.console);
+  return {
+    printers,
+    ...(Object.keys(weights).length > 0 ? { weights } : {}),
+    ...(Object.keys(console).length > 0 ? { console } : {}),
+  };
 }
 
 /** Saves run one after another, each reading what the last one wrote, so none drops another's change. */
@@ -63,7 +90,10 @@ function serially<T>(work: () => Promise<T>): Promise<T> {
 }
 
 async function write(settings: TuiSettings, path: string): Promise<void> {
-  await writeAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
+  const { console, ...rest } = settings;
+  const kept = consoleOf(console);
+  const file = Object.keys(kept).length > 0 ? { ...rest, console: kept } : rest;
+  await writeAtomic(path, `${JSON.stringify(file, null, 2)}\n`);
 }
 
 /**
@@ -87,5 +117,13 @@ export function rememberWeight(
   return serially(async () => {
     const current = await loadTuiSettings(path);
     await write({ ...current, weights: { ...current.weights, [key]: choice } }, path);
+  });
+}
+
+/** Remembers a change to the console's host, port or HTTPS beside the rest; an empty host forgets it. */
+export function rememberConsole(change: SavedConsole, path = tuiSettingsPath()): Promise<void> {
+  return serially(async () => {
+    const current = await loadTuiSettings(path);
+    await write({ ...current, console: { ...current.console, ...change } }, path);
   });
 }

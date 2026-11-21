@@ -5,9 +5,11 @@ import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "../src/cli.js";
+import { removeSecret, SECRETS, storeSecret } from "../src/secrets.js";
+import { rememberConsole } from "../src/tuiSettings.js";
 import {
   baseFilamentDir,
   installBambuStudio,
@@ -16,6 +18,7 @@ import {
   X1C_06,
 } from "./bambuStudioSetup.js";
 import { installFakeLp } from "./fakeLp.js";
+import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { decodeQr, readPdf } from "./pdf.js";
 import {
@@ -25,6 +28,28 @@ import {
   TEST_SECURITY_KEY,
 } from "./spooleaseServer.js";
 import { type SpoolmanDbServer, startSpoolmanDbServer } from "./spoolmanDbServer.js";
+
+const CONSOLE_KEY = SECRETS.spoolease;
+
+// A private keyring for the whole file, started before any test reads one: the keyring module keeps
+// its first D-Bus connection for the process's life. Without one, every read falls through as unreachable.
+let keyring: PrivateKeyring | null = null;
+
+beforeAll(async () => {
+  if (privateKeyringSupported) keyring = await startPrivateKeyring();
+});
+
+afterAll(async () => {
+  await keyring?.close();
+});
+
+beforeEach(() => {
+  for (const [name, value] of Object.entries(keyring?.env ?? {})) vi.stubEnv(name, value);
+});
+
+afterEach(async () => {
+  if (keyring) await removeSecret(CONSOLE_KEY);
+});
 
 interface Captured {
   code: number;
@@ -173,6 +198,98 @@ describe("cli", () => {
     ]);
 
     expect(code).toBe(0);
+  });
+
+  it.skipIf(!privateKeyringSupported)(
+    "uses the console saved in Settings: the key from the keyring, host and port from tui.json",
+    async () => {
+      await storeSecret(CONSOLE_KEY, TEST_SECURITY_KEY);
+      await rememberConsole({ host: "127.0.0.1", port: server.port });
+
+      const { code, stdout, stderr } = await run(["--source", SOURCE_FIXTURE]);
+
+      expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+      expect(server.requests[0]?.path).toBe("/api/test-key");
+      expect(stdout).not.toContain(TEST_SECURITY_KEY);
+    },
+  );
+
+  it.skipIf(!privateKeyringSupported)(
+    "takes the key from the flag, then the environment, then the keyring, then BambuStudio",
+    async () => {
+      const port = ["--spoolease-port", String(server.port)];
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "WRONG" });
+      await storeSecret(CONSOLE_KEY, TEST_SECURITY_KEY);
+      expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
+
+      await storeSecret(CONSOLE_KEY, "WRONG-TOO");
+      vi.stubEnv("SPOOLEASE_SECURITY_KEY", TEST_SECURITY_KEY);
+      expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
+
+      vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
+      const flag = ["--spoolease-security-key", TEST_SECURITY_KEY];
+      expect((await run(["--source", SOURCE_FIXTURE, ...port, ...flag])).code).toBe(0);
+
+      // Neither: the keyring's wrong key is the one tried, and the console refuses it.
+      const refused = await run(["--source", SOURCE_FIXTURE, ...port]);
+      expect(refused.code).toBe(2);
+      expect(refused.stdout + refused.stderr).not.toContain("WRONG-TOO");
+    },
+  );
+
+  it("takes host, port and HTTPS from flags and environment before tui.json, and tui.json before BambuStudio", async () => {
+    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: TEST_SECURITY_KEY });
+    await rememberConsole({ host: "127.0.0.1", port: server.port });
+    expect((await run(["--source", SOURCE_FIXTURE])).code).toBe(0);
+
+    // Nothing answers on port 1, so these only pass when the flag or variable wins.
+    await rememberConsole({ host: "127.0.0.1", port: 1 });
+    const port = ["--spoolease-port", String(server.port)];
+    expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
+    await rememberConsole({ host: "192.0.2.1", port: server.port });
+    vi.stubEnv("SPOOLEASE_HOST", "127.0.0.1");
+    expect((await run(["--source", SOURCE_FIXTURE])).code).toBe(0);
+  });
+
+  it.skipIf(!privateKeyringSupported)(
+    "says a stored key isn't usable, naming the keyring and never quoting it",
+    async () => {
+      await storeSecret(CONSOLE_KEY, "LEAK\tME");
+      const { code, stdout, stderr } = await run([
+        "--source",
+        SOURCE_FIXTURE,
+        "--spoolease-host",
+        "127.0.0.1",
+      ]);
+      expect(code).toBe(2);
+      expect(stderr).toMatch(
+        /the SpoolEase security key stored in .* isn't usable: .*bambu-hando key set spoolease/,
+      );
+      expect(stdout + stderr).not.toContain("LEAK");
+      expect(server.requests).toEqual([]);
+    },
+  );
+
+  it("says SPOOLEASE_SECURITY_KEY isn't usable without quoting it", async () => {
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", "LEAK\nME");
+    const { code, stdout, stderr } = await run([
+      "--source",
+      SOURCE_FIXTURE,
+      "--spoolease-host",
+      "127.0.0.1",
+    ]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("SPOOLEASE_SECURITY_KEY doesn't hold a usable SpoolEase security key");
+    expect(stdout + stderr).not.toContain("LEAK");
+  });
+
+  it("lets --no-spoolease-https switch off an HTTPS saved in Settings", async () => {
+    await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
+    await rememberConsole({ port: server.port, https: true });
+    // The stand-in speaks plain HTTP, so HTTPS can't reach it.
+    expect((await run(["--source", SOURCE_FIXTURE, "--dry-run"])).code).toBe(2);
+    const off = await run(["--source", SOURCE_FIXTURE, "--dry-run", "--no-spoolease-https"]);
+    expect({ code: off.code, stderr: off.stderr }).toEqual({ code: 0, stderr: "" });
   });
 
   it("reads SpoolEase host and key from the environment", async () => {
@@ -697,7 +814,7 @@ describe("cli", () => {
     [[], "--source is required"],
     [
       ["--source", SOURCE_FIXTURE],
-      "SpoolEase host and security key are required unless --skip-spoolease is set: pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, or configure SpoolEase in BambuStudio",
+      "SpoolEase host and security key are required unless --skip-spoolease is set: pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, save them in the TUI's Settings (the key also with bambu-hando key set spoolease), or configure SpoolEase in BambuStudio",
     ],
     [
       ["--source", SOURCE_FIXTURE, "--skip-spoolease", "--spoolease-port", "eighty"],
@@ -739,6 +856,14 @@ describe("cli", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("Usage:");
     expect(stdout).toContain("bambu-hando tui");
+  });
+
+  it("says in every help where a remembered console and key come from", async () => {
+    for (const argv of [["--help"], ["tui", "--help"], ["labels", "--help"], ["check", "--help"]]) {
+      const { stdout } = await run(argv);
+      expect(stdout).toContain("bambu-hando key set spoolease");
+      expect(stdout).toContain("Settings");
+    }
   });
 
   it("refuses to start the TUI without an interactive terminal", async () => {

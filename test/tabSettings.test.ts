@@ -8,9 +8,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadLabelSettings } from "../src/labelSettings.js";
+import { press } from "../src/tui/core/keys.js";
 import { toTab } from "../src/tui/core/types.js";
 import { listFor, OTHER, pageRows, shownItems } from "../src/tui/tabs/settings/fields.js";
 import { type SettingsModel, settingsLogic } from "../src/tui/tabs/settings/model.js";
+import { loadTuiSettings } from "../src/tuiSettings.js";
 import { bambuConfigDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 import { installFakeLp } from "./fakeLp.js";
 import {
@@ -407,6 +409,81 @@ describe("text fields", () => {
     expect(shown).not.toContain("NEWKEY");
     expect(shown).not.toContain("OLDKEY");
     expect(rowsOf(h)[2]?.value).toBe("set");
+  });
+});
+
+describe("what the SpoolEase page keeps for next time", () => {
+  /** Types into the row's text field after emptying it, then saves with enter. */
+  async function retype(h: Harness<SettingsModel>, label: string, text: string): Promise<void> {
+    await onRow(h, label);
+    await h.press("enter");
+    await h.dispatch({ type: "key", key: press("u", { ctrl: true }) });
+    for (const c of text) await h.press(c);
+    await h.press("enter");
+  }
+
+  it("marks host, port, security key and HTTPS as saved for next time", async () => {
+    const h = await start();
+    await onPage(h, "SpoolEase");
+    const kept = Object.fromEntries(rowsOf(h).map((row) => [row.label, row.kept]));
+    expect(kept).toMatchObject({
+      Host: true,
+      Port: true,
+      "Security key": true,
+      "Use HTTPS": true,
+      "Use SpoolEase": false,
+    });
+  });
+
+  it("saves host, port and HTTPS to tui.json as each one changes", async () => {
+    const h = await start();
+    await onPage(h, "SpoolEase");
+    await retype(h, "Host", "10.0.0.5");
+    await retype(h, "Port", "8080");
+    await onRow(h, "Use HTTPS");
+    await h.press("enter");
+    expect(await loadTuiSettings()).toMatchObject({
+      console: { host: "10.0.0.5", port: 8080, https: true },
+    });
+    await h.press("enter");
+    expect((await loadTuiSettings()).console).toEqual({
+      host: "10.0.0.5",
+      port: 8080,
+      https: false,
+    });
+    expect(h.of("app/toast")).toEqual([]);
+  });
+
+  it("keeps a typed key for the session and says why when the keyring can't take it", async () => {
+    const h = await start({ host: "10.0.0.5" });
+    await onPage(h, "SpoolEase");
+    await retype(h, "Security key", "  SESSIONKEY ");
+    expect(h.ctx.values.securityKey).toBe("SESSIONKEY");
+    const toasts = h.of("app/toast");
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]).toMatchObject({ tone: "warning" });
+    expect(toasts[0]?.text).toMatch(/^SpoolEase key kept for this session only: can't use /);
+    expect(JSON.stringify(toasts)).not.toContain("SESSIONKEY");
+    expect(await loadTuiSettings()).not.toHaveProperty("console.securityKey");
+  });
+
+  it("takes a key with spaces inside, trimming only its ends", async () => {
+    const h = await start({ securityKey: "OLDKEY" });
+    await onPage(h, "SpoolEase");
+    await retype(h, "Security key", " TWO WORDS ");
+    expect(h.model.error).toBe("");
+    expect(h.ctx.values.securityKey).toBe("TWO WORDS");
+  });
+
+  it("forgets the key when the field is emptied, warning when the keyring can't be reached", async () => {
+    const h = await start({ securityKey: "OLDKEY" });
+    await onPage(h, "SpoolEase");
+    await retype(h, "Security key", "");
+    expect(h.ctx.values.securityKey).toBe("");
+    const toasts = h.of("app/toast");
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]?.text).toMatch(/^Couldn't forget the stored SpoolEase key: can't use /);
+    expect(JSON.stringify(toasts)).not.toContain("OLDKEY");
   });
 });
 

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installBambuStudio } from "./bambuStudioSetup.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { type SpoolmanDbServer, startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
@@ -21,15 +22,20 @@ function snap(
   args: string[],
   home: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
+  // A key in the environment, so the TUI never looks one up in a keyring (keyringGuard.ts).
+  const env = {
+    PATH: process.env.PATH ?? "",
+    HOME: home,
+    SPOOLMANDB_URL: spoolmanDb.url,
+    SPOOLEASE_SECURITY_KEY: "snap-test-key",
+  };
+  // The script passes the arguments after "--" to bambu-hando tui, with the environment above.
+  const dashes = args.indexOf("--");
+  assertNoLoginKeyring(["tui", ...(dashes < 0 ? [] : args.slice(dashes + 1))], env);
   return new Promise((resolve) => {
-    execFile(
-      process.execPath,
-      [SCRIPT, ...args],
-      { env: { PATH: process.env.PATH ?? "", HOME: home, SPOOLMANDB_URL: spoolmanDb.url } },
-      (err, stdout, stderr) => {
-        resolve({ code: err ? Number(err.code ?? 1) : 0, stdout, stderr });
-      },
-    );
+    execFile(process.execPath, [SCRIPT, ...args], { env }, (err, stdout, stderr) => {
+      resolve({ code: err ? Number(err.code ?? 1) : 0, stdout, stderr });
+    });
   });
 }
 

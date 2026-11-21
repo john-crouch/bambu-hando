@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { baseFilamentDir, installBambuStudio, X1C_06 } from "./bambuStudioSetup.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 import { expectedSpoolPayload, SOURCE_FIXTURE } from "./parity.js";
 import { decodeQr, readPdf } from "./pdf.js";
 import {
@@ -27,15 +28,12 @@ function spawnCli(
   home: string,
   env: Record<string, string> = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
+  const fullEnv = { PATH: process.env.PATH ?? "", HOME: home, ...env };
+  assertNoLoginKeyring(args, fullEnv);
   return new Promise((resolve) => {
-    execFile(
-      process.execPath,
-      [BIN, ...args],
-      { env: { PATH: process.env.PATH ?? "", HOME: home, ...env } },
-      (err, stdout, stderr) => {
-        resolve({ code: err ? Number(err.code) : 0, stdout, stderr });
-      },
-    );
+    execFile(process.execPath, [BIN, ...args], { env: fullEnv }, (err, stdout, stderr) => {
+      resolve({ code: err ? Number(err.code) : 0, stdout, stderr });
+    });
   });
 }
 

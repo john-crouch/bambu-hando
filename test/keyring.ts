@@ -6,6 +6,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { registerPrivateBus } from "./keyringGuard.js";
+
 function installed(command: string): boolean {
   try {
     execFileSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" });
@@ -72,6 +74,7 @@ export async function startPrivateKeyring(): Promise<PrivateKeyring> {
   );
   keyring.stdin?.end("test-password");
   await waitForSecretService(busEnv);
+  registerPrivateBus(address);
   return {
     env: { DBUS_SESSION_BUS_ADDRESS: address, XDG_RUNTIME_DIR: root },
     close: async () => {
