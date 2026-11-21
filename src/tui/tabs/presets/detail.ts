@@ -75,6 +75,14 @@ function swatchOf(preset: Preset): string | undefined {
   return undefined;
 }
 
+/** "30–80%": the part cooling fan's range, or the one end the preset sets. */
+function fanRange(preset: Preset): string {
+  const low = shown(preset, "fan_min_speed");
+  const high = shown(preset, "fan_max_speed");
+  if (low && high) return `${low}–${high}%`;
+  return low || high ? `${low || high}%` : "";
+}
+
 const PLATES: readonly [string, string][] = [
   ["textured_plate_temp", "Textured PEI"],
   ["hot_plate_temp", "Smooth PEI"],
@@ -100,14 +108,62 @@ export function presetDetail(preset: Preset): PresetDetail {
   }
   add("Flow ratio", shown(preset, "filament_flow_ratio"));
   add("Max flow", shown(preset, "filament_max_volumetric_speed", " mm³/s"));
-  const fanMin = shown(preset, "fan_min_speed");
-  const fanMax = shown(preset, "fan_max_speed");
-  add(
-    "Fan",
-    fanMin && fanMax ? `${fanMin}–${fanMax}%` : fanMin || fanMax ? `${fanMin || fanMax}%` : "",
-  );
+  add("Fan", fanRange(preset));
   add("Density", shown(preset, "filament_density", " g/cm³"));
   add("Cost", shown(preset, "filament_cost", " per kg"));
   const swatch = swatchOf(preset);
   return swatch ? { swatch, rows } : { rows };
+}
+
+const SHORT_PLATES: Record<string, string> = {
+  textured_plate_temp: "Textured",
+  hot_plate_temp: "Smooth",
+  cool_plate_temp: "Cool",
+  eng_plate_temp: "Engineering",
+};
+
+/** The same settings in at most four lines, for a detail panel under the list on a narrow terminal. */
+export function compactDetail(preset: Preset): DetailRow[] {
+  const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
+  const tagged = (tag: string, value: string) => (value ? `${tag} ${value}` : "");
+  const low = shown(preset, "nozzle_temperature_range_low");
+  const high = shown(preset, "nozzle_temperature_range_high");
+  const nozzle = shown(preset, "nozzle_temperature", "°C");
+  const first = shown(preset, "nozzle_temperature_initial_layer", "°C");
+  const fan = fanRange(preset);
+  const rows: DetailRow[] = [
+    {
+      label: "Nozzle",
+      value: join(
+        nozzle,
+        first && first !== nozzle ? tagged("first", first) : "",
+        low && high ? `range ${low}–${high}°C` : "",
+      ),
+    },
+    {
+      label: "Bed",
+      value: join(
+        ...PLATES.map(([key]) => {
+          const temp = shown(preset, key);
+          return temp && temp !== "0" ? `${SHORT_PLATES[key]} ${temp}°C` : "";
+        }),
+      ),
+    },
+    {
+      label: "Flow",
+      value: join(
+        tagged("ratio", shown(preset, "filament_flow_ratio")),
+        tagged("max", shown(preset, "filament_max_volumetric_speed", " mm³/s")),
+        tagged("fan", fan),
+      ),
+    },
+    {
+      label: "Filament",
+      value: join(
+        shown(preset, "filament_density", " g/cm³"),
+        shown(preset, "filament_cost", " per kg"),
+      ),
+    },
+  ];
+  return rows.filter((row) => row.value);
 }

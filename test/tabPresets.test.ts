@@ -12,7 +12,7 @@ import { type KeyPress, press } from "../src/tui/core/keys.js";
 import type { Cmd } from "../src/tui/core/program.js";
 import type { AppMsg, Ctx, Resource, Resources, TabMsg } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
-import { presetDetail, presetRows } from "../src/tui/tabs/presets/detail.js";
+import { compactDetail, presetDetail, presetRows } from "../src/tui/tabs/presets/detail.js";
 import { ALL_SETTINGS } from "../src/tui/tabs/presets/editor.js";
 import {
   capturesText,
@@ -233,6 +233,20 @@ describe("presetDetail", () => {
       rows: [{ label: "Nozzle", value: "220 / 230°C" }],
     });
     expect(presetDetail({})).toEqual({ rows: [] });
+  });
+});
+
+describe("compactDetail", () => {
+  it("fits the key settings in four lines for a narrow terminal", () => {
+    expect(compactDetail(presetJson("Acme PLA Red", X1C_04, "P1111111"))).toEqual([
+      { label: "Nozzle", value: "220°C · first 225°C · range 190–240°C" },
+      { label: "Bed", value: "Textured 55°C · Smooth 60°C" },
+      { label: "Flow", value: "ratio 0.98 · max 21 mm³/s · fan 30–80%" },
+      { label: "Filament", value: "1.24 g/cm³ · 25 per kg" },
+    ]);
+    expect(compactDetail({ nozzle_temperature: ["220"] })).toEqual([
+      { label: "Nozzle", value: "220°C" },
+    ]);
   });
 });
 

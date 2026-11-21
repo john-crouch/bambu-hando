@@ -1,0 +1,288 @@
+// ABOUTME: The preset editor's view: a page bar of setting groups, the page's settings, and the changes so far.
+// ABOUTME: Embeddable: the host gives it a width and height (the Presets tab's body, a pane of the Add tab's review).
+
+import { Box } from "ink";
+
+import { tildePath } from "../../../paths.js";
+import { editChanges } from "../../../presetEdit.js";
+import {
+  Line,
+  type ListRow,
+  listPosition,
+  listWindow,
+  type Page,
+  PageBar,
+  Panel,
+  panelInner,
+  type Segment,
+  splitWidths,
+  textWidth,
+} from "../../ui/index.js";
+import { rowSegments } from "../../ui/List.js";
+import { textFieldSegments } from "../../ui/TextField.js";
+import { padSegments, spaces } from "../../ui/text.js";
+import { COLORS, ICONS } from "../../ui/theme.js";
+import { printerLabel } from "./detail.js";
+import {
+  ALL_SETTINGS,
+  type EditorModel,
+  type EditorRow,
+  editorPages,
+  editorRows,
+  editorTypingHint,
+} from "./editor.js";
+
+/** Wide enough for the changes beside the settings. */
+export const EDITOR_SIDE_MIN = 100;
+
+/** Rows of the panel's inside that aren't settings: page bar, filter line, the gap and the note line. */
+const EDITOR_CHROME = 4;
+
+/** Rows of settings the editor shows in a pane this tall (what ↑↓ paging moves by). */
+export function editorListRows(height: number): number {
+  return Math.max(1, panelInner(0, height).height - EDITOR_CHROME);
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** The columns of a settings row: label, value, and (group pages) what it was. */
+function columns(model: EditorModel, rows: readonly EditorRow[], width: number) {
+  const widest = Math.max(0, ...rows.map((row) => textWidth(row.label)));
+  if (model.page === ALL_SETTINGS) {
+    const key = Math.min(widest, Math.max(12, Math.floor(width * 0.45)));
+    return { label: key, value: 0 };
+  }
+  return { label: Math.min(widest, 28), value: 18 };
+}
+
+function cellsOf(row: EditorRow, all: boolean, widths: { label: number; value: number }) {
+  const value = { text: row.value, ...(row.changed ? { color: COLORS.accent } : {}) };
+  if (all)
+    return [
+      { text: row.label, width: widths.label, ...(row.locked ? { dim: true } : {}) },
+      { ...value, grow: true, ...(row.locked && !row.changed ? { dim: true } : {}) },
+    ];
+  return [
+    { text: row.label, width: widths.label },
+    { ...value, width: widths.value },
+    { text: row.was ? `was ${row.was}` : "", grow: true, dim: true },
+  ];
+}
+
+/** The row being typed: its label, then the text field across the rest of the row. */
+function typingSegments(
+  model: EditorModel,
+  row: EditorRow,
+  width: number,
+  labelWidth: number,
+): Segment[] {
+  const text = model.text ?? { value: "", cursor: 0 };
+  const label = padSegments([{ text: row.label, bold: true }], labelWidth);
+  const fieldWidth = Math.max(1, width - 1 - labelWidth - 1 - 1);
+  return padSegments(
+    [
+      { text: "▌", color: COLORS.accent },
+      ...label,
+      { text: " " },
+      ...textFieldSegments({
+        value: text.value,
+        cursor: text.cursor,
+        focused: true,
+        width: fieldWidth,
+      }),
+    ],
+    width,
+  );
+}
+
+/** The line under the settings: an error, what's being typed takes, a locked key's reason, or the file. */
+function noteSegments(model: EditorModel, row: EditorRow | undefined): Segment[] {
+  if (model.error) return [{ text: `${ICONS.failed} ${model.error}`, color: COLORS.failed }];
+  const typing = editorTypingHint(model);
+  if (typing) return [{ text: typing, color: COLORS.muted }];
+  if (row?.locked) return [{ text: `Locked: ${row.locked}`, color: COLORS.muted }];
+  if (model.page === ALL_SETTINGS && row?.was)
+    return [{ text: `was ${row.was}`, color: COLORS.muted }];
+  if (model.mode === "planned")
+    return [{ text: "The preset the run writes; edits go into it", color: COLORS.muted }];
+  return model.path ? [{ text: tildePath(model.path), color: COLORS.muted, dim: true }] : [];
+}
+
+function FilterLine({ model, width }: { model: EditorModel; width: number }) {
+  if (model.page !== ALL_SETTINGS) return <Line segments={[]} width={width} />;
+  const { text, focused } = model.filter;
+  if (!focused && !text.value)
+    return (
+      <Line segments={[{ text: " / filter keys", color: COLORS.muted, dim: true }]} width={width} />
+    );
+  return (
+    <Line
+      segments={[
+        { text: " / ", color: COLORS.accent2, bold: true },
+        ...textFieldSegments({
+          value: text.value,
+          cursor: text.cursor,
+          focused,
+          placeholder: "words of the key",
+          width: Math.max(1, width - 4),
+        }),
+      ]}
+      width={width}
+    />
+  );
+}
+
+function Settings({ model, width, height }: { model: EditorModel; width: number; height: number }) {
+  const rows = editorRows(model);
+  const all = model.page === ALL_SETTINGS;
+  const cursor = Math.min(model.cursors[model.page] ?? 0, Math.max(0, rows.length - 1));
+  const widths = columns(model, rows, width);
+  const { start, end } = listWindow(cursor, rows.length, height);
+  if (rows.length === 0)
+    return (
+      <Box flexDirection="column" height={height}>
+        <Line
+          segments={[{ text: " No key has every word of the filter", color: COLORS.muted }]}
+          width={width}
+        />
+      </Box>
+    );
+  return (
+    <Box flexDirection="column" height={height} flexShrink={0}>
+      {rows.slice(start, end).map((row, offset) => {
+        const index = start + offset;
+        const typing = index === cursor && model.text !== null;
+        const listRow: ListRow = { key: row.key, cells: cellsOf(row, all, widths) };
+        return (
+          <Line
+            key={row.key}
+            width={width}
+            segments={
+              typing
+                ? typingSegments(model, row, width, widths.label)
+                : rowSegments(listRow, width, {
+                    selected: index === cursor,
+                    focused: !model.filter.focused,
+                    marker: false,
+                    chip: false,
+                    ...(all && model.filter.text.value
+                      ? { highlight: model.filter.text.value }
+                      : {}),
+                    thumb: false,
+                  })
+            }
+          />
+        );
+      })}
+    </Box>
+  );
+}
+
+/** The edits so far, beside the settings on a wide terminal. */
+function Changes({ model, width, height }: { model: EditorModel; width: number; height: number }) {
+  const changes = editChanges(model.original, model.edits);
+  const inner = panelInner(width, height);
+  const fit = Math.floor(inner.height / 2);
+  return (
+    <Panel
+      title="Changes"
+      {...(changes.length ? { subtitle: String(changes.length) } : {})}
+      width={width}
+      height={height}
+    >
+      {changes.length === 0 ? (
+        <Box flexDirection="column">
+          <Line segments={[{ text: " Nothing changed yet", bold: true }]} width={inner.width} />
+          <Line segments={[]} width={inner.width} />
+          <Line
+            segments={[{ text: " enter edits the highlighted setting;", color: COLORS.muted }]}
+            width={inner.width}
+          />
+          <Line
+            segments={[{ text: " ←→ goes through the groups.", color: COLORS.muted }]}
+            width={inner.width}
+          />
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          {changes.slice(0, fit).map((change) => (
+            <Box key={change.key} flexDirection="column">
+              <Line
+                segments={[{ text: ` ${change.label}`, color: COLORS.muted }]}
+                width={inner.width}
+              />
+              <Line
+                segments={[
+                  { text: `   ${change.from}`, dim: true },
+                  { text: " → " },
+                  { text: change.to, color: COLORS.accent, bold: true },
+                ]}
+                width={inner.width}
+              />
+            </Box>
+          ))}
+          {changes.length > fit ? (
+            <Line
+              segments={[
+                {
+                  text: ` … ${changes.length - fit} more`,
+                  color: COLORS.muted,
+                },
+              ]}
+              width={inner.width}
+            />
+          ) : null}
+        </Box>
+      )}
+    </Panel>
+  );
+}
+
+export interface EditorViewProps {
+  model: EditorModel;
+  width: number;
+  height: number;
+}
+
+export function EditorView({ model, width, height }: EditorViewProps) {
+  const [main = width, side = 0] = width >= EDITOR_SIDE_MIN ? splitWidths(width, [3, 2]) : [width];
+  const inner = panelInner(main, height);
+  const rows = editorRows(model);
+  const cursor = Math.min(model.cursors[model.page] ?? 0, Math.max(0, rows.length - 1));
+  const pages: Page[] = editorPages(model).map((page, index) => ({
+    id: page.id,
+    title: page.title,
+    state: index === model.page ? "current" : "todo",
+    ...(page.badge ? { badge: page.badge } : {}),
+  }));
+  const changed = model.edits.size;
+  const position = listPosition(cursor, rows.length);
+  return (
+    <Box flexDirection="row" width={width} height={height}>
+      <Panel
+        title={`Edit ${model.name}`}
+        {...(model.printer ? { subtitle: printerLabel(model.printer) } : {})}
+        focused
+        width={main}
+        height={height}
+        footerRight={`${changed ? plural(changed, "change") : "no changes"} · ${position}`}
+      >
+        <PageBar pages={pages} width={inner.width} />
+        <FilterLine model={model} width={inner.width} />
+        <Settings
+          model={model}
+          width={inner.width}
+          height={Math.max(1, inner.height - EDITOR_CHROME)}
+        />
+        <Line segments={[]} width={inner.width} />
+        <Line
+          segments={[{ text: spaces(1) }, ...noteSegments(model, rows[cursor])]}
+          width={inner.width}
+        />
+      </Panel>
+      {side > 0 ? <Changes model={model} width={side} height={height} /> : null}
+    </Box>
+  );
+}
