@@ -425,7 +425,9 @@ function onRead(model: PresetsModel, msg: PresetFileMsg): Step<PresetsModel> {
       [],
     ];
   const opening = model.opening;
-  if (opening?.path !== msg.path) return [{ ...model, files }, []];
+  // Only the read made to open it knows the printer's nozzle type: a detail read of the same file may come back first.
+  if (opening?.path !== msg.path || msg.printer !== opening.printer)
+    return [{ ...model, files }, []];
   if (!("preset" in msg)) return [{ ...model, files, opening: undefined }, []];
   const draft = model.drafts.get(opening.path);
   const editor = initEditor({

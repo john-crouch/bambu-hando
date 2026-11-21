@@ -97,25 +97,37 @@ function drive(model: PresetsModel, ctx: Ctx, ...keys: string[]): PresetsModel {
       const inner = msg.msg as TabMsg;
       if (inner.type !== "presets/read") continue;
       const found = PRESETS.find((p) => p.path === inner.path);
+      // A read to open a preset is made for its printer, and says so.
+      const printer = "printer" in inner ? { printer: inner.printer } : {};
       const reply = found
         ? {
             type: "presets/read",
             path: inner.path,
+            ...printer,
             preset: presetJson(found.name, found.printer, found.filamentId),
           }
-        : { type: "presets/read", path: inner.path, error: "Couldn't read it" };
+        : { type: "presets/read", path: inner.path, ...printer, error: "Couldn't read it" };
       current = presetsTab.update(current, reply, ctx)[0];
     }
   };
-  const reads = (path: string | undefined): AppMsg[] =>
-    path ? [{ type: "tab", tab: "presets", msg: { type: "presets/read", path } }] : [];
+  const reads = (path: string | undefined, printer?: string): AppMsg[] =>
+    path
+      ? [
+          {
+            type: "tab",
+            tab: "presets",
+            msg: { type: "presets/read", path, ...(printer === undefined ? {} : { printer }) },
+          },
+        ]
+      : [];
   for (const key of keys) {
     const before = current;
     current = presetsTab.update(current, { type: "key", key: press(key) }, ctx)[0];
     // A read was asked for when a preset is now loading or opening.
     const opening = current.opening?.path;
     const loading = [...current.files].find(([, f]) => f.state === "loading")?.[0];
-    if (opening && opening !== before.opening?.path) answer(reads(opening));
+    if (opening && opening !== before.opening?.path)
+      answer(reads(opening, current.opening?.printer));
     if (loading) answer(reads(loading));
     // The review reads the edited preset's family.
     for (const [path, file] of current.review?.contents ?? [])

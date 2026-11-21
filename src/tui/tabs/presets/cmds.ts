@@ -40,9 +40,10 @@ export interface SpoolEaseOutcome {
   line: string;
 }
 
+/** A preset file read; `printer` is the printer it was read for (to open it), absent for the detail panel. */
 export type PresetFileMsg =
-  | { type: "presets/read"; path: string; preset: Preset; nozzleType?: string }
-  | { type: "presets/read"; path: string; error: string };
+  | { type: "presets/read"; path: string; printer?: string; preset: Preset; nozzleType?: string }
+  | { type: "presets/read"; path: string; printer?: string; error: string };
 
 export interface RangeMsg {
   type: "presets/range";
@@ -81,6 +82,11 @@ export function rangeText(low: number | null, high: number | null): string {
 /** Reads a preset file (it must hold a JSON object); given its printer, BambuStudio's nozzle type for it too. */
 export function readPresetCmd(path: string, printer?: string): Cmd<AppMsg> {
   return async (dispatch) => {
+    const read = {
+      type: "presets/read" as const,
+      path,
+      ...(printer === undefined ? {} : { printer }),
+    };
     try {
       const preset: unknown = JSON.parse(await readFile(path, "utf-8"));
       if (typeof preset !== "object" || preset === null || Array.isArray(preset))
@@ -91,8 +97,7 @@ export function readPresetCmd(path: string, printer?: string): Cmd<AppMsg> {
           : nozzleTypeFor((await readBambuStudioConf(bambuConfigDir())).nozzleTypes, printer);
       dispatch(
         toPresets({
-          type: "presets/read",
-          path,
+          ...read,
           preset: preset as Preset,
           ...(nozzleType ? { nozzleType } : {}),
         }),
@@ -100,8 +105,7 @@ export function readPresetCmd(path: string, printer?: string): Cmd<AppMsg> {
     } catch (err) {
       dispatch(
         toPresets({
-          type: "presets/read",
-          path,
+          ...read,
           error: `Couldn't read ${basename(path)}: ${errorMessage(err)}`,
         }),
       );
