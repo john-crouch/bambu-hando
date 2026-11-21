@@ -51,7 +51,7 @@ export function spaces(count: number): string {
 }
 
 /** The text cut to width and padded to exactly width columns. */
-export function fit(text: string, width: number, align: Align = "left"): string {
+export function fitText(text: string, width: number, align: Align = "left"): string {
   if (width <= 0) return "";
   const cut = truncate(text, width);
   const pad = spaces(width - stringWidth(cut));

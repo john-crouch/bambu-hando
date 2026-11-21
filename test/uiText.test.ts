@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { fit, fitSegments, segmentsWidth, textWidth, truncate } from "../src/tui/ui/text.js";
+import { fitText, fitSegments, segmentsWidth, textWidth, truncate } from "../src/tui/ui/text.js";
 
 describe("textWidth", () => {
   it("counts columns as Ink does: one for the TUI's symbols, two for wide characters", () => {
@@ -41,16 +41,16 @@ describe("truncate", () => {
   });
 });
 
-describe("fit", () => {
+describe("fitText", () => {
   it("pads to the width on the right, or on the left when aligned right", () => {
-    expect(fit("564 g", 8)).toBe("564 g   ");
-    expect(fit("564 g", 8, "right")).toBe("   564 g");
+    expect(fitText("564 g", 8)).toBe("564 g   ");
+    expect(fitText("564 g", 8, "right")).toBe("   564 g");
   });
 
   it("cuts and pads in one go, so the result is always exactly the width", () => {
     for (const width of [0, 1, 5, 12, 40]) {
-      expect(textWidth(fit("OVERTURE PLA Basic White", width))).toBe(width);
-      expect(textWidth(fit("日本語の名前", width, "right"))).toBe(width);
+      expect(textWidth(fitText("OVERTURE PLA Basic White", width))).toBe(width);
+      expect(textWidth(fitText("日本語の名前", width, "right"))).toBe(width);
     }
   });
 });
