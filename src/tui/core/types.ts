@@ -184,6 +184,12 @@ export interface TabModule<M> {
    */
   modal?(model: M): boolean;
   /**
+   * The tab's own dialog (a count, a scan, an unlisted color), else null. The shell draws it centered
+   * over the body, which goes gray and dim behind it (the same layer as help and the palette), so a tab
+   * never draws a dialog inside its View. Its keys go in the footer: set modal too while it's open.
+   */
+  dialog?(model: M, ctx: Ctx): ReactElement | null;
+  /**
    * How many changes would be lost by quitting (unsaved preset edits, plan edits): q then asks
    * "Quit and drop N unsaved changes?" before it quits.
    */

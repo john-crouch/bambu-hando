@@ -2,9 +2,10 @@
 // ABOUTME: Its keys go in the footer (one place for keys); Frame centers it over the body; dialogInner gives its content width.
 
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
+import { type ReactNode, useContext } from "react";
 
 import type { Hint } from "../core/types.js";
+import { Backdrop } from "./backdrop.js";
 import { fitHints, hintSegments } from "./hints.js";
 import { Line } from "./Line.js";
 import { panelBottom, panelTop } from "./Panel.js";
@@ -47,6 +48,8 @@ const COVER_ROWS = 200;
 
 export function Dialog({ title, width = DIALOG_WIDTH, hints = [], note, children }: DialogProps) {
   const inner = dialogInner(width);
+  // Under the shell's overlay a tab's dialog is backdrop too: its borders go gray and dim with the rest.
+  const backdrop = useContext(Backdrop);
   const keys = hintSegments(fitHints(hints, inner));
   const cover = Array.from({ length: COVER_ROWS }, () => spaces(width - 2)).join("\n");
   return (
@@ -56,7 +59,8 @@ export function Dialog({ title, width = DIALOG_WIDTH, hints = [], note, children
         borderStyle="round"
         borderTop={false}
         borderBottom={false}
-        borderColor={COLORS.accent}
+        borderColor={backdrop ? COLORS.border : COLORS.accent}
+        borderDimColor={backdrop}
         flexDirection="column"
         overflow="hidden"
         width={width}
