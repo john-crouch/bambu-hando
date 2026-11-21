@@ -555,6 +555,7 @@ describe("editing", () => {
         .map((c) => c.title)
         .slice(0, 2),
     ).toEqual(["Filter presets", "Edit Acme ABS Black @ X1C 0.4"]);
+    expect(commands(started, ctx)[0]?.keys).toBe("/");
   });
 });
 
