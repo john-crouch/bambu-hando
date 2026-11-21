@@ -131,8 +131,10 @@ Lists for every value that can come from a list; text only where nothing can.
 - `program.ts`: a model/update/view runtime. `update(model, msg) → [model, cmds]` is pure; a `Cmd` is an
   async function that may dispatch messages (one, or a stream, as a sync run does). Keys, loaded data and
   run events are all messages.
-- `App.tsx`: the one `useInput`, turning Ink keys into `key` messages; global keys (tabs, help, palette,
-  quit); routes the rest to the active tab or the open overlay; renders the frame.
+- `app/Shell.tsx` and `app/shell.ts`: the one `useInput` (and `usePaste`), turning Ink input into `key`
+  messages (`keyPresses` splits keys that arrived together); `shell.ts`'s pure update holds the global keys
+  (tabs, help, palette, quit), routes the rest to the open overlay, a tab's dialog or the active tab, and loads
+  the shared resources; `Shell.tsx` renders the frame.
 - `tabs/<tab>/`: each tab is a module: `init`, `update`, `View`, `hints(model)` (the footer and help come
   from the same hints). No tab registers input.
 - `ui/`: the design system: `Frame`, `Header`, `Footer`, `Panel`, `List` (highlight bar, ticks, swatches,
