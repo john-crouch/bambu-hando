@@ -11,6 +11,7 @@ import {
   validPort,
 } from "../src/tui/tabs/settings/connection.js";
 import { TYPE_AHEAD_MS, typeAheadJump } from "../src/tui/tabs/settings/keys.js";
+import { wrapText } from "../src/tui/tabs/settings/wrap.js";
 
 const VALUES: FormValues = {
   source: "spoolmandb",
@@ -82,5 +83,19 @@ describe("the console connection", () => {
   it("splits the printers and drops the vendor for people", () => {
     expect(printerList(" A , ,B ")).toEqual(["A", "B"]);
     expect(printerLabel("Bambu Lab X1 Carbon 0.4 nozzle")).toBe("X1 Carbon 0.4 nozzle");
+  });
+});
+
+describe("wrapText", () => {
+  it("breaks at spaces within the width, cutting a word too long for a line", () => {
+    expect(wrapText("Spools of these find no preset in the AMS", 16)).toEqual([
+      "Spools of these",
+      "find no preset",
+      "in the AMS",
+    ]);
+    expect(wrapText("a  b", 10)).toEqual(["a b"]);
+    expect(wrapText("supercalifragilistic word", 8)).toEqual(["superca…", "word"]);
+    expect(wrapText("", 10)).toEqual([]);
+    expect(wrapText("text", 0)).toEqual([]);
   });
 });

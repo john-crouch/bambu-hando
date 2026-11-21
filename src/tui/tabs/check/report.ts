@@ -1,10 +1,11 @@
-// ABOUTME: What the Check tab shows from the sync check: its state, a row per section, the headline and pane sizes.
+// ABOUTME: What the Check tab shows from the sync check: its state, a row per section, the headline and its layout.
 // ABOUTME: Pure functions over the shell's check resource and the session's values; the console URL never has the key.
 
 import { type CheckSection, checkCounts, checkSummary } from "../../../syncCheck.js";
 import type { CheckData, Ctx } from "../../core/types.js";
-import { consoleUrl } from "../../ui/index.js";
+import { consoleUrl, panelInner } from "../../ui/index.js";
 import { connectionOf } from "../settings/connection.js";
+import { wrapText } from "../settings/wrap.js";
 
 /** none: no console to check against (SpoolEase skipped or not set up). */
 export interface CheckView {
@@ -83,18 +84,88 @@ export function checkHeadline(sections: CheckSection[], ctx: Ctx): Headline {
   };
 }
 
-// The summary line, the items panel's borders, the section's why (two lines), a gap and a spare line.
-const ITEMS_CHROME = 7;
+/** Section titles short enough for the sections pane; the full title heads the items pane. */
+export const SHORT_TITLES: Record<CheckSection["key"], string> = {
+  csvOnly: "Filaments without a preset",
+  unknownCode: "Spools of unknown filaments",
+  badRows: "Misread filament rows",
+  presetsOnly: "Presets SpoolEase lacks",
+  presetsNoId: "Presets without an ID",
+  noCode: "Spools without a code",
+};
 
-/** Items the right pane shows at once. */
-export function itemRows(ctx: Ctx): number {
-  return Math.max(1, ctx.bodyRows - ITEMS_CHROME);
+/** The warnings shown above the panes: the first, and how many more. */
+export function warningLines(warnings: readonly string[]): string[] {
+  if (warnings.length === 0) return [];
+  const more = warnings.length - 1;
+  return [warnings[0] ?? "", ...(more > 0 ? [`… and ${plural(more, "more warning")}`] : [])];
 }
 
-// The review's title, two lines on what happens, the panel's borders, a gap and a spare line.
-const IDS_CHROME = 7;
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
 
-/** Files the ID review shows at once. */
-export function idRows(ctx: Ctx): number {
-  return Math.max(1, ctx.bodyRows - IDS_CHROME);
+/** The sections pane's width, borders included, where there's room for it. */
+const SECTIONS_WIDTH = 37;
+
+export interface CheckLayout {
+  /** Lines above the panes: the headline and the warnings. */
+  top: number;
+  /** Both panes' height, borders included. */
+  height: number;
+  /** The sections pane's width and the items pane's, borders included. */
+  left: number;
+  right: number;
+}
+
+export function checkLayout(ctx: Ctx, data: CheckData | undefined): CheckLayout {
+  const top = 1 + warningLines(data?.warnings ?? []).length;
+  // Room for the longest short title with its mark and count; narrower terminals give the items more.
+  const left = ctx.bodyColumns >= 80 ? SECTIONS_WIDTH : Math.floor(ctx.bodyColumns * 0.46);
+  return {
+    top,
+    height: Math.max(3, ctx.bodyRows - top),
+    left,
+    right: Math.max(0, ctx.bodyColumns - left),
+  };
+}
+
+/** Margin on each side of text inside a pane. */
+export const PAD = 1;
+
+/** The section's why, wrapped to the items pane. */
+export function whyLines(ctx: Ctx, data: CheckData | undefined, section: CheckSection): string[] {
+  const { right, height } = checkLayout(ctx, data);
+  return wrapText(section.why, panelInner(right, height).width - 2 * PAD);
+}
+
+/** Items the items pane shows at once, below the section's why and a gap. */
+export function itemRows(ctx: Ctx, data: CheckData | undefined, section: CheckSection): number {
+  const { right, height } = checkLayout(ctx, data);
+  return Math.max(1, panelInner(right, height).height - whyLines(ctx, data, section).length - 1);
+}
+
+export const IDS_INTRO =
+  "Each preset gets the filament ID BambuStudio's Create filament gives a filament of that name, so spools can find their preset.";
+export const IDS_NOTE =
+  "Logged in to Bambu, BambuStudio uploads the change on its next sync; restart BambuStudio to load it.";
+
+export interface IdsLayout {
+  /** The review panel's height, borders included (the page bar is above it). */
+  height: number;
+  intro: string[];
+  note: string[];
+  /** Files shown at once. */
+  rows: number;
+}
+
+/** The ID review: page bar, then a panel with the intro, the files, the status line and the note. */
+export function idsLayout(ctx: Ctx): IdsLayout {
+  const height = Math.max(3, ctx.bodyRows - 1);
+  const inner = panelInner(ctx.bodyColumns, height);
+  const intro = wrapText(IDS_INTRO, inner.width - 2 * PAD);
+  const note = wrapText(IDS_NOTE, inner.width - 2 * PAD);
+  // A gap after the intro, and before the status line, the status line, a gap and the note.
+  const rows = Math.max(1, inner.height - intro.length - 1 - 3 - note.length);
+  return { height, intro, note, rows };
 }

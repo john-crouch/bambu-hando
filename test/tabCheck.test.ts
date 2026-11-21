@@ -158,10 +158,12 @@ describe("the report", () => {
     expect(h.model.focus).toBe("items");
     await h.press("down", "down");
     expect(h.model.scroll).toBe(2);
+    const shown = itemRows(h.ctx, value, value.sections[index]!);
+    expect(shown).toBeGreaterThan(5);
     await h.press("end");
-    expect(h.model.scroll).toBe(40 - itemRows(h.ctx));
+    expect(h.model.scroll).toBe(40 - shown);
     await h.press("pageUp");
-    expect(h.model.scroll).toBe(Math.max(0, 40 - 2 * itemRows(h.ctx)));
+    expect(h.model.scroll).toBe(Math.max(0, 40 - 2 * shown));
     await h.press("esc");
     expect(h.model.focus).toBe("sections");
     await h.press("down");

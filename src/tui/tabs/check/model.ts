@@ -18,7 +18,7 @@ import type {
 import { toTab } from "../../core/types.js";
 import { moveCursor } from "../../ui/index.js";
 import { writeIds } from "./cmds.js";
-import { checkView, consoleConfigured, firstWithItems, idRows, itemRows } from "./report.js";
+import { checkView, consoleConfigured, firstWithItems, idsLayout, itemRows } from "./report.js";
 
 export interface IdsPage {
   fixes: IdFix[];
@@ -69,6 +69,13 @@ function sectionsNow(ctx: Ctx) {
   return checkView(ctx).data?.sections ?? [];
 }
 
+/** Items of the highlighted section shown at once. */
+function shownItems(model: CheckModel, ctx: Ctx): number {
+  const data = checkView(ctx).data;
+  const section = data?.sections[model.section];
+  return section ? itemRows(ctx, data, section) : 1;
+}
+
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
@@ -78,7 +85,10 @@ function clamp(model: CheckModel, ctx: Ctx): CheckModel {
   const sections = sectionsNow(ctx);
   const section = Math.max(0, Math.min(model.section, sections.length - 1));
   const items = sections[section]?.items.length ?? 0;
-  const scroll = Math.max(0, Math.min(model.scroll, items - itemRows(ctx)));
+  const scroll = Math.max(
+    0,
+    Math.min(model.scroll, items - shownItems({ ...model, section }, ctx)),
+  );
   const focus = items === 0 ? "sections" : model.focus;
   return { ...model, section, scroll, focus };
 }
@@ -99,8 +109,9 @@ function idsKey(model: CheckModel, ids: IdsPage, key: KeyPress, ctx: Ctx): Step<
     return step({ ...model, page: "report", ids: ids.running ? ids : null });
   if (letter(key) === "a" && ids.results === null && !ids.running)
     return step({ ...model, ids: { ...ids, running: true } }, writeIds(ids.fixes));
-  const last = Math.max(0, ids.fixes.length - idRows(ctx));
-  const moved = moveCursor(ids.scroll, key, last + 1, idRows(ctx));
+  const rows = idsLayout(ctx).rows;
+  const last = Math.max(0, ids.fixes.length - rows);
+  const moved = moveCursor(ids.scroll, key, last + 1, rows);
   return moved === null ? step(model) : step({ ...model, ids: { ...ids, scroll: moved } });
 }
 
@@ -112,8 +123,9 @@ function reportKey(model: CheckModel, key: KeyPress, ctx: Ctx): Step<CheckModel>
   const items = sections[model.section]?.items.length ?? 0;
   if (model.focus === "items") {
     if (key.name === "esc" || key.name === "left") return step({ ...model, focus: "sections" });
-    const last = Math.max(0, items - itemRows(ctx));
-    const moved = moveCursor(model.scroll, key, last + 1, itemRows(ctx));
+    const rows = shownItems(model, ctx);
+    const last = Math.max(0, items - rows);
+    const moved = moveCursor(model.scroll, key, last + 1, rows);
     return moved === null ? step(model) : step({ ...model, scroll: moved });
   }
   if ((key.name === "enter" || key.name === "right") && items > 0)
@@ -206,7 +218,7 @@ function hints(model: CheckModel, ctx: Ctx): Hint[] {
     return [{ keys: "enter", label: "set up SpoolEase in Settings", primary: true }];
   if (model.page === "ids" && model.ids) {
     const ids = model.ids;
-    const scrolls = ids.fixes.length > idRows(ctx);
+    const scrolls = ids.fixes.length > idsLayout(ctx).rows;
     if (ids.running) return [{ keys: "esc", label: "back" }];
     if (ids.results) return [{ keys: "esc", label: "back to the check", primary: true }];
     return [
