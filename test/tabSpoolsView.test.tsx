@@ -354,8 +354,11 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(ctx.bodyColumns);
     const text = lines.join("\n");
     expect(text).toContain("Labels for 2 new spools");
-    expect(text).toContain("[✓] qr");
-    expect(text).toContain("[ ] location");
+    // The same field names as Settings › Labels.
+    expect(text).toContain("[✓] QR code");
+    expect(text).toContain("[✓] Color name");
+    expect(text).toContain("[ ] Location");
+    expect(text).toContain("Save PDF to");
     expect(text).toContain("╭ #14");
     expect(text).toContain("Sunlu");
     expect(text).toContain("230–250°C");
@@ -375,6 +378,20 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     expect(text).not.toContain("✗");
     const [loading] = labelsOverlay.init({ spoolIds: ["14"], fresh: false }, ctx);
     expect(overlay(loading).join("\n")).toContain("Looking for printers…");
+  });
+
+  it("names one spool only on its preview card, not again on a line of IDs", () => {
+    const [model] = labelsOverlay.init({ spoolIds: ["14"], fresh: false }, ctx);
+    const one = labelsOverlay.update(
+      model,
+      { type: "labels/loaded", settings: DEFAULT_LABEL_SETTINGS, printers: [] },
+      ctx,
+    )[0];
+    const lines = overlay(one);
+    expect(lines.some((line) => /^│\s+#14\s+│$/.test(line))).toBe(false);
+    expect(lines.join("\n")).toContain("╭ #14");
+    const two = overlay(loaded());
+    if (rows >= 24) expect(two.some((line) => /^│\s+#14 #13\s+│$/.test(line))).toBe(true);
   });
 
   it("keeps the dialog's height when fields are ticked or unticked", () => {
@@ -404,6 +421,16 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     // A list that scrolls says where the cursor is.
     expect(overlay(many).join("\n")).toContain(" 1/31 ");
     expect(text).toContain("Don't print");
-    expect(text).toContain("DYMO");
+    // One of them is chosen: the current printer carries the radio's dot.
+    expect(text).toContain("● DYMO");
+    expect(text).toContain("○ Don't print");
+  });
+
+  it("shows a long PDF path with its file name kept", () => {
+    const path = "/home/someone/Documents/3d printing/labels/spools/october/labels-2026-10-30.pdf";
+    const model = { ...loaded(), output: { value: path, cursor: path.length } };
+    const text = overlay(model).join("\n");
+    expect(text).toContain("labels-2026-10-30.pdf");
+    expect(text).toContain("…");
   });
 });

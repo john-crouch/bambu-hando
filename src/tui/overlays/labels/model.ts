@@ -375,13 +375,15 @@ export function hints(model: LabelsModel, _ctx: Ctx): Hint[] {
       { keys: "enter", label: "done", primary: true },
       { keys: "esc", label: "keep it", primary: true },
     ];
-  const makeHint: Hint = { keys: "a", label: "make labels", primary: true };
+  // a is offered only once labels can be made; until then the Make row says what's missing.
+  const makeHints: Hint[] =
+    "error" in labelTarget(model) ? [] : [{ keys: "a", label: "make labels", primary: true }];
   if (LABEL_FIELDS[model.focus])
     return [
       move,
       { keys: "←→", label: "column" },
       { keys: "space", label: "tick", primary: true },
-      makeHint,
+      ...makeHints,
       closeHint,
     ];
   switch (model.focus) {
@@ -390,11 +392,16 @@ export function hints(model: LabelsModel, _ctx: Ctx): Hint[] {
         move,
         { keys: "←→", label: "common sizes", primary: true },
         { keys: "type", label: "a size like 2.25x1.25in" },
-        makeHint,
+        ...makeHints,
         closeHint,
       ];
     case PRINTER_ROW:
-      return [move, { keys: "enter", label: "choose printer", primary: true }, makeHint, closeHint];
+      return [
+        move,
+        { keys: "enter", label: "choose printer", primary: true },
+        ...makeHints,
+        closeHint,
+      ];
     case OUTPUT_ROW:
       return [
         move,
