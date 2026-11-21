@@ -201,10 +201,21 @@ describe("what the pages say", () => {
     }
   });
 
-  it("draws the Other color dialog over the list", () => {
-    expect(other).toContain("Other color · Acme PLA");
-    expect(other).toMatch(/Settings from\s+‹/);
-    expect(other).toContain("Moss");
+  it("gives the Other color dialog to the shell's dialog layer, not the body", () => {
+    expect(other).not.toContain("Other color · Acme PLA");
+    const model = pages(context).find(([name]) => name === "other color")?.[1];
+    if (!model) throw new Error("no other color page");
+    const dialog = addTab.dialog?.(model, context);
+    if (!dialog) throw new Error("no dialog");
+    const out = stripVTControlCharacters(
+      renderToString(<ThemeProvider theme={theme}>{dialog}</ThemeProvider>, {
+        columns: context.columns,
+      }),
+    );
+    expect(out).toContain("Other color · Acme PLA");
+    expect(out).toMatch(/Settings from\s+‹/);
+    expect(out).toContain("Moss");
+    expect(addTab.dialog?.(after(context), context)).toBeNull();
   });
 
   it("shows the search query and its matches", () => {

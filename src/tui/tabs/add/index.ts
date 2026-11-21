@@ -4,7 +4,7 @@
 import type { TabModule } from "../../core/types.js";
 import { type AddModel, init } from "./model.js";
 import { busy, capturesText, commands, hints, modal, unsaved, update } from "./update.js";
-import { AddView } from "./View.js";
+import { AddView, addDialog } from "./View.js";
 
 export type { AddModel } from "./model.js";
 
@@ -14,6 +14,7 @@ export const addTab: TabModule<AddModel> = {
   init,
   update,
   View: AddView,
+  dialog: addDialog,
   hints,
   capturesText,
   busy,

@@ -1,7 +1,8 @@
 // ABOUTME: The Add tab's body: page bar, the current page (Find, Weights, Review, Done), and the status line.
-// ABOUTME: The Other color dialog draws centered over the page; everything is sized from ctx's body.
+// ABOUTME: The Other color dialog goes to the shell's dialog layer (addDialog); everything is sized from ctx's body.
 
 import { Box } from "ink";
+import type { ReactElement } from "react";
 
 import type { Ctx } from "../../core/types.js";
 import { shortPrinter } from "../../ui/format.js";
@@ -43,6 +44,13 @@ export function statusSegments(model: AddModel, ctx: Ctx): Segment[] {
   ];
 }
 
+/** The Other color dialog, for the shell to draw over the dimmed body; null when it's closed. */
+export function addDialog(model: AddModel, ctx: Ctx): ReactElement | null {
+  return model.page === "find" && model.dialog ? (
+    <ColorDialogView dialog={model.dialog} columns={ctx.bodyColumns} />
+  ) : null;
+}
+
 export function AddView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
   const width = ctx.bodyColumns;
   const area = pageArea(width, ctx.bodyRows);
@@ -59,19 +67,6 @@ export function AddView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
         ) : (
           <PlanView model={model} ctx={ctx} />
         )}
-        {model.dialog ? (
-          <Box
-            position="absolute"
-            top={0}
-            left={0}
-            width={width}
-            height={area.height}
-            justifyContent="center"
-            alignItems="center"
-          >
-            <ColorDialogView dialog={model.dialog} columns={width} />
-          </Box>
-        ) : null}
       </Box>
       <Line width={width} segments={statusSegments(model, ctx)} />
     </Box>
