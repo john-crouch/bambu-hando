@@ -1,5 +1,5 @@
 // ABOUTME: Tests resolving the SpoolEase console (flags, environment, keyring, tui.json) and reading the SpoolEase
-// ABOUTME: build of BambuStudio's spoolease/config.json; port, HTTPS and key follow the host's source (private keyring).
+// ABOUTME: build of BambuStudio's spoolease/config.json; port, HTTPS and key follow the host they belong to (private keyring).
 
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -133,7 +133,23 @@ describe("consoleSettings", () => {
     });
   });
 
-  it("never gives a host from a flag or the environment tui.json's port and HTTPS", async () => {
+  it("gives a port and HTTPS saved without a host to any host, BambuStudio's included", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9:8443", security_key: "FROM-BAMBU" });
+    await rememberConsole({ port: 8080, https: true });
+    expect(await consoleSettings({}, {})).toEqual({
+      host: "10.0.0.9",
+      port: "8080",
+      securityKey: "FROM-BAMBU",
+      https: true,
+    });
+    expect(await consoleSettings({ "spoolease-host": "flag-host" }, {})).toMatchObject({
+      host: "flag-host",
+      port: "8080",
+      https: true,
+    });
+  });
+
+  it("gives a host from a flag or the environment tui.json's port and HTTPS only when it's tui.json's host", async () => {
     await rememberConsole({ host: "10.0.0.5", port: 8080, https: true });
     expect(await consoleSettings({ "spoolease-host": "flag-host" }, {})).toEqual({
       host: "flag-host",
@@ -146,9 +162,26 @@ describe("consoleSettings", () => {
       port: "80",
       https: false,
     });
+    expect(await consoleSettings({ "spoolease-host": "10.0.0.5" }, {})).toMatchObject({
+      host: "10.0.0.5",
+      port: "8080",
+      https: true,
+    });
+    expect(await consoleSettings({}, { SPOOLEASE_HOST: " 10.0.0.5 " })).toMatchObject({
+      port: "8080",
+      https: true,
+    });
   });
 
-  it("never gives a host from a flag or the environment BambuStudio's key", async () => {
+  it("never gives BambuStudio's address port, even for BambuStudio's host", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9:8443", security_key: "FROM-BAMBU" });
+    expect(await consoleSettings({ "spoolease-host": "10.0.0.9" }, {})).toMatchObject({
+      port: "80",
+      https: false,
+    });
+  });
+
+  it("gives a host from a flag or the environment BambuStudio's key only when it's BambuStudio's host", async () => {
     await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
     expect(await consoleSettings({ "spoolease-host": "flag-host" }, {})).toMatchObject({
       securityKey: "",
@@ -156,6 +189,26 @@ describe("consoleSettings", () => {
     expect(await consoleSettings({}, { SPOOLEASE_HOST: "env-host" })).toMatchObject({
       securityKey: "",
     });
+    expect(await consoleSettings({}, { SPOOLEASE_HOST: "10.0.0.9" })).toMatchObject({
+      host: "10.0.0.9",
+      securityKey: "FROM-BAMBU",
+    });
+    // tui.json names another console, but the host given is BambuStudio's: its key is the one that fits.
+    await rememberConsole({ host: "10.0.0.5", port: 8080 });
+    expect(await consoleSettings({}, { SPOOLEASE_HOST: "10.0.0.9" })).toEqual({
+      host: "10.0.0.9",
+      port: "80",
+      securityKey: "FROM-BAMBU",
+      https: false,
+    });
+  });
+
+  it("reads BambuStudio's key as stored, spaces included, and takes a blank one for none", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "  MY KEY " });
+    expect(await consoleSettings({}, {})).toMatchObject({ securityKey: "  MY KEY " });
+    expect((await readSpoolEaseConfig(bambuConfigDir(home))).securityKey).toBe("  MY KEY ");
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "   " });
+    expect(await consoleSettings({}, {})).toMatchObject({ securityKey: "" });
   });
 
   it("takes port and HTTPS from the flags whatever the host's source, --no-spoolease-https included", async () => {
@@ -240,16 +293,65 @@ describe.skipIf(!privateKeyringSupported)("consoleSettings with a key in the key
     });
   });
 
-  it("uses BambuStudio's key for BambuStudio's host, and the keyring's when BambuStudio has none", async () => {
-    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
-    expect(await consoleSettings({}, {})).toMatchObject({
-      host: "10.0.0.9",
-      securityKey: "FROM-BAMBU",
-    });
-    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "" });
+  it("prefers it to BambuStudio's possibly stale key while tui.json names no other console", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "OLD-BAMBU" });
     expect(await consoleSettings({}, {})).toMatchObject({
       host: "10.0.0.9",
       securityKey: "FROM-KEYRING",
+    });
+    await rememberConsole({ host: "10.0.0.9", port: 8080 });
+    expect(await consoleSettings({}, {})).toMatchObject({
+      host: "10.0.0.9",
+      port: "8080",
+      securityKey: "FROM-KEYRING",
+    });
+    expect(await consoleSettings({}, { SPOOLEASE_HOST: "10.0.0.9" })).toMatchObject({
+      securityKey: "FROM-KEYRING",
+    });
+  });
+
+  it("gives BambuStudio's host BambuStudio's key when tui.json names another console", async () => {
+    // Settings saved console B with its key; BambuStudio knows console A with A's key.
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "KEY-OF-A" });
+    await rememberConsole({ host: "10.0.0.5", port: 8080, https: true });
+    expect(await consoleSettings({ "spoolease-host": "10.0.0.9" }, {})).toEqual({
+      host: "10.0.0.9",
+      port: "80",
+      securityKey: "KEY-OF-A",
+      https: false,
+    });
+    expect(await consoleSettings({}, { SPOOLEASE_HOST: "10.0.0.9" })).toMatchObject({
+      securityKey: "KEY-OF-A",
+    });
+    // ...and tui.json's own host keeps the keyring's key and its saved port.
+    expect(await consoleSettings({}, {})).toEqual({
+      host: "10.0.0.5",
+      port: "8080",
+      securityKey: "FROM-KEYRING",
+      https: true,
+    });
+  });
+
+  it("falls back to it, best effort, when nothing else gives the host a key", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "" });
+    await rememberConsole({ host: "10.0.0.5" });
+    expect(await consoleSettings({ "spoolease-host": "10.0.0.9" }, {})).toMatchObject({
+      securityKey: "FROM-KEYRING",
+    });
+    expect(await consoleSettings({ "spoolease-host": "elsewhere" }, {})).toMatchObject({
+      securityKey: "FROM-KEYRING",
+    });
+  });
+
+  it("keeps a host changed in Settings bound to its port, HTTPS and the keyring's key", async () => {
+    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
+    await rememberConsole({ host: "10.0.0.5", port: 8080, https: true });
+    await rememberConsole({ host: "10.0.0.6", port: 8080, https: true });
+    expect(await consoleSettings({}, {})).toEqual({
+      host: "10.0.0.6",
+      port: "8080",
+      securityKey: "FROM-KEYRING",
+      https: true,
     });
   });
 
