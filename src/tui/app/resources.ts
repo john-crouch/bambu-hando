@@ -8,6 +8,7 @@ import { checkKey } from "../../sync.js";
 import { readCheck, readUserPresets } from "../../syncCheck.js";
 import type { Resource, ResourceId, Resources } from "../core/types.js";
 import type { FormValues } from "../core/values.js";
+import { connectionOf } from "../tabs/settings/connection.js";
 import type { HeaderStatus } from "../ui/index.js";
 
 type Loaded<K extends ResourceId> = Resources[K] extends Resource<infer T> ? T : never;
@@ -20,16 +21,6 @@ export function consoleConfigured(values: FormValues): boolean {
   return !values.skipSpoolease && values.host.trim() !== "" && values.securityKey !== "";
 }
 
-function connection(values: FormValues): SpoolEaseConnection | null {
-  if (!consoleConfigured(values)) return null;
-  return {
-    host: values.host.trim(),
-    port: Number(values.port),
-    securityKey: values.securityKey,
-    https: values.https,
-  };
-}
-
 /** A client whose key the console accepted; throws KeyCheckError when it's unreachable or refuses the key. */
 async function checkedClient(target: SpoolEaseConnection): Promise<SpoolEaseClient> {
   const client = new SpoolEaseClient(target);
@@ -39,7 +30,7 @@ async function checkedClient(target: SpoolEaseConnection): Promise<SpoolEaseClie
 
 export const DEFAULT_LOADERS: Loaders = {
   console(values) {
-    const target = connection(values);
+    const target = connectionOf(values);
     if (!target) return null;
     return (async () => {
       const client = await checkedClient(target);
@@ -53,7 +44,7 @@ export const DEFAULT_LOADERS: Loaders = {
   presets: (values) => readUserPresets(values.presetFolder.trim()),
   catalog: (values) => loadSpoolmanDb({ diameter: values.diameter }),
   check(values) {
-    const target = connection(values);
+    const target = connectionOf(values);
     if (!target) return null;
     return (async () => readCheck(await checkedClient(target), values.presetFolder.trim()))();
   },
@@ -112,6 +103,9 @@ export function headerStatus(values: FormValues, console: Resource<unknown>): He
       printerText: printers,
     };
   }
+  // A port that isn't one is never tried (connectionOf); Settings' port row says what to fix.
+  if (!connectionOf(values))
+    return { console: "failed", consoleText: "SpoolEase port invalid", printerText: printers };
   const state =
     console.state === "ready"
       ? "ok"

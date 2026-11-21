@@ -4,6 +4,7 @@
 import { AsyncEntry } from "@napi-rs/keyring";
 
 import { errorMessage } from "./errors.js";
+import { trackWrite } from "./pendingWrites.js";
 
 /** One API key bambu-hando can keep: its `key` command name, keyring account and overriding variable. */
 export interface SecretSpec {
@@ -65,10 +66,13 @@ export function keyringName(platform: string = process.platform): string {
   return platform === "darwin" ? "the macOS Keychain" : "the system keyring (Secret Service)";
 }
 
-/** The key without the whitespace a paste or pipe adds; never quotes the value in its errors. */
+/**
+ * The key without what a paste or pipe adds: surrounding whitespace, or for keys that may hold spaces (`spaces`) only
+ * the trailing line end, since spaces around such a key may be part of it. Never quotes the value in its errors.
+ */
 export function validateSecret(value: string, spec?: SecretSpec): string {
-  const key = value.trim();
-  if (key === "") throw new Error("the key is empty");
+  const key = spec?.spaces ? value.replace(/[\r\n]+$/, "") : value.trim();
+  if (key.trim() === "") throw new Error("the key is empty");
   // Control characters inside mean a mangled paste (or two lines), not a key; so do spaces, for keys without any.
   if (spec?.spaces) {
     if (/\p{Cc}/u.test(key))
@@ -95,8 +99,9 @@ async function inKeyring<T>(spec: SecretSpec, use: (entry: AsyncEntry) => Promis
   }
 }
 
-export async function storeSecret(spec: SecretSpec, value: string): Promise<void> {
-  await inKeyring(spec, (e) => e.setPassword(value));
+/** Stores the key; tracked (`pendingWrites.ts`), so quitting right after doesn't cut the keyring call short. */
+export function storeSecret(spec: SecretSpec, value: string): Promise<void> {
+  return trackWrite(inKeyring(spec, (e) => e.setPassword(value)));
 }
 
 /** The key in the keyring, ignoring the environment; null when none is stored. */
@@ -104,9 +109,9 @@ export async function storedSecret(spec: SecretSpec): Promise<string | null> {
   return inKeyring(spec, (e) => e.getPassword());
 }
 
-/** True when a key was stored and is now gone; false when there was none. */
-export async function removeSecret(spec: SecretSpec): Promise<boolean> {
-  return inKeyring(spec, (e) => e.deletePassword());
+/** True when a key was stored and is now gone; false when there was none. Tracked like `storeSecret`. */
+export function removeSecret(spec: SecretSpec): Promise<boolean> {
+  return trackWrite(inKeyring(spec, (e) => e.deletePassword()));
 }
 
 export interface LoadedSecret {
@@ -130,8 +135,8 @@ export async function loadSecret(
   env: Record<string, string | undefined> = process.env,
 ): Promise<LoadedSecret | null> {
   // Checked like `key set` checks a paste: a mangled value would end up in a header, and in fetch's error about it.
-  const fromEnv = env[spec.env]?.trim();
-  if (fromEnv) {
+  const fromEnv = env[spec.env];
+  if (fromEnv?.trim()) {
     try {
       return { value: validateSecret(fromEnv, spec), from: "env" };
     } catch (err) {
@@ -147,5 +152,5 @@ export async function loadSecret(
     throw new InvalidSecretError(
       `the ${spec.label} stored in ${keyringName()} isn't usable: ${problem}; store it again with \`bambu-hando key set ${spec.name}\``,
     );
-  return { value: stored.trim(), from: "keyring" };
+  return { value: validateSecret(stored, spec), from: "keyring" };
 }

@@ -458,7 +458,7 @@ describe("what the SpoolEase page keeps for next time", () => {
     const h = await start({ host: "10.0.0.5" });
     await onPage(h, "SpoolEase");
     await retype(h, "Security key", "  SESSIONKEY ");
-    expect(h.ctx.values.securityKey).toBe("SESSIONKEY");
+    expect(h.ctx.values.securityKey).toBe("  SESSIONKEY ");
     const toasts = h.of("app/toast");
     expect(toasts).toHaveLength(1);
     expect(toasts[0]).toMatchObject({ tone: "warning" });
@@ -472,7 +472,7 @@ describe("what the SpoolEase page keeps for next time", () => {
     await onPage(h, "SpoolEase");
     await retype(h, "Security key", " TWO WORDS ");
     expect(h.model.error).toBe("");
-    expect(h.ctx.values.securityKey).toBe("TWO WORDS");
+    expect(h.ctx.values.securityKey).toBe(" TWO WORDS ");
   });
 
   it("forgets the key when the field is emptied, warning when the keyring can't be reached", async () => {

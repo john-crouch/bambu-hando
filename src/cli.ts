@@ -29,6 +29,7 @@ import { loadProfiles } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 import {
   type ConsoleSettings,
+  type ConsoleSettingsOptions,
   consoleSettings,
   SPOOLEASE_SETTINGS_HINT,
   type SpoolEaseFlags,
@@ -91,7 +92,8 @@ Options:
                                   Settings (its key in the system keyring, also
                                   stored by bambu-hando key set spoolease), then
                                   to the SpoolEase settings saved in BambuStudio
-  --spoolease-port <port>         SpoolEase port (default: as saved in Settings, else 80)
+  --spoolease-port <port>         SpoolEase port (default: as saved in Settings with its
+                                  host, else 80)
   --spoolease-https               Use HTTPS for SpoolEase (default: as saved in Settings;
                                   --no-spoolease-https turns a saved one off)
   --skip-spoolease                Skip SpoolEase API updates
@@ -228,7 +230,7 @@ or by bambu-hando key set spoolease, then the SpoolEase settings saved in
 BambuStudio):
   --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>         Port (default: as saved in Settings, else 80)
+  --spoolease-port <port>         Port (default: as saved in Settings with its host, else 80)
   --spoolease-https               Use HTTPS (--no-spoolease-https: don't, even if saved)
   -h, --help                      Show this help
 
@@ -271,7 +273,7 @@ Options:
   --json                          Print a snake_case JSON report instead of text
   --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>         Port (default: as saved in Settings, else 80)
+  --spoolease-port <port>         Port (default: as saved in Settings with its host, else 80)
   --spoolease-https               Use HTTPS (--no-spoolease-https: don't, even if saved)
   -h, --help                      Show this help
 
@@ -355,9 +357,12 @@ function parsePort(value: string): number {
 }
 
 /** consoleSettings, with an unusable saved key as a usage error (which never quotes it). */
-async function consoleOrUsage(flags: SpoolEaseFlags): Promise<ConsoleSettings> {
+async function consoleOrUsage(
+  flags: SpoolEaseFlags,
+  options: ConsoleSettingsOptions = {},
+): Promise<ConsoleSettings> {
   try {
-    return await consoleSettings(flags);
+    return await consoleSettings(flags, process.env, options);
   } catch (err) {
     throw err instanceof InvalidSecretError ? new UsageError(err.message) : err;
   }
@@ -653,11 +658,13 @@ async function parseTuiValues(
     parseArgs({ args: argv, options: TUI_OPTIONS, allowNegative: true, strict: true }),
   );
   if (values.help) return { values: null, help: true };
+  if (values["spoolease-port"] !== undefined) parsePort(values["spoolease-port"]);
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
   const [defaults, remembered, spoolease] = await Promise.all([
     bambuDefaults(),
     loadTuiSettings(),
-    consoleOrUsage(values),
+    // Skipping SpoolEase never asks the keyring, and never refuses to start over a key it won't use.
+    consoleOrUsage(values, { keyring: !values["skip-spoolease"] }),
   ]);
   // --printer-preset, else the printers of the last TUI run, else the printer selected in BambuStudio.
   const printerList =

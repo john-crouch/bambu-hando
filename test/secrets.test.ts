@@ -2,7 +2,7 @@
 // ABOUTME: Runs against a private gnome-keyring on its own D-Bus session, never the login keyring; keyCommand.e2e covers an unreachable one.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { writesSettled } from "../src/pendingWrites.js";
 import {
   holdsSecret,
   InvalidSecretError,
@@ -62,14 +62,28 @@ describe("the SpoolEase security key", () => {
   });
 
   it("takes any key without control characters, spaces inside included, since it has no prefix", () => {
-    expect(validateSecret(" anything-goes_123\n", CONSOLE)).toBe("anything-goes_123");
-    expect(validateSecret("  two words \n", CONSOLE)).toBe("two words");
+    expect(validateSecret("anything-goes_123\n", CONSOLE)).toBe("anything-goes_123");
+    expect(validateSecret("two words", CONSOLE)).toBe("two words");
     expect(() => validateSecret(" \n", CONSOLE)).toThrow(/empty/);
     for (const bad of ["abc\ndef", "abc\tdef", "abc\u0007def"]) {
       expect(() => validateSecret(bad, CONSOLE)).toThrow(
         "the key contains control characters: paste only the key",
       );
     }
+  });
+
+  it("keeps the key as typed, surrounding spaces included, dropping only the line end a paste or pipe adds", () => {
+    expect(validateSecret("  two words \n", CONSOLE)).toBe("  two words ");
+    expect(validateSecret(" key\r\n", CONSOLE)).toBe(" key");
+    expect(validateSecret("key\n\n", CONSOLE)).toBe("key");
+    expect(() => validateSecret("\tkey", CONSOLE)).toThrow(/control characters/);
+  });
+
+  it("keeps SPOOLEASE_SECURITY_KEY as set, surrounding spaces included", async () => {
+    expect(await loadSecret(CONSOLE, { [CONSOLE.env]: " spaced key " })).toEqual({
+      value: " spaced key ",
+      from: "env",
+    });
   });
 
   it("still refuses spaces inside a 3DFilamentProfiles key", () => {
@@ -158,6 +172,11 @@ describe.skipIf(!privateKeyringSupported)("secrets in the system keyring", () =>
     expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
   });
 
+  it("reads the SpoolEase key back as it was stored, surrounding spaces included", async () => {
+    await storeSecret(CONSOLE, " spaced key ");
+    expect(await loadSecret(CONSOLE, {})).toEqual({ value: " spaced key ", from: "keyring" });
+  });
+
   it("refuses a mangled SpoolEase key in the keyring, says how to replace it, and never echoes it", async () => {
     await storeSecret(CONSOLE, "LEAK\tME");
     const err: unknown = await loadSecret(CONSOLE, {}).catch((e: unknown) => e);
@@ -172,6 +191,21 @@ describe.skipIf(!privateKeyringSupported)("secrets in the system keyring", () =>
     await storeSecret(TDFP, "3dfp_abc123");
     expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
     expect(await loadSecret(TDFP, {})).toEqual({ value: "3dfp_abc123", from: "keyring" });
+  });
+
+  it("tracks storing and removing as writes, so the binary lets them finish before it exits", async () => {
+    let stored = false;
+    void storeSecret(TDFP, "3dfp_unawaited").then(() => {
+      stored = true;
+    });
+    await writesSettled();
+    expect(stored).toBe(true);
+    let removed = false;
+    void removeSecret(TDFP).then(() => {
+      removed = true;
+    });
+    await writesSettled();
+    expect(removed).toBe(true);
   });
 
   it("replaces a stored key", async () => {

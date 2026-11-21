@@ -165,11 +165,11 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
 
   it("stores a SpoolEase key with spaces inside, and refuses one with a tab", async () => {
     expect((await run(["key", "set", "spoolease"], " fake_key two words \n")).code).toBe(0);
-    expect(await storedSecret(CONSOLE)).toBe("fake_key two words");
+    expect(await storedSecret(CONSOLE)).toBe(" fake_key two words ");
     const { code, stderr } = await run(["key", "set", "spoolease"], "fake_key\ttabbed");
     expect(code).toBe(2);
     expect(stderr).toContain("the key contains control characters");
-    expect(await storedSecret(CONSOLE)).toBe("fake_key two words");
+    expect(await storedSecret(CONSOLE)).toBe(" fake_key two words ");
   });
 
   it("reports where each key comes from, never its value", async () => {
