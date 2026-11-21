@@ -300,7 +300,7 @@ describe("presetDetail", () => {
       { label: "Max flow", value: "21 mm³/s" },
       { label: "Fan", value: "30–80%" },
       { label: "Density", value: "1.24 g/cm³" },
-      { label: "Price", value: "25 money/kg" },
+      { label: "Cost", value: "25 per kg" },
     ]);
   });
 
@@ -318,6 +318,22 @@ describe("presetDetail", () => {
       presetDetail({ fan_min_speed: ["100"], fan_max_speed: ["100"], filament_cost: ["0"] }),
     ).toEqual({ rows: [{ label: "Fan", value: "100%" }] });
   });
+
+  it("names the nozzle types of variants that differ, as BambuStudio lists them", () => {
+    const variants = {
+      filament_extruder_variant: ["Direct Drive Standard", "Direct Drive High Flow"],
+      nozzle_temperature: ["220", "220"],
+      filament_max_volumetric_speed: ["22", "29"],
+    };
+    expect(presetDetail(variants).rows).toEqual([
+      { label: "Nozzle", value: "220°C" },
+      { label: "Max flow", value: "standard 22 · high flow 29 mm³/s" },
+    ]);
+    expect(compactDetail(variants)).toEqual([
+      { label: "Nozzle", value: "220°C" },
+      { label: "Flow", value: "max standard 22 · high flow 29 mm³/s" },
+    ]);
+  });
 });
 
 describe("compactDetail", () => {
@@ -326,7 +342,7 @@ describe("compactDetail", () => {
       { label: "Nozzle", value: "220°C · first 225°C · range 190–240°C" },
       { label: "Bed", value: "Textured 55°C · Smooth 60°C" },
       { label: "Flow", value: "ratio 0.98 · max 21 mm³/s · fan 30–80%" },
-      { label: "Filament", value: "1.24 g/cm³ · price 25 money/kg" },
+      { label: "Filament", value: "1.24 g/cm³ · cost 25 per kg" },
     ]);
     expect(compactDetail({ nozzle_temperature: ["220"] })).toEqual([
       { label: "Nozzle", value: "220°C" },

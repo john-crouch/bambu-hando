@@ -165,9 +165,29 @@ function values(value: unknown): string[] {
   return [...new Set(list.filter((v): v is string => typeof v === "string" && v !== ""))];
 }
 
+/** "Direct Drive High Flow" → "high flow": the nozzle type a variant is for, as BambuStudio names it. */
+function variantName(name: string): string {
+  return name.replace(/^Direct Drive /, "").toLowerCase();
+}
+
+/**
+ * A setting with its unit: "220°C"; variants that differ each tagged with their nozzle type when the
+ * preset names them ("standard 22 · high flow 29 mm³/s"), else "220 / 230°C".
+ */
 function shown(preset: Preset, key: string, unit = ""): string {
   const list = values(preset[key]);
-  return list.length ? `${list.join(" / ")}${unit}` : "";
+  if (list.length === 0) return "";
+  const each = preset[key];
+  const names = preset.filament_extruder_variant;
+  if (
+    list.length > 1 &&
+    Array.isArray(each) &&
+    Array.isArray(names) &&
+    names.length === each.length &&
+    names.every((n) => typeof n === "string" && n)
+  )
+    return `${each.map((value, index) => `${variantName(names[index] as string)} ${value}`).join(" · ")}${unit}`;
+  return `${list.join(" / ")}${unit}`;
 }
 
 function swatchOf(preset: Preset): string | undefined {
@@ -178,9 +198,9 @@ function swatchOf(preset: Preset): string | undefined {
   return undefined;
 }
 
-/** "25 money/kg", BambuStudio's own unit for its Price (in whatever currency); "" for 0, "no price given". */
-function pricePerKg(preset: Preset): string {
-  return shown(preset, "filament_cost") === "0" ? "" : shown(preset, "filament_cost", " money/kg");
+/** "25 per kg", in whatever currency BambuStudio is set to; "" for 0, "no cost given". */
+function costPerKg(preset: Preset): string {
+  return shown(preset, "filament_cost") === "0" ? "" : shown(preset, "filament_cost", " per kg");
 }
 
 /** "30–80%": the part cooling fan's range, or the one end the preset sets. */
@@ -218,7 +238,7 @@ export function presetDetail(preset: Preset): PresetDetail {
   add("Max flow", shown(preset, "filament_max_volumetric_speed", " mm³/s"));
   add("Fan", fanRange(preset));
   add("Density", shown(preset, "filament_density", " g/cm³"));
-  add("Price", pricePerKg(preset));
+  add("Cost", costPerKg(preset));
   const swatch = swatchOf(preset);
   return swatch ? { swatch, rows } : { rows };
 }
@@ -267,7 +287,7 @@ export function compactDetail(preset: Preset): DetailRow[] {
     },
     {
       label: "Filament",
-      value: join(shown(preset, "filament_density", " g/cm³"), tagged("price", pricePerKg(preset))),
+      value: join(shown(preset, "filament_density", " g/cm³"), tagged("cost", costPerKg(preset))),
     },
   ];
   return rows.filter((row) => row.value);
