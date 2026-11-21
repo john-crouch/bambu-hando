@@ -7,11 +7,12 @@ import { renderToString } from "ink";
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_LABEL_SETTINGS } from "../src/labelSettings.js";
+import { LABEL_FIELDS } from "../src/labels.js";
 import { press } from "../src/tui/core/keys.js";
 import type { Ctx, Resources } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
 import { labelsOverlay } from "../src/tui/overlays/labels/index.js";
-import type { LabelsModel } from "../src/tui/overlays/labels/model.js";
+import { type LabelsModel, MAKE_ROW, PRINTER_ROW } from "../src/tui/overlays/labels/model.js";
 import { spoolsTab } from "../src/tui/tabs/spools/index.js";
 import type { SpoolsModel } from "../src/tui/tabs/spools/model.js";
 import { frameBody, textWidth, theme } from "../src/tui/ui/index.js";
@@ -271,7 +272,7 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
   );
 });
 
-describe.each(SIZES.slice(1))("the labels overlay at %ix%i", (columns, rows) => {
+describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
   const ctx = ctxAt(columns, rows);
 
   function overlay(model: LabelsModel): string[] {
@@ -293,7 +294,7 @@ describe.each(SIZES.slice(1))("the labels overlay at %ix%i", (columns, rows) => 
 
   it("fits the body and shows the fields, the preview and what Make labels does", () => {
     const lines = overlay(loaded());
-    expect(lines.length).toBeLessThan(ctx.bodyRows);
+    expect(lines.length).toBeLessThanOrEqual(ctx.bodyRows);
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(ctx.bodyColumns);
     const text = lines.join("\n");
     expect(text).toContain("Labels for 2 new spools");
@@ -301,18 +302,41 @@ describe.each(SIZES.slice(1))("the labels overlay at %ix%i", (columns, rows) => 
     expect(text).toContain("[ ] location");
     expect(text).toContain("╭ #14");
     expect(text).toContain("Sunlu");
-    expect(text).toContain("230–250 °C");
+    expect(text).toMatch(/230–250 ?°C/);
     expect(text).toContain("Print 2 labels on DYMO");
+    // Its keys are in the footer.
+    expect(text).not.toContain("esc close");
   });
 
-  it("shows a validation error and the loading state", () => {
+  it("says once what's missing, on the Make row", () => {
     const model = labelsOverlay.update(
-      { ...loaded(), printer: "" },
+      { ...loaded(), printer: "", focus: MAKE_ROW },
       { type: "key", key: press("enter") },
       ctx,
     )[0];
-    expect(overlay(model).join("\n")).toContain("✗ Choose a printer, a PDF path, or both");
+    const text = overlay(model).join("\n");
+    expect(text.split("Choose a printer, a PDF path, or both")).toHaveLength(2);
+    expect(text).not.toContain("✗");
     const [loading] = labelsOverlay.init({ spoolIds: ["14"], fresh: false }, ctx);
     expect(overlay(loading).join("\n")).toContain("Looking for printers…");
+  });
+
+  it("keeps the dialog's height when fields are ticked or unticked", () => {
+    const many = { ...loaded(), fields: LABEL_FIELDS.map((f) => f.key) };
+    const few = { ...loaded(), fields: ["brand" as const] };
+    expect(overlay(many)).toHaveLength(overlay(few).length);
+    expect(overlay(many).join("\n")).toMatch(/\+\d+ more/);
+  });
+
+  it("opens the printer choices as a list, Don't print first", () => {
+    const model = labelsOverlay.update(
+      { ...loaded(), focus: PRINTER_ROW },
+      { type: "key", key: press("enter") },
+      ctx,
+    )[0];
+    const text = overlay(model).join("\n");
+    expect(text).toContain("Labels for 2 new spools · Printer");
+    expect(text).toContain("Don't print");
+    expect(text).toContain("DYMO");
   });
 });

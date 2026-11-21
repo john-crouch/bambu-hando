@@ -2,7 +2,7 @@
 // ABOUTME: Model and update live in model.ts, the view in View.tsx.
 
 import type { LabelsRequest, OverlayModule } from "../../core/types.js";
-import { hints, init, type LabelsModel, update } from "./model.js";
+import { busy, hints, init, type LabelsModel, update } from "./model.js";
 import { LabelsView } from "./View.js";
 
 export const labelsOverlay: OverlayModule<LabelsModel, LabelsRequest> = {
@@ -11,4 +11,5 @@ export const labelsOverlay: OverlayModule<LabelsModel, LabelsRequest> = {
   update,
   View: LabelsView,
   hints,
+  busy,
 };

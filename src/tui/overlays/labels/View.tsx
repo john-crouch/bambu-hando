@@ -1,5 +1,5 @@
 // ABOUTME: The labels overlay's view: field ticks in two columns beside a preview of the label, then size, printer, PDF.
-// ABOUTME: The Make labels line says what pressing it does: which printer, which file, how many labels.
+// ABOUTME: Printer and PDF choices open as a list in the dialog; the Make labels line says what pressing it does.
 
 import { Box } from "ink";
 
@@ -11,38 +11,53 @@ import {
   Dialog,
   dialogInner,
   Line,
+  List,
+  type ListRow,
+  plural,
   type Segment,
   TextField,
+  textWidth,
   truncate,
 } from "../../ui/index.js";
 import {
   COMMON_SIZES,
   FIELD_ROWS,
-  hints,
   type LabelPreview,
   type LabelsModel,
   labelPreview,
+  labelTarget,
   MAKE_ROW,
+  OTHER_OUTPUT,
   OUTPUT_ROW,
+  outputChoices,
   PRINTER_ROW,
+  printerChoices,
   SIZE_ROW,
 } from "./model.js";
 
-/** Columns of one field cell: "[✓] location". */
-const FIELD_CELL = 14;
+/** Columns of one field cell: the focus gutter, then "[✓] location". */
+const FIELD_CELL = 15;
 const LABEL_COLUMN = 10;
+/** Lines inside the preview card: fixed, so ticking a field never makes the dialog jump. */
+const PREVIEW_LINES = FIELD_ROWS;
+/** Body rows the full form needs (the spool IDs line included) before it drops that line. */
+const FULL_FORM_ROWS = 20;
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+/** The focused row's look, one style for every row (as in lists): ▌ in the gutter and the selection bar. */
+const FOCUSED: Omit<Segment, "text"> = { backgroundColor: COLORS.selection };
+
+function gutter(focused: boolean): Segment {
+  return focused ? { text: "▌", color: COLORS.accent, ...FOCUSED } : { text: " " };
 }
 
 function fieldCell(model: LabelsModel, index: number, focused: boolean): Segment[] {
   const field = LABEL_FIELDS[index];
   if (!field) return [{ text: " ".repeat(FIELD_CELL) }];
   const on = model.fields.includes(field.key);
-  const bar = focused ? { backgroundColor: COLORS.selection } : {};
-  const text = ` ${field.key}`.padEnd(FIELD_CELL - 3);
+  const bar = focused ? FOCUSED : {};
+  const text = ` ${field.key}`.padEnd(FIELD_CELL - 4);
   return [
+    gutter(focused),
     { text: "[", color: COLORS.muted, ...bar },
     on ? { text: "✓", color: COLORS.ok, bold: true, ...bar } : { text: " ", ...bar },
     { text: "]", color: COLORS.muted, ...bar },
@@ -54,7 +69,7 @@ function fieldCell(model: LabelsModel, index: number, focused: boolean): Segment
   ];
 }
 
-/** The label as it prints: a QR block when it has one, then its lines in their weights. */
+/** The label as it prints: a QR block when it has one, then its lines in their weights; always PREVIEW_LINES tall. */
 function Preview({ preview, width }: { preview: LabelPreview | null; width: number }) {
   const lines: Segment[][] = [];
   if (!preview) {
@@ -63,9 +78,10 @@ function Preview({ preview, width }: { preview: LabelPreview | null; width: numb
   } else {
     const qr = preview.qr ? 5 : 0;
     const room = width - 4 - qr;
-    const rows = Math.max(preview.lines.length, preview.qr ? 3 : 1);
-    for (let i = 0; i < rows; i++) {
-      const line = preview.lines[i];
+    const overflow = preview.lines.length > PREVIEW_LINES;
+    const shown = overflow ? preview.lines.slice(0, PREVIEW_LINES - 1) : preview.lines;
+    for (let i = 0; i < PREVIEW_LINES; i++) {
+      const line = shown[i];
       const block: Segment[] = preview.qr
         ? [{ text: i < 3 ? "▚▞▚▞" : "    ", color: COLORS.muted }, { text: " " }]
         : [];
@@ -77,24 +93,27 @@ function Preview({ preview, width }: { preview: LabelPreview | null; width: numb
               ...(line.style === "small" ? { dim: true } : {}),
             },
           ]
-        : [];
+        : overflow && i === PREVIEW_LINES - 1
+          ? [
+              {
+                text: `+${preview.lines.length - shown.length} more`,
+                color: COLORS.muted,
+              },
+            ]
+          : [];
       lines.push([...block, ...text]);
     }
   }
+  while (lines.length < PREVIEW_LINES) lines.push([]);
   const inner = width - 2;
+  const id = ` #${preview?.spoolId ?? "?"} `;
   return (
     <Box flexDirection="column" width={width} flexShrink={0}>
       <Line
         segments={[
           { text: "╭", color: COLORS.border },
-          {
-            text: ` #${preview?.spoolId ?? "?"} `,
-            color: COLORS.muted,
-          },
-          {
-            text: "─".repeat(Math.max(0, inner - 3 - (preview?.spoolId.length ?? 1))),
-            color: COLORS.border,
-          },
+          { text: id, color: COLORS.muted },
+          { text: "─".repeat(Math.max(0, inner - textWidth(id))), color: COLORS.border },
           { text: "╮", color: COLORS.border },
         ]}
         width={width}
@@ -121,36 +140,99 @@ function Preview({ preview, width }: { preview: LabelPreview | null; width: numb
 }
 
 function lineWidth(segments: Segment[]): number {
-  return segments.reduce((sum, s) => sum + [...s.text].length, 0);
+  return segments.reduce((sum, s) => sum + textWidth(s.text), 0);
 }
 
-function rowLabel(text: string, focused: boolean): Segment[] {
-  return [
-    { text: focused ? "▸ " : "  ", color: COLORS.accent },
-    {
-      text: text.padEnd(LABEL_COLUMN),
-      ...(focused ? { color: COLORS.accent, bold: true } : { color: COLORS.muted }),
-    },
-  ];
+/** A form row: its label, then its value; the focused one is the selection bar, like the field cells. */
+function FormRow({
+  label,
+  value,
+  focused,
+  width,
+}: {
+  label: string;
+  value: Segment[];
+  focused: boolean;
+  width: number;
+}) {
+  const bar = focused ? FOCUSED : {};
+  return (
+    <Line
+      segments={[
+        gutter(focused),
+        {
+          text: label.padEnd(LABEL_COLUMN + 1),
+          ...bar,
+          ...(focused ? { color: COLORS.selectionText, bold: true } : { color: COLORS.muted }),
+        },
+        ...value.map((segment) => ({ ...segment, ...bar })),
+      ]}
+      width={width}
+      {...(focused ? { fill: FOCUSED } : {})}
+    />
+  );
 }
 
-function choice(value: string, focused: boolean, detail?: string): Segment[] {
-  return [
-    { text: focused ? "‹ " : "", color: COLORS.accent },
-    { text: value, bold: focused },
-    { text: focused ? " ›" : "", color: COLORS.accent },
-    ...(detail ? [{ text: `  ${detail}`, color: COLORS.muted }] : []),
-  ];
+function outputLabel(choice: string): string {
+  return choice === "" ? "No PDF" : choice;
 }
 
-/** What Make labels does, named: "Print 2 labels on DYMO and save ~/labels.pdf". */
-export function makeSummary(model: LabelsModel): string {
+/** What Make labels does, named ("Print 2 labels on DYMO and save ~/labels.pdf"), or what's missing first. */
+export function makeSummary(model: LabelsModel): { ready: boolean; text: string } {
+  const target = labelTarget(model);
+  if ("error" in target) return { ready: false, text: target.error };
   const count = plural(model.request.spoolIds.length, "label");
   const output = model.output.value.trim();
-  if (model.printer && output) return `Print ${count} on ${model.printer} and save ${output}`;
-  if (model.printer) return `Print ${count} on ${model.printer}`;
-  if (output) return `Save ${count} to ${output}`;
-  return "Choose a printer, a PDF path, or both";
+  if (model.printer && output)
+    return { ready: true, text: `Print ${count} on ${model.printer} and save ${output}` };
+  if (model.printer) return { ready: true, text: `Print ${count} on ${model.printer}` };
+  return { ready: true, text: `Save ${count} to ${output}` };
+}
+
+/** The Printer or Save PDF choices, in place of the form while open. */
+function Picker({
+  model,
+  ctx,
+  picker,
+  width,
+}: {
+  model: LabelsModel;
+  ctx: Ctx;
+  picker: { row: number; cursor: number };
+  width: number;
+}) {
+  const printing = picker.row === PRINTER_ROW;
+  const choices = printing ? printerChoices(model) : outputChoices(model, ctx);
+  const rows: ListRow[] = choices.map((choice) => ({
+    key: choice || "none",
+    cells: [
+      {
+        text: printing ? choice || "Don't print" : outputLabel(choice),
+        grow: true,
+      },
+      ...(choice === OTHER_OUTPUT ? [{ text: "type a path", dim: true }] : []),
+    ],
+  }));
+  const height = Math.max(1, Math.min(rows.length, ctx.bodyRows - 8));
+  return (
+    <>
+      <Line
+        segments={[
+          {
+            text: printing
+              ? model.printers.length === 0
+                ? "No CUPS printers found: save a PDF instead."
+                : "Print the labels on"
+              : "Save the labels as a PDF",
+            color: COLORS.muted,
+          },
+        ]}
+        width={width}
+      />
+      <Line segments={[]} width={width} />
+      <List rows={rows} cursor={picker.cursor} height={height} width={width} />
+    </>
+  );
 }
 
 export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
@@ -158,26 +240,37 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
   const inner = dialogInner(width);
   const count = model.request.spoolIds.length;
   const title = `Labels for ${plural(count, model.request.fresh ? "new spool" : "spool")}`;
-  const ids = truncate(model.request.spoolIds.map((id) => `#${id}`).join(" "), inner);
-
+  // The overlay's keys are in the footer, so the dialog doesn't repeat them.
   if (model.phase !== "ready")
     return (
-      <Dialog title={title} width={width} hints={hints(model, ctx)}>
+      <Dialog title={title} width={width} hints={[]}>
         <Busy message={model.phase === "loading" ? "Looking for printers…" : "Making labels…"} />
+      </Dialog>
+    );
+  if (model.picker)
+    return (
+      <Dialog
+        title={`${title} · ${model.picker.row === PRINTER_ROW ? "Printer" : "Save PDF"}`}
+        width={width}
+        hints={[]}
+      >
+        <Picker model={model} ctx={ctx} picker={model.picker} width={inner} />
       </Dialog>
     );
 
   const grid = 2 * FIELD_CELL + 1;
   const previewWidth = inner - grid - 2;
   const showPreview = previewWidth >= 18;
+  const showIds = ctx.bodyRows >= FULL_FORM_ROWS;
   const focusedField = LABEL_FIELDS[model.focus];
   const size = COMMON_SIZES.find((s) => s.size === model.size);
   const make = makeSummary(model);
-  const ready = make !== "Choose a printer, a PDF path, or both";
+  const ids = truncate(model.request.spoolIds.map((id) => `#${id}`).join(" "), inner);
+  const muted = (text: string): Segment => ({ text, color: COLORS.muted });
 
   return (
-    <Dialog title={title} width={width} hints={hints(model, ctx)}>
-      <Line segments={[{ text: ids, color: COLORS.muted }]} width={inner} />
+    <Dialog title={title} width={width} hints={[]}>
+      {showIds ? <Line segments={[muted(ids)]} width={inner} /> : null}
       <Box flexDirection="row">
         <Box flexDirection="column" width={grid} flexShrink={0}>
           {Array.from({ length: FIELD_ROWS }, (_, row) => (
@@ -200,54 +293,57 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
         ) : null}
       </Box>
       <Line
-        segments={[
-          {
-            text: focusedField ? focusedField.description : "Fields print in this order.",
-            color: COLORS.muted,
-          },
-        ]}
+        segments={[muted(focusedField ? focusedField.description : "Fields print in this order.")]}
         width={inner}
       />
-      <Line
-        segments={[
-          ...rowLabel("Size", model.focus === SIZE_ROW),
-          ...choice(model.size, model.focus === SIZE_ROW, size?.detail),
+      <FormRow
+        label="Size"
+        value={[
+          // A stepper while focused: ←→ go through the common sizes.
+          { text: model.focus === SIZE_ROW ? `‹ ${model.size} ›` : model.size },
+          ...(size?.detail ? [muted(`  ${size.detail}`)] : []),
         ]}
+        focused={model.focus === SIZE_ROW}
         width={inner}
       />
-      <Line
-        segments={[
-          ...rowLabel("Printer", model.focus === PRINTER_ROW),
-          ...choice(
-            model.printer || "Don't print",
-            model.focus === PRINTER_ROW,
-            model.printers.length === 0 ? "no CUPS printers found" : undefined,
-          ),
+      <FormRow
+        label="Printer"
+        value={[
+          model.printer ? { text: model.printer } : muted("Don't print"),
+          ...(model.printers.length === 0 ? [muted("  no CUPS printers found")] : []),
         ]}
+        focused={model.focus === PRINTER_ROW}
         width={inner}
       />
-      <Box flexDirection="row">
-        <Line segments={rowLabel("Save PDF", model.focus === OUTPUT_ROW)} width={12} />
-        <TextField
-          value={model.output.value}
-          cursor={model.output.cursor}
+      {model.editing ? (
+        <Box flexDirection="row">
+          <FormRow label="Save PDF" value={[]} focused width={LABEL_COLUMN + 2} />
+          <TextField
+            value={model.output.value}
+            cursor={model.output.cursor}
+            focused
+            placeholder="~/labels.pdf"
+            width={inner - LABEL_COLUMN - 2}
+          />
+        </Box>
+      ) : (
+        <FormRow
+          label="Save PDF"
+          value={[
+            model.output.value.trim() ? { text: model.output.value.trim() } : muted("No PDF"),
+          ]}
           focused={model.focus === OUTPUT_ROW}
-          placeholder="don't save a PDF"
-          width={inner - 12}
+          width={inner}
         />
-      </Box>
-      <Line
-        segments={[
-          ...rowLabel("Make", model.focus === MAKE_ROW),
-          {
-            text: make,
-            ...(ready
-              ? model.focus === MAKE_ROW
-                ? { color: COLORS.accent, bold: true }
-                : {}
-              : { color: COLORS.muted }),
-          },
+      )}
+      <FormRow
+        label="Make"
+        value={[
+          make.ready
+            ? { text: make.text, ...(model.focus === MAKE_ROW ? { bold: true } : {}) }
+            : { text: make.text, color: COLORS.warning },
         ]}
+        focused={model.focus === MAKE_ROW}
         width={inner}
       />
       {model.error ? (
