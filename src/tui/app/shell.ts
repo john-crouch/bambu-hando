@@ -92,9 +92,10 @@ export function summaryText(summaries: RunSummary[]): string {
   return summaries.map((s) => `${s.lines.join("\n")}\n`).join("\n");
 }
 
+/** In the order they give way when the footer is narrow (Footer drops from the left, never ? help). */
 const GLOBAL_HINTS: Hint[] = [
-  { keys: "tab", label: "next tab" },
   { keys: "ctrl+k", label: "commands" },
+  { keys: "tab", label: "next tab" },
   { keys: "?", label: "help", primary: true },
   { keys: "q", label: "quit" },
 ];

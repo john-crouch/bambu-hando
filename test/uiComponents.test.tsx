@@ -603,6 +603,30 @@ describe("Footer", () => {
     expect(line(24)).toBe(" ↑↓ move         ? help ");
   });
 
+  it("drops the global keys in one order as it narrows: ctrl+k, then tab, then q, never ? help", () => {
+    const global: Hint[] = [
+      { keys: "ctrl+k", label: "commands" },
+      { keys: "tab", label: "next tab" },
+      { keys: "?", label: "help", primary: true },
+      { keys: "q", label: "quit" },
+    ];
+    const kept: string[] = [];
+    for (let width = 80; width >= 10; width--) {
+      const text = footerSegments([], width, global)
+        .map((s) => s.text)
+        .join("")
+        .trim()
+        .replace(/ {2,}/g, " | ");
+      if (kept.at(-1) !== text) kept.push(text);
+    }
+    expect(kept).toEqual([
+      "ctrl+k commands | tab next tab | ? help | q quit",
+      "tab next tab | ? help | q quit",
+      "? help | q quit",
+      "? help",
+    ]);
+  });
+
   it("puts a toast nowhere: the frame draws it", () => {
     expect(footerSegments(HINTS, 80).some((s) => s.bold && s.text.startsWith("✓"))).toBe(false);
   });
