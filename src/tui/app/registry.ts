@@ -5,7 +5,9 @@ import { createElement } from "react";
 
 import type { Ctx, LabelsRequest, OverlayModule, TabId, TabModule } from "../core/types.js";
 import { labelsOverlay } from "../overlays/labels/index.js";
+import { checkTab } from "../tabs/check/index.js";
 import { presetsTab } from "../tabs/presets/index.js";
+import { settingsTab } from "../tabs/settings/index.js";
 import { spoolsTab } from "../tabs/spools/index.js";
 import { Empty } from "../ui/index.js";
 
@@ -46,8 +48,8 @@ export const TABS: Record<TabId, AnyTab> = {
   spools: spoolsTab,
   add: placeholder("add", "Add"),
   presets: presetsTab,
-  check: placeholder("check", "Check"),
-  settings: placeholder("settings", "Settings"),
+  check: checkTab,
+  settings: settingsTab,
 };
 
 export const LABELS: AnyLabels = labelsOverlay;

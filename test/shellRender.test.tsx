@@ -60,6 +60,8 @@ async function shellAt(
     const lines = screen().split("\n");
     expect(lines).toHaveLength(rows);
     expect(lines[rows - 1]).toContain("? help");
+    // ink-testing-library reports 100 columns until the resize lands: wait for a frame drawn at ours.
+    for (const line of lines) expect(stringWidth(line)).toBeLessThanOrEqual(columns);
   });
   const press = async (...keys: string[]) => {
     for (const key of keys) {
