@@ -54,7 +54,11 @@ export function SpoolCopies({ filament, count, target, results, running, outcome
       </Box>
       {(results ?? []).map((result, index) =>
         result.ok ? (
-          <Text key={`added-${result.id}`} color="green">
+          <Text
+            // biome-ignore lint/suspicious/noArrayIndexKey: SpoolEase can reply without an id (write returns ""), so the copy number is the row's identity; results only grow, in order.
+            key={`added-${index}`}
+            color="green"
+          >
             ✓ spool #{result.id} added
           </Text>
         ) : (
