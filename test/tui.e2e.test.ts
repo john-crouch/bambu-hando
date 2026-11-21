@@ -285,6 +285,17 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     await helpFor("Settings");
   });
 
+  it("keeps esc, tab and ? in order when they arrive in one read over an open help", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    await t.pressEach("?");
+    await t.waitForOnScreen("Help · Spools");
+    // One write: Ink reads esc+tab as one meta+tab and the ? after it in the same tick.
+    await t.pressEach(`${ESC}${TAB}?`);
+    await t.waitForOnScreen("Help · Add");
+  });
+
   it("keeps both keys when tab and ? arrive in one read", async () => {
     const t = start(consoleFlags());
     await t.waitFor("Spools");

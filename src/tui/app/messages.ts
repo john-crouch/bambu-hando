@@ -3,7 +3,7 @@
 
 import type { ReactElement } from "react";
 
-import type { Cmd } from "../core/program.js";
+import { type Cmd, send } from "../core/program.js";
 import type { AppMsg, Ctx, Hint, Resource, ResourceId, TabId, TabMsg } from "../core/types.js";
 
 export type ShellMsg =
@@ -38,10 +38,10 @@ export interface PaletteItem {
   tab?: TabId;
 }
 
-/** A command that closes the open overlay, then sends msgs. */
+/**
+ * A command that closes the open overlay, then sends msgs. A send, so the overlay is closed before the next
+ * key: a key Ink read together with the one that closed it (esc then tab) must reach the tab, not the overlay.
+ */
 export function closeThen(...msgs: ShellMsg[]): Cmd<ShellMsg> {
-  return (dispatch) => {
-    dispatch({ type: "app/closeOverlay" });
-    for (const msg of msgs) dispatch(msg);
-  };
+  return send<ShellMsg>({ type: "app/closeOverlay" }, ...msgs);
 }

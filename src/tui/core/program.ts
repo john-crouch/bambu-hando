@@ -11,11 +11,23 @@ export type Cmd<Msg> = (dispatch: Dispatch<Msg>) => void | Promise<void>;
 /** The next model and the commands to run, from the current model and a message. Pure. */
 export type Update<Model, Msg> = (model: Model, msg: Msg) => [Model, Cmd<Msg>[]];
 
-/** A command that dispatches messages right away, for an update that wants to send another update a message. */
+/** Marks send's commands: the program queues their messages at once instead of deferring them. */
+const IMMEDIATE = Symbol("immediate");
+
+/**
+ * A command that sends messages on, for an update that wants another update to run. The program queues them
+ * right after the update that returned it, ahead of anything dispatched later: two keys Ink parsed from one
+ * read arrive back to back, and what the first one sends (the key after an esc) must not fall behind the second.
+ */
 export function send<Msg>(...msgs: Msg[]): Cmd<Msg> {
-  return (dispatch) => {
+  const cmd: Cmd<Msg> = (dispatch) => {
     for (const msg of msgs) dispatch(msg);
   };
+  return Object.assign(cmd, { [IMMEDIATE]: true });
+}
+
+function immediate<Msg>(cmd: Cmd<Msg>): boolean {
+  return (cmd as { [IMMEDIATE]?: boolean })[IMMEDIATE] === true;
 }
 
 /** Runs update and its commands outside React: the store App's hook wraps, and what tests drive directly. */
@@ -33,6 +45,7 @@ export class Program<Model, Msg> {
   ) {
     this.current = init[0];
     this.run(init[1]);
+    if (this.queue.length > 0) this.drain();
   }
 
   get model(): Model {
@@ -42,7 +55,10 @@ export class Program<Model, Msg> {
   /** Messages dispatched while an update runs are queued, so updates never nest. */
   dispatch = (msg: Msg): void => {
     this.queue.push(msg);
-    if (this.draining) return;
+    if (!this.draining) this.drain();
+  };
+
+  private drain(): void {
     this.draining = true;
     try {
       while (this.queue.length > 0) {
@@ -55,7 +71,7 @@ export class Program<Model, Msg> {
       this.draining = false;
     }
     for (const listener of this.listeners) listener();
-  };
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -66,6 +82,11 @@ export class Program<Model, Msg> {
 
   private run(cmds: Cmd<Msg>[]): void {
     for (const cmd of cmds) {
+      // send's messages join the queue now, in order, so they run before anything dispatched later.
+      if (immediate(cmd)) {
+        cmd((msg) => this.queue.push(msg));
+        continue;
+      }
       // Deferred, so a command never dispatches into the update that returned it.
       queueMicrotask(() => {
         try {

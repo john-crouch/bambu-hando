@@ -18,7 +18,8 @@ function counter() {
     (model, msg) => {
       seen.push(msg.type);
       if (msg.type === "add") return [model + msg.n, []];
-      if (msg.type === "later") return [model, [send<Msg>({ type: "add", n: 10 })]];
+      // A plain command (not send): commands run after the update, deferred.
+      if (msg.type === "later") return [model, [(d) => d({ type: "add", n: 10 })]];
       if (msg.type === "boom")
         return [
           model,
@@ -53,6 +54,33 @@ describe("Program", () => {
     await flush();
     expect(program.model).toBe(10);
     expect(seen).toEqual(["later", "add"]);
+  });
+
+  it("queues send's messages right after the update that returned them, ahead of a later dispatch", () => {
+    // Two inputs Ink parsed from one read arrive back to back: what the first one sends must run before the second.
+    const seen: string[] = [];
+    const program = new Program<number, Msg>(
+      [0, []],
+      (model, msg) => {
+        seen.push(msg.type === "add" ? `add ${msg.n}` : msg.type);
+        if (msg.type === "later") return [model, [send<Msg>({ type: "add", n: 10 })]];
+        return [msg.type === "add" ? model + msg.n : model, []];
+      },
+      () => ({ type: "error" }),
+    );
+    program.dispatch({ type: "later" });
+    program.dispatch({ type: "add", n: 1 });
+    expect(seen).toEqual(["later", "add 10", "add 1"]);
+    expect(program.model).toBe(11);
+  });
+
+  it("runs send's messages from the initial commands too", () => {
+    const program = new Program<number, Msg>(
+      [1, [send<Msg>({ type: "add", n: 1 })]],
+      (model, msg) => [msg.type === "add" ? model + msg.n : model, []],
+      () => ({ type: "error" }),
+    );
+    expect(program.model).toBe(2);
   });
 
   it("turns a throwing command into a message", async () => {
