@@ -176,6 +176,25 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     expect(text).toContain(action);
   });
 
+  it("says what to check when the console refused the key, without repeating the footer's r", () => {
+    const failed = ctxAt(columns, rows, {
+      resources: {
+        console: { state: "failed" as const, error: "SpoolEase key validation failed" },
+      },
+    });
+    const lines = tab(start(failed), failed);
+    expectExact(lines, failed);
+    // The advice wraps: read the words inside the frame as one text.
+    const text = lines
+      .map((line) => line.replace(/[│╭╮╰╯─]/g, "").trim())
+      .filter(Boolean)
+      .join(" ");
+    expect(text).toContain("SpoolEase key validation failed");
+    expect(text).toContain("check the security key");
+    expect(text).not.toContain("Check its address");
+    expect(text).not.toContain("press r");
+  });
+
   it("shows the reading state with the console's address and never the key", () => {
     const loading = ctxAt(columns, rows, { resources: { console: { state: "loading" } } });
     const text = tab(start(loading), loading).join("\n");

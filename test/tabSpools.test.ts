@@ -272,6 +272,24 @@ describe("empty states", () => {
     ]);
   });
 
+  it("sends you to the Settings row the console's error points at", async () => {
+    const focusFor = async (error: string) => {
+      const ctx = makeCtx({ resources: { console: { state: "failed", error } } });
+      return sent(key(start(ctx), "enter", ctx));
+    };
+    expect(await focusFor("SpoolEase key validation failed")).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.key" },
+    ]);
+    expect(
+      await focusFor(
+        "SpoolEase unreachable at http://127.0.0.1:81: fetch failed: connect ECONNREFUSED",
+      ),
+    ).toEqual([{ type: "app/switchTab", tab: "settings", focus: "spoolease.port" }]);
+    expect(
+      await focusFor("SpoolEase unreachable at http://127.0.0.1:6000: fetch failed: bad port"),
+    ).toEqual([{ type: "app/switchTab", tab: "settings", focus: "spoolease.port" }]);
+  });
+
   it("sends you to Add when the console has no spools yet", async () => {
     const ctx = makeCtx({ resources: { console: consoleOf([]) } });
     expect(await sent(key(start(ctx), "enter", ctx))).toEqual([

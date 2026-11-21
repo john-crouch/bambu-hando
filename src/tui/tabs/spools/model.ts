@@ -28,6 +28,7 @@ import {
 import { hintSegments } from "../../ui/hints.js";
 import { editText, moveCursor, plural, type TextState, typeAhead } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
+import { consoleProblem } from "../settings/connection.js";
 import { addCopiesCmd, loadBarcodesCmd, rememberBarcodeCmd } from "./cmds.js";
 import { consoleConnection, consoleUrl, consoleValue, SORT_NAMES } from "./data.js";
 import { pasted, textState } from "./local.js";
@@ -417,12 +418,16 @@ function filterKey(model: SpoolsModel, key: KeyPress, ctx: Ctx): Step<SpoolsMode
   return [settle(next, visibleRows(next, ctx)), []];
 }
 
-/** The Settings row that would make the console readable: the first one missing, else its address. */
-export function settingsFocus(ctx: Ctx): string {
+/**
+ * The Settings row that would make the console readable: the first one missing, else the one the read's
+ * error points at (as Check does), else its address.
+ */
+export function settingsFocus(ctx: Ctx, error?: string): string {
   const { values } = ctx;
   if (values.skipSpoolease) return "spoolease.skip";
   if (!values.host.trim()) return "spoolease.host";
   if (!values.securityKey) return "spoolease.key";
+  if (error !== undefined) return consoleProblem(error).focus;
   return "spoolease.host";
 }
 
@@ -435,7 +440,13 @@ function emptyKey(
   if ((screen.kind === "unset" || screen.kind === "failed") && key.name === "enter")
     return [
       model,
-      [send<AppMsg>({ type: "app/switchTab", tab: "settings", focus: settingsFocus(ctx) })],
+      [
+        send<AppMsg>({
+          type: "app/switchTab",
+          tab: "settings",
+          focus: settingsFocus(ctx, screen.kind === "failed" ? screen.error : undefined),
+        }),
+      ],
     ];
   if (screen.kind === "unset") return [model, []];
   if (screen.kind === "empty" && key.name === "enter")
