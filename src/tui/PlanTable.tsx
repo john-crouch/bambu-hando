@@ -104,20 +104,23 @@ export function RunProgress({ progress, total }: { progress: RowProgress[]; tota
   );
 }
 
-/** A column cell: truncated to its width, keeping one blank column before the next cell; fixed ones never shrink. */
+/**
+ * A column cell: truncated to its width, keeping one blank column before the next cell.
+ * Only the name and brand columns shrink on a narrow terminal; every other cell keeps its width.
+ */
 function Cell({
   width,
   children,
   dim,
-  fixed,
+  shrink,
 }: {
   width: number;
   children: string;
   dim?: boolean;
-  fixed?: boolean;
+  shrink?: boolean;
 }) {
   return (
-    <Box width={width} paddingRight={1} {...(fixed ? { flexShrink: 0 } : {})}>
+    <Box width={width} paddingRight={1} flexShrink={shrink ? 1 : 0}>
       <Text wrap="truncate-end" {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
@@ -151,10 +154,10 @@ export function PlanTable({
         <Cell width={COLUMNS.swatch} dim>
           {""}
         </Cell>
-        <Cell width={COLUMNS.name} dim>
+        <Cell width={COLUMNS.name} dim shrink>
           Name
         </Cell>
-        <Cell width={COLUMNS.brand} dim>
+        <Cell width={COLUMNS.brand} dim shrink>
           Brand
         </Cell>
         <Cell width={COLUMNS.material} dim>
@@ -169,10 +172,10 @@ export function PlanTable({
         <Cell width={COLUMNS.empty} dim>
           Empty
         </Cell>
-        <Cell width={COLUMNS.preset} dim fixed>
+        <Cell width={COLUMNS.preset} dim>
           Preset
         </Cell>
-        <Cell width={COLUMNS.spool} dim fixed>
+        <Cell width={COLUMNS.spool} dim>
           SpoolEase
         </Cell>
       </Box>
@@ -188,11 +191,15 @@ export function PlanTable({
             // biome-ignore lint/suspicious/noArrayIndexKey: profiles aren't deduplicated (a JSON source can repeat a name or filament ID), so the row's position is part of its identity; the list never reorders while shown.
             key={`${index}-${profile.name}`}
           >
-            <Box width={COLUMNS.swatch}>
+            <Box width={COLUMNS.swatch} flexShrink={0}>
               <Text backgroundColor={`#${profile.colorRgba.slice(0, 6)}`}>{"  "}</Text>
             </Box>
-            <Cell width={COLUMNS.name}>{profile.name}</Cell>
-            <Cell width={COLUMNS.brand}>{profile.brand}</Cell>
+            <Cell width={COLUMNS.name} shrink>
+              {profile.name}
+            </Cell>
+            <Cell width={COLUMNS.brand} shrink>
+              {profile.brand}
+            </Cell>
             <Cell width={COLUMNS.material}>{profile.material}</Cell>
             <Cell width={COLUMNS.temps}>{`${range.low}-${range.high}`}</Cell>
             <Cell width={COLUMNS.code}>{profile.filamentId}</Cell>

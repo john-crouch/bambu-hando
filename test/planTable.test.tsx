@@ -88,7 +88,7 @@ describe("statuses, while and after a run", () => {
     expect(first?.indexOf("FAILED")).toBe(second?.indexOf("PLANNED"));
   });
 
-  it("keeps the status columns whole, under their headers, when the terminal is narrow", () => {
+  it("cuts only the name and brand on a narrow terminal, keeping the others whole under their headers", () => {
     const { lastFrame } = render(
       <Box width={80}>
         <PlanTable
@@ -101,7 +101,8 @@ describe("statuses, while and after a run", () => {
     );
 
     const [header, row] = (lastFrame() ?? "").split("\n");
-    expect(row).toMatch(/ WRITTEN {5}SKIPPED$/);
+    expect(row).toMatch(/PETG +230-240 +P1234567 140 g +WRITTEN {5}SKIPPED$/);
+    expect(header).toMatch(/Material +Nozzle°C +Code +Empty +Preset/);
     expect(row?.indexOf("WRITTEN")).toBe((header?.indexOf("Preset") ?? 0) + 1);
     expect(row?.indexOf("SKIPPED")).toBe((header?.indexOf("SpoolEase") ?? 0) + 1);
   });
