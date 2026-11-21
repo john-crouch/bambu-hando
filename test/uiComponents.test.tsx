@@ -396,6 +396,21 @@ describe("List", () => {
     expect(cells(lines[1] ?? "")[2]).toMatchObject({ ch: "✓", fg: COLORS.ok });
   });
 
+  it("draws a radio marker for one-of choices: ● in accent on the chosen row, ○ muted on the rest", () => {
+    const choices: ListRow[] = [
+      { key: "a", cells: [{ text: "Spool weight from SpoolmanDB", grow: true }] },
+      { key: "b", cells: [{ text: "Unspecified", grow: true }], ticked: true },
+    ];
+    const frame = draw(<List rows={choices} cursor={0} height={2} width={40} marker="radio" />, 40);
+    expect(plain(frame).map((line) => line.trimEnd())).toEqual([
+      "▌○ Spool weight from SpoolmanDB",
+      " ● Unspecified",
+    ]);
+    const lines = frame.split("\n");
+    expect(cells(lines[1] ?? "")[1]).toMatchObject({ ch: "●", fg: COLORS.accent, bold: true });
+    expect(cells(lines[0] ?? "")[1]).toMatchObject({ ch: "○", fg: GRAY });
+  });
+
   it("draws chips in the row's color, two columns wide", () => {
     const line = draw(<List rows={rows} cursor={8} height={1} width={60} />).split("\n")[0] ?? "";
     const row = cells(line);
@@ -586,6 +601,30 @@ describe("Footer", () => {
     // Narrow: the tab's own keys give way first, the pinned ? help stays at the right end.
     expect(line(50)).toBe(" ↑↓ move  space tick  / filter  l label    ? help ");
     expect(line(24)).toBe(" ↑↓ move         ? help ");
+  });
+
+  it("drops the global keys in one order as it narrows: ctrl+k, then tab, then q, never ? help", () => {
+    const global: Hint[] = [
+      { keys: "ctrl+k", label: "commands" },
+      { keys: "tab", label: "next tab" },
+      { keys: "?", label: "help", primary: true },
+      { keys: "q", label: "quit" },
+    ];
+    const kept: string[] = [];
+    for (let width = 80; width >= 10; width--) {
+      const text = footerSegments([], width, global)
+        .map((s) => s.text)
+        .join("")
+        .trim()
+        .replace(/ {2,}/g, " | ");
+      if (kept.at(-1) !== text) kept.push(text);
+    }
+    expect(kept).toEqual([
+      "ctrl+k commands | tab next tab | ? help | q quit",
+      "tab next tab | ? help | q quit",
+      "? help | q quit",
+      "? help",
+    ]);
   });
 
   it("puts a toast nowhere: the frame draws it", () => {
@@ -918,7 +957,7 @@ describe("Frame", () => {
     expect(lines).toEqual(["head", "line 0", "line 1", "line 2", "foot"]);
   });
 
-  it("draws a toast over the body's last line, two columns in, above the footer", () => {
+  it("draws a toast as the body's whole last row, above the footer", () => {
     const lines = plain(
       draw(
         <Frame
@@ -933,8 +972,28 @@ describe("Frame", () => {
         40,
       ),
     );
-    expect(lines[4]).toBe(`╰─ ✓ Saved ${"─".repeat(28)}`);
+    // The whole row is the toast: nothing of what's under it shows beside it.
+    expect(lines[4]).toBe(" ✓ Saved".padEnd(40));
     expect(lines[5]).toBe("foot");
+  });
+
+  it("paints the toast's row as one bar, over text that runs the whole width", () => {
+    const frame = draw(
+      <Frame
+        columns={40}
+        rows={4}
+        header={<Text>head</Text>}
+        footer={<Text>foot</Text>}
+        toast={{ text: "1 filament added", tone: "ok" }}
+      >
+        <Text>{["a", "S".repeat(40)].join("\n")}</Text>
+      </Frame>,
+      40,
+    );
+    const row = cells(frame.split("\n")[2] ?? "");
+    expect(row.map((c) => c.ch).join("")).toBe(" ✓ 1 filament added".padEnd(40));
+    expect(row.every((c) => c.bg === COLORS.toast)).toBe(true);
+    expect(row[1]).toMatchObject({ ch: "✓", fg: COLORS.ok, bold: true });
   });
 
   it("dims the body behind an overlay: gray, no colors or backgrounds, the dialog untouched", () => {
@@ -968,6 +1027,48 @@ describe("Frame", () => {
       (c) => c.ch === "╭" && c.fg === COLORS.accent,
     );
     expect(corner).toBeDefined();
+  });
+
+  it("draws a tab's dialog over the dimmed body, and dims it too under an overlay", () => {
+    const at = (frame: string, text: string) => {
+      const lines = frame.split("\n");
+      const index = lines.findIndex((line) => stripVTControlCharacters(line).includes(text));
+      const row = cells(lines[index] ?? "");
+      return row[
+        row
+          .map((c) => c.ch)
+          .join("")
+          .indexOf(text)
+      ];
+    };
+    const frame = (overlay: boolean) =>
+      draw(
+        <Frame
+          columns={40}
+          rows={14}
+          header={<Text>head</Text>}
+          footer={<Text>foot</Text>}
+          dialog={
+            <Dialog title="Scan" width={30}>
+              <Line segments={[{ text: "Barcode", color: COLORS.ok }]} width={20} />
+              {/* Tall enough that the help below leaves the Barcode line in view. */}
+              <Text>{"\n\n\n\n"}</Text>
+            </Dialog>
+          }
+          overlay={overlay ? <Dialog title="Help" width={20} /> : null}
+        >
+          <Line segments={[{ text: "green", color: COLORS.ok }]} width={40} />
+        </Frame>,
+        40,
+      );
+    const alone = frame(false);
+    expect(at(alone, "green")).toMatchObject({ fg: GRAY, dim: true });
+    expect(at(alone, "Barcode")).toMatchObject({ fg: COLORS.ok, dim: false });
+    expect(at(alone, "╭ Scan")).toMatchObject({ fg: COLORS.accent });
+    const under = frame(true);
+    expect(at(under, "Barcode")).toMatchObject({ fg: GRAY, dim: true });
+    expect(at(under, "╭ Scan")).toMatchObject({ fg: GRAY, dim: true });
+    expect(at(under, "╭ Help")).toMatchObject({ fg: COLORS.accent });
   });
 
   it("doesn't dim the body without an overlay", () => {
