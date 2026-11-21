@@ -428,6 +428,31 @@ describe("editing a preset before the run writes it", () => {
     expect(d.model.review.editing).toBeNull();
     expect(d.model.review.error).toMatch(/already there and the run keeps them/);
   });
+
+  it("asks for a printer, not that the presets are there, when Settings has none", async () => {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.context = { ...d.context, values: { ...d.context.values, printerPreset: " " } };
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.review.error).toBe("Choose at least one printer in Settings › BambuStudio");
+  });
+
+  it("says why when BambuStudio's system presets can't build the preset", async () => {
+    const base = join(home, ".config", "BambuStudio", "system", "BBL", "filament");
+    const abs = join(base, "Generic ABS @base.json");
+    const preset = JSON.parse(await readFile(abs, "utf-8"));
+    await writeFile(abs, JSON.stringify({ ...preset, inherits: "No Such Parent" }), "utf-8");
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.review.error).toMatch(/unknown BambuStudio system preset No Such Parent/);
+  });
 });
 
 describe("palette commands while Review's editor is open", () => {
