@@ -15,7 +15,7 @@ import {
   type Segment,
   textWidth,
 } from "../../ui/index.js";
-import { spaces } from "../../ui/text.js";
+import { spaces, truncate } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
 import { presetTitle, printerLabel } from "./detail.js";
 import { editWarning } from "./editor.js";
@@ -95,7 +95,7 @@ function resultCell(review: ReviewModel, path: string, width: number): ListRow["
   const result = review.results?.find((r) => r.path === path);
   if (!result) return { text: "- not saved", width, dim: true };
   return {
-    text: `${result.ok ? ICONS.ok : ICONS.failed} ${result.detail || "saved"}`,
+    text: truncate(`${result.ok ? ICONS.ok : ICONS.failed} ${result.detail || "saved"}`, width),
     width,
     color: result.ok ? (result.detail ? COLORS.warning : COLORS.ok) : COLORS.failed,
   };
@@ -105,11 +105,9 @@ function resultCell(review: ReviewModel, path: string, width: number): ListRow["
 function targetRows(review: ReviewModel): ListRow[] {
   const names = review.targets.map((t) => printerLabel(t.printer) || presetTitle(t));
   const nameWidth = Math.max(0, ...names.map(textWidth));
+  // As wide as the widest result shown.
   const resultWidth = review.results
-    ? Math.max(
-        textWidth("- not saved"),
-        ...review.results.map((r) => Math.min(48, textWidth(r.detail || "saved") + 2)),
-      )
+    ? Math.max(...review.targets.map((t) => textWidth(resultCell(review, t.path, 48).text)))
     : 0;
   return review.targets.map((target, index) => {
     const note = index === 0 ? "the one you edited" : "same filament ID";
