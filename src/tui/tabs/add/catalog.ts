@@ -6,6 +6,7 @@ import { basename } from "node:path";
 import type { FilamentProfile } from "../../../models.js";
 import { filterProfiles, SPOOLMANDB_SOURCE } from "../../../spoolmanDb.js";
 import type { FormValues } from "../../core/values.js";
+import { formatGrams, formatRange, plural, shortPrinter } from "../../ui/format.js";
 import { consoleSetup, printersOf } from "./targets.js";
 
 export const SPOOLMANDB_LABEL = "SpoolmanDB";
@@ -36,10 +37,6 @@ export function importSourceOf(values: FormValues): string | null {
 
 export function importName(source: string): string {
   return /^https?:\/\//i.test(source) ? source : basename(source);
-}
-
-export function tempsText(low: number, high: number): string {
-  return low === high ? `${low}°C` : `${low}–${high}°C`;
 }
 
 export function swatchOf(profile: FilamentProfile): string {
@@ -277,15 +274,13 @@ export type FindDetail =
       facts: Fact[];
       /** What saving it adds, one line per target. */
       adds: string[];
+      /** The same in one short line, for a panel without room: "preset ×2 · custom filament · spool". */
+      addsShort: string;
     }
   | { kind: "other"; title: string; lines: string[] };
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 function grams(value: number): string {
-  return value > 0 ? `${value} g` : "unknown";
+  return value > 0 ? formatGrams(value) : "unknown";
 }
 
 /** The filament's facts and what a run writes for it with these settings. */
@@ -295,7 +290,7 @@ function colorDetail(profile: FilamentProfile, ticked: boolean, values: FormValu
     { label: "Brand", value: profile.brand },
     { label: "Material", value: profile.material },
     { label: "Color", value: `${profile.colorName} · ${swatch.toUpperCase()}` },
-    { label: "Nozzle", value: tempsText(profile.nozzleTempMin, profile.nozzleTempMax) },
+    { label: "Nozzle", value: formatRange(profile.nozzleTempMin, profile.nozzleTempMax) },
     { label: "Filament", value: grams(profile.labelWeight) },
     { label: "Empty spool", value: grams(profile.coreWeight) },
     { label: "Density", value: `${profile.density} g/cm³` },
@@ -306,14 +301,19 @@ function colorDetail(profile: FilamentProfile, ticked: boolean, values: FormValu
       : []),
   ];
   const ready = consoleSetup(values) === "ready";
+  const printers = printersOf(values);
+  const spool = ready && values.createSpools;
   const adds = [
-    ...printersOf(values).map(
-      (printer) => `BambuStudio preset for ${printer.replace(/^Bambu Lab /, "")}`,
-    ),
+    ...printers.map((printer) => `BambuStudio preset for ${shortPrinter(printer)}`),
     ...(ready ? [`SpoolEase custom filament ${profile.filamentId}`] : []),
-    ...(ready && values.createSpools ? ["SpoolEase spool of it"] : []),
+    ...(spool ? ["A SpoolEase spool"] : []),
   ];
-  return { kind: "color", title: profile.name, swatch, ticked, facts, adds };
+  const addsShort = [
+    ...(printers.length > 0 ? [`preset ×${printers.length}`] : []),
+    ...(ready ? ["custom filament"] : []),
+    ...(spool ? ["spool"] : []),
+  ].join(" · ");
+  return { kind: "color", title: profile.name, swatch, ticked, facts, adds, addsShort };
 }
 
 /**

@@ -24,7 +24,14 @@ import { consoleOf, createsSpools, printersOf } from "./targets.js";
 export type AddMsg =
   | { type: "add/imported"; source: string; profiles: FilamentProfile[] }
   | { type: "add/importFailed"; source: string; error: string }
-  | { type: "add/weightsRead"; signature: string; entries: SpoolWeightEntry[]; warnings: string[] }
+  | {
+      type: "add/weightsRead";
+      signature: string;
+      entries: SpoolWeightEntry[];
+      warnings: string[];
+      /** Filament IDs the console has spools of: the run makes none for them. */
+      spooled: string[];
+    }
   | { type: "add/weightsFailed"; signature: string; error: string; keyRejected: boolean }
   | { type: "add/planRead"; seq: number; plans: ProfilePlan[] | null; warnings: string[] }
   | { type: "add/runEvent"; event: SyncEvent }
@@ -80,7 +87,11 @@ export function importCmd(source: string): Cmd<AppMsg> {
   };
 }
 
-/** SpoolEase's spool catalog and the user's own list, after checking the key (a wrong key would read as empty lists). */
+/**
+ * SpoolEase's spool catalog and the user's own list, after checking the key (a wrong key would read as
+ * empty lists), and which filaments have spools already. An unreadable spool list counts as none, so
+ * every brand is still asked.
+ */
 export function weightsCmd(signature: string, values: FormValues): Cmd<AppMsg> {
   return async (dispatch) => {
     const connection = consoleOf(values);
@@ -98,8 +109,13 @@ export function weightsCmd(signature: string, values: FormValues): Cmd<AppMsg> {
     try {
       const client = new SpoolEaseClient(connection);
       await checkKey(client);
-      const { entries, warnings } = await readSpoolWeights(client);
-      dispatch(addMsg({ type: "add/weightsRead", signature, entries, warnings }));
+      const [{ entries, warnings }, spooled] = await Promise.all([
+        readSpoolWeights(client),
+        client.listSpoolFilamentIds().catch(() => new Set<string>()),
+      ]);
+      dispatch(
+        addMsg({ type: "add/weightsRead", signature, entries, warnings, spooled: [...spooled] }),
+      );
     } catch (err) {
       dispatch(
         addMsg({

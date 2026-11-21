@@ -17,7 +17,7 @@ export interface ColorDialog {
   material: string;
   /** The listed colors of this brand and material, sorted by name. */
   bases: FilamentProfile[];
-  /** Index into bases of the color whose settings the new one takes; null until chosen. */
+  /** Index into bases of the color whose settings the new one takes; null only when the list has none. */
   base: number | null;
   name: TextState;
   /** As typed: 6 hex digits, with or without "#". */
@@ -31,19 +31,22 @@ export type ColorDialogResult =
   | { close: true }
   | { added: FilamentProfile };
 
+/** Opens on `preferred` (a ticked color of the list) as the one it's like, else the first listed color. */
 export function openColorDialog(
   brand: string,
   material: string,
   bases: FilamentProfile[],
+  preferred?: FilamentProfile,
 ): ColorDialog {
   const sorted = [...bases].sort((a, b) =>
     a.colorName.localeCompare(b.colorName, undefined, { sensitivity: "base" }),
   );
+  const at = preferred ? sorted.indexOf(preferred) : -1;
   return {
     brand,
     material,
     bases: sorted,
-    base: null,
+    base: sorted.length === 0 ? null : Math.max(0, at),
     name: { value: "", cursor: 0 },
     hex: { value: "", cursor: 0 },
     field: "base",
@@ -122,6 +125,11 @@ export function colorDialogKey(
   const index = COLOR_FIELDS.indexOf(dialog.field);
 
   if (key.name === "esc") return { close: true };
+  if (key.name === "tab") {
+    const step = key.shift ? -1 : 1;
+    const field = COLOR_FIELDS[(index + step + COLOR_FIELDS.length) % COLOR_FIELDS.length];
+    return next({ field: field ?? dialog.field });
+  }
   if (key.name === "up" || key.name === "down") {
     const moved = moveCursor(index, key, COLOR_FIELDS.length, 1) ?? index;
     return next({ field: COLOR_FIELDS[moved] ?? dialog.field });
