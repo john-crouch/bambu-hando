@@ -458,7 +458,8 @@ export function createShell(deps: ShellDeps) {
         const current = model.error ? { ...model, error: null } : model;
         const [first, ...rest] = lettersApart(current, msg.key) ?? unmerged(current, msg.key);
         const [next, cmds] = onKey(current, first as KeyPress);
-        // After the first key's own commands (an overlay closing), so the rest land where it left things.
+        // A send, so the rest run right after the first key's own sends (an overlay closing, via closeThen) and
+        // before any later input; they run before the first key's other, deferred commands.
         return rest.length > 0
           ? [next, [...cmds, send<ShellMsg>(...rest.map((key) => ({ type: "key" as const, key })))]]
           : [next, cmds];
