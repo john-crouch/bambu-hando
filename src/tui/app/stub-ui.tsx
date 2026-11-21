@@ -197,7 +197,7 @@ export function Dialog({
 }: {
   title: string;
   width?: number;
-  children: ReactNode;
+  children?: ReactNode;
   hints: Hint[];
 }): ReactElement {
   return (

@@ -9,16 +9,25 @@ import { Dialog, Empty } from "./stub-ui.js";
 /** Any tab module: the shell keeps each tab's model opaque. */
 // biome-ignore lint/suspicious/noExplicitAny: each tab has its own model type, opaque to the shell.
 export type AnyTab = TabModule<any>;
+/** The labels overlay, whatever its model. */
 // biome-ignore lint/suspicious/noExplicitAny: the labels overlay's model is its own business.
 export type AnyLabels = OverlayModule<any, LabelsRequest>;
 
-function placeholder(id: TabId, title: string): TabModule<null> {
+interface PlaceholderModel {
+  title: string;
+}
+
+function PlaceholderView({ model }: { model: PlaceholderModel }) {
+  return createElement(Empty, { title: model.title, lines: ["Coming soon"] });
+}
+
+function placeholder(id: TabId, title: string): TabModule<PlaceholderModel> {
   return {
     id,
     title,
-    init: () => [null, []],
+    init: () => [{ title }, []],
     update: (model) => [model, []],
-    View: () => createElement(Empty, { title, lines: ["Coming soon"] }),
+    View: PlaceholderView,
     hints: () => [],
     capturesText: () => false,
   };
@@ -32,19 +41,23 @@ export const TABS: Record<TabId, AnyTab> = {
   settings: placeholder("settings", "Settings"),
 };
 
-export const LABELS: OverlayModule<LabelsRequest, LabelsRequest> = {
+const CLOSE = [{ keys: "any key", label: "close" }];
+
+function LabelsView({ model }: { model: LabelsRequest }) {
+  return createElement(
+    Dialog,
+    { title: "Labels", hints: CLOSE },
+    createElement(Empty, { title: `${model.spoolIds.length} spools`, lines: ["Coming soon"] }),
+  );
+}
+
+export const LABELS: AnyLabels = {
   id: "labels",
-  init: (request) => [request, []],
+  init: (request: LabelsRequest) => [request, []],
   update: (model, msg) =>
-    msg.type === "key" ? [model, [(dispatch) => dispatch({ type: "app/closeOverlay" })]] : [model, []],
-  View: ({ model }) =>
-    createElement(
-      Dialog,
-      { title: "Labels", hints: [{ keys: "any key", label: "close" }] },
-      createElement(Empty, {
-        title: `${model.spoolIds.length} spools`,
-        lines: ["Coming soon"],
-      }),
-    ),
-  hints: () => [{ keys: "any key", label: "close" }],
+    msg.type === "key"
+      ? [model, [(dispatch) => dispatch({ type: "app/closeOverlay" })]]
+      : [model, []],
+  View: LabelsView,
+  hints: () => CLOSE,
 };
