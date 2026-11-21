@@ -3,6 +3,7 @@
 
 import { Box } from "ink";
 
+import type { FilamentProfile } from "../../../models.js";
 import { formatGrams, formatRange } from "../../ui/format.js";
 import {
   DIALOG_WIDTH,
@@ -13,6 +14,7 @@ import {
   TextField,
 } from "../../ui/index.js";
 import { swatchSegments } from "../../ui/Swatch.js";
+import { textWidth, truncate } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import { type ColorDialog, type ColorField, typedColor } from "./color.js";
 
@@ -25,6 +27,27 @@ function label(text: string, focused: boolean): Segment[] {
   ];
 }
 
+/** Columns the base row's frame takes: "‹ ", the swatch, its gap, and " ›". */
+const BASE_FRAME = 7;
+
+/**
+ * The listed color the new one copies, framed by ‹ ›: its facts are left out before its name is cut,
+ * and the closing › always shows, since it says ←→ changes it.
+ */
+function baseChoice(base: FilamentProfile, width: number): Segment[] {
+  const room = Math.max(0, width - BASE_FRAME);
+  const facts = ` · ${formatRange(base.nozzleTempMin, base.nozzleTempMax)}${base.labelWeight ? ` · ${formatGrams(base.labelWeight)}` : ""}`;
+  const name = base.colorName || base.name;
+  const withFacts = textWidth(name) + textWidth(facts) <= room;
+  return [
+    { text: "‹ ", color: COLORS.muted },
+    ...swatchSegments(`#${base.colorRgba.slice(0, 6)}`, 2),
+    { text: ` ${truncate(name, room)}` },
+    ...(withFacts ? [{ text: facts, color: COLORS.muted }] : []),
+    { text: " ›", color: COLORS.muted },
+  ];
+}
+
 export function ColorDialogView({ dialog, columns }: { dialog: ColorDialog; columns: number }) {
   const width = Math.min(DIALOG_WIDTH + 8, Math.max(30, columns - 4));
   const inner = dialogInner(width);
@@ -33,16 +56,7 @@ export function ColorDialogView({ dialog, columns }: { dialog: ColorDialog; colu
   const color = typedColor(dialog.hex.value);
   const at = (field: ColorField) => dialog.field === field;
   const baseSegments: Segment[] = base
-    ? [
-        { text: "‹ ", color: COLORS.muted },
-        ...swatchSegments(`#${base.colorRgba.slice(0, 6)}`, 2),
-        { text: ` ${base.colorName}` },
-        {
-          text: ` · ${formatRange(base.nozzleTempMin, base.nozzleTempMax)}${base.labelWeight ? ` · ${formatGrams(base.labelWeight)}` : ""}`,
-          color: COLORS.muted,
-        },
-        { text: " ›", color: COLORS.muted },
-      ]
+    ? baseChoice(base, value)
     : [{ text: "‹ choose with ←→ ›", color: at("base") ? COLORS.accent2 : COLORS.muted }];
   return (
     <Dialog
