@@ -26,6 +26,7 @@ import {
   type TabMsg,
   toTab,
 } from "../../core/types.js";
+import { plural } from "../../ui/format.js";
 import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
 import {
   type PresetFileMsg,
@@ -38,7 +39,7 @@ import {
   saveCmd,
   spooleaseConnection,
 } from "./cmds.js";
-import { presetRows, presetTitle } from "./detail.js";
+import { type PresetGroup, presetGroups, presetRows, presetTitle } from "./detail.js";
 import {
   type EditorModel,
   editorCapturesText,
@@ -97,10 +98,6 @@ type OwnMsg =
 
 const EMPTY_TEXT: TextState = { value: "", cursor: 0 };
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 function presetsIn(resource: Resource<PresetsData>): UserPreset[] {
   if (resource.state === "ready") return resource.value.presets;
   if (resource.state === "loading" || resource.state === "failed")
@@ -111,6 +108,11 @@ function presetsIn(resource: Resource<PresetsData>): UserPreset[] {
 /** The presets the list shows now, in order, filtered. */
 export function visiblePresets(model: PresetsModel, ctx: Ctx): UserPreset[] {
   return presetRows(presetsIn(ctx.resources.presets), model.filter.text.value);
+}
+
+/** The list's rows now: a filament each, filtered. */
+export function visibleGroups(model: PresetsModel, ctx: Ctx): PresetGroup[] {
+  return presetGroups(presetsIn(ctx.resources.presets), model.filter.text.value);
 }
 
 /** Rows a page key moves by: the body less the panel's border, summary and margins. */
@@ -154,27 +156,36 @@ function open(model: PresetsModel, preset: UserPreset): Step<PresetsModel> {
   return [{ ...model, path: preset.path, opening: preset, files }, [readPresetCmd(preset.path)]];
 }
 
+/** The group's preset for printer, else its first: moving between filaments keeps the printer. */
+function onPrinter(group: PresetGroup, printer: string | undefined): UserPreset | undefined {
+  return group.presets.find((p) => p.printer === printer) ?? group.presets[0];
+}
+
 function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsModel> {
   const presets = presetsIn(ctx.resources.presets);
-  const rows = presetRows(presets, model.filter.text.value);
+  const groups = presetGroups(presets, model.filter.text.value);
   const cursor = Math.max(
     0,
-    rows.findIndex((p) => p.path === model.path),
+    groups.findIndex((g) => g.presets.some((p) => p.path === model.path)),
   );
-  const highlighted = rows[cursor];
+  const group = groups[cursor];
+  const highlighted = group?.presets.find((p) => p.path === model.path) ?? group?.presets[0];
   // Moving on cancels a preset still being read to open.
-  const moveTo = (index: number) =>
-    normalize({ ...model, path: rows[index]?.path, opening: undefined }, presets);
-  const moved = (keys: KeyPress) => moveCursor(cursor, keys, rows.length, pageRows(ctx));
+  const select = (preset: UserPreset | undefined) =>
+    normalize({ ...model, path: preset?.path, opening: undefined }, presets);
+  const moveTo = (index: number) => {
+    const to = groups[index];
+    return select(to ? onPrinter(to, highlighted?.printer) : undefined);
+  };
+  const moved = (keys: KeyPress) => moveCursor(cursor, keys, groups.length, pageRows(ctx));
   const clearFilter = () =>
     normalize({ ...model, filter: { text: EMPTY_TEXT, focused: false } }, presets);
 
   if (model.filter.focused) {
     if (key.name === "esc") return clearFilter();
-    if (key.name === "enter") {
-      const unfocused = { ...model, filter: { ...model.filter, focused: false } };
-      return highlighted ? open(unfocused, highlighted) : [unfocused, []];
-    }
+    // enter keeps the filter and leaves the field; enter again opens.
+    if (key.name === "enter")
+      return [{ ...model, filter: { ...model.filter, focused: false } }, []];
     if (
       key.name === "up" ||
       key.name === "down" ||
@@ -185,19 +196,36 @@ function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsMode
     const edited = editText(model.filter.text, key);
     if (!edited) return [model, []];
     const text = { value: edited.value, cursor: edited.cursor };
+    if (edited.submit) return normalize({ ...model, filter: { text, focused: false } }, presets);
     return normalize({ ...model, filter: { text, focused: true } }, presets);
   }
 
   if (key.name === "esc") return model.filter.text.value ? clearFilter() : [model, []];
-  if (key.name === "enter") return highlighted ? open(model, highlighted) : [model, []];
+  if (key.name === "enter") {
+    if (highlighted) return open(model, highlighted);
+    if (presets.length === 0) return [model, [send<AppMsg>({ type: "app/switchTab", tab: "add" })]];
+    return [model, []];
+  }
+  if ((key.name === "left" || key.name === "right") && group && highlighted) {
+    const at = group.presets.indexOf(highlighted) + (key.name === "left" ? -1 : 1);
+    const to = group.presets[Math.min(group.presets.length - 1, Math.max(0, at))];
+    return to === highlighted ? [model, []] : select(to);
+  }
   const to = moved(key);
   if (to !== null) return moveTo(to);
-  if (typed(key) === "/") return [{ ...model, filter: { ...model.filter, focused: true } }, []];
+  const text = typed(key);
+  if (text === "/") return [{ ...model, filter: { ...model.filter, focused: true } }, []];
+  if (text === "f")
+    return highlighted && !highlighted.filamentId
+      ? [model, [send<AppMsg>({ type: "app/switchTab", tab: "check", focus: "presetsNoId" })]]
+      : [model, []];
+  if (text === "r")
+    return [model, [send<AppMsg>({ type: "app/load", resource: "presets", force: true })]];
   const jump = letter(key);
   if (jump)
     return moveTo(
       typeAhead(
-        rows.map((p) => p.name),
+        groups.map((g) => g.name),
         cursor,
         jump,
       ),
@@ -502,7 +530,7 @@ export function capturesText(model: PresetsModel): boolean {
   return model.filter.focused;
 }
 
-export function hints(model: PresetsModel, _ctx: Ctx): Hint[] {
+export function hints(model: PresetsModel, ctx: Ctx): Hint[] {
   if (model.view === "editor" && model.editor) return editorHints(model.editor.model);
   if (model.view === "review" && model.review) {
     if (model.review.phase === "saving") return [];
@@ -517,16 +545,30 @@ export function hints(model: PresetsModel, _ctx: Ctx): Hint[] {
   }
   if (model.filter.focused)
     return [
-      { keys: "enter", label: "edit", primary: true },
-      { keys: "esc", label: "clear", primary: true },
       { keys: "↑↓", label: "move" },
+      { keys: "enter", label: "done", primary: true },
+      { keys: "esc", label: "clear", primary: true },
     ];
+  const presets = presetsIn(ctx.resources.presets);
+  const groups = presetGroups(presets, model.filter.text.value);
+  const group = groups.find((g) => g.presets.some((p) => p.path === model.path));
+  const highlighted = group?.presets.find((p) => p.path === model.path);
+  if (!highlighted)
+    return presets.length === 0 && ctx.resources.presets.state === "ready"
+      ? [
+          { keys: "enter", label: "add one in Add", primary: true },
+          { keys: "r", label: "reload", primary: true },
+        ]
+      : [{ keys: "r", label: "reload", primary: true }];
   return [
+    { keys: "↑↓", label: "move" },
+    ...(group && group.presets.length > 1 ? [{ keys: "←→", label: "printer", primary: true }] : []),
     { keys: "enter", label: "edit", primary: true },
     { keys: "/", label: "filter", primary: true },
+    ...(highlighted.filamentId ? [] : [{ keys: "f", label: "fix in Check", primary: true }]),
     ...(model.filter.text.value ? [{ keys: "esc", label: "clear filter", primary: true }] : []),
-    { keys: "↑↓", label: "move" },
-    { keys: "a–z", label: "jump" },
+    { keys: "a-z", label: "jump" },
+    { keys: "r", label: "reload" },
   ];
 }
 

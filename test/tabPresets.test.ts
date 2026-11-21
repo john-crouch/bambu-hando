@@ -12,7 +12,15 @@ import { type KeyPress, press } from "../src/tui/core/keys.js";
 import type { Cmd } from "../src/tui/core/program.js";
 import type { AppMsg, Ctx, Resource, Resources, TabMsg } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
-import { compactDetail, presetDetail, presetRows } from "../src/tui/tabs/presets/detail.js";
+import {
+  compactDetail,
+  listColumns,
+  presetDetail,
+  presetGroups,
+  presetRows,
+  printersText,
+  statusCells,
+} from "../src/tui/tabs/presets/detail.js";
 import { ALL_SETTINGS } from "../src/tui/tabs/presets/editor.js";
 import { presetsTab } from "../src/tui/tabs/presets/index.js";
 import {
@@ -207,6 +215,78 @@ describe("presetRows", () => {
   });
 });
 
+describe("presetGroups", () => {
+  it("makes one row per filament: presets sharing a filament ID and name, printers in order", () => {
+    const groups = presetGroups(presets, "");
+    expect(groups.map((g) => [g.name, g.presets.map((p) => p.path.split("/").pop())])).toEqual([
+      ["Acme ABS Black", ["black.json"]],
+      ["Acme PLA Red", ["red04.json", "red06.json"]],
+      ["Bolt PETG Blue", ["blue.json"]],
+    ]);
+  });
+
+  it("keeps presets without an ID apart, even with one name, and groups only the filter's matches", () => {
+    const twins: UserPreset[] = [
+      { name: "Rock", printer: "BBL X1", filamentId: "", path: "/a.json" },
+      { name: "Rock", printer: "BBL X1C", filamentId: "", path: "/b.json" },
+    ];
+    expect(presetGroups(twins, "").map((g) => g.presets.length)).toEqual([1, 1]);
+    expect(presetGroups(presets, "red 0.6").map((g) => g.presets.map((p) => p.printer))).toEqual([
+      [X1C_06],
+    ]);
+  });
+
+  it("finds presets by their short printer name too", () => {
+    expect(presetRows(presets, "x1c 0.6").map((p) => p.path.split("/").pop())).toEqual([
+      "red06.json",
+    ]);
+  });
+});
+
+describe("printersText", () => {
+  it("names printers short, a model's nozzles once", () => {
+    expect(printersText([X1C_04, X1C_06])).toBe("X1C 0.4, 0.6");
+    expect(printersText([X1C_04, "Bambu Lab P1S 0.4 nozzle", X1C_06])).toBe(
+      "X1C 0.4, 0.6 · P1S 0.4",
+    );
+    expect(printersText(["BBL X1C"])).toBe("BBL X1C");
+    expect(printersText([X1C_04, X1C_06], 11)).toBe("X1C 0.4/0.6");
+    expect(printersText([X1C_04, X1C_06], 7)).toBe("X1C ×2");
+    expect(printersText([""])).toBe("any");
+  });
+});
+
+describe("listColumns", () => {
+  const row = (name: string, id = "P1234567", edited = false) => ({
+    name,
+    printers: "X1C 0.4, 0.6",
+    edited,
+    id,
+  });
+
+  it("shows every column when the names fit, saying no ID in the ID column", () => {
+    const widths = listColumns(80, [row("Acme PLA Red"), row("Bolt PETG", "")]);
+    expect(widths).toEqual({ printers: 12, status: 0, id: 8 });
+    expect(statusCells(row("Bolt PETG", ""), widths)).toEqual({ status: "", id: "no ID" });
+    const edited = listColumns(80, [row("Acme PLA Red", "P1234567", true)]);
+    expect(edited).toEqual({ printers: 12, status: 6, id: 8 });
+    expect(statusCells(row("Acme", "P1", true), edited)).toEqual({ status: "edited", id: "P1" });
+  });
+
+  it("drops the ID, then shrinks the printers, before a name is cut; no ID moves to status", () => {
+    const long = "Polymaker PolyLite PETG Galaxy Dark Blue"; // 40 columns
+    expect(listColumns(64, [row(long, "P1234567", true)])).toEqual({
+      printers: 12,
+      status: 6,
+      id: 0,
+    });
+    expect(listColumns(58, [row(long, "")])).toEqual({ printers: 8, status: 6, id: 0 });
+    expect(statusCells(row(long, ""), { id: 0 })).toEqual({ status: "no ID", id: "" });
+    expect(listColumns(56, [row(long)])).toEqual({ printers: 12, status: 0, id: 0 });
+    expect(listColumns(40, [row(long, "", true)])).toEqual({ printers: 7, status: 6, id: 0 });
+  });
+});
+
 describe("presetDetail", () => {
   it("shows the color and the key settings people check, with units", () => {
     const detail = presetDetail(presetJson("Acme PLA Red", X1C_04, "P1111111"));
@@ -264,10 +344,10 @@ describe("list", () => {
 
   it("reads a preset once when highlighted, then keeps it", async () => {
     const ctx = ctxWith();
-    const { model } = await drive((await start(ctx)).model, ctx, "down", "down");
+    const { model } = await drive((await start(ctx)).model, ctx, "down", "right");
     expect(model.path).toBe(presets[2]?.path);
     expect([...model.files.keys()]).toHaveLength(3);
-    const [, cmds] = update(model, { type: "key", key: press("up") }, ctx);
+    const [, cmds] = update(model, { type: "key", key: press("left") }, ctx);
     expect(cmds).toEqual([]);
   });
 
@@ -301,7 +381,7 @@ describe("list", () => {
 
   it("filters with /, typing every key into the filter, keeping the highlight when it's still listed", async () => {
     const ctx = ctxWith();
-    const at = (await drive((await start(ctx)).model, ctx, "down", "down")).model;
+    const at = (await drive((await start(ctx)).model, ctx, "down", "right")).model;
     const filtering = (await drive(at, ctx, "/")).model;
     expect(capturesText(filtering)).toBe(true);
     const typed = (await drive(filtering, ctx, "red", "space", "0.6")).model;
@@ -323,14 +403,56 @@ describe("list", () => {
     expect(model.files.get(presets[1]?.path ?? "")?.state).toBe("ready");
   });
 
-  it("keeps the filter's words after enter, and esc then clears them", async () => {
+  it("keeps the filter with enter, leaving the field; enter again opens, esc then clears", async () => {
     const ctx = ctxWith();
-    const opened = (await drive((await start(ctx)).model, ctx, "/", "acme", "enter")).model;
+    const kept = (await drive((await start(ctx)).model, ctx, "/", "acme", "enter")).model;
+    expect(kept.view).toBe("list");
+    expect(kept.filter).toEqual({ text: { value: "acme", cursor: 4 }, focused: false });
+    expect(capturesText(kept)).toBe(false);
+    const opened = (await drive(kept, ctx, "enter")).model;
     expect(opened.view).toBe("editor");
     const back = (await drive(opened, ctx, "esc")).model;
     expect(back.view).toBe("list");
     expect(back.filter).toEqual({ text: { value: "acme", cursor: 4 }, focused: false });
     expect((await drive(back, ctx, "esc")).model.filter.text.value).toBe("");
+  });
+
+  it("moves a filament at a time, keeping the printer, and picks the printer with left and right", async () => {
+    const ctx = ctxWith();
+    const red = (await drive((await start(ctx)).model, ctx, "down")).model;
+    expect(red.path).toBe(presets[0]?.path);
+    const red06 = (await drive(red, ctx, "right")).model;
+    expect(red06.path).toBe(presets[2]?.path);
+    expect(red06.files.get(presets[2]?.path ?? "")?.state).toBe("ready");
+    expect((await drive(red06, ctx, "right")).model.path).toBe(presets[2]?.path);
+    expect((await drive(red06, ctx, "left")).model.path).toBe(presets[0]?.path);
+    expect((await drive(red06, ctx, "down")).model.path).toBe(presets[1]?.path);
+    expect((await drive(red06, ctx, "down", "up")).model.path).toBe(presets[0]?.path);
+  });
+
+  it("opens the printer's preset: enter edits the one left and right picked", async () => {
+    const ctx = ctxWith();
+    const { model } = await drive((await start(ctx)).model, ctx, "down", "right", "enter");
+    expect(model.editor?.preset.path).toBe(presets[2]?.path);
+  });
+
+  it("sends a preset without an ID to Check's list of them with f, and reloads with r", async () => {
+    const ctx = ctxWith();
+    const started = (await start(ctx)).model;
+    expect((await drive(started, ctx, "f")).sent).toEqual([]);
+    const blue = (await drive(started, ctx, "b")).model;
+    expect((await drive(blue, ctx, "f")).sent).toEqual([
+      { type: "app/switchTab", tab: "check", focus: "presetsNoId" },
+    ]);
+    expect((await drive(started, ctx, "r")).sent).toEqual([
+      { type: "app/load", resource: "presets", force: true },
+    ]);
+  });
+
+  it("goes to Add with enter when there are no presets yet", async () => {
+    const ctx = ctxWith([]);
+    const { sent } = await drive((await start(ctx)).model, ctx, "enter");
+    expect(sent).toContainEqual({ type: "app/switchTab", tab: "add" });
   });
 
   it("jumps to the next preset starting with a typed letter", async () => {
@@ -418,9 +540,7 @@ describe("editing", () => {
   it("opens a preset from the command palette, switching to the tab", async () => {
     const ctx = ctxWith();
     const started = (await start(ctx)).model;
-    const open = commands(started, ctx).find(
-      (c) => c.title === "Edit Acme PLA Red @ X1 Carbon 0.6 nozzle",
-    );
+    const open = commands(started, ctx).find((c) => c.title === "Edit Acme PLA Red @ X1C 0.6");
     expect(open?.msg).toEqual({
       type: "tab",
       tab: "presets",
@@ -434,7 +554,7 @@ describe("editing", () => {
       commands(started, ctx)
         .map((c) => c.title)
         .slice(0, 2),
-    ).toEqual(["Filter presets", "Edit Acme ABS Black @ X1 Carbon 0.4 nozzle"]);
+    ).toEqual(["Filter presets", "Edit Acme ABS Black @ X1C 0.4"]);
   });
 });
 
@@ -652,7 +772,7 @@ describe("saving", () => {
         exitCode: 1,
         lines: [
           "1 BambuStudio preset of Acme PLA Red saved, 1 failed: restart BambuStudio to load",
-          expect.stringMatching(/^Acme PLA Red @ X1 Carbon 0\.6 nozzle: couldn't read it: /),
+          expect.stringMatching(/^Acme PLA Red @ X1C 0\.6: couldn't read it: /),
         ],
       },
     });
@@ -691,17 +811,24 @@ describe("hints and modes", () => {
     const ctx = ctxWith();
     const { model } = await start(ctx);
     expect(hints(model, ctx).map((h) => `${h.keys} ${h.label}`)).toEqual([
+      "↑↓ move",
       "enter edit",
       "/ filter",
-      "↑↓ move",
-      "a–z jump",
+      "a-z jump",
+      "r reload",
     ]);
+    const red = (await drive(model, ctx, "down")).model;
+    expect(hints(red, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("←→ printer");
+    const blue = (await drive(model, ctx, "b")).model;
+    expect(hints(blue, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("f fix in Check");
     const filtering = (await drive(model, ctx, "/", "x")).model;
     expect(hints(filtering, ctx).map((h) => `${h.keys} ${h.label}`)).toEqual([
-      "enter edit",
-      "esc clear",
       "↑↓ move",
+      "enter done",
+      "esc clear",
     ]);
+    const kept = (await drive(model, ctx, "/", "acme", "enter")).model;
+    expect(hints(kept, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("esc clear filter");
   });
 
   it("uses the editor's hints and text capture while editing", async () => {

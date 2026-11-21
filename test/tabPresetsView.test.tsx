@@ -169,21 +169,36 @@ describe.each([
     const screen = lines(start(ctx), ctx);
     expectExact(screen, ctx);
     const text = screen.join("\n");
-    expect(screen[0]).toMatch(/^╭ Presets · 5 in folder default ─/);
-    expect(text).toContain("Sunlu PETG 2.0 Vivid Yellow");
-    expect(text).toContain("no ID");
-    expect(text).toContain("X1 Carbon 0.6 nozzle");
-    expect(text).not.toContain("Bambu Lab X1");
-    expect(text).toContain("P4840583");
+    expect(screen[0]).toMatch(/^╭ Presets · 4 filaments \(5 presets\) in folder default ─/);
+    expect(text).toMatch(/Sunlu PETG 2\.0 Vivid Yellow +X1C (0\.4(, |\/)0\.6|×2)/);
+    expect(text.match(/Sunlu PETG 2\.0 Vivid Yellow/g)).toHaveLength(1);
+    expect(text).toMatch(/OVERTURE ROCK PLA +BBL X1C +no ID/);
+    expect(text).toContain("Polymaker PolyLite™ PETG Galaxy Dark Blue With A Lo");
+    expect(text).not.toContain("X1 Carbon");
     expect(text).toMatch(/Nozzle +255°C/);
-    expect(text).toContain("Same ID");
+    expect(text).toMatch(/Printer +X1C 0\.4/);
+  });
+
+  it("picks the printer of a filament with left and right, shown in the detail", () => {
+    const sunlu = drive(start(ctx), ctx, "s", "right");
+    const screen = lines(sunlu, ctx);
+    expectExact(screen, ctx);
+    const text = screen.join("\n");
+    expect(text).toMatch(/Printer +‹ X1C 0\.6 › +2 of 2/);
+    expect(text).toContain("P4840583");
+  });
+
+  it("points a preset without an ID at Check", () => {
+    const rock = drive(start(ctx), ctx, "o");
+    const text = lines(rock, ctx).join("\n");
+    expect(text).toMatch(/Filament ID +none: f fixes it in Check/);
   });
 
   it("shows the filter, its matches, and a draft's marker", () => {
     const filtered = drive(start(ctx), ctx, "/", "r", "o", "c", "k");
     const screen = lines(filtered, ctx);
     expectExact(screen, ctx);
-    expect(screen[0]).toMatch(/^╭ Presets · 1 of 5 ─/);
+    expect(screen[0]).toMatch(/^╭ Presets · 1 of 4 ─/);
     expect(screen[1]).toMatch(/^│ \/ rock/);
     const drafted = drive(start(ctx), ctx, "enter", "enter", "backspace", "0", "enter", "esc");
     const text = lines(drafted, ctx).join("\n");
@@ -212,7 +227,7 @@ describe.each([
     const screen = lines(editor, ctx);
     expectExact(screen, ctx);
     const text = screen.join("\n");
-    expect(screen[0]).toMatch(/^╭ Edit Sunlu PETG 2.0 Vivid Yellow · X1 Carbon 0.4 nozzle/);
+    expect(screen[0]).toMatch(/^╭ Edit Sunlu PETG 2.0 Vivid Yellow · X1C 0.4 ─/);
     expect(screen[1]).toContain("▸ Nozzle 1 ─ Bed ─ Flow");
     expect(screen[1]).toContain("All settings");
     expect(text).toMatch(/Nozzle range, high +255 °C +was 270 °C/);
@@ -253,13 +268,11 @@ describe.each([
     const screen = lines(review, ctx);
     expectExact(screen, ctx);
     const text = screen.join("\n");
-    expect(screen[0]).toMatch(
-      /^╭ Save changes · Sunlu PETG 2.0 Vivid Yellow @ X1 Carbon 0.4 nozzle/,
-    );
+    expect(screen[0]).toMatch(/^╭ Save changes · Sunlu PETG 2.0 Vivid Yellow @ X1C 0.4 ─/);
     expect(text).toMatch(/Nozzle +255 °C → 250 °C/);
     expect(text).toContain("Into 2 presets of Sunlu PETG 2.0 Vivid Yellow");
-    expect(text).toMatch(/\[✓\] X1 Carbon 0\.4 nozzle +the one you edited/);
-    expect(text).toMatch(/\[✓\] X1 Carbon 0\.6 nozzle +same filament ID/);
+    expect(text).toMatch(/\[✓\] X1C 0\.4 +the one you edited/);
+    expect(text).toMatch(/\[✓\] X1C 0\.6 +same filament ID/);
     expect(text).toContain("Close BambuStudio first");
   });
 
