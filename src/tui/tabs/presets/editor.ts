@@ -113,6 +113,9 @@ export interface EditorRow {
   field?: EditField;
 }
 
+/** Page titles that say more than their group: Temperature holds only the nozzle's (Bed has the plates'). */
+const PAGE_TITLES: Record<string, string> = { Temperature: "Nozzle" };
+
 export interface EditorPage {
   id: string;
   title: string;
@@ -205,9 +208,9 @@ export function editorRows(model: EditorModel): EditorRow[] {
 export function editorPages(model: EditorModel): EditorPage[] {
   const count = (keys: string[]) => keys.filter((key) => model.edits.has(key)).length;
   const badge = (n: number) => (n > 0 ? { badge: String(n) } : {});
-  const groups = EDITOR_GROUPS.map((title, page) => ({
-    id: title.toLowerCase(),
-    title,
+  const groups = EDITOR_GROUPS.map((group, page) => ({
+    id: group.toLowerCase(),
+    title: PAGE_TITLES[group] ?? group,
     ...badge(count(groupFields(page).map((f) => f.key))),
   }));
   const raw = [...model.edits.keys()].filter((key) => !editField(key)).length;
@@ -227,11 +230,28 @@ function currentRow(model: EditorModel): EditorRow | undefined {
   return rows[Math.min(cursorOf(model), rows.length - 1)];
 }
 
-/** What the field being typed takes; "" when not typing one. */
-export function editorTypingHint(model: EditorModel): string {
-  if (model.text === null) return "";
-  const field = currentRow(model)?.field;
-  if (!field) return "\\n starts a new line";
+/** The row at the cursor, if the page has any. */
+export function editorCurrentRow(model: EditorModel): EditorRow | undefined {
+  return currentRow(model);
+}
+
+function differingVariants(value: unknown): number {
+  return Array.isArray(value) && value.length > 1 && value.some((v) => v !== value[0])
+    ? value.length
+    : 0;
+}
+
+/** What the highlighted setting takes ("whole number, 0–500"); "" when it can't be changed here. */
+export function editorTakes(model: EditorModel): string {
+  const row = currentRow(model);
+  if (!row) return "";
+  const field = row.field;
+  if (!field) {
+    const value = editedPreset(model)[row.key];
+    if (row.locked || rawText(value) === null) return "";
+    const variants = differingVariants(value);
+    return variants ? `a JSON list of ${variants} values` : "text; \\n starts a new line";
+  }
   const nil = field.nilable ? "; nothing: printer's" : "";
   switch (field.kind) {
     case "int":
@@ -241,10 +261,15 @@ export function editorTypingHint(model: EditorModel): string {
     case "color":
       return "6 hex digits; nothing: none";
     case "text":
-      return "\\n starts a new line";
+      return "text; \\n starts a new line";
     case "switch":
-      return "";
+      return "on or off";
   }
+}
+
+/** What the field being typed takes; "" when not typing. */
+export function editorTypingHint(model: EditorModel): string {
+  return model.text === null ? "" : editorTakes(model);
 }
 
 export function editorHints(model: EditorModel): Hint[] {

@@ -6,6 +6,8 @@ import { Box } from "ink";
 import { tildePath } from "../../../paths.js";
 import { editChanges } from "../../../presetEdit.js";
 import {
+  Detail,
+  type DetailRow,
   Line,
   type ListRow,
   listPosition,
@@ -27,8 +29,10 @@ import {
   ALL_SETTINGS,
   type EditorModel,
   type EditorRow,
+  editorCurrentRow,
   editorPages,
   editorRows,
+  editorTakes,
   editorTypingHint,
 } from "./editor.js";
 
@@ -98,13 +102,16 @@ function typingSegments(
 }
 
 /** The line under the settings: an error, what's being typed takes, a locked key's reason, or the file. */
-function noteSegments(model: EditorModel, row: EditorRow | undefined): Segment[] {
+function noteSegments(model: EditorModel, row: EditorRow | undefined, narrow: boolean): Segment[] {
   if (model.error) return [{ text: `${ICONS.failed} ${model.error}`, color: COLORS.failed }];
   const typing = editorTypingHint(model);
   if (typing) return [{ text: typing, color: COLORS.muted }];
   if (row?.locked) return [{ text: `Locked: ${row.locked}`, color: COLORS.muted }];
   if (model.page === ALL_SETTINGS && row?.was)
     return [{ text: `was ${row.was}`, color: COLORS.muted }];
+  // Without the side panel, this line is where what a setting takes is said.
+  const takes = narrow ? editorTakes(model) : "";
+  if (takes) return [{ text: `Takes ${takes}`, color: COLORS.muted }];
   if (model.mode === "planned")
     return [{ text: "The preset the run writes; edits go into it", color: COLORS.muted }];
   return model.path ? [{ text: tildePath(model.path), color: COLORS.muted, dim: true }] : [];
@@ -180,62 +187,70 @@ function Settings({ model, width, height }: { model: EditorModel; width: number;
   );
 }
 
-/** The edits so far, beside the settings on a wide terminal. */
-function Changes({ model, width, height }: { model: EditorModel; width: number; height: number }) {
-  const changes = editChanges(model.original, model.edits);
+/** The highlighted setting, then the edits so far: beside the settings on a wide terminal. */
+function SidePanel({
+  model,
+  width,
+  height,
+}: {
+  model: EditorModel;
+  width: number;
+  height: number;
+}) {
   const inner = panelInner(width, height);
-  const fit = Math.floor(inner.height / 2);
+  const w = inner.width;
+  const row = editorCurrentRow(model);
+  const takes = editorTakes(model);
+  const about: DetailRow[] = row
+    ? [
+        { label: "Key", value: row.key, dim: true },
+        { label: "Now", value: row.value, ...(row.changed ? { tone: "accent" as const } : {}) },
+        ...(row.was ? [{ label: "On disk", value: row.was }] : []),
+        ...(takes ? [{ label: "Takes", value: takes }] : []),
+        ...(row.locked ? [{ label: "Locked", value: row.locked, tone: "warning" as const }] : []),
+        ...(!row.locked && !takes && !row.field
+          ? [{ label: "Not text", value: "change it in BambuStudio", tone: "warning" as const }]
+          : []),
+      ]
+    : [];
+  const changes = editChanges(model.original, model.edits);
+  // Two lines a change, under the setting's rows, a gap and the heading.
+  const fit = Math.max(0, Math.floor((inner.height - about.length - 3) / 2));
+  const shown = changes.length > fit ? Math.max(0, fit - 1) : changes.length;
   return (
-    <Panel
-      title="Changes"
-      {...(changes.length ? { subtitle: String(changes.length) } : {})}
-      width={width}
-      height={height}
-    >
+    <Panel title={row?.label ?? "Setting"} width={width} height={height}>
+      <Detail rows={about} width={w} />
+      <Line segments={[]} width={w} />
+      <Line
+        segments={[
+          { text: " Changes", bold: true },
+          ...(changes.length ? [{ text: ` · ${changes.length}`, color: COLORS.muted }] : []),
+        ]}
+        width={w}
+      />
       {changes.length === 0 ? (
-        <Box flexDirection="column">
-          <Line segments={[{ text: " Nothing changed yet", bold: true }]} width={inner.width} />
-          <Line segments={[]} width={inner.width} />
-          <Line
-            segments={[{ text: " enter edits the highlighted setting;", color: COLORS.muted }]}
-            width={inner.width}
-          />
-          <Line
-            segments={[{ text: " ←→ goes through the groups.", color: COLORS.muted }]}
-            width={inner.width}
-          />
-        </Box>
+        <Line segments={[{ text: " Nothing changed yet", color: COLORS.muted }]} width={w} />
       ) : (
-        <Box flexDirection="column">
-          {changes.slice(0, fit).map((change) => (
-            <Box key={change.key} flexDirection="column">
-              <Line
-                segments={[{ text: ` ${change.label}`, color: COLORS.muted }]}
-                width={inner.width}
-              />
-              <Line
-                segments={[
-                  { text: `   ${change.from}`, dim: true },
-                  { text: " → " },
-                  { text: change.to, color: COLORS.accent, bold: true },
-                ]}
-                width={inner.width}
-              />
-            </Box>
-          ))}
-          {changes.length > fit ? (
+        changes.slice(0, shown).map((change) => (
+          <Box key={change.key} flexDirection="column">
+            <Line segments={[{ text: `  ${change.label}`, color: COLORS.muted }]} width={w} />
             <Line
               segments={[
-                {
-                  text: ` … ${changes.length - fit} more`,
-                  color: COLORS.muted,
-                },
+                { text: `    ${change.from}`, dim: true },
+                { text: " → " },
+                { text: change.to, color: COLORS.accent, bold: true },
               ]}
-              width={inner.width}
+              width={w}
             />
-          ) : null}
-        </Box>
+          </Box>
+        ))
       )}
+      {shown < changes.length ? (
+        <Line
+          segments={[{ text: `  … ${changes.length - shown} more`, color: COLORS.muted }]}
+          width={w}
+        />
+      ) : null}
     </Panel>
   );
 }
@@ -247,7 +262,7 @@ export interface EditorViewProps {
 }
 
 export function EditorView({ model, width, height }: EditorViewProps) {
-  const [main = width, side = 0] = width >= EDITOR_SIDE_MIN ? splitWidths(width, [3, 2]) : [width];
+  const [main = width, side = 0] = width >= EDITOR_SIDE_MIN ? splitWidths(width, [5, 3]) : [width];
   const inner = panelInner(main, height);
   const rows = editorRows(model);
   const cursor = Math.min(model.cursors[model.page] ?? 0, Math.max(0, rows.length - 1));
@@ -267,7 +282,9 @@ export function EditorView({ model, width, height }: EditorViewProps) {
         focused
         width={main}
         height={height}
-        footerRight={`${changed ? plural(changed, "change") : "no changes"} · ${position}`}
+        footerRight={[changed ? plural(changed, "change") : "no changes", position]
+          .filter(Boolean)
+          .join(" · ")}
       >
         <PageBar pages={pages} width={inner.width} />
         <FilterLine model={model} width={inner.width} />
@@ -278,11 +295,11 @@ export function EditorView({ model, width, height }: EditorViewProps) {
         />
         <Line segments={[]} width={inner.width} />
         <Line
-          segments={[{ text: spaces(1) }, ...noteSegments(model, rows[cursor])]}
+          segments={[{ text: spaces(1) }, ...noteSegments(model, rows[cursor], side === 0)]}
           width={inner.width}
         />
       </Panel>
-      {side > 0 ? <Changes model={model} width={side} height={height} /> : null}
+      {side > 0 ? <SidePanel model={model} width={side} height={height} /> : null}
     </Box>
   );
 }

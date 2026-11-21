@@ -75,11 +75,16 @@ function swatchOf(preset: Preset): string | undefined {
   return undefined;
 }
 
+/** "25 per kg"; "" for 0, BambuStudio's "no cost given". */
+function costPerKg(preset: Preset): string {
+  return shown(preset, "filament_cost") === "0" ? "" : shown(preset, "filament_cost", " per kg");
+}
+
 /** "30–80%": the part cooling fan's range, or the one end the preset sets. */
 function fanRange(preset: Preset): string {
   const low = shown(preset, "fan_min_speed");
   const high = shown(preset, "fan_max_speed");
-  if (low && high) return `${low}–${high}%`;
+  if (low && high) return low === high ? `${low}%` : `${low}–${high}%`;
   return low || high ? `${low || high}%` : "";
 }
 
@@ -110,7 +115,7 @@ export function presetDetail(preset: Preset): PresetDetail {
   add("Max flow", shown(preset, "filament_max_volumetric_speed", " mm³/s"));
   add("Fan", fanRange(preset));
   add("Density", shown(preset, "filament_density", " g/cm³"));
-  add("Cost", shown(preset, "filament_cost", " per kg"));
+  add("Cost", costPerKg(preset));
   const swatch = swatchOf(preset);
   return swatch ? { swatch, rows } : { rows };
 }
@@ -159,10 +164,7 @@ export function compactDetail(preset: Preset): DetailRow[] {
     },
     {
       label: "Filament",
-      value: join(
-        shown(preset, "filament_density", " g/cm³"),
-        shown(preset, "filament_cost", " per kg"),
-      ),
+      value: join(shown(preset, "filament_density", " g/cm³"), costPerKg(preset)),
     },
   ];
   return rows.filter((row) => row.value);

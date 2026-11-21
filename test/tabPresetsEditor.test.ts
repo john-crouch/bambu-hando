@@ -11,9 +11,11 @@ import {
   type EditorOutcome,
   editedPreset,
   editorCapturesText,
+  editorCurrentRow,
   editorHints,
   editorPages,
   editorRows,
+  editorTakes,
   editorTypingHint,
   initEditor,
   updateEditor,
@@ -82,7 +84,12 @@ describe("pages", () => {
     ]);
     const model = open();
     expect(model.page).toBe(0);
-    expect(editorPages(model).map((p) => p.title)).toEqual([...EDITOR_GROUPS, "All settings"]);
+    // The Temperature group holds only nozzle temperatures (Bed has the plates'), so its page says so.
+    expect(editorPages(model).map((p) => p.title)).toEqual([
+      "Nozzle",
+      ...EDITOR_GROUPS.slice(1),
+      "All settings",
+    ]);
     expect(keys(model, "left").model.page).toBe(0);
     expect(keys(model, "right", "right").model.page).toBe(2);
     const last = keys(model, ...Array(10).fill("right")).model;
@@ -202,8 +209,25 @@ describe("editing a field", () => {
     const typing = keys(open(), "enter").model;
     expect(editorTypingHint(typing)).toBe("whole number, 0–500");
     const notes = keys(open(), ...Array(5).fill("right"), "end", "enter").model;
-    expect(editorTypingHint(notes)).toBe("\\n starts a new line");
+    expect(editorTypingHint(notes)).toBe("text; \\n starts a new line");
     expect(editorTypingHint(open())).toBe("");
+  });
+});
+
+describe("editorTakes", () => {
+  it("says what the highlighted setting takes, typing or not", () => {
+    expect(editorTakes(open())).toBe("whole number, 0–500");
+    expect(editorCurrentRow(open())?.key).toBe("nozzle_temperature");
+    const flow = keys(open(), "right", "right", "down", "down").model;
+    expect(editorTakes(flow)).toBe("on or off");
+    const retraction = keys(open(), "right", "right", "right").model;
+    expect(editorTakes(retraction)).toBe("number, 0–20; nothing: printer's");
+    const all = keys(open(), ...Array(ALL_SETTINGS).fill("right")).model;
+    expect(editorTakes(all)).toBe("");
+    expect(editorTakes(keys(all, "end").model)).toBe("");
+    expect(editorTakes(keys(all, "/", "vendor", "esc").model)).toBe("");
+    expect(editorTakes(keys(all, "/", "vendor").model)).toBe("text; \\n starts a new line");
+    expect(editorTakes(keys(all, "/", "slow_down").model)).toBe("a JSON list of 2 values");
   });
 });
 

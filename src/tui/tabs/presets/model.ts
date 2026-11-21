@@ -491,11 +491,6 @@ export function hints(model: PresetsModel, _ctx: Ctx): Hint[] {
 export function commands(_model: PresetsModel, ctx: Ctx): PaletteCommand[] {
   const detail = "Presets";
   return [
-    {
-      title: "Reload presets",
-      detail,
-      msg: { type: "app/load", resource: "presets", force: true },
-    },
     { title: "Filter presets", detail, msg: toTab("presets", { type: "presets/filter" }) },
     ...presetRows(presetsIn(ctx.resources.presets), "").map((preset) => ({
       title: `Edit ${presetTitle(preset)}`,

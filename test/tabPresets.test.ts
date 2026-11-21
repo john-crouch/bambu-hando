@@ -233,6 +233,9 @@ describe("presetDetail", () => {
       rows: [{ label: "Nozzle", value: "220 / 230°C" }],
     });
     expect(presetDetail({})).toEqual({ rows: [] });
+    expect(
+      presetDetail({ fan_min_speed: ["100"], fan_max_speed: ["100"], filament_cost: ["0"] }),
+    ).toEqual({ rows: [{ label: "Fan", value: "100%" }] });
   });
 });
 
@@ -426,7 +429,10 @@ describe("editing", () => {
     const { model, sent } = await drive(started, ctx, msg);
     expect(sent).toEqual([{ type: "app/switchTab", tab: "presets" }]);
     expect(model.editor?.preset.path).toBe(presets[2]?.path);
-    expect(commands(started, ctx).map((c) => c.title)).toContain("Reload presets");
+    expect(commands(started, ctx).map((c) => c.title).slice(0, 2)).toEqual([
+      "Filter presets",
+      "Edit Acme ABS Black @ X1 Carbon 0.4 nozzle",
+    ]);
   });
 });
 
