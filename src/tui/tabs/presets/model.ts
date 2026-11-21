@@ -360,7 +360,8 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   const ok = failed === 0 && msg.spoolease?.ok !== false;
   const exitCode: 1 | 2 | undefined = ok ? undefined : msg.setupError ? 2 : 1;
   const toast = [
-    `${ok ? "✓" : "✗"} Saved ${plural(saved, "preset")} of ${name}`,
+    // The footer puts the tone's icon in front.
+    `Saved ${plural(saved, "preset")} of ${name}`,
     failed ? `, ${failed} failed` : "",
     msg.spoolease?.ok === false ? "; SpoolEase's range unchanged" : "",
   ].join("");

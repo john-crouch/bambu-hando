@@ -550,7 +550,7 @@ describe("saving", () => {
         },
       },
       { type: "app/load", resource: "presets", force: true },
-      { type: "app/toast", text: "✓ Saved 1 preset of Acme PLA Red", tone: "ok" },
+      { type: "app/toast", text: "Saved 1 preset of Acme PLA Red", tone: "ok" },
     ]);
     const back = (await drive(model, ctx, "esc")).model;
     expect(back.view).toBe("list");
@@ -596,7 +596,7 @@ describe("saving", () => {
       { type: "app/load", resource: "presets", force: true },
       { type: "app/load", resource: "console", force: true },
       { type: "app/load", resource: "check", force: true },
-      { type: "app/toast", text: "✓ Saved 2 presets of Acme PLA Red", tone: "ok" },
+      { type: "app/toast", text: "Saved 2 presets of Acme PLA Red", tone: "ok" },
     ]);
     expect(JSON.stringify(sent)).not.toContain(TEST_SECURITY_KEY);
   });
@@ -656,7 +656,7 @@ describe("saving", () => {
     });
     expect(sent.at(-1)).toEqual({
       type: "app/toast",
-      text: "✗ Saved 1 preset of Acme PLA Red, 1 failed",
+      text: "Saved 1 preset of Acme PLA Red, 1 failed",
       tone: "failed",
     });
   });
