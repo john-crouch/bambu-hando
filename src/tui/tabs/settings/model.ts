@@ -42,10 +42,10 @@ import {
   textFor,
   tickItem,
 } from "./fields.js";
-import { editText, insertText, moveCursor, typeAhead } from "./keys.js";
+import { editText, insertText, moveCursor, type Typed, typeAheadJump } from "./keys.js";
 
 export type Open =
-  | { kind: "list"; field: FieldId; cursor: number }
+  | { kind: "list"; field: FieldId; cursor: number; typed?: Typed }
   | { kind: "text"; field: FieldId; value: string; cursor: number };
 
 export type TestState =
@@ -208,18 +208,11 @@ function listKey(
     return apply(close, chooseItem(open.field, item.value), ctx);
   }
   const typedLetter = letter(key);
-  if (typedLetter)
-    return step({
-      ...model,
-      open: {
-        ...open,
-        cursor: typeAhead(
-          list.items.map((i) => i.label),
-          open.cursor,
-          typedLetter,
-        ),
-      },
-    });
+  if (typedLetter) {
+    const labels = list.items.map((i) => i.label);
+    const jump = typeAheadJump(labels, open.cursor, typedLetter, open.typed, ctx.now);
+    return step({ ...model, open: { ...open, ...jump } });
+  }
   return step(model);
 }
 

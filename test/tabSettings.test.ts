@@ -192,6 +192,33 @@ describe("the preset folder list", () => {
     expect(valuesSent(h)).toEqual([{ presetFolder: "default" }]);
   });
 
+  it("jumps to a name typed quickly, letter by letter", async () => {
+    for (const folder of ["demo", "work"])
+      await mkdir(join(bambuConfigDir(home), "user", folder), { recursive: true });
+    const h = await start();
+    await h.press("enter");
+    expect(listFor("presetFolder", h.ctx, h.model).items.map((i) => i.value)).toEqual([
+      "1234567",
+      "default",
+      "demo",
+      "work",
+    ]);
+    const at = (now: number) => {
+      h.ctx = { ...h.ctx, now };
+    };
+    at(10_000);
+    await h.press("d");
+    expect(h.model.open).toMatchObject({ cursor: 2 });
+    at(10_300);
+    await h.press("e");
+    at(10_600);
+    await h.press("f");
+    expect(h.model.open).toMatchObject({ cursor: 1 });
+    at(20_000);
+    await h.press("w");
+    expect(h.model.open).toMatchObject({ cursor: 3, typed: { text: "w", at: 20_000 } });
+  });
+
   it("jumps by letter, and esc closes it without a change", async () => {
     const h = await start();
     await h.press("enter", "1");

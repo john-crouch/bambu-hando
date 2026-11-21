@@ -12,7 +12,14 @@ import {
   printerList,
   validPort,
 } from "../src/tui/tabs/settings/connection.js";
-import { editText, insertText, moveCursor, typeAhead } from "../src/tui/tabs/settings/keys.js";
+import {
+  editText,
+  insertText,
+  moveCursor,
+  TYPE_AHEAD_MS,
+  typeAhead,
+  typeAheadJump,
+} from "../src/tui/tabs/settings/keys.js";
 
 const VALUES: FormValues = {
   source: "spoolmandb",
@@ -54,6 +61,38 @@ describe("typeAhead", () => {
     expect(typeAhead(labels, 2, "D")).toBe(0);
     expect(typeAhead(labels, 0, "w")).toBe(3);
     expect(typeAhead(labels, 1, "z")).toBe(1);
+  });
+});
+
+describe("typeAheadJump", () => {
+  const labels = ["default", "demo", "Sunlu", "Sunlu Silk", "work"];
+
+  it("builds a prefix from letters typed within the window", () => {
+    const s = typeAheadJump(labels, 0, "s", undefined, 1000);
+    expect(s).toEqual({ cursor: 2, typed: { text: "s", at: 1000 } });
+    const su = typeAheadJump(labels, s.cursor, "u", s.typed, 1500);
+    expect(su.cursor).toBe(2);
+    const sunlu_ = ["n", "l", "u", " "].reduce(
+      (acc, c, i) => typeAheadJump(labels, acc.cursor, c, acc.typed, 1600 + i * 100),
+      su,
+    );
+    expect(sunlu_.cursor).toBe(3);
+    expect(typeAheadJump(labels, 0, "d", undefined, 0).cursor).toBe(1);
+    const de = typeAheadJump(labels, 1, "e", { text: "d", at: 0 }, 500);
+    expect(de.cursor).toBe(1);
+    expect(typeAheadJump(labels, 1, "m", de.typed, 900).cursor).toBe(1);
+  });
+
+  it("cycles on one letter repeated, and starts over after the window", () => {
+    const first = typeAheadJump(labels, 0, "d", undefined, 0);
+    expect(first.cursor).toBe(1);
+    expect(typeAheadJump(labels, first.cursor, "d", first.typed, 100).cursor).toBe(0);
+    const late = typeAheadJump(labels, 2, "w", { text: "su", at: 0 }, TYPE_AHEAD_MS + 1);
+    expect(late).toEqual({ cursor: 4, typed: { text: "w", at: TYPE_AHEAD_MS + 1 } });
+  });
+
+  it("stays put when nothing starts with the prefix", () => {
+    expect(typeAheadJump(labels, 2, "x", { text: "su", at: 0 }, 10).cursor).toBe(2);
   });
 });
 
