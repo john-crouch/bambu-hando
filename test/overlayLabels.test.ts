@@ -249,12 +249,16 @@ describe("making labels", () => {
     }
   });
 
-  it("closes when done, and esc closes while making", async () => {
+  it("closes when done, and stays open while making so q can't cut the print short", async () => {
     const [making] = key({ ...loaded(), printer: "DYMO" }, "a");
     expect(await runCmds(msg({ type: "labels/made" }, making)[1])).toEqual([
       { type: "app/closeOverlay" },
     ]);
-    expect(await runCmds(key(making, "esc")[1])).toEqual([{ type: "app/closeOverlay" }]);
+    // Closed, the overlay couldn't name the write, and q would quit mid-print.
+    const [afterEsc, escCmds] = key(making, "esc");
+    expect(escCmds).toEqual([]);
+    expect(afterEsc.phase).toBe("making");
+    expect(busy(afterEsc)).toBe("Making 2 labels");
     expect(key(making, "a")[1]).toEqual([]);
     // A late reply to a form that isn't making does nothing.
     expect(msg({ type: "labels/made" }, loaded())[1]).toEqual([]);
@@ -295,6 +299,8 @@ describe("hints", () => {
 
   it("follows the focused row, every key that works listed", () => {
     expect(keysOf(init(REQUEST, CTX)[0])).toEqual(["esc"]);
+    // While making, no key does anything: none is offered.
+    expect(keysOf(key({ ...loaded(), printer: "DYMO" }, "a")[0])).toEqual([]);
     expect(keysOf(at(loaded(), MAKE_ROW))).toEqual(["↑↓", "enter", "esc"]);
     expect(hints(at(loaded(), MAKE_ROW), CTX)[1]?.label).toBe("choose a printer");
     expect(hints({ ...at(loaded(), MAKE_ROW), printer: "DYMO" }, CTX)[1]?.label).toBe(
