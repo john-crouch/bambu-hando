@@ -388,9 +388,7 @@ describe("editing a preset before the run writes it", () => {
     d.key(press("e"));
     await d.settle();
     d.key(press("enter"), press("u", { ctrl: true }), press("250"), press("enter"));
-    expect(hints(d.model, d.context).map((h) => h.label)).toEqual(
-      expect.arrayContaining(["back"]),
-    );
+    expect(hints(d.model, d.context).map((h) => h.label)).toEqual(expect.arrayContaining(["back"]));
     d.key(press("a"));
     expect(d.model.review.editing).toBeNull();
     await d.settle();

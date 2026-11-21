@@ -7,11 +7,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installBambuStudio } from "./bambuStudioSetup.js";
 import { SOURCE_FIXTURE } from "./parity.js";
+import { type SpoolmanDbServer, startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const SCRIPT = fileURLToPath(new URL("../scripts/tui-snap.mjs", import.meta.url));
+
+// Tests never reach the internet: Add loads SpoolmanDB from the stand-in server on its first visit.
+let spoolmanDb: SpoolmanDbServer;
 
 function snap(
   args: string[],
@@ -21,7 +25,7 @@ function snap(
     execFile(
       process.execPath,
       [SCRIPT, ...args],
-      { env: { PATH: process.env.PATH ?? "", HOME: home } },
+      { env: { PATH: process.env.PATH ?? "", HOME: home, SPOOLMANDB_URL: spoolmanDb.url } },
       (err, stdout, stderr) => {
         resolve({ code: err ? Number(err.code ?? 1) : 0, stdout, stderr });
       },
@@ -35,6 +39,11 @@ describe("tui-snap", () => {
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-snap-"));
     await installBambuStudio(home);
+    spoolmanDb = await startSpoolmanDbServer();
+  });
+
+  afterEach(async () => {
+    await spoolmanDb.close();
   });
 
   it("plays keys and prints each requested screen as the terminal shows it", async () => {

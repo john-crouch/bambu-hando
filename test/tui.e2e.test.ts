@@ -19,6 +19,7 @@ import {
   startSpoolEaseServer,
   TEST_SECURITY_KEY,
 } from "./spooleaseServer.js";
+import { type SpoolmanDbServer, startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
@@ -156,6 +157,8 @@ class Terminal {
 // Each waitFor may take WAIT_MS, and a test chains several; vitest's 5 s default cut slow runs short.
 describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
   let server: SpoolEaseServer;
+  // Tests never reach the internet: Add loads SpoolmanDB from this stand-in on its first visit.
+  let spoolmanDb: SpoolmanDbServer;
   let home: string;
   let terminal: Terminal | undefined;
 
@@ -163,12 +166,14 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-pty-"));
     await installBambuStudio(home);
     server = await startSpoolEaseServer();
+    spoolmanDb = await startSpoolmanDbServer();
   });
 
   afterEach(async () => {
     terminal?.kill();
     terminal = undefined;
     await server.close();
+    await spoolmanDb.close();
   });
 
   const consoleFlags = (key = TEST_SECURITY_KEY): string[] => [
@@ -181,7 +186,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
   ];
 
   const start = (args: string[], size?: { cols: number; rows: number }) => {
-    terminal = new Terminal(args, { HOME: home }, size);
+    terminal = new Terminal(args, { HOME: home, SPOOLMANDB_URL: spoolmanDb.url }, size);
     return terminal;
   };
 
@@ -214,15 +219,8 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
         HOME: home,
         SPOOLMANDB_URL: `http://127.0.0.1:${port}`,
       });
+      // waitFor also waits for raw mode, so q isn't lost; landing on Add asks for the catalog right away.
       await terminal.waitFor("SpoolEase skipped");
-      // The palette's reload asks for the catalog whatever the Add tab does on its own.
-      await terminal.pressEach("\u000B", ..."catalog");
-      // The drawn screen, not the output stream: Ink redraws only the changed part of a line.
-      await terminal.waitForScreen(
-        (lines) => lines.some((line) => line.includes("Reload the SpoolmanDB catalog")),
-        "the palette's catalog reload",
-      );
-      await terminal.pressEach("\r");
       await terminal.waitForScreen(() => asked > 0, "the catalog request");
       await terminal.pressEach("q");
       const quit = await Promise.race([

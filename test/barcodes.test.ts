@@ -1,19 +1,13 @@
-// ABOUTME: Tests for remembered spool barcodes (which filament a scanned barcode is) and the scan screen's keys.
-// ABOUTME: A scanner types the whole code and enter in one burst, which reaches the app as one input.
+// ABOUTME: Tests for remembered spool barcodes: which filament a scanned barcode is, kept in barcodes.json.
+// ABOUTME: The Spools tab's scan dialog (and its scanner bursts) is tested with the tab, in tabSpools.test.ts.
 
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { Key } from "ink";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { barcodesPath, loadBarcodes, normalizeBarcode, rememberBarcode } from "../src/barcodes.js";
-import { scanInput } from "../src/tui/BarcodeScan.js";
-
-function key(overrides: Partial<Key> = {}): Key {
-  return overrides as Key;
-}
 
 describe("normalizeBarcode", () => {
   it("ignores case and spaces, so a typed code matches a scanned one", () => {
@@ -58,26 +52,5 @@ describe("remembered barcodes", () => {
 
     await writeFile(barcodesPath(), "{");
     expect(await loadBarcodes()).toEqual(new Map());
-  });
-});
-
-describe("scanInput", () => {
-  it("types a code a key at a time and submits it with enter", () => {
-    expect(scanInput("0015", "0", key())).toEqual({ type: "update", code: "00150" });
-    expect(scanInput("00150603Z", "", key({ return: true }))).toEqual({
-      type: "submit",
-      code: "00150603Z",
-    });
-  });
-
-  it("takes a scanner's burst, code and enter in one input, as a whole scan", () => {
-    expect(scanInput("", "00150603Z\r", key())).toEqual({ type: "submit", code: "00150603Z" });
-    expect(scanInput("", "00150603Z\n", key())).toEqual({ type: "submit", code: "00150603Z" });
-  });
-
-  it("deletes with backspace, ignores enter on nothing, and goes back with esc", () => {
-    expect(scanInput("001", "", key({ backspace: true }))).toEqual({ type: "update", code: "00" });
-    expect(scanInput("  ", "", key({ return: true }))).toEqual({ type: "none" });
-    expect(scanInput("001", "", key({ escape: true }))).toEqual({ type: "back" });
   });
 });
