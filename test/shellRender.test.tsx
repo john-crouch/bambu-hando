@@ -125,13 +125,15 @@ describe("shell", () => {
     skipped.app.unmount();
   });
 
-  it("drops the printer from the header before the console when narrow", async () => {
-    const { screen, app } = await shellAt(80, 24, {
-      values: { host: "printer-room-console.local" },
-    });
-    await vi.waitFor(() => expect(screen()).toContain("✓ SpoolEase printer-room"));
-    expect(screen().split("\n")[0]).not.toContain("X1C");
-    app.unmount();
+  it("drops the printer, then the console's name, from the header when narrow", async () => {
+    const short = await shellAt(80, 24, { values: { host: "console.local" } });
+    await vi.waitFor(() => expect(short.screen()).toContain("✓ SpoolEase console.local"));
+    expect(short.screen().split("\n")[0]).not.toContain("X1C");
+    short.app.unmount();
+
+    const long = await shellAt(80, 24, { values: { host: "printer-room-console.local" } });
+    await vi.waitFor(() => expect(long.screen().split("\n")[0]).toMatch(/Settings\s+✓$/));
+    long.app.unmount();
   });
 
   it("quits on q with exit 0", async () => {

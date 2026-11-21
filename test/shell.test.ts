@@ -12,6 +12,7 @@ import {
   type ShellDeps,
   type ShellModel,
   type ShellMsg,
+  summaryText,
 } from "../src/tui/app/shell.js";
 import { type KeyPress, press } from "../src/tui/core/keys.js";
 import type { Cmd } from "../src/tui/core/program.js";
@@ -136,6 +137,18 @@ describe("exitCode", () => {
         { ok: false, lines: [] },
       ]),
     ).toBe(2);
+  });
+});
+
+describe("summaryText", () => {
+  it("prints each run's lines, a blank line between runs, nothing without runs", () => {
+    expect(summaryText([])).toBe("");
+    expect(
+      summaryText([
+        { ok: true, lines: ["Done: 3 written"] },
+        { ok: false, lines: ["Failed: 1", "  x"] },
+      ]),
+    ).toBe("Done: 3 written\n\nFailed: 1\n  x\n");
   });
 });
 

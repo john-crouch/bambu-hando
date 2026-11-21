@@ -115,7 +115,13 @@ export function Header({
   const used = stringWidth(name) + 1 + pills.reduce((sum, p) => sum + stringWidth(p.text), 0);
   const room = columns - used - 2;
   const full = [status.consoleText, status.printerText].filter(Boolean).join(" · ");
-  const right = room >= stringWidth(full) + 2 ? full : cut(status.consoleText, room - 2);
+  // The whole status, else the console alone, else only its mark.
+  const right =
+    room >= stringWidth(full) + 2
+      ? full
+      : room >= stringWidth(status.consoleText) + 2
+        ? status.consoleText
+        : "";
   const mark =
     status.console === "checking" ? null : (
       <Text color={STATUS_MARK[status.console][1]}>{STATUS_MARK[status.console][0]} </Text>
@@ -140,7 +146,7 @@ export function Header({
         )}
       </Box>
       <Box flexGrow={1} justifyContent="flex-end" paddingRight={1}>
-        {room >= 4 ? (
+        {room >= 2 ? (
           <>
             {status.console === "checking" ? <Spinner type="dots" label="" /> : mark}
             <Text dimColor wrap="truncate-end">
