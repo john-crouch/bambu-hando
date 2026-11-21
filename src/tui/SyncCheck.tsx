@@ -4,6 +4,7 @@
 import { Box, type Key, Text } from "ink";
 
 import { type CheckLine, type CheckSection, checkLines, checkSummary } from "../syncCheck.js";
+import { LinkedText, type TextPart } from "./ConsoleLink.js";
 import { listRows } from "./screenSize.js";
 
 /** Report lines on screen at once when the terminal's height is unknown. */
@@ -59,8 +60,8 @@ const TONES: Record<CheckLine["tone"], { color?: string; dim?: boolean }> = {
 interface Props {
   sections: CheckSection[];
   top: number;
-  /** What was compared, e.g. "BambuStudio default · SpoolEase http://host:80". */
-  compared: string;
+  /** What was compared, e.g. "BambuStudio default · SpoolEase host:80", the console linked. */
+  compared: TextPart[];
   warnings: string[];
   /** Presets without a filament ID that [f] can give one. */
   fixable?: number;
@@ -77,7 +78,9 @@ export function SyncCheck({ sections, top, compared, warnings, fixable = 0, heig
 
   return (
     <Box flexDirection="column">
-      <Text bold>Sync check: {compared}</Text>
+      <Text bold>
+        Sync check: <LinkedText parts={compared} />
+      </Text>
       <Text bold {...(summary === "Everything lines up" ? { color: "green" } : {})}>
         {summary}
       </Text>

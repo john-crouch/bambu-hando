@@ -6,7 +6,9 @@ import { basename } from "node:path";
 import { Box, type Key, Text } from "ink";
 
 import { SPOOLMANDB_SOURCE } from "../spoolmanDb.js";
+import { LinkedText, partsText, type TextPart } from "./ConsoleLink.js";
 import { listMove, typeAhead, typedLetter } from "./menu.js";
+import { Title } from "./Title.js";
 
 const LABEL_WIDTH = 46;
 
@@ -137,8 +139,8 @@ export function homeInput(cursor: number, input: string, key: Key, items: HomeIt
 interface Props {
   items: HomeItem[];
   cursor: number;
-  /** One line per setting the next run uses: preset folder and printers, SpoolEase. */
-  context: string[];
+  /** One line per setting the next run uses: preset folder and printers, SpoolEase (its console linked). */
+  context: TextPart[][];
   /** What the last labels made from the menu did. */
   outcome: { ok: boolean; lines: string[] } | null;
 }
@@ -146,7 +148,7 @@ interface Props {
 export function HomeMenu({ items, cursor, context, outcome }: Props) {
   return (
     <Box flexDirection="column">
-      <Text bold>bambu-hando: sync filament profiles to BambuStudio and SpoolEase</Text>
+      <Title />
       <Box flexDirection="column" marginY={1}>
         {items.map((item, index) => {
           const active = index === cursor;
@@ -169,8 +171,8 @@ export function HomeMenu({ items, cursor, context, outcome }: Props) {
         })}
       </Box>
       {context.map((line) => (
-        <Text key={line} dimColor>
-          {line}
+        <Text key={partsText(line)} dimColor>
+          <LinkedText parts={line} />
         </Text>
       ))}
       {outcome?.lines.map((line) => (

@@ -88,6 +88,7 @@ import {
   colorFormTyping,
   initialColorForm,
 } from "./ColorForm.js";
+import { consoleUrl, type TextPart } from "./ConsoleLink.js";
 import { Help, type HelpTopic } from "./Help.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import {
@@ -1647,9 +1648,15 @@ export function App({ initial, onExit }: Props) {
 
   if (screen.name === "home") {
     const target = connection(values);
-    const context = [
-      `BambuStudio: ${values.presetFolder.trim()} · ${printers(values).join(", ")}`,
-      `SpoolEase: ${target ? `${target.host}${values.createSpools ? "" : " (register filaments only)"}` : "skipped"}`,
+    const context: TextPart[][] = [
+      [`BambuStudio: ${values.presetFolder.trim()} · ${printers(values).join(", ")}`],
+      target
+        ? [
+            "SpoolEase: ",
+            { text: target.host, url: consoleUrl(target) },
+            values.createSpools ? "" : " (register filaments only)",
+          ]
+        : ["SpoolEase: skipped"],
     ];
     return (
       <HomeMenu items={menuItems()} cursor={screen.cursor} context={context} outcome={outcome} />
@@ -1743,7 +1750,12 @@ export function App({ initial, onExit }: Props) {
         filament={screen.filament}
         count={screen.count}
         target={
-          target ? `${target.https ? "https" : "http"}://${target.host}:${target.port}` : "skipped"
+          target
+            ? {
+                text: `${target.https ? "https" : "http"}://${target.host}:${target.port}`,
+                url: consoleUrl(target),
+              }
+            : "skipped"
         }
         results={screen.results}
         running={screen.running}
@@ -1754,7 +1766,10 @@ export function App({ initial, onExit }: Props) {
 
   if (screen.name === "check") {
     const target = connection(values);
-    const compared = `BambuStudio ${values.presetFolder.trim()} · SpoolEase ${target ? `${target.host}:${target.port}` : "skipped"}`;
+    const compared: TextPart[] = [
+      `BambuStudio ${values.presetFolder.trim()} · SpoolEase `,
+      target ? { text: `${target.host}:${target.port}`, url: consoleUrl(target) } : "skipped",
+    ];
     return (
       <SyncCheck
         sections={screen.sections}
