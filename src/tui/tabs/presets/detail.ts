@@ -122,6 +122,10 @@ function rowEdges(scrolls: boolean): number {
   return scrolls ? 3 : 2;
 }
 
+/** Said before anything writes preset files: Presets' review and Check's filament IDs. */
+export const CLOSE_BAMBUSTUDIO_FIRST =
+  "Close BambuStudio first: it may save its own copy over these presets.";
+
 const NO_ID = "no ID";
 const EDITED = "edited";
 
@@ -274,13 +278,13 @@ const SHORT_PLATES: Record<string, string> = {
   eng_plate_temp: "Engineering",
 };
 
-/** Flow ratio, max flow and fan in one line when it fits width, else max flow on a line of its own. */
+/** Flow ratio, max flow and fan in one line when it fits width, else max flow on a line of its own (one wording both ways). */
 function flowRows(preset: Preset, fan: string, width: number): DetailRow[] {
   const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
   const ratio = shown(preset, "filament_flow_ratio");
   const max = shown(preset, "filament_max_volumetric_speed", " mm³/s");
   const tagged = (tag: string, value: string) => (value ? `${tag} ${value}` : "");
-  const one = join(tagged("ratio", ratio), tagged("max", max), tagged("fan", fan));
+  const one = join(tagged("ratio", ratio), tagged("max flow", max), tagged("fan", fan));
   if (textWidth(one) <= width || !max) return [{ label: "Flow", value: one }];
   return [
     { label: "Flow", value: join(tagged("ratio", ratio), tagged("fan", fan)) },

@@ -266,6 +266,11 @@ describe.each([
     expect(text).toContain(fix.id);
     expect(text).not.toContain("until you press a");
     expect(text).toContain("1 preset to write");
+    // As Presets' review says: it writes preset files BambuStudio may save over.
+    expect(text).toMatch(/! Close BambuStudio first: it may save its own copy/);
+    expect(text.replace(/\s*│\s*/g, " ").replace(/ +/g, " ")).toContain(
+      "! Close BambuStudio first: it may save its own copy over these presets.",
+    );
     const two = { ...ids, fixes: [fix, { ...fix, path: "/p/Rock @X1C 0.6.json" }] };
     expect(screen({ ...MODEL, page: "ids", ids: two }, ctx).join("\n")).toContain(
       "1 preset, 2 files to write",
@@ -276,6 +281,7 @@ describe.each([
     ).join("\n");
     expect(done).toContain("✓ written");
     expect(done).toContain("✓ 1 preset given an ID");
+    expect(done).not.toContain("Close BambuStudio first");
   });
 
   it("gives the file names the room the results don't use yet", () => {

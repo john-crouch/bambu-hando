@@ -268,9 +268,19 @@ function SidePanel({
       : wrapDetailRows([fact], keyRoom),
   );
   const changes = editorChanges(model);
-  // Two lines a change, under the setting's rows, a gap and the heading.
-  const fit = Math.max(0, Math.floor((inner.height - about.length - 3) / 2));
-  const shown = changes.length > fit ? Math.max(0, fit - 1) : changes.length;
+  // A change's label, then from → to; → to on a line of its own when both don't fit (never cut).
+  const split = (change: (typeof changes)[number]) =>
+    textWidth(`    ${change.from} → ${change.to}`) > w;
+  const heights = changes.map((change) => (split(change) ? 3 : 2));
+  // Under the setting's rows, a gap and the heading; a line for "… more" when not all fit.
+  const room = Math.max(0, inner.height - about.length - 3);
+  const fits = (count: number, left: number) =>
+    heights.slice(0, count).reduce((sum, h) => sum + h, 0) <= left;
+  let shown = changes.length;
+  if (!fits(shown, room)) {
+    shown = 0;
+    while (shown < changes.length && fits(shown + 1, room - 1)) shown++;
+  }
   return (
     <Panel
       title={row && model.page !== ALL_SETTINGS ? row.label : "Setting"}
@@ -292,14 +302,27 @@ function SidePanel({
         changes.slice(0, shown).map((change) => (
           <Box key={change.key} flexDirection="column">
             <Line segments={[{ text: `  ${change.label}`, color: COLORS.muted }]} width={w} />
-            <Line
-              segments={[
-                { text: `    ${change.from}`, dim: true },
-                { text: " → " },
-                { text: change.to, color: COLORS.accent, bold: true },
-              ]}
-              width={w}
-            />
+            {split(change) ? (
+              <>
+                <Line segments={[{ text: `    ${change.from}`, dim: true }]} width={w} />
+                <Line
+                  segments={[
+                    { text: "    → " },
+                    { text: change.to, color: COLORS.accent, bold: true },
+                  ]}
+                  width={w}
+                />
+              </>
+            ) : (
+              <Line
+                segments={[
+                  { text: `    ${change.from}`, dim: true },
+                  { text: " → " },
+                  { text: change.to, color: COLORS.accent, bold: true },
+                ]}
+                width={w}
+              />
+            )}
           </Box>
         ))
       )}

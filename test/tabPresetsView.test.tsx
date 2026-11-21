@@ -117,6 +117,9 @@ function drive(model: PresetsModel, ctx: Ctx, ...keys: string[]): PresetsModel {
     const loading = [...current.files].find(([, f]) => f.state === "loading")?.[0];
     if (opening && opening !== before.opening?.path) answer(reads(opening));
     if (loading) answer(reads(loading));
+    // The review reads the edited preset's family.
+    for (const [path, file] of current.review?.contents ?? [])
+      if (file.state === "loading") answer(reads(path));
   }
   return current;
 }
@@ -229,7 +232,7 @@ describe.each([
     const note = screen.at(-2) ?? "";
     // Without the side panel, the line says what the setting takes instead.
     if (columns < 100) {
-      expect(note).toContain("Takes whole number, 0–500");
+      expect(note).toContain("Takes a whole number, 0–500");
       return;
     }
     expect(note).toMatch(
@@ -258,6 +261,8 @@ describe.each([
     expectExact(screen, ctx);
     expect(screen[0]).toMatch(/^╭ Presets · 1 of 4 ─/);
     expect(screen[1]).toMatch(/^│ \/ rock/);
+    // The cursor's bar stays while typing, as on Spools.
+    expect(screen[3]).toMatch(/^│▌OVERTURE ROCK PLA/);
     const drafted = drive(start(ctx), ctx, "enter", "enter", "backspace", "0", "enter", "esc");
     const text = lines(drafted, ctx).join("\n");
     expect(text).toContain("edited");
@@ -287,7 +292,7 @@ describe.each([
     expect(screen[1]).toMatch(/─ All +│/);
     expect(text).toMatch(/Nozzle range, high +255°C +was 270°C/);
     expect(text).toContain("Takes");
-    expect(text).toContain("whole number, 0–500");
+    expect(text).toContain("a whole number, 0–500");
     expect(text).toMatch(/1 change · 4\/4 ─╯/);
   });
 
@@ -315,9 +320,11 @@ describe.each([
     expect(note).toContain("! 5°C is low for a nozzle (most take 150–350°C)");
     const review = lines(drive(cold, ctx, "a"), ctx);
     expectExact(review, ctx);
-    const change = review.findIndex((line) => /Nozzle +255°C → 5°C/.test(line));
+    const change = review.findIndex((line) => /Nozzle +X1C 0\.4 +255°C +→ 5°C/.test(line));
     expect(change).toBeGreaterThan(0);
-    expect(review[change + 1]).toContain("! 5°C is low for a nozzle");
+    // Under the change's rows, one per preset.
+    expect(review[change + 1]).toMatch(/X1C 0\.6 +255°C +→ 5°C/);
+    expect(review[change + 2]).toContain("! 5°C is low for a nozzle");
     expect(review.join("\n")).toContain("150–350°C)");
   });
 
@@ -325,7 +332,7 @@ describe.each([
     const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
     const screen = lines(flow, ctx);
     expectExact(screen, ctx);
-    expect(screen.join("\n")).toMatch(/Max volumetric speed +standard 12 · high flow 16 mm³\/s/);
+    expect(screen.join("\n")).toMatch(/Max volumetric speed +●standard 12 · ○high flow 16 mm³\/s/);
   });
 
   it("lists every key on All settings, filtered", () => {
@@ -361,20 +368,44 @@ describe.each([
     expectExact(screen, ctx);
     const text = screen.join("\n");
     expect(screen[0]).toMatch(/^╭ Save changes · Sunlu PETG 2.0 Vivid Yellow @ X1C 0.4 ─/);
-    expect(text).toMatch(/Nozzle +255°C → 250°C/);
-    expect(text).toContain("Into 2 presets of Sunlu PETG 2.0 Vivid Yellow");
-    expect(text).toMatch(/\[✓\] X1C 0\.4 +the one you edited/);
-    expect(text).toMatch(/\[✓\] X1C 0\.6 +same filament ID/);
+    expect(screen[1]).toMatch(/^│ 1 change · into 2 presets +│$/);
+    // A row per preset of the filament, each with its own before → after, the change named once.
+    expect(screen[2]).toMatch(/^│▌\[✓\] Nozzle {2}X1C 0\.4 {2}255°C {2}→ 250°C +│$/);
+    expect(screen[3]).toMatch(/^│ \[✓\] {9}X1C 0\.6 {2}255°C {2}→ 250°C +│$/);
     const warning = screen.findIndex((line) => line.includes("! Close BambuStudio first"));
-    const into = screen.findIndex((line) => line.includes("Into 2 presets"));
-    expect(warning).toBeGreaterThan(0);
-    expect(warning).toBeLessThan(into);
+    expect(warning).toBeGreaterThan(3);
+    expect(text).not.toContain("Flow speed, pressure advance");
   });
 
-  it("keeps the review's targets beside their names", () => {
-    const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
-    const row = lines(review, ctx).find((line) => line.includes("the one you edited")) ?? "";
-    expect(row).toMatch(/\[✓\] X1C 0\.4 the one you edited/);
+  it("ticks a nozzle-size change on the edited preset only, and says why", () => {
+    const review = drive(
+      start(ctx),
+      ctx,
+      "s",
+      "enter",
+      "right",
+      "right",
+      "down",
+      "n",
+      "enter",
+      "backspace",
+      "backspace",
+      "14",
+      "enter",
+      "a",
+    );
+    const screen = lines(review, ctx);
+    expectExact(screen, ctx);
+    const text = screen.join("\n");
+    expect(text).toContain("1 change · into 1 preset");
+    // Before → after side by side where they fit, else after right under before: never cut.
+    expect(text).toMatch(
+      /\[✓\] Max volumetric speed {2}X1C 0\.4 {2}standard 12 · high flow 16 mm³\/s +(│\n│ +)?→ 14 mm³\/s/,
+    );
+    expect(text).toMatch(/\[ \] +X1C 0\.6 {2}standard 12 · high flow 16 mm³\/s +(│\n│ +)?stays/);
+    expect(text).not.toContain("…");
+    const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+    expect(words).toContain("they go into the preset you edited unless you tick the others.");
   });
 
   it("says once that everything saved, and what to do next", () => {
@@ -399,7 +430,7 @@ describe.each([
     const screen = lines(done, ctx);
     expectExact(screen, ctx);
     const text = screen.join("\n");
-    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
+    expect(text).toMatch(/ Nozzle {2}X1C 0\.4 {2}✓ saved {2}255°C {2}→ 250°C/);
     expect(text).toContain("Restart BambuStudio to load the change");
     expect(text).not.toMatch(/presets? saved/);
   });
@@ -428,8 +459,8 @@ describe.each([
     const text = screen.join("\n");
     expect(screen[0]).toMatch(/^╭ Save changes · /);
     // Each preset's result right after its name; the line under them says what's next, once.
-    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
-    expect(text).toMatch(/ X1C 0\.6 +✗ couldn't write it: EACCES +same filament ID/);
+    expect(text).toMatch(/ Nozzle {2}X1C 0\.4 {2}✓ saved +255°C {2}→ 250°C/);
+    expect(text).toMatch(/ +X1C 0\.6 {2}✗ couldn't write it: EACCES {2}255°C {2}→ 250°C/);
     expect(text).not.toContain("[✓]");
     expect(text).toContain("✗ 1 of 2 presets failed: restart BambuStudio to load the saved one");
     expect(text.match(/saved/g)).toHaveLength(2);
@@ -490,6 +521,40 @@ it("wraps the review's notes at 60 columns instead of cutting them", () => {
   expect(words).toContain("it may save its own copy over these presets.");
   expect(words).toContain("uploads the change on its next sync.");
   expect(screen.join("\n")).not.toContain("…");
+});
+
+it("puts a long change's new value under its old one in the editor's side panel", () => {
+  const ctx = ctxFor(120, 36);
+  const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
+  const edited = drive(flow, ctx, "enter", "backspace", "backspace", "14", "enter");
+  const screen = lines(edited, ctx);
+  expectExact(screen, ctx);
+  const side = screen.map((line) => line.slice(line.lastIndexOf("││") + 2)).join("\n");
+  expect(side).toMatch(
+    /standard 12 · high flow 16 mm³\/s +│\n +→ standard 14 · high flow 16 mm³\/s/,
+  );
+  expect(side).not.toContain("…");
+});
+
+it("keeps nozzle types' values whole at 60 columns, in the editor and the review", () => {
+  const ctx = ctxFor(60, 20);
+  const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
+  const editor = lines(flow, ctx);
+  expectExact(editor, ctx);
+  expect(editor.join("\n")).toMatch(/Max volumetric speed ●standard 12 · ○high flow 16 mm³\/s/);
+  expect(editor.join("\n")).toContain("Takes a number, 0.1–200; for standard (n: all types)");
+  const review = drive(flow, ctx, "enter", "backspace", "backspace", "14", "enter", "a");
+  const screen = lines(review, ctx);
+  expectExact(screen, ctx);
+  const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+  expect(words).toContain("standard 12 · high flow 16 mm³/s → standard 14 · high flow 16 mm³/s");
+  expect(screen.join("\n")).not.toContain("…");
+  // The rows scroll here: the other preset's is one down.
+  const next = lines(drive(review, ctx, "down"), ctx);
+  expectExact(next, ctx);
+  const below = next.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+  expect(below).toContain("X1C 0.6 standard 12 · high flow 16 mm³/s stays");
+  expect(next.join("\n")).not.toContain("…");
 });
 
 it("wraps a change's warning at 60 columns instead of cutting it", () => {

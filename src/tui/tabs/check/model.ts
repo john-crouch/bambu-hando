@@ -25,6 +25,7 @@ import {
   consoleConfigured,
   firstWithItems,
   type ItemTarget,
+  idsBefore,
   idsLayout,
   itemRows,
   itemViews,
@@ -126,7 +127,7 @@ function idsKey(model: CheckModel, ids: IdsPage, key: KeyPress, ctx: Ctx): Step<
     return step({ ...model, page: "report", ids: ids.running ? ids : null });
   if (letter(key) === "a" && ids.results === null && !ids.running)
     return step({ ...model, ids: { ...ids, running: true } }, writeIds(ids.fixes));
-  const rows = idsLayout(ctx).rows;
+  const rows = idsLayout(ctx, idsBefore(ids)).rows;
   const last = Math.max(0, ids.fixes.length - rows);
   const moved = moveCursor(ids.scroll, key, last + 1, rows);
   return moved === null ? step(model) : step({ ...model, ids: { ...ids, scroll: moved } });
@@ -295,7 +296,7 @@ function hints(model: CheckModel, ctx: Ctx): Hint[] {
     return [{ keys: "enter", label: "set up SpoolEase in Settings", primary: true }];
   if (model.page === "ids" && model.ids) {
     const ids = model.ids;
-    const scrolls = ids.fixes.length > idsLayout(ctx).rows;
+    const scrolls = ids.fixes.length > idsLayout(ctx, idsBefore(ids)).rows;
     if (ids.running) return [{ keys: "esc", label: "back" }];
     if (ids.results) return [{ keys: "esc", label: "back to the check", primary: true }];
     return [

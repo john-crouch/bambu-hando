@@ -1,11 +1,11 @@
 // ABOUTME: Tests for the Presets tab's model: the list, its detail data, drafts, the review and saving to presets and SpoolEase.
 // ABOUTME: Drives update() with press() keys and runs its commands against real files and the SpoolEase stand-in.
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Preset } from "../src/presetEdit.js";
 import type { UserPreset } from "../src/syncCheck.js";
 import { type KeyPress, press } from "../src/tui/core/keys.js";
@@ -30,6 +30,8 @@ import {
   hints,
   init,
   type PresetsModel,
+  reviewRows,
+  rowId,
   update,
   visiblePresets,
 } from "../src/tui/tabs/presets/model.js";
@@ -74,8 +76,14 @@ async function writePreset(file: string, preset: Preset): Promise<string> {
   return path;
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "tab-presets-"));
+  // BambuStudio.conf (the printers' nozzle types) is read from HOME: never the real one.
+  vi.stubEnv("HOME", dir);
   presets = [
     {
       name: "Acme PLA Red",
@@ -349,7 +357,7 @@ describe("presetDetail", () => {
     ]);
     expect(compactDetail(variants)).toEqual([
       { label: "Nozzle", value: "220°C" },
-      { label: "Flow", value: "max standard 22 · high flow 29 mm³/s" },
+      { label: "Flow", value: "max flow standard 22 · high flow 29 mm³/s" },
     ]);
     const flow = { ...variants, filament_flow_ratio: ["0.98"], fan_max_speed: ["100"] };
     expect(compactDetail(flow, 40)).toEqual([
@@ -387,7 +395,7 @@ describe("compactDetail", () => {
     expect(compactDetail(presetJson("Acme PLA Red", X1C_04, "P1111111"))).toEqual([
       { label: "Nozzle", value: "220°C · first 225°C · range 190–240°C" },
       { label: "Bed", value: "Textured 55°C · Smooth 60°C" },
-      { label: "Flow", value: "ratio 0.98 · max 21 mm³/s · fan 30–80%" },
+      { label: "Flow", value: "ratio 0.98 · max flow 21 mm³/s · fan 30–80%" },
       { label: "Filament", value: "1.24 g/cm³ · cost 25 per kg" },
     ]);
     expect(compactDetail({ nozzle_temperature: ["220"] })).toEqual([
@@ -492,6 +500,29 @@ describe("list", () => {
     expect((await drive(red06, ctx, "down", "up")).model.path).toBe(presets[0]?.path);
   });
 
+  it("opens the editor on the variant of the printer's nozzle type in BambuStudio.conf", async () => {
+    const two = {
+      ...presetJson("Acme PLA Red", X1C_04, "P1111111"),
+      filament_extruder_variant: ["Direct Drive Standard", "Direct Drive High Flow"],
+      filament_max_volumetric_speed: ["21", "29"],
+    };
+    await writeFile(presets[0]?.path ?? "", JSON.stringify(two));
+    const conf = join(dir, ".config", "BambuStudio");
+    await mkdir(conf, { recursive: true });
+    await writeFile(
+      join(conf, "BambuStudio.conf"),
+      JSON.stringify({ nozzle_volume_types: { [X1C_04]: "High Flow" } }),
+    );
+    const ctx = ctxWith();
+    const { model } = await drive((await start(ctx)).model, ctx, "down", "enter");
+    expect(model.editor?.preset.path).toBe(presets[0]?.path);
+    expect(model.editor?.model.active).toBe(1);
+    // Without a conf entry: Standard.
+    await writeFile(join(conf, "BambuStudio.conf"), "{}");
+    const plain = await drive((await start(ctx)).model, ctx, "down", "enter");
+    expect(plain.model.editor?.model.active).toBe(0);
+  });
+
   it("opens the printer's preset: enter edits the one left and right picked", async () => {
     const ctx = ctxWith();
     const { model } = await drive((await start(ctx)).model, ctx, "down", "right", "enter");
@@ -506,9 +537,28 @@ describe("list", () => {
     expect((await drive(blue, ctx, "f")).sent).toEqual([
       { type: "app/switchTab", tab: "check", focus: "presetsNoId" },
     ]);
-    expect((await drive(started, ctx, "r")).sent).toEqual([
+    const empty = ctxWith([]);
+    expect((await drive((await start(empty)).model, empty, "r")).sent).toEqual([
       { type: "app/load", resource: "presets", force: true },
     ]);
+  });
+
+  it("jumps with f and r like any letter while they have nothing else to do", async () => {
+    const named = (name: string, id: string): UserPreset => ({
+      name,
+      printer: X1C_04,
+      filamentId: id,
+      path: join(dir, `${name}.json`),
+    });
+    const list = [...presets, named("Fiber PLA", "P3333333"), named("Rock PLA", "P4444444")];
+    const ctx = ctxWith(list);
+    const started = (await start(ctx)).model;
+    const fiber = await drive(started, ctx, "f");
+    expect(fiber.model.path).toBe(list[4]?.path);
+    expect(fiber.sent).toEqual([]);
+    const rock = await drive(started, ctx, "r");
+    expect(rock.model.path).toBe(list[5]?.path);
+    expect(rock.sent).toEqual([]);
   });
 
   it("goes to Add with enter when there are no presets yet", async () => {
@@ -640,6 +690,23 @@ async function editRange(ctx: Ctx, high = "250") {
   );
 }
 
+/** Opens Acme PLA Red @X1C 0.4 and sets its max volumetric speed (a nozzle-size setting) to 25. */
+async function editFlow(ctx: Ctx, from?: PresetsModel) {
+  const opened = from ?? (await drive((await start(ctx)).model, ctx, "down", "enter")).model;
+  return drive(
+    opened,
+    ctx,
+    "right",
+    "right",
+    "down",
+    "enter",
+    "backspace",
+    "backspace",
+    "25",
+    "enter",
+  );
+}
+
 describe("review", () => {
   it("lists the changes and every preset of the filament, all ticked; space unticks", async () => {
     const ctx = ctxWith();
@@ -655,13 +722,49 @@ describe("review", () => {
       },
     ]);
     expect(review?.targets.map((t) => t.path)).toEqual([presets[0]?.path, presets[2]?.path]);
-    expect([...(review?.ticked ?? [])]).toEqual([presets[0]?.path, presets[2]?.path]);
+    const high = "nozzle_temperature_range_high";
+    // One row per change and preset; a material setting goes into every preset of the filament.
+    expect(reviewRows(review!).map((r) => [r.key, r.path])).toEqual([
+      [high, presets[0]?.path],
+      [high, presets[2]?.path],
+    ]);
+    expect([...(review?.ticked ?? [])]).toEqual([
+      rowId(high, presets[0]?.path ?? ""),
+      rowId(high, presets[2]?.path ?? ""),
+    ]);
     expect(review?.range).toEqual({ state: "none" });
     const unticked = (await drive(reviewing, ctx, "down", "space")).model;
-    expect([...(unticked.review?.ticked ?? [])]).toEqual([presets[0]?.path]);
+    expect([...(unticked.review?.ticked ?? [])]).toEqual([rowId(high, presets[0]?.path ?? "")]);
     const none = (await drive(unticked, ctx, "up", "space", "a")).model;
     expect(none.review?.error).toBe("Tick at least one preset to save to");
     expect(none.review?.phase).toBe("review");
+  });
+
+  it("reads the other presets, then ticks a nozzle-size setting on the edited one only", async () => {
+    const ctx = ctxWith();
+    const reviewing = (await drive((await editFlow(ctx)).model, ctx, "a")).model;
+    const review = reviewing.review!;
+    const speed = "filament_max_volumetric_speed";
+    expect(reviewRows(review).map((r) => [r.key, r.path])).toEqual([
+      [speed, presets[0]?.path],
+      [speed, presets[2]?.path],
+    ]);
+    expect([...review.ticked]).toEqual([rowId(speed, presets[0]?.path ?? "")]);
+    expect(review.contents.get(presets[2]?.path ?? "")).toMatchObject({
+      state: "ready",
+      preset: { filament_max_volumetric_speed: ["21"] },
+    });
+  });
+
+  it("waits for the other presets to be read before saving", async () => {
+    const ctx = ctxWith();
+    const edited = (await editFlow(ctx)).model;
+    const [reviewing, cmds] = update(edited, { type: "key", key: press("a") }, ctx);
+    expect(reviewing.review?.contents.get(presets[2]?.path ?? "")).toEqual({ state: "loading" });
+    expect(cmds).toHaveLength(1);
+    const [refused] = update(reviewing, { type: "key", key: press("a") }, ctx);
+    expect(refused.review?.error).toBe("Still reading the other presets");
+    expect(refused.review?.phase).toBe("review");
   });
 
   it("goes back to the editor with esc, edits intact", async () => {
@@ -742,6 +845,44 @@ describe("saving", () => {
     expect(back.editor).toBeNull();
   });
 
+  it("saves a nozzle-size setting into the edited preset only, unless the others are ticked", async () => {
+    const ctx = ctxWith();
+    const reviewing = (await drive((await editFlow(ctx)).model, ctx, "a")).model;
+    await drive(reviewing, ctx, "a");
+    const speed = async (index: number) =>
+      JSON.parse(await readFile(presets[index]?.path ?? "", "utf-8")).filament_max_volumetric_speed;
+    expect(await speed(0)).toEqual(["25"]);
+    expect(await speed(2)).toEqual(["21"]);
+    const both = (await drive(reviewing, ctx, "down", "space", "a")).model;
+    expect(both.review?.results?.map((r) => r.path)).toEqual([presets[0]?.path, presets[2]?.path]);
+    expect(await speed(2)).toEqual(["25"]);
+  });
+
+  it("gives each preset only the changes ticked for it", async () => {
+    const ctx = ctxWith();
+    const ranged = (await editRange(ctx)).model;
+    const both = (await editFlow(ctx, ranged)).model;
+    const reviewing = (await drive(both, ctx, "a")).model;
+    expect(reviewRows(reviewing.review!).map((r) => r.key)).toEqual([
+      "nozzle_temperature_range_high",
+      "nozzle_temperature_range_high",
+      "filament_max_volumetric_speed",
+      "filament_max_volumetric_speed",
+    ]);
+    const { model, sent } = await drive(reviewing, ctx, "a");
+    expect(model.review?.results?.map((r) => r.ok)).toEqual([true, true]);
+    const red06 = JSON.parse(await readFile(presets[2]?.path ?? "", "utf-8"));
+    expect(red06.nozzle_temperature_range_high).toEqual(["250"]);
+    expect(red06.filament_max_volumetric_speed).toEqual(["21"]);
+    expect(sent[0]).toMatchObject({
+      type: "app/runFinished",
+      summary: {
+        ok: true,
+        lines: ["2 BambuStudio presets of Acme PLA Red saved: restart BambuStudio to load them"],
+      },
+    });
+  });
+
   it("ignores keys while saving", async () => {
     const ctx = ctxWith();
     const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
@@ -810,14 +951,25 @@ describe("saving", () => {
     expect(JSON.stringify(sent)).not.toContain("WRONG");
   });
 
+  it("leaves SpoolEase's range alone when the edited preset's range isn't saved", async () => {
+    const reviewing = (await drive((await editRange(consoleCtx)).model, consoleCtx, "a")).model;
+    const before = server.customFilaments;
+    const { model } = await drive(reviewing, consoleCtx, "space", "a");
+    expect(model.review?.results?.map((r) => r.path)).toEqual([presets[2]?.path]);
+    expect(model.review?.spoolease).toBeNull();
+    expect(server.customFilaments).toBe(before);
+  });
+
   it("waits for SpoolEase's range before saving", async () => {
     const edited = (await editRange(consoleCtx)).model;
     const [checking, cmds] = update(edited, { type: "key", key: press("a") }, consoleCtx);
     expect(checking.review?.range).toEqual({ state: "checking" });
-    const [refused] = update(checking, { type: "key", key: press("a") }, consoleCtx);
+    // The other preset's read, then SpoolEase's range.
+    expect(cmds).toHaveLength(2);
+    const { model: read } = await settle(checking, consoleCtx, cmds.slice(0, 1));
+    const [refused] = update(read, { type: "key", key: press("a") }, consoleCtx);
     expect(refused.review?.phase).toBe("review");
     expect(refused.review?.error).toBe("Still reading SpoolEase's nozzle range");
-    expect(cmds).toHaveLength(1);
   });
 
   it("reports a preset it couldn't write as a failure, exit code 1", async () => {
@@ -839,6 +991,22 @@ describe("saving", () => {
     });
     // The review's own page says how it went: no toast on top of it.
     expect(sent.some((msg) => msg.type === "app/toast")).toBe(false);
+    // The edits stay a draft where they didn't save, and the saved preset's draft goes.
+    expect([...model.drafts.keys()]).toEqual([presets[2]?.path]);
+    expect(model.drafts.get(presets[2]?.path ?? "")).toEqual(reviewing.review?.edits);
+    const back = (await drive(model, ctx, "esc")).model;
+    expect([...back.drafts.keys()]).toEqual([presets[2]?.path]);
+  });
+
+  it("keeps the edits as the preset's draft when it couldn't save the preset they were made on", async () => {
+    const ctx = ctxWith();
+    const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
+    await rm(presets[0]?.path ?? "");
+    await rm(presets[2]?.path ?? "");
+    const { model } = await drive(reviewing, ctx, "a");
+    expect(model.review?.results?.map((r) => r.ok)).toEqual([false, false]);
+    expect([...model.drafts.keys()]).toEqual([presets[0]?.path, presets[2]?.path]);
+    expect(model.drafts.get(presets[0]?.path ?? "")).toEqual(reviewing.review?.edits);
   });
 
   it("counts a key SpoolEase rejects while saving its range as a setup error, exit code 2", async () => {
@@ -873,7 +1041,6 @@ describe("hints and modes", () => {
       "enter edit",
       "/ filter",
       "a-z jump",
-      "r reload",
     ]);
     const red = (await drive(model, ctx, "down")).model;
     expect(hints(red, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("←→ printer");
@@ -881,10 +1048,12 @@ describe("hints and modes", () => {
     expect(hints(blue, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("f fix in Check");
     const filtering = (await drive(model, ctx, "/", "x")).model;
     expect(hints(filtering, ctx).map((h) => `${h.keys} ${h.label}`)).toEqual([
+      "type filter",
       "↑↓ move",
       "enter done",
       "esc clear",
     ]);
+    expect(hints(filtering, ctx).every((h) => h.primary)).toBe(true);
     const kept = (await drive(model, ctx, "/", "acme", "enter")).model;
     expect(hints(kept, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("esc clear filter");
   });

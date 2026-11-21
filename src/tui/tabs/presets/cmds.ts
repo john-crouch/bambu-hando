@@ -4,8 +4,15 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
+import { nozzleTypeFor, readBambuStudioConf } from "../../../bambuProfiles.js";
 import { errorMessage } from "../../../errors.js";
-import { type EditResult, type Edits, type Preset, writePresetEdits } from "../../../presetEdit.js";
+import { bambuConfigDir } from "../../../paths.js";
+import {
+  type EditResult,
+  type Edits,
+  type Preset,
+  writePresetTargets,
+} from "../../../presetEdit.js";
 import { SpoolEaseClient, type SpoolEaseConnection, withNozzleRange } from "../../../spoolease.js";
 import { checkKey, KeyCheckError } from "../../../sync.js";
 import type { Cmd } from "../../core/program.js";
@@ -34,7 +41,7 @@ export interface SpoolEaseOutcome {
 }
 
 export type PresetFileMsg =
-  | { type: "presets/read"; path: string; preset: Preset }
+  | { type: "presets/read"; path: string; preset: Preset; nozzleType?: string }
   | { type: "presets/read"; path: string; error: string };
 
 export interface RangeMsg {
@@ -71,14 +78,25 @@ export function rangeText(low: number | null, high: number | null): string {
   return `${low ?? "?"}–${high ?? "?"}°C`;
 }
 
-/** Reads a preset file; it must hold a JSON object. */
-export function readPresetCmd(path: string): Cmd<AppMsg> {
+/** Reads a preset file (it must hold a JSON object); given its printer, BambuStudio's nozzle type for it too. */
+export function readPresetCmd(path: string, printer?: string): Cmd<AppMsg> {
   return async (dispatch) => {
     try {
       const preset: unknown = JSON.parse(await readFile(path, "utf-8"));
       if (typeof preset !== "object" || preset === null || Array.isArray(preset))
         throw new Error("it isn't a preset");
-      dispatch(toPresets({ type: "presets/read", path, preset: preset as Preset }));
+      const nozzleType =
+        printer === undefined
+          ? undefined
+          : nozzleTypeFor((await readBambuStudioConf(bambuConfigDir())).nozzleTypes, printer);
+      dispatch(
+        toPresets({
+          type: "presets/read",
+          path,
+          preset: preset as Preset,
+          ...(nozzleType ? { nozzleType } : {}),
+        }),
+      );
     } catch (err) {
       dispatch(
         toPresets({
@@ -127,16 +145,15 @@ export function rangeCmd(
   };
 }
 
-/** Writes the edits into each target, then SpoolEase's nozzle range when it changes and a preset was saved. */
+/** Writes each target its edits, then SpoolEase's nozzle range when it changes and a preset was saved. */
 export function saveCmd(
   path: string,
-  targets: string[],
-  edits: Edits,
+  writes: readonly { path: string; edits: Edits }[],
   change: RangeChange | null,
   connection: SpoolEaseConnection | null,
 ): Cmd<AppMsg> {
   return async (dispatch) => {
-    const results = await writePresetEdits(targets, edits);
+    const results = await writePresetTargets(writes);
     let spoolease: SpoolEaseOutcome | null = null;
     let setupError = false;
     if (change && connection && results.some((r) => r.ok)) {

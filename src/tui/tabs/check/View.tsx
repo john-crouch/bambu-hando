@@ -34,6 +34,7 @@ import {
   checkView,
   fixCount,
   type ItemView,
+  idsBefore,
   idsLayout,
   itemCount,
   itemRows,
@@ -350,7 +351,7 @@ function resultSegments(
 }
 
 function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
-  const layout = idsLayout(ctx);
+  const layout = idsLayout(ctx, idsBefore(ids));
   const inner = panelInner(ctx.bodyColumns, layout.height);
   const shown = ids.fixes.slice(ids.scroll, ids.scroll + layout.rows);
   const failed = ids.results?.filter((r) => !r.ok).length ?? 0;
@@ -378,6 +379,16 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
           />
         ))}
         <Line segments={[]} width={inner.width} />
+        {layout.warning.map((line, index) => (
+          <Line
+            key={line}
+            segments={pad([
+              { text: `${index === 0 ? `${ICONS.warning} ` : "  "}${line}`, color: COLORS.warning },
+            ])}
+            width={inner.width}
+          />
+        ))}
+        {layout.warning.length ? <Line segments={[]} width={inner.width} /> : null}
         <Line segments={headerSegments(inner.width, ids)} width={inner.width} />
         {shown.map((fix, offset) => (
           <Line
