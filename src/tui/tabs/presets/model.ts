@@ -28,7 +28,7 @@ import {
 } from "../../core/types.js";
 import { plural } from "../../ui/format.js";
 import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
-import { connectionOf } from "../settings/connection.js";
+import { connectionOf, validPort } from "../settings/connection.js";
 import {
   type PresetFileMsg,
   type RangeMsg,
@@ -287,11 +287,19 @@ function startReview(
   const targets = presetFamily(presetsIn(ctx.resources.presets), preset);
   const range = nozzleRange(applyEdits(editor.original, edits).preset);
   const connection = connectionOf(ctx.values);
-  const checks =
+  const rangeEdited =
     changes.some((c) => c.key.startsWith("nozzle_temperature_range_")) &&
     range !== null &&
-    preset.filamentId !== "" &&
-    connection !== null;
+    preset.filamentId !== "";
+  const checks = rangeEdited && connection !== null;
+  // SpoolEase set up but on a port that isn't one: say its range waits, rather than leave it out unsaid.
+  const portBlocks =
+    rangeEdited &&
+    connection === null &&
+    !ctx.values.skipSpoolease &&
+    ctx.values.host.trim() !== "" &&
+    ctx.values.securityKey !== "" &&
+    validPort(ctx.values.port) === null;
   // A nozzle-size (or raw) setting is tuned for the preset it was made on: the others only when ticked.
   const ticked = new Set(
     changes.flatMap((change) =>
@@ -313,7 +321,14 @@ function startReview(
     contents,
     ticked,
     cursor: 0,
-    range: checks ? { state: "checking" } : { state: "none" },
+    range: checks
+      ? { state: "checking" }
+      : portBlocks
+        ? {
+            state: "warning",
+            warning: `SpoolEase's nozzle range for ${preset.filamentId} won't be updated until the console's port is fixed in Settings`,
+          }
+        : { state: "none" },
     phase: "review",
     results: null,
     spoolease: null,
