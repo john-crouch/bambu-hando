@@ -1171,12 +1171,18 @@ export function modal(model: AddModel): boolean {
 export function commands(model: AddModel, ctx: Ctx): PaletteCommand[] {
   const count = ticked(model, ctx).length;
   return [
-    { title: "Search SpoolmanDB", detail: "Add", msg: addMsg({ type: "add/openSearch" }) },
+    {
+      title: "Search SpoolmanDB",
+      detail: "Add",
+      keys: "/",
+      msg: addMsg({ type: "add/openSearch" }),
+    },
     ...(count > 0
       ? [
           {
             title: `Review the ${count} ticked`,
             detail: "Add",
+            keys: "→",
             msg: addMsg({ type: "add/review" }),
           },
           { title: "Untick everything", detail: "Add", msg: addMsg({ type: "add/clear" }) },
