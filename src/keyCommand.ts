@@ -104,9 +104,10 @@ async function statusLine(
   env: Record<string, string | undefined>,
 ): Promise<string> {
   const head = `${target.name}  ${target.label}`;
-  const fromEnv = env[target.env]?.trim();
-  if (fromEnv) {
-    // Checked as every command checks it, so status never says a key is in use that they'd refuse.
+  const fromEnv = env[target.env];
+  if (fromEnv?.trim()) {
+    // Checked as every command checks it (untrimmed, as loadSecret does), so status never says a key is in use
+    // that they'd refuse.
     const problem = secretProblem(target, fromEnv);
     const source = problem
       ? `from ${target.env}, but not usable (${problem})`

@@ -200,6 +200,18 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
     );
   });
 
+  it("checks SPOOLEASE_SECURITY_KEY as every command does, untrimmed, without printing it", async () => {
+    // Commands refuse a tab around it (only a trailing line break is dropped): status must not call it usable.
+    vi.stubEnv(CONSOLE.env, "fake_console_key\t");
+    expect((await run(["key", "status", "spoolease"])).stdout).toBe(
+      "spoolease  SpoolEase security key: from SPOOLEASE_SECURITY_KEY, but not usable (the key contains control characters: paste only the key)\n",
+    );
+    vi.stubEnv(CONSOLE.env, " fake console key \n");
+    expect((await run(["key", "status", "spoolease"])).stdout).toBe(
+      "spoolease  SpoolEase security key: from SPOOLEASE_SECURITY_KEY\n",
+    );
+  });
+
   it("says when the stored key isn't usable, without printing it", async () => {
     await storeSecret(TDFP, "3dfp_fake_key\nfor_tests");
     const { code, stdout } = await run(["key", "status", "3dfp"]);
