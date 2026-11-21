@@ -84,6 +84,8 @@ export interface PresetsModel {
   drafts: ReadonlyMap<string, Edits>;
   editor: { preset: UserPreset; model: EditorModel } | null;
   review: ReviewModel | null;
+  /** A deep link's preset path that wasn't listed yet: highlighted once the presets load. */
+  focus: string | undefined;
 }
 
 type OwnMsg =
@@ -138,6 +140,7 @@ export function init(ctx: Ctx, _start: StartOptions): Step<PresetsModel> {
     drafts: new Map(),
     editor: null,
     review: null,
+    focus: undefined,
   };
   const [next, cmds] = normalize(model, presetsIn(ctx.resources.presets));
   return [next, [send<AppMsg>({ type: "app/load", resource: "presets" }), ...cmds]];
@@ -391,6 +394,22 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   ];
 }
 
+/** Back on the list with path listed: the editor left (its draft kept), a filter that hides path cleared. */
+function leaveTo(model: PresetsModel, path: string, presets: UserPreset[]): PresetsModel {
+  const editor = model.review?.phase === "done" ? null : model.editor;
+  return {
+    ...model,
+    view: "list",
+    editor: null,
+    review: null,
+    focus: undefined,
+    drafts: editor ? withDraft(model.drafts, editor.preset.path, editor.model.edits) : model.drafts,
+    filter: presetRows(presets, model.filter.text.value).some((p) => p.path === path)
+      ? model.filter
+      : { text: EMPTY_TEXT, focused: false },
+  };
+}
+
 /** Opens a preset by path from anywhere (the command palette): leaves the editor, keeping its draft. */
 function onOpen(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel> {
   const switchTab: Cmd<AppMsg> = send({ type: "app/switchTab", tab: "presets" });
@@ -398,19 +417,16 @@ function onOpen(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel>
   const presets = presetsIn(ctx.resources.presets);
   const preset = presets.find((p) => p.path === path);
   if (!preset) return [model, [switchTab]];
-  const editor = model.editor;
-  const left: PresetsModel = {
-    ...model,
-    view: "list",
-    editor: null,
-    review: null,
-    drafts: editor ? withDraft(model.drafts, editor.preset.path, editor.model.edits) : model.drafts,
-    filter: presetRows(presets, model.filter.text.value).some((p) => p.path === path)
-      ? model.filter
-      : { text: EMPTY_TEXT, focused: false },
-  };
-  const [opened, cmds] = open(left, preset);
+  const [opened, cmds] = open(leaveTo(model, path, presets), preset);
   return [opened, [switchTab, ...cmds]];
+}
+
+/** A deep link (app/switchTab focus): the list, on that preset; kept for later while presets load. */
+function onFocus(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel> {
+  if (model.review?.phase === "saving") return [model, []];
+  const presets = presetsIn(ctx.resources.presets);
+  if (!presets.some((p) => p.path === path)) return [{ ...model, focus: path }, []];
+  return normalize({ ...leaveTo(model, path, presets), path, opening: undefined }, presets);
 }
 
 export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<PresetsModel> {
@@ -427,10 +443,18 @@ export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Ste
     case "app/loaded": {
       const loaded = msg as Extract<AppMsg, { type: "app/loaded" }>;
       if (loaded.resource !== "presets") return [model, []];
-      return normalize(
-        { ...model, files: new Map() },
-        presetsIn(loaded.result as Resource<PresetsData>),
-      );
+      const listed = presetsIn(loaded.result as Resource<PresetsData>);
+      const focus = model.focus;
+      if (focus && listed.some((p) => p.path === focus))
+        return normalize(
+          { ...leaveTo(model, focus, listed), path: focus, opening: undefined, files: new Map() },
+          listed,
+        );
+      return normalize({ ...model, files: new Map() }, listed);
+    }
+    case "app/switchTab": {
+      const focus = (msg as Extract<AppMsg, { type: "app/switchTab" }>).focus;
+      return focus ? onFocus(model, focus, ctx) : [model, []];
     }
     case "presets/read":
       return onRead(model, own as PresetFileMsg);
@@ -453,6 +477,23 @@ export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Ste
     default:
       return [model, []];
   }
+}
+
+/** What's being written, for the shell's quit guard. */
+export function busy(model: PresetsModel): string | null {
+  const review = model.review;
+  if (review?.phase !== "saving") return null;
+  return `Saving ${plural(review.ticked.size, "preset")} of ${review.preset.name}`;
+}
+
+/** Edits quitting would drop: every draft, the open editor's edits in place of its own draft. */
+export function unsaved(model: PresetsModel): number {
+  const drafts = new Map(model.drafts);
+  const editor = model.review?.phase === "done" ? null : model.editor;
+  if (editor) drafts.set(editor.preset.path, editor.model.edits);
+  let count = 0;
+  for (const edits of drafts.values()) count += edits.size;
+  return count;
 }
 
 export function capturesText(model: PresetsModel): boolean {

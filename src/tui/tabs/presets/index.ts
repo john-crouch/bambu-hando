@@ -2,7 +2,16 @@
 // ABOUTME: The editor (editor.ts, EditorView.tsx) is exported too, for the Add tab's review to embed.
 
 import type { TabModule } from "../../core/types.js";
-import { capturesText, commands, hints, init, type PresetsModel, update } from "./model.js";
+import {
+  busy,
+  capturesText,
+  commands,
+  hints,
+  init,
+  type PresetsModel,
+  unsaved,
+  update,
+} from "./model.js";
 import { PresetsView } from "./View.js";
 
 export const presetsTab: TabModule<PresetsModel> = {
@@ -13,6 +22,8 @@ export const presetsTab: TabModule<PresetsModel> = {
   View: PresetsView,
   hints,
   capturesText,
+  busy,
+  unsaved,
   commands,
 };
 

@@ -14,6 +14,7 @@ import type { AppMsg, Ctx, Resource, Resources, TabMsg } from "../src/tui/core/t
 import type { FormValues } from "../src/tui/core/values.js";
 import { compactDetail, presetDetail, presetRows } from "../src/tui/tabs/presets/detail.js";
 import { ALL_SETTINGS } from "../src/tui/tabs/presets/editor.js";
+import { presetsTab } from "../src/tui/tabs/presets/index.js";
 import {
   capturesText,
   commands,
@@ -710,5 +711,93 @@ describe("hints and modes", () => {
     ).model;
     expect(capturesText(opened)).toBe(true);
     expect(hints(opened, ctx).map((h) => h.keys)).toEqual(["enter", "esc", "↑↓"]);
+  });
+});
+
+describe("contract with the shell", () => {
+  it("says it's busy while saving, so q doesn't quit in the middle", async () => {
+    const ctx = ctxWith();
+    const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
+    expect(presetsTab.busy?.(reviewing)).toBeNull();
+    const [saving, cmds] = update(reviewing, { type: "key", key: press("a") }, ctx);
+    expect(presetsTab.busy?.(saving)).toBe("Saving 2 presets of Acme PLA Red");
+    const { model } = await settle(saving, ctx, cmds);
+    expect(presetsTab.busy?.(model)).toBeNull();
+  });
+
+  it("counts unsaved changes: drafts, plus the editor's own edits while it's open", async () => {
+    const ctx = ctxWith();
+    const started = (await start(ctx)).model;
+    expect(presetsTab.unsaved?.(started)).toBe(0);
+    const edited = (await drive(started, ctx, "enter", "enter", "backspace", "5", "enter")).model;
+    expect(presetsTab.unsaved?.(edited)).toBe(1);
+    const left = (await drive(edited, ctx, "esc")).model;
+    expect(presetsTab.unsaved?.(left)).toBe(1);
+    const both = (await drive(left, ctx, "enter", "down", "enter", "backspace", "0", "enter"))
+      .model;
+    expect(presetsTab.unsaved?.(both)).toBe(2);
+    const reviewing = (await editRange(ctx)).model;
+    expect(presetsTab.unsaved?.(reviewing)).toBe(1);
+    const { model: saved } = await drive(reviewing, ctx, "a", "a");
+    expect(saved.review?.phase).toBe("done");
+    expect(presetsTab.unsaved?.(saved)).toBe(0);
+  });
+
+  it("opens on the preset a deep link names, leaving the editor with its draft kept", async () => {
+    const ctx = ctxWith();
+    const editing = (
+      await drive((await start(ctx)).model, ctx, "enter", "enter", "backspace", "5", "enter")
+    ).model;
+    const { model } = await drive(editing, ctx, {
+      type: "app/switchTab",
+      tab: "presets",
+      focus: presets[1]?.path,
+    } as unknown as TabMsg);
+    expect(model.view).toBe("list");
+    expect(model.path).toBe(presets[1]?.path);
+    expect(model.files.get(presets[1]?.path ?? "")?.state).toBe("ready");
+    expect(model.drafts.get(presets[3]?.path ?? "")?.size).toBe(1);
+  });
+
+  it("clears a filter that hides the deep-linked preset, and waits for presets still loading", async () => {
+    const ctx = ctxWith();
+    const filtered = (await drive((await start(ctx)).model, ctx, "/", "acme", "enter")).model;
+    const { model } = await drive(filtered, ctx, {
+      type: "app/switchTab",
+      tab: "presets",
+      focus: presets[1]?.path,
+    } as unknown as TabMsg);
+    expect(model.filter.text.value).toBe("");
+    expect(model.path).toBe(presets[1]?.path);
+
+    const loading = ctxWith(null);
+    const early = (await start(loading)).model;
+    const waiting = (
+      await drive(early, loading, {
+        type: "app/switchTab",
+        tab: "presets",
+        focus: presets[2]?.path,
+      } as unknown as TabMsg)
+    ).model;
+    const { model: landed } = await drive(waiting, ctx, {
+      type: "app/loaded",
+      resource: "presets",
+      result: ctx.resources.presets,
+    } as unknown as TabMsg);
+    expect(landed.path).toBe(presets[2]?.path);
+  });
+
+  it("ignores a deep link while saving, and a switch without focus changes nothing", async () => {
+    const ctx = ctxWith();
+    const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
+    const [saving] = update(reviewing, { type: "key", key: press("a") }, ctx);
+    const [still] = update(
+      saving,
+      { type: "app/switchTab", tab: "presets", focus: presets[1]?.path },
+      ctx,
+    );
+    expect(still).toBe(saving);
+    const [same] = update(reviewing, { type: "app/switchTab", tab: "presets" }, ctx);
+    expect(same).toBe(reviewing);
   });
 });
