@@ -33,7 +33,8 @@ function presetJson(name: string, printer: string, id: string, colour = "#F1C400
     textured_plate_temp: ["70"],
     hot_plate_temp: ["70"],
     filament_flow_ratio: ["0.95"],
-    filament_max_volumetric_speed: ["12"],
+    filament_extruder_variant: ["Direct Drive Standard", "Direct Drive High Flow"],
+    filament_max_volumetric_speed: ["12", "16"],
     fan_min_speed: ["40"],
     fan_max_speed: ["90"],
     filament_density: ["1.22"],
@@ -175,9 +176,65 @@ describe.each([
     expect(text.match(/Sunlu PETG 2\.0 Vivid Yellow/g)).toHaveLength(1);
     expect(text).toMatch(/OVERTURE ROCK PLA +BBL X1C +no ID/);
     expect(text).toContain("Polymaker PolyLite™ PETG Galaxy Dark Blue With A Lo");
-    expect(text).not.toContain("X1 Carbon");
+    // Printers short in the list (the detail's File row is the file's own name).
+    expect(screen.map((line) => line.split("││")[0]).join("\n")).not.toContain("X1 Carbon");
     expect(text).toMatch(/Nozzle +255°C/);
     expect(text).toMatch(/Printer +X1C 0\.4/);
+  });
+
+  it("says how many presets inherit a system one, which the list leaves to BambuStudio", () => {
+    const inheriting: Ctx = {
+      ...ctx,
+      resources: {
+        ...ctx.resources,
+        presets: {
+          state: "ready",
+          value: { presets: PRESETS, warnings: [], inherited: 25 },
+          at: 0,
+        },
+      },
+    };
+    const screen = lines(start(inheriting), inheriting);
+    expectExact(screen, inheriting);
+    const note = screen.findIndex((line) =>
+      line.includes("25 more inherit a system preset: edit those in BambuStudio"),
+    );
+    expect(note).toBeGreaterThan(0);
+    // The list panel's last line inside, above its bottom border.
+    expect(screen[note + 1]).toMatch(/^╰/);
+  });
+
+  it("shows the preset's file with its name in view, the folder under it when cut", () => {
+    const screen = lines(start(ctx), ctx);
+    expectExact(screen, ctx);
+    const text = screen.join("\n");
+    if (columns < 90) {
+      expect(text).not.toContain("File");
+      return;
+    }
+    // The name whole, over the rows it takes, never cut; the folder fitted to one row.
+    const file = screen.findIndex((line) => line.includes("File "));
+    const words = screen
+      .slice(file, file + 4)
+      .map((line) => (line.split("││")[1] ?? "").replace(/^\s*(File)?\s*|\s*│$/g, ""))
+      .join(" ");
+    expect(words).toContain("OVERTURE PLA Basic @Bambu Lab X1 Carbon 0.4 nozzle.json");
+    expect(text).toMatch(/Folder +~\/.*filament\/base +│/);
+    expect(text).not.toMatch(/Max flow .*…/);
+  });
+
+  it("ends the editor with the preset's file, its name kept", () => {
+    const screen = lines(drive(start(ctx), ctx, "s", "enter"), ctx);
+    expectExact(screen, ctx);
+    const note = screen.at(-2) ?? "";
+    // Without the side panel, the line says what the setting takes instead.
+    if (columns < 100) {
+      expect(note).toContain("Takes whole number, 0–500");
+      return;
+    }
+    expect(note).toMatch(
+      /~\/.*Sunlu PETG 2\.0 Vivid Yellow @Bambu Lab X1 Carbon 0\.4 nozzle\.json/,
+    );
   });
 
   it("picks the printer of a filament with left and right, shown in the detail", () => {
@@ -250,6 +307,27 @@ describe.each([
     expect(lines(stepped, ctx).join("\n")).toMatch(/Nozzle +‹ 256°C ›/);
   });
 
+  it("warns about an unusual temperature under the settings and in the review", () => {
+    const cold = drive(start(ctx), ctx, "s", "enter", "enter", "5", "enter");
+    const screen = lines(cold, ctx);
+    expectExact(screen, ctx);
+    const note = screen.at(-2) ?? "";
+    expect(note).toContain("! 5°C is low for a nozzle (most take 150–350°C)");
+    const review = lines(drive(cold, ctx, "a"), ctx);
+    expectExact(review, ctx);
+    const change = review.findIndex((line) => /Nozzle +255°C → 5°C/.test(line));
+    expect(change).toBeGreaterThan(0);
+    expect(review[change + 1]).toContain("! 5°C is low for a nozzle");
+    expect(review.join("\n")).toContain("150–350°C)");
+  });
+
+  it("gives a value the width it needs, its nozzle types named", () => {
+    const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
+    const screen = lines(flow, ctx);
+    expectExact(screen, ctx);
+    expect(screen.join("\n")).toMatch(/Max volumetric speed +standard 12 · high flow 16 mm³\/s/);
+  });
+
   it("lists every key on All settings, filtered", () => {
     const all = drive(
       start(ctx),
@@ -293,6 +371,39 @@ describe.each([
     expect(warning).toBeLessThan(into);
   });
 
+  it("keeps the review's targets beside their names", () => {
+    const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
+    const row = lines(review, ctx).find((line) => line.includes("the one you edited")) ?? "";
+    expect(row).toMatch(/\[✓\] X1C 0\.4 the one you edited/);
+  });
+
+  it("says once that everything saved, and what to do next", () => {
+    const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
+    const [saving] = presetsTab.update(review, { type: "key", key: press("a") }, ctx);
+    const results = (PRESETS.slice(0, 2) as UserPreset[]).map((p) => ({
+      path: p.path,
+      ok: true,
+      detail: "",
+    }));
+    const [done] = presetsTab.update(
+      saving,
+      {
+        type: "presets/saved",
+        path: results[0]?.path,
+        results,
+        spoolease: null,
+        setupError: false,
+      },
+      ctx,
+    );
+    const screen = lines(done, ctx);
+    expectExact(screen, ctx);
+    const text = screen.join("\n");
+    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
+    expect(text).toContain("Restart BambuStudio to load the change");
+    expect(text).not.toMatch(/presets? saved/);
+  });
+
   it("shows each preset's result once saved", () => {
     const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
     const [saving] = presetsTab.update(review, { type: "key", key: press("a") }, ctx);
@@ -315,10 +426,13 @@ describe.each([
     const screen = lines(done, ctx);
     expectExact(screen, ctx);
     const text = screen.join("\n");
-    expect(screen[0]).toMatch(/^╭ Saved · /);
-    expect(text).toContain("✓ saved");
-    expect(text).toContain("✗ couldn't write it: EACCES");
-    expect(text).toContain("✗ 1 preset saved, 1 failed: restart BambuStudio to load it");
+    expect(screen[0]).toMatch(/^╭ Save changes · /);
+    // Each preset's result right after its name; the line under them says what's next, once.
+    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
+    expect(text).toMatch(/ X1C 0\.6 +✗ couldn't write it: EACCES +same filament ID/);
+    expect(text).not.toContain("[✓]");
+    expect(text).toContain("✗ 1 of 2 presets failed: restart BambuStudio to load the saved one");
+    expect(text.match(/saved/g)).toHaveLength(2);
     expect(text).not.toContain("Close BambuStudio first");
   });
 });
@@ -337,6 +451,35 @@ it("says where to look when the folder has no presets of its own", () => {
   expect(screen.join("\n")).toContain("No filament presets of your own yet");
 });
 
+it("keeps the list's names whole at 60 columns while shorter printers fit beside them", () => {
+  const ctx = ctxFor(60, 20);
+  const long = "OVERTURE PC PROFESSIONAL Transparent";
+  const many: Ctx = {
+    ...ctx,
+    values: { ...ctx.values, presetFolder: "1489686194" },
+    resources: {
+      ...ctx.resources,
+      presets: {
+        state: "ready",
+        value: {
+          presets: [
+            ...PRESETS.slice(0, 4),
+            ...Array.from({ length: 12 }, (_, i) => preset(`${long} ${i}`, X1C_04, `P00000${i}`)),
+          ],
+          warnings: [],
+          inherited: 1,
+        },
+        at: 0,
+      },
+    },
+  };
+  const screen = lines(start(many), many);
+  expectExact(screen, many);
+  expect(screen.join("\n")).toContain(`${long} 0`);
+  expect(screen[0]).not.toContain("…");
+  expect(screen.join("\n")).toContain("1 more inherits a system preset");
+});
+
 it("wraps the review's notes at 60 columns instead of cutting them", () => {
   const ctx = ctxFor(60, 20);
   const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
@@ -346,5 +489,16 @@ it("wraps the review's notes at 60 columns instead of cutting them", () => {
   const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
   expect(words).toContain("it may save its own copy over these presets.");
   expect(words).toContain("uploads the change on its next sync.");
+  expect(screen.join("\n")).not.toContain("…");
+});
+
+it("wraps a change's warning at 60 columns instead of cutting it", () => {
+  const ctx = ctxFor(60, 20);
+  const review = drive(start(ctx), ctx, "s", "enter", "enter", "5", "enter", "a");
+  const screen = lines(review, ctx);
+  expectExact(screen, ctx);
+  const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+  expect(words).toContain("5°C is low for a nozzle (most take 150–350°C)");
+  expect(screen.some((line) => line.includes("! 5°C is low"))).toBe(true);
   expect(screen.join("\n")).not.toContain("…");
 });

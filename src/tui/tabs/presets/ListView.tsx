@@ -5,11 +5,10 @@ import { basename, dirname } from "node:path";
 
 import { Box } from "ink";
 
-import { tildePath } from "../../../paths.js";
 import { type Preset, presetFamily } from "../../../presetEdit.js";
 import type { UserPreset } from "../../../syncCheck.js";
 import type { Ctx } from "../../core/types.js";
-import { plural } from "../../ui/format.js";
+import { fitPath, plural } from "../../ui/format.js";
 import {
   Busy,
   Detail,
@@ -41,6 +40,7 @@ import {
   printerLabel,
   printersText,
   statusCells,
+  wrapDetailRows,
 } from "./detail.js";
 import { type FileState, type PresetsModel, visibleGroups } from "./model.js";
 
@@ -58,31 +58,49 @@ function presetsOf(ctx: Ctx): { presets: UserPreset[]; warnings: string[] } {
   return { presets: [], warnings: [] };
 }
 
+/** How many presets readUserPresets left out for inheriting a system preset. */
+function inheritedOf(ctx: Ctx): number {
+  const resource = ctx.resources.presets;
+  if (resource.state === "ready") return resource.value.inherited ?? 0;
+  if (resource.state === "loading" || resource.state === "failed")
+    return resource.previous?.inherited ?? 0;
+  return 0;
+}
+
 /** What a group's row says: its name, printers, whether it has unsaved edits, and its filament ID. */
 function groupCells(model: PresetsModel, group: PresetGroup): ListCells {
   return {
     name: group.name,
-    printers: printersText(group.presets.map((p) => p.printer)),
+    printers: group.presets.map((p) => p.printer),
     edited: group.presets.some((p) => model.drafts.has(p.path)),
     id: group.presets[0]?.filamentId ?? "",
   };
 }
 
-function listRows(model: PresetsModel, groups: PresetGroup[], width: number): ListRow[] {
+function listRows(
+  model: PresetsModel,
+  groups: PresetGroup[],
+  width: number,
+  scrolls: boolean,
+): ListRow[] {
   const cells = groups.map((group) => groupCells(model, group));
-  const widths = listColumns(width, cells);
+  const widths = listColumns(width, cells, scrolls);
   return groups.map((group, index) => {
     const row = cells[index] as ListCells;
     const { status, id } = statusCells(row, widths);
-    const printers = printersText(
-      group.presets.map((p) => p.printer),
-      widths.printers,
-    );
     return {
       key: group.key,
       cells: [
-        { text: row.name, grow: true },
-        ...(widths.printers ? [{ text: printers, width: widths.printers, dim: true }] : []),
+        { text: row.name, width: widths.name },
+        ...(widths.printers
+          ? [
+              {
+                text: printersText(row.printers, widths.printers),
+                width: widths.printers,
+                dim: true,
+              },
+            ]
+          : []),
         ...(widths.status ? [{ text: status, width: widths.status, color: COLORS.warning }] : []),
         ...(widths.id
           ? [
@@ -94,6 +112,24 @@ function listRows(model: PresetsModel, groups: PresetGroup[], width: number): Li
       ],
     };
   });
+}
+
+/** The first of the texts that fits width columns, else the last. */
+function firstFitting(texts: string[], width: number): string {
+  return texts.find((text) => textWidth(text) <= width) ?? (texts.at(-1) as string);
+}
+
+/** The list's subtitle: counts and folder, the folder dropped before anything is cut. */
+function listSubtitle(filaments: number, presets: number, folder: string, room: number): string {
+  const counts = `${plural(filaments, "filament")}${filaments === presets ? "" : ` (${plural(presets, "preset")})`}`;
+  return firstFitting([`${counts} in folder ${folder}`, counts], room);
+}
+
+/** Says how many presets the list leaves out for inheriting a system one, and where they're edited. */
+function inheritedNote(count: number, width: number): string {
+  const one = count === 1;
+  const more = `${count} more ${one ? "inherits" : "inherit"} a system preset`;
+  return firstFitting([`${more}: edit ${one ? "it" : "those"} in BambuStudio`, more], width);
 }
 
 function FilterLine({ model, width }: { model: PresetsModel; width: number }) {
@@ -135,14 +171,24 @@ function PresetList({
   const inner = panelInner(width, height);
   const filtering = model.filter.focused || model.filter.text.value !== "";
   const shownWarnings = warnings.slice(0, 2);
+  const inherited = inheritedOf(ctx);
   const listHeight = Math.max(
     1,
-    inner.height - (filtering ? 2 : 0) - (shownWarnings.length ? shownWarnings.length + 1 : 0),
+    inner.height -
+      (filtering ? 2 : 0) -
+      (shownWarnings.length ? shownWarnings.length + 1 : 0) -
+      (inherited ? 1 : 0),
   );
   const filaments = presetGroups(presets, "").length;
+  // The top border holds "╭ Presets · ", the subtitle and " ─╮".
   const subtitle = model.filter.text.value
     ? `${groups.length} of ${filaments}`
-    : `${plural(filaments, "filament")}${filaments === presets.length ? "" : ` (${plural(presets.length, "preset")})`} in folder ${ctx.values.presetFolder.trim() || "default"}`;
+    : listSubtitle(
+        filaments,
+        presets.length,
+        ctx.values.presetFolder.trim() || "default",
+        width - 15,
+      );
   return (
     <Panel
       title="Presets"
@@ -163,37 +209,40 @@ function PresetList({
       {filtering ? <FilterLine model={model} width={inner.width} /> : null}
       {filtering ? <Line segments={[]} width={inner.width} /> : null}
       {groups.length === 0 ? (
-        <Line
-          segments={[{ text: " No preset has every word of the filter", color: COLORS.muted }]}
-          width={inner.width}
-        />
+        <Box flexDirection="column" height={listHeight} flexShrink={0}>
+          <Line
+            segments={[{ text: " No preset has every word of the filter", color: COLORS.muted }]}
+            width={inner.width}
+          />
+        </Box>
       ) : (
-        <List
-          rows={listRows(model, groups, inner.width)}
-          cursor={cursor}
-          height={listHeight}
-          width={inner.width}
-          highlight={model.filter.text.value}
-          focused={!model.filter.focused}
-        />
+        // Its own height, so a note under it sits on the panel's last line.
+        <Box flexDirection="column" height={listHeight} flexShrink={0}>
+          <List
+            rows={listRows(model, groups, inner.width, groups.length > listHeight)}
+            cursor={cursor}
+            height={listHeight}
+            width={inner.width}
+            highlight={model.filter.text.value}
+            focused={!model.filter.focused}
+          />
+        </Box>
       )}
+      {inherited ? (
+        <Line
+          segments={[
+            { text: ` ${inheritedNote(inherited, inner.width - 2)}`, color: COLORS.muted },
+          ]}
+          width={inner.width}
+        />
+      ) : null}
     </Panel>
   );
 }
 
-/** Stands in for the folder until the value's width is known: it's cut from the left, keeping its end. */
+/** Stand in for the file and its folder until the value column's width is known. */
+const FILE = "\u0000file";
 const FOLDER = "\u0000folder";
-
-/** The text cut from the left to width columns, starting with … when cut. */
-function truncateStart(text: string, width: number): string {
-  if (textWidth(text) <= width) return text;
-  let out = "";
-  for (const char of [...text].reverse()) {
-    if (textWidth(`…${char}${out}`) > width) break;
-    out = char + out;
-  }
-  return `…${out}`;
-}
 
 /** The preset's printer; with ‹ › and its place when ←→ pick among the row's printers. */
 function printerRow(preset: UserPreset, group: PresetGroup | undefined): DetailRow {
@@ -212,6 +261,8 @@ function detailRows(
   others: UserPreset[],
   drafted: number,
   compact: boolean,
+  /** The compact detail's value column, so a long line can split. */
+  valueWidth: number,
 ): DetailRow[] {
   const id: DetailRow = preset.filamentId
     ? { label: "Filament ID", value: preset.filamentId, dim: true }
@@ -232,7 +283,7 @@ function detailRows(
       ...draft,
       printerRow(preset, group),
       id,
-      ...compactDetail(file),
+      ...compactDetail(file, valueWidth),
       ...(others.length
         ? [{ label: "Same ID", value: others.map((p) => presetTitle(p)).join(", ") }]
         : []),
@@ -246,7 +297,7 @@ function detailRows(
     { label: "", value: "" },
     ...presetDetail(file).rows,
     { label: "", value: "" },
-    { label: "File", value: basename(preset.path), dim: true },
+    { label: "File", value: FILE, dim: true },
     { label: "Folder", value: FOLDER, dim: true },
     ...shared,
   ];
@@ -299,14 +350,21 @@ function PresetDetail({
       </Panel>
     );
   const swatch = presetDetail(file.preset).swatch;
-  const listed = detailRows(preset, file.preset, group, others, drafted, compact);
+  // The compact detail: the swatch chip, a margin, 11 columns of labels, a gap and a margin.
+  const compactValues = inner.width - (swatch ? 4 : 0) - 1 - 11 - 2 - 1;
+  const listed = detailRows(preset, file.preset, group, others, drafted, compact, compactValues);
   // Detail's value column: what's left of the inside after a margin, the labels, a gap and a margin.
   const valueRoom = inner.width - 1 - labelColumn(listed) - 2 - 1;
-  const rows = listed.map((row) =>
-    row.value === FOLDER
-      ? { ...row, value: truncateStart(tildePath(dirname(preset.path)), valueRoom) }
-      : row,
-  );
+  // The whole path when it fits; else the file's name, whole over as many rows as it takes, and its folder.
+  const whole = fitPath(preset.path, valueRoom) === fitPath(preset.path, Infinity);
+  const placed = listed.flatMap((row) => {
+    if (row.value === FILE)
+      return [{ ...row, value: whole ? fitPath(preset.path, valueRoom) : basename(preset.path) }];
+    if (row.value === FOLDER)
+      return whole ? [] : [{ ...row, value: fitPath(dirname(preset.path), valueRoom) }];
+    return [row];
+  });
+  const rows = compact ? placed : wrapDetailRows(placed, valueRoom);
   const chip: Segment[] = swatch
     ? [{ text: " " }, { text: "  ", backgroundColor: swatch }, { text: " " }]
     : [];

@@ -101,42 +101,66 @@ export function presetGroups(presets: readonly UserPreset[], filter: string): Pr
 /** What a list row shows, for sizing its columns. */
 export interface ListCells {
   name: string;
-  printers: string;
+  /** BambuStudio's names of the row's printers. */
+  printers: readonly string[];
   /** A preset of the row has unsaved edits. */
   edited: boolean;
   /** "" when the row's presets have none. */
   id: string;
 }
 
-/** Columns of a list row's gutter mark and scroll thumb. */
-const ROW_EDGES = 2;
-const MIN_PRINTERS = 7;
+/** The columns of a row's cells. */
+export interface ListWidths {
+  name: number;
+  printers: number;
+  status: number;
+  id: number;
+}
+
+/** The gutter mark and the scroll thumb's column; a scrolling list keeps one more free before the thumb. */
+function rowEdges(scrolls: boolean): number {
+  return scrolls ? 3 : 2;
+}
+
 const NO_ID = "no ID";
 const EDITED = "edited";
 
+/** printersText's forms, longest first, as narrow as their widest row: the widths the column can take. */
+const PRINTER_FORMS = [Infinity, 11, 7];
+
 /**
- * Column widths for the list's rows in width columns, the name taking the rest: every column when the
- * names fit, else the ID goes first, then the printers shrink (to "X1C 0.4", "X1C ×2"). The ID column says "no ID"
- * where there's none; status says "edited", and "no ID" too once the IDs are gone; it shows only when a
- * row has something to say there.
+ * Column widths for the list's rows in width columns: the name gets its widest, with every other column
+ * when that fits; else the ID goes first, then the printers take a shorter form ("X1C 0.4/0.6", "X1C ×2"),
+ * and only then is a name cut. The ID column says "no ID" where there's none; status says "edited", and
+ * "no ID" too once the IDs are gone; it shows only when a row has something to say there. Each column is
+ * as wide as its widest value, so a short printer sits next to its name.
  */
 export function listColumns(
   width: number,
   rows: readonly ListCells[],
-): { printers: number; status: number; id: number } {
-  const cells = Math.max(0, width - ROW_EDGES);
+  scrolls = false,
+): ListWidths {
+  const cells = Math.max(0, width - rowEdges(scrolls));
   const name = Math.max(0, ...rows.map((r) => textWidth(r.name)));
-  const printers = Math.max(0, ...rows.map((r) => textWidth(r.printers)));
+  const printersAt = (form: number) =>
+    Math.max(0, ...rows.map((r) => textWidth(printersText(r.printers, form))));
   const id = Math.min(10, Math.max(0, ...rows.map((r) => textWidth(r.id || NO_ID))));
   const edited = rows.some((r) => r.edited) ? EDITED.length : 0;
-  const noId = rows.some((r) => !r.id) ? EDITED.length : 0;
+  const noId = rows.some((r) => !r.id) ? NO_ID.length : 0;
   const room = (n: number) => (n > 0 ? n + 1 : 0);
-  if (name + room(printers) + room(edited) + room(id) <= cells)
-    return { printers, status: edited, id };
-  const status = Math.max(edited, noId);
-  if (name + room(printers) + room(status) <= cells) return { printers, status, id: 0 };
-  const left = cells - name - room(status) - 1;
-  return { printers: Math.min(printers, Math.max(MIN_PRINTERS, left)), status, id: 0 };
+  const plans: Omit<ListWidths, "name">[] = [
+    { printers: printersAt(Infinity), status: edited, id },
+    ...PRINTER_FORMS.map((form) => ({
+      printers: printersAt(form),
+      status: Math.max(edited, noId),
+      id: 0,
+    })),
+  ];
+  for (const plan of plans)
+    if (name + room(plan.printers) + room(plan.status) + room(plan.id) <= cells)
+      return { name, ...plan };
+  const last = plans.at(-1) as Omit<ListWidths, "name">;
+  return { name: Math.max(1, cells - room(last.printers) - room(last.status)), ...last };
 }
 
 /** A row's status and ID cells as listColumns sized them. */
@@ -165,9 +189,29 @@ function values(value: unknown): string[] {
   return [...new Set(list.filter((v): v is string => typeof v === "string" && v !== ""))];
 }
 
+/** "Direct Drive High Flow" → "high flow": the nozzle type a variant is for, as BambuStudio names it. */
+function variantName(name: string): string {
+  return name.replace(/^Direct Drive /, "").toLowerCase();
+}
+
+/**
+ * A setting with its unit: "220°C"; variants that differ each tagged with their nozzle type when the
+ * preset names them ("standard 22 · high flow 29 mm³/s"), else "220 / 230°C".
+ */
 function shown(preset: Preset, key: string, unit = ""): string {
   const list = values(preset[key]);
-  return list.length ? `${list.join(" / ")}${unit}` : "";
+  if (list.length === 0) return "";
+  const each = preset[key];
+  const names = preset.filament_extruder_variant;
+  if (
+    list.length > 1 &&
+    Array.isArray(each) &&
+    Array.isArray(names) &&
+    names.length === each.length &&
+    names.every((n) => typeof n === "string" && n)
+  )
+    return `${each.map((value, index) => `${variantName(names[index] as string)} ${value}`).join(" · ")}${unit}`;
+  return `${list.join(" / ")}${unit}`;
 }
 
 function swatchOf(preset: Preset): string | undefined {
@@ -178,9 +222,9 @@ function swatchOf(preset: Preset): string | undefined {
   return undefined;
 }
 
-/** "25 money/kg", BambuStudio's own unit for its Price (in whatever currency); "" for 0, "no price given". */
-function pricePerKg(preset: Preset): string {
-  return shown(preset, "filament_cost") === "0" ? "" : shown(preset, "filament_cost", " money/kg");
+/** "25 per kg", in whatever currency BambuStudio is set to; "" for 0, "no cost given". */
+function costPerKg(preset: Preset): string {
+  return shown(preset, "filament_cost") === "0" ? "" : shown(preset, "filament_cost", " per kg");
 }
 
 /** "30–80%": the part cooling fan's range, or the one end the preset sets. */
@@ -218,7 +262,7 @@ export function presetDetail(preset: Preset): PresetDetail {
   add("Max flow", shown(preset, "filament_max_volumetric_speed", " mm³/s"));
   add("Fan", fanRange(preset));
   add("Density", shown(preset, "filament_density", " g/cm³"));
-  add("Price", pricePerKg(preset));
+  add("Cost", costPerKg(preset));
   const swatch = swatchOf(preset);
   return swatch ? { swatch, rows } : { rows };
 }
@@ -230,8 +274,25 @@ const SHORT_PLATES: Record<string, string> = {
   eng_plate_temp: "Engineering",
 };
 
-/** The same settings in at most four lines, for a detail panel under the list on a narrow terminal. */
-export function compactDetail(preset: Preset): DetailRow[] {
+/** Flow ratio, max flow and fan in one line when it fits width, else max flow on a line of its own. */
+function flowRows(preset: Preset, fan: string, width: number): DetailRow[] {
+  const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
+  const ratio = shown(preset, "filament_flow_ratio");
+  const max = shown(preset, "filament_max_volumetric_speed", " mm³/s");
+  const tagged = (tag: string, value: string) => (value ? `${tag} ${value}` : "");
+  const one = join(tagged("ratio", ratio), tagged("max", max), tagged("fan", fan));
+  if (textWidth(one) <= width || !max) return [{ label: "Flow", value: one }];
+  return [
+    { label: "Flow", value: join(tagged("ratio", ratio), tagged("fan", fan)) },
+    { label: "Max flow", value: max },
+  ];
+}
+
+/**
+ * The same settings in four lines, for a detail panel under the list on a narrow terminal; given the
+ * value column's width, a Flow line too long for it puts the max flow on a line of its own.
+ */
+export function compactDetail(preset: Preset, width = Infinity): DetailRow[] {
   const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
   const tagged = (tag: string, value: string) => (value ? `${tag} ${value}` : "");
   const low = shown(preset, "nozzle_temperature_range_low");
@@ -257,18 +318,59 @@ export function compactDetail(preset: Preset): DetailRow[] {
         }),
       ),
     },
-    {
-      label: "Flow",
-      value: join(
-        tagged("ratio", shown(preset, "filament_flow_ratio")),
-        tagged("max", shown(preset, "filament_max_volumetric_speed", " mm³/s")),
-        tagged("fan", fan),
-      ),
-    },
+    ...flowRows(preset, fan, width),
     {
       label: "Filament",
-      value: join(shown(preset, "filament_density", " g/cm³"), tagged("price", pricePerKg(preset))),
+      value: join(shown(preset, "filament_density", " g/cm³"), tagged("cost", costPerKg(preset))),
     },
   ];
   return rows.filter((row) => row.value);
+}
+
+/** Words packed into lines of at most width columns (a word longer than that keeps a line of its own). */
+function packWords(words: readonly string[], width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && textWidth(next) > width) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  return line ? [...lines, line] : lines;
+}
+
+/** A value in lines of at most width columns: broken after a " · " where it can be, else between words. */
+function wrapValue(value: string, width: number): string[] {
+  const pieces = value
+    .split(" · ")
+    .map((piece, index, all) => (index < all.length - 1 ? `${piece} ·` : piece));
+  const lines: string[] = [];
+  let line = "";
+  for (const piece of pieces) {
+    const next = line ? `${line} ${piece}` : piece;
+    if (textWidth(next) <= width) {
+      line = next;
+      continue;
+    }
+    if (line) lines.push(line);
+    if (textWidth(piece) <= width) line = piece;
+    else {
+      const words = packWords(piece.split(" "), width);
+      lines.push(...words.slice(0, -1));
+      line = words.at(-1) ?? "";
+    }
+  }
+  return line ? [...lines, line] : lines;
+}
+
+/** Rows whose values are too long for width columns go on over rows without a label, never cut. */
+export function wrapDetailRows<R extends DetailRow>(rows: readonly R[], width: number): R[] {
+  return rows.flatMap((row) => {
+    if (textWidth(row.value) <= width) return [row];
+    return wrapValue(row.value, width).map((value, index) =>
+      index === 0 ? { ...row, value } : { ...row, label: "", value },
+    );
+  });
 }
