@@ -1,5 +1,5 @@
-// ABOUTME: The command palette (ctrl+k): a fuzzy filter over every tab's commands and the shell's own; enter runs one.
-// ABOUTME: fuzzyMatch and paletteInput are pure; the view only draws the query line and the ranked list.
+// ABOUTME: The command palette (ctrl+k): every tab's commands and the shell's own, ranked word prefix → initials → loose.
+// ABOUTME: paletteMatch, paletteInput and the row layout are pure; the view draws the query line and the ranked list.
 
 import { Box } from "ink";
 
@@ -10,6 +10,7 @@ import {
   Dialog,
   dialogInner,
   dialogWidth,
+  fitText,
   Line,
   listWindow,
   type Segment,
@@ -28,6 +29,14 @@ export interface Match {
   score: number;
   /** Indexes into the text of the matched characters, for highlighting. */
   hits: number[];
+}
+
+/** The groups of the shell's own commands, in the same title case as the tabs' names. */
+export const SHELL_GROUPS = { tab: "Tab", data: "Data", app: "App" } as const;
+
+/** How well a query matches: 0 starts words, 1 is initials, 2 is loose; lower ranks first. */
+export interface RankedMatch extends Match {
+  tier: 0 | 1 | 2;
 }
 
 const WORD_START = /[\s\-_/.·:(]/;
@@ -80,12 +89,71 @@ export function fuzzyMatch(query: string, text: string): Match | null {
   return { score: score - text.length * 0.05, hits };
 }
 
+/** Where each word of the text starts. */
+function wordStarts(text: string): number[] {
+  const starts: number[] = [];
+  for (let i = 0; i < text.length; i++)
+    if (!/\s/.test(text[i] as string) && (i === 0 || WORD_START.test(text[i - 1] as string)))
+      starts.push(i);
+  return starts;
+}
+
+/** Each query word starts a word of the text, in order ("go sp" in "Go to Spools"); null when not. */
+function prefixMatch(
+  words: readonly string[],
+  haystack: string,
+  starts: readonly number[],
+): Match | null {
+  const hits: number[] = [];
+  let word = 0;
+  for (const query of words) {
+    while (word < starts.length && !haystack.startsWith(query, starts[word] as number)) word++;
+    const at = starts[word];
+    if (at === undefined) return null;
+    for (let i = 0; i < query.length; i++) hits.push(at + i);
+    word++;
+  }
+  // The shorter the title, the more of it the query says: "Go to Spools" before "Reload spools from…".
+  return { score: -haystack.length, hits };
+}
+
+/** The query's characters are initials of the text's words, in order ("ssp" in "Show sync problems"). */
+function initialsMatch(needle: string, haystack: string, starts: readonly number[]): Match | null {
+  const hits: number[] = [];
+  let word = 0;
+  for (const char of needle) {
+    while (word < starts.length && haystack[starts[word] as number] !== char) word++;
+    const at = starts[word];
+    if (at === undefined) return null;
+    hits.push(at);
+    word++;
+  }
+  return { score: -haystack.length, hits };
+}
+
+/** How the query matches a title, ignoring case: by word prefixes, else initials, else loosely; null when not at all. */
+export function paletteMatch(query: string, title: string): RankedMatch | null {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { tier: 2, score: 0, hits: [] };
+  const haystack = title.toLowerCase();
+  const starts = wordStarts(haystack);
+  const prefix = prefixMatch(words, haystack, starts);
+  if (prefix) return { tier: 0, ...prefix };
+  const initials = initialsMatch(words.join(""), haystack, starts);
+  if (initials) return { tier: 1, ...initials };
+  const loose = fuzzyMatch(query, title);
+  return loose ? { tier: 2, ...loose } : null;
+}
+
 /** The items the query keeps, best first; ties keep the palette's order. */
 export function paletteRows(model: PaletteModel): { item: PaletteItem; hits: number[] }[] {
   const ranked = model.items
-    .map((item, index) => ({ item, index, match: fuzzyMatch(model.query, item.title) }))
-    .filter((row): row is typeof row & { match: Match } => row.match !== null);
-  if (model.query.trim()) ranked.sort((a, b) => b.match.score - a.match.score || a.index - b.index);
+    .map((item, index) => ({ item, index, match: paletteMatch(model.query, item.title) }))
+    .filter((row): row is typeof row & { match: RankedMatch } => row.match !== null);
+  if (model.query.trim())
+    ranked.sort(
+      (a, b) => a.match.tier - b.match.tier || b.match.score - a.match.score || a.index - b.index,
+    );
   return ranked.map((row) => ({ item: row.item, hits: row.match.hits }));
 }
 
@@ -148,22 +216,49 @@ export function titleSegments(text: string, hits: readonly number[], selected: b
   return out;
 }
 
-/** One palette row of exactly width columns: gutter mark, title (cut with …), detail at the right. */
+/** The group and shortcut columns' widths, from every item, so they line up whatever the query keeps. */
+export interface PaletteLayout {
+  detail: number;
+  keys: number;
+}
+
+export function paletteLayout(items: readonly PaletteItem[]): PaletteLayout {
+  const widest = (texts: (string | undefined)[]) =>
+    Math.max(0, ...texts.map((text) => textWidth(text ?? "")));
+  return {
+    detail: widest(items.map((item) => item.detail)),
+    keys: widest(items.map((item) => item.keys)),
+  };
+}
+
+/** Columns between the title, group and shortcut columns. */
+const COLUMN_GAP = 2;
+
+/**
+ * One palette row of exactly width columns: gutter mark, title (cut with …), the group, and the
+ * shortcut right-aligned at the end.
+ */
 export function rowSegments(
   item: PaletteItem,
   hits: readonly number[],
   selected: boolean,
   width: number,
+  layout: PaletteLayout = paletteLayout([item]),
 ): Segment[] {
   const fill: Omit<Segment, "text"> = selected ? { backgroundColor: COLORS.selection } : {};
   const paint = (segments: Segment[]): Segment[] => segments.map((seg) => ({ ...fill, ...seg }));
-  const detail = item.detail ?? "";
-  const detailWidth = detail ? textWidth(detail) + 1 : 0;
-  const titleWidth = Math.max(1, width - 2 - detailWidth);
+  const detailWidth = layout.detail > 0 ? layout.detail + COLUMN_GAP : 0;
+  const keysWidth = layout.keys > 0 ? layout.keys + 1 : 0;
+  const titleWidth = Math.max(1, width - 2 - detailWidth - keysWidth);
   return paint([
     { text: selected ? "▌ " : "  ", color: COLORS.accent },
     ...padSegments(titleSegments(item.title, hits, selected), titleWidth, fill),
-    ...(detail ? [{ text: ` ${detail}`, color: COLORS.muted }] : []),
+    ...(detailWidth > 0
+      ? [{ text: fitText(`  ${item.detail ?? ""}`, detailWidth), color: COLORS.muted }]
+      : []),
+    ...(keysWidth > 0
+      ? [{ text: fitText(item.keys ?? "", keysWidth, "right"), color: COLORS.accent2, bold: true }]
+      : []),
   ]);
 }
 
@@ -192,6 +287,7 @@ function PaletteView({ model, ctx }: { model: PaletteModel; ctx: Ctx }) {
   const rows = paletteRows(model);
   const { start, end } = listWindow(model.cursor, rows.length, height);
   const shown = rows.slice(start, end);
+  const layout = paletteLayout(model.items);
   return (
     <Dialog title="Commands" width={width}>
       <Line segments={queryLine(model, rows.length, inner)} width={inner} />
@@ -205,7 +301,13 @@ function PaletteView({ model, ctx }: { model: PaletteModel; ctx: Ctx }) {
           shown.map((row, index) => (
             <Line
               key={`${row.item.detail ?? ""}:${row.item.title}`}
-              segments={rowSegments(row.item, row.hits, start + index === model.cursor, inner)}
+              segments={rowSegments(
+                row.item,
+                row.hits,
+                start + index === model.cursor,
+                inner,
+                layout,
+              )}
               width={inner}
             />
           ))

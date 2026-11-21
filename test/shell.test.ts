@@ -2,7 +2,7 @@
 // ABOUTME: Drives createShell with recording fake tabs and injected loaders, so no terminal or network is involved.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-
+import type { PaletteItem } from "../src/tui/app/messages.js";
 import type { AnyLabels, AnyTab } from "../src/tui/app/registry.js";
 import type { Loaders } from "../src/tui/app/resources.js";
 import {
@@ -76,7 +76,7 @@ function fakeTab(id: TabId): AnyTab {
     modal: (model: FakeModel) => model.dialog === true,
     unsaved: (model: FakeModel) => model.edits ?? 0,
     commands: () => [
-      { title: `${id} thing`, msg: { type: "tab", tab: id, msg: { type: "thing" } } },
+      { title: `${id} thing`, keys: "z", msg: { type: "tab", tab: id, msg: { type: "thing" } } },
     ],
   };
 }
@@ -432,6 +432,18 @@ describe("overlays", () => {
     model = await drive(shell, model, key("esc"));
     expect(model.overlay).toBeNull();
     expect(seen(model, "spools")).toEqual([]);
+  });
+
+  it("palette lists commands under title-case groups with their shortcuts", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("k", { ctrl: true }));
+    const items = (model.overlay?.model as { items: PaletteItem[] }).items;
+    const find = (title: string) => items.find((i) => i.title === title);
+    expect(find("spools thing")).toMatchObject({ detail: "Spools", keys: "z" });
+    expect(find("Go to Add")).toMatchObject({ detail: "Tab" });
+    expect(find("Reload BambuStudio presets")).toMatchObject({ detail: "Data" });
+    expect(find("Help")).toMatchObject({ detail: "App", keys: "?" });
+    expect(find("Quit")).toMatchObject({ detail: "App", keys: "q" });
   });
 
   it("palette runs a tab's command on that tab, switching to it", async () => {

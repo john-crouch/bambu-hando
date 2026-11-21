@@ -30,7 +30,10 @@ export interface ShellOverlay<M, Req> {
 /** A command palette entry; tab, when set, is shown first, so a tab's command runs where its result shows. */
 export interface PaletteItem {
   title: string;
+  /** The group, dim: the tab's title, or the shell's own (SHELL_GROUPS). */
   detail?: string;
+  /** The shortcut that does the same, at the row's right end. */
+  keys?: string;
   msg: ShellMsg;
   tab?: TabId;
 }

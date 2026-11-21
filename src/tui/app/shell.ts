@@ -26,7 +26,7 @@ import { frameBody, type HeaderTab } from "../ui/index.js";
 import { CONFIRM, type ShellConfirmRequest } from "./confirm.js";
 import { HELP, type HelpRequest } from "./help.js";
 import type { PaletteItem, ShellMsg, ShellOverlay } from "./messages.js";
-import { PALETTE } from "./palette.js";
+import { PALETTE, SHELL_GROUPS } from "./palette.js";
 import type { AnyLabels, AnyTab } from "./registry.js";
 import { affectedResources, consoleConfigured, type Loaders, reloading } from "./resources.js";
 
@@ -188,6 +188,7 @@ export function createShell(deps: ShellDeps) {
       (tab(model, id).commands?.(model.tabs[id], c) ?? []).map((command) => ({
         title: command.title,
         detail: command.detail ?? tab(model, id).title,
+        ...(command.keys ? { keys: command.keys } : {}),
         msg: command.msg,
         tab: id,
       }));
@@ -196,7 +197,7 @@ export function createShell(deps: ShellDeps) {
       ...TAB_ORDER.map(
         (id): PaletteItem => ({
           title: `Go to ${tab(model, id).title}`,
-          detail: "tab",
+          detail: SHELL_GROUPS.tab,
           msg: { type: "app/switchTab", tab: id },
         }),
       ),
@@ -206,12 +207,12 @@ export function createShell(deps: ShellDeps) {
         .map(
           (id): PaletteItem => ({
             title: RESOURCE_TITLES[id],
-            detail: "data",
+            detail: SHELL_GROUPS.data,
             msg: { type: "app/load", resource: id, force: true },
           }),
         ),
-      { title: "Help", detail: "?", msg: { type: "shell/help" } },
-      { title: "Quit", detail: "q", msg: { type: "app/quit" } },
+      { title: "Help", detail: SHELL_GROUPS.app, keys: "?", msg: { type: "shell/help" } },
+      { title: "Quit", detail: SHELL_GROUPS.app, keys: "q", msg: { type: "app/quit" } },
     ];
   }
 

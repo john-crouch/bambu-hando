@@ -63,6 +63,8 @@ export interface PaletteCommand {
   title: string;
   /** Shown dim after the title, e.g. the tab it's in. */
   detail?: string;
+  /** The key that does the same where it works ("b", "ctrl+k"), shown at the row's right end. */
+  keys?: string;
   msg: AppMsg;
 }
 

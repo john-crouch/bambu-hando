@@ -19,7 +19,10 @@ import {
   PALETTE,
   type PaletteModel,
   paletteInput,
+  paletteLayout,
   paletteRows,
+  rowSegments,
+  SHELL_GROUPS,
 } from "../src/tui/app/palette.js";
 import { press } from "../src/tui/core/keys.js";
 import type { Cmd } from "../src/tui/core/program.js";
@@ -71,6 +74,35 @@ describe("fuzzyMatch", () => {
       "Go to Spools",
       "Reload SpoolmanDB catalog",
     ]);
+  });
+
+  it("ranks word-prefix matches first, then initials, then loose matches", () => {
+    const model: PaletteModel = {
+      items: [
+        item("Scan a barcode"),
+        item("Show sync problems"),
+        item("Go to Spools"),
+        item("Reload spools from the console"),
+      ],
+      query: "sp",
+      cursor: 0,
+    };
+    const titles = () => paletteRows(model).map((r) => r.item.title);
+    // "sp" starts a word in both Spools rows; Show sync problems only has it as initials.
+    expect(titles()).toEqual([
+      "Go to Spools",
+      "Reload spools from the console",
+      "Show sync problems",
+    ]);
+    model.query = "ssp";
+    expect(titles()[0]).toBe("Show sync problems");
+    model.query = "go sp";
+    expect(titles()).toEqual(["Go to Spools"]);
+    model.query = "barc";
+    expect(paletteRows(model)[0]).toEqual({ item: model.items[0], hits: [7, 8, 9, 10] });
+    // Loose: characters in order anywhere, after every better kind of match.
+    model.query = "cn";
+    expect(titles().sort()).toEqual(["Reload spools from the console", "Scan a barcode"]);
   });
 
   it("keeps the palette's order without a query", () => {
@@ -139,6 +171,29 @@ describe("paletteInput", () => {
     const [m] = PALETTE.init([], ctx());
     const [next] = PALETTE.update(m, { type: "paste", text: "go\nto" }, ctx());
     expect(next.query).toBe("go to");
+  });
+});
+
+describe("palette rows", () => {
+  it("draws the title, the group and the shortcut in aligned columns, the key at the right end", () => {
+    const items = [
+      item("Scan a barcode", { detail: "Spools", keys: "b" }),
+      item("Go to Add", { detail: "Tab" }),
+      item("Command palette", { detail: "App", keys: "ctrl+k" }),
+    ];
+    const layout = paletteLayout(items);
+    const text = (index: number) =>
+      rowSegments(items[index] as PaletteItem, [], false, 40, layout)
+        .map((s) => s.text)
+        .join("");
+    expect(text(0)).toBe("  Scan a barcode           Spools      b");
+    expect(text(1)).toBe("  Go to Add                Tab          ");
+    expect(text(2)).toBe("  Command palette          App    ctrl+k");
+    for (const index of [0, 1, 2]) expect(text(index)).toHaveLength(40);
+  });
+
+  it("names the shell's own groups in title case", () => {
+    expect(SHELL_GROUPS).toEqual({ tab: "Tab", data: "Data", app: "App" });
   });
 });
 
