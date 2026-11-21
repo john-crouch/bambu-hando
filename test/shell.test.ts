@@ -16,7 +16,13 @@ import {
 } from "../src/tui/app/shell.js";
 import { type KeyPress, press } from "../src/tui/core/keys.js";
 import type { Cmd } from "../src/tui/core/program.js";
-import { type AppMsg, TAB_ORDER, type TabId, type TabMsg } from "../src/tui/core/types.js";
+import {
+  type AppMsg,
+  type Ctx,
+  TAB_ORDER,
+  type TabId,
+  type TabMsg,
+} from "../src/tui/core/types.js";
 import { values } from "./shellFixtures.js";
 
 function NoView(): never {
@@ -238,10 +244,25 @@ describe("global keys", () => {
     expect(model.overlay?.id).toBe("palette");
   });
 
-  it("passes other keys and pastes to the active tab", async () => {
+  it("passes other keys, / and letters to the active tab", async () => {
     let { shell, model } = start();
-    model = await drive(shell, model, key("down"), key("enter"), { type: "paste", text: "abc" });
-    expect(seen(model, "spools")).toEqual(["key:down", "key:enter", "paste"]);
+    model = await drive(shell, model, key("down"), key("enter"), key("/"), key("l"));
+    expect(seen(model, "spools")).toEqual(["key:down", "key:enter", "key:/", "key:l"]);
+  });
+
+  it("gives a paste to the tab only while it takes text, else to the open overlay", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, { type: "paste", text: "abc" });
+    expect(seen(model, "spools")).toEqual([]);
+    model = await drive(shell, model, key("t"), { type: "paste", text: "abc" });
+    expect(seen(model, "spools")).toEqual(["key:t", "paste"]);
+    model = await drive(shell, model, {
+      type: "app/openLabels",
+      request: { spoolIds: [], fresh: false },
+    });
+    model = await drive(shell, model, { type: "paste", text: "x" });
+    expect(seen(model, "spools")).toEqual(["key:t", "paste"]);
+    expect((model.overlay?.model as { seen: string[] } | undefined)?.seen).toEqual(["paste"]);
   });
 
   it("shows the footer hints of the tab plus the global keys", () => {
@@ -255,6 +276,32 @@ describe("global keys", () => {
     expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "tab", "ctrl+k"]);
     model = await drive(shell, model, key("k", { ctrl: true }));
     expect(shell.hints(model)).toEqual([]);
+  });
+});
+
+describe("ctx", () => {
+  it("reads the clock for every key, so tabs can time type-ahead", async () => {
+    let clock = 1_000;
+    const nows: number[] = [];
+    const timing: AnyTab = {
+      ...fakeTab("spools"),
+      update(model: FakeModel, _msg: AppMsg | TabMsg, ctx: Ctx) {
+        nows.push(ctx.now);
+        return [model, []];
+      },
+    };
+    const d = deps({ now: () => clock, tabs: { ...deps().tabs, spools: timing } });
+    let { shell, model } = start({}, d);
+    model = await drive(shell, model, key("a"));
+    clock = 1_400;
+    model = await drive(shell, model, key("b"));
+    expect(nows).toEqual([1_000, 1_400]);
+  });
+
+  it("hands tabs the settings app/values changed", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, { type: "app/values", values: { createSpools: false } });
+    expect(shell.ctx(model).values.createSpools).toBe(false);
   });
 });
 

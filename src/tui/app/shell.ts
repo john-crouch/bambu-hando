@@ -333,7 +333,9 @@ export function createShell(deps: ShellDeps) {
         // Any key dismisses the error banner, and still does what it does.
         return onKey(model.error ? { ...model, error: null } : model, msg.key);
       case "paste":
-        return model.overlay ? toOverlay(model, msg) : toTab(model, model.active, msg);
+        // Text only lands where text is being taken: the overlay, or a tab with a field focused.
+        if (model.overlay) return toOverlay(model, msg);
+        return capturing(model) ? toTab(model, model.active, msg) : [model, []];
       case "resize":
         return toAll({ ...model, columns: msg.columns, rows: msg.rows }, msg);
       case "tab":

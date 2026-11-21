@@ -44,8 +44,13 @@ async function shellAt(
   Object.defineProperty(app.stdout, "columns", { value: columns, configurable: true });
   Object.defineProperty(app.stdout, "rows", { value: rows, configurable: true });
   app.stdout.emit("resize");
-  await settle();
   const screen = () => (app.lastFrame() ?? "").replace(ANSI, "");
+  // The shell hears of the size in an effect: wait for a frame drawn at it.
+  await vi.waitFor(() => {
+    const lines = screen().split("\n");
+    expect(lines).toHaveLength(rows);
+    expect(lines[rows - 1]).toContain("? help");
+  });
   const press = async (...keys: string[]) => {
     for (const key of keys) {
       app.stdin.write(key);
