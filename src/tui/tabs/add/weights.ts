@@ -32,7 +32,7 @@ export function weightItems(
   return [
     ...rows,
     {
-      label: sourceName,
+      label: `As listed in ${sourceName}`,
       detail: describeSourceWeights(profiles, group),
       choice: { kind: "source" },
     },

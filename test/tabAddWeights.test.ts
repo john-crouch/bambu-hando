@@ -28,7 +28,7 @@ describe("weightItems", () => {
         detail: "219 g",
         choice: { kind: "grams", grams: 219 },
       },
-      { label: "SpoolmanDB", detail: "189 g", choice: { kind: "source" } },
+      { label: "As listed in SpoolmanDB", detail: "189 g", choice: { kind: "source" } },
       {
         label: "Unspecified",
         detail: "SpoolEase works it out on the first full weigh",
@@ -41,7 +41,7 @@ describe("weightItems", () => {
     const profiles = [profile({ brand: "Acme", coreWeight: 150 })];
     const [group] = weightGroups(profiles, entries);
     expect(weightItems(group!, profiles, "mine.json").map((i) => [i.label, i.detail])).toEqual([
-      ["mine.json", "150 g"],
+      ["As listed in mine.json", "150 g"],
       ["Unspecified", "SpoolEase works it out on the first full weigh"],
     ]);
   });

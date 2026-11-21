@@ -17,7 +17,7 @@ import { COLORS } from "../../ui/theme.js";
 import { tempsText } from "./catalog.js";
 import { type ColorDialog, type ColorField, typedColor } from "./color.js";
 
-const LABEL = 15;
+const LABEL = 17;
 
 function label(text: string, focused: boolean): Segment[] {
   return [
@@ -111,10 +111,9 @@ export function ColorDialogView({ dialog, columns }: { dialog: ColorDialog; colu
             : { text: "[ Add color ]", color: COLORS.muted },
         ]}
       />
-      <Line
-        width={inner}
-        segments={dialog.error ? [{ text: `✗ ${dialog.error}`, color: COLORS.failed }] : []}
-      />
+      {dialog.error ? (
+        <Line width={inner} segments={[{ text: `✗ ${dialog.error}`, color: COLORS.failed }]} />
+      ) : null}
     </Dialog>
   );
 }

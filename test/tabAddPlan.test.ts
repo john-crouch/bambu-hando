@@ -218,7 +218,7 @@ describe("runOutcome", () => {
         ok: true,
         lines: ["2 filaments from SpoolmanDB: 2 written, 0 failed, 2 new spools"],
       },
-      toast: { text: "✓ 2 filaments added · 2 new spools", tone: "ok" },
+      toast: { text: "2 filaments added · 2 new spools", tone: "ok" },
       spoolIds: ["14", "15"],
     });
   });
@@ -236,7 +236,7 @@ describe("runOutcome", () => {
       exitCode: 1,
       lines: ["2 filaments from mine.json: 1 written, 1 failed", "Acme PLA Blue: HTTP 500"],
     });
-    expect(outcome.toast).toEqual({ text: "✗ 1 of 2 filaments failed", tone: "failed" });
+    expect(outcome.toast).toEqual({ text: "1 of 2 filaments failed", tone: "failed" });
   });
 });
 

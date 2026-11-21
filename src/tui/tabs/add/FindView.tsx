@@ -36,7 +36,7 @@ import { type AddModel, sourcesOf } from "./model.js";
 import { findRows } from "./update.js";
 
 function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+  return `${count} ${noun}${count === 1 ? "" : /(ch|sh|s|x)$/.test(noun) ? "es" : "s"}`;
 }
 
 const tickCell = (ticked: boolean) =>
@@ -44,22 +44,25 @@ const tickCell = (ticked: boolean) =>
     ? { text: "[✓]", width: 3, color: COLORS.ok }
     : { text: "[ ]", width: 3, color: COLORS.muted };
 
-function countCells(count: number, ticked: number) {
+function countCells(count: number, ticked: number, noun: string) {
   return [
-    { text: String(count), width: 5, align: "right" as const, dim: true },
+    { text: plural(count, noun), width: 15, align: "right" as const, dim: true },
     ticked > 0 ? { text: `✓ ${ticked}`, width: 6, color: COLORS.ok } : { text: "", width: 6 },
   ];
 }
 
-/** A Find row as a list row; `full` lists show the brand and material too (search and import). */
-export function listRow(row: FindRow, selected: ReadonlySet<string>, full: boolean): ListRow {
+/** A Find row as a list row. */
+export function listRow(row: FindRow, selected: ReadonlySet<string>): ListRow {
   switch (row.kind) {
     case "source":
     case "brand":
     case "material":
       return {
         key: `${row.kind}:${row.label}`,
-        cells: [{ text: row.label, grow: true }, ...countCells(row.count, row.ticked)],
+        cells: [
+          { text: row.label, grow: true },
+          ...countCells(row.count, row.ticked, row.kind === "source" ? "filament" : "color"),
+        ],
       };
     case "color": {
       const { profile } = row;
@@ -69,7 +72,6 @@ export function listRow(row: FindRow, selected: ReadonlySet<string>, full: boole
         cells: [
           tickCell(selected.has(row.key)),
           { text: row.label, grow: true },
-          ...(full ? [{ text: profile.material, width: 7, dim: true }] : []),
           { text: tempsText(profile.nozzleTempMin, profile.nozzleTempMax), width: 9 },
           { text: profile.filamentId, width: 8, dim: true },
         ],
@@ -167,8 +169,6 @@ function ListPanel({ model, ctx, box }: { model: AddModel; ctx: Ctx; box: Area }
   const { title, subtitle } = findTitle(model, ctx);
   const search = model.search;
   const cursor = search ? search.cursor : (model.stack.at(-1)?.cursor ?? 0);
-  const level = currentLevel(model);
-  const full = search !== null || level.kind === "import";
   const listHeight = Math.max(0, inner.height - (search ? 2 : 0));
   return (
     <Panel
@@ -183,16 +183,16 @@ function ListPanel({ model, ctx, box }: { model: AddModel; ctx: Ctx; box: Area }
         <>
           <Box>
             <Line
-              width={2}
+              width={3}
               segments={[
-                { text: " /", color: search.focus === "query" ? COLORS.accent : COLORS.muted },
+                { text: " / ", color: search.focus === "query" ? COLORS.accent : COLORS.muted },
               ]}
             />
             <TextField
               value={search.text.value}
               cursor={search.text.cursor}
               focused={search.focus === "query"}
-              placeholder=" type words of the name"
+              placeholder="type words of the name"
               width={Math.max(0, inner.width - 3)}
             />
           </Box>
@@ -203,7 +203,7 @@ function ListPanel({ model, ctx, box }: { model: AddModel; ctx: Ctx; box: Area }
         emptyState(model, ctx, { width: inner.width, height: listHeight })
       ) : (
         <List
-          rows={rows.map((row) => listRow(row, model.selected, full))}
+          rows={rows.map((row) => listRow(row, model.selected))}
           cursor={Math.min(cursor, rows.length - 1)}
           height={listHeight}
           width={inner.width}
@@ -227,7 +227,55 @@ function chipLine(color: string, text: string, detail: string, width: number) {
 }
 
 /** The detail panel's lines for the highlighted row. */
-function DetailBody({ detail, width }: { detail: FindDetail; width: number }) {
+/** A color's detail in the few lines a stacked panel has: one line of facts, one of what adding writes. */
+function CompactColor({
+  detail,
+  width,
+}: {
+  detail: Extract<FindDetail, { kind: "color" }>;
+  width: number;
+}) {
+  const fact = (label: string) => detail.facts.find((f) => f.label === label)?.value ?? "";
+  return (
+    <>
+      <Line
+        width={width}
+        segments={[
+          { text: " " },
+          ...swatchSegments(detail.swatch, 4),
+          detail.ticked
+            ? { text: " ✓ ticked", color: COLORS.ok, bold: true }
+            : muted(" space ticks it"),
+        ]}
+      />
+      <Line
+        width={width}
+        segments={[
+          {
+            text: ` ${fact("Nozzle")} · ${fact("Filament")} · empty ${fact("Empty spool")} · ${fact("Density")}  `,
+          },
+          muted(fact("Code")),
+        ]}
+      />
+      <Line width={width} segments={[]} />
+      <Line width={width} segments={[muted(" Adding it writes")]} />
+      <Line
+        width={width}
+        segments={[{ text: " + ", color: COLORS.ok }, { text: detail.adds.join(" · ") }]}
+      />
+    </>
+  );
+}
+
+function DetailBody({
+  detail,
+  width,
+  compact,
+}: {
+  detail: FindDetail;
+  width: number;
+  compact: boolean;
+}) {
   switch (detail.kind) {
     case "source":
     case "other":
@@ -265,6 +313,7 @@ function DetailBody({ detail, width }: { detail: FindDetail; width: number }) {
         </>
       );
     case "color":
+      if (compact) return <CompactColor detail={detail} width={width} />;
       return (
         <>
           <Box paddingLeft={1}>
@@ -294,7 +343,17 @@ function DetailBody({ detail, width }: { detail: FindDetail; width: number }) {
   }
 }
 
-function DetailPanel({ model, ctx, box }: { model: AddModel; ctx: Ctx; box: Area }) {
+function DetailPanel({
+  model,
+  ctx,
+  box,
+  compact,
+}: {
+  model: AddModel;
+  ctx: Ctx;
+  box: Area;
+  compact: boolean;
+}) {
   const rows = findRows(model, ctx);
   const cursor = model.search ? model.search.cursor : (model.stack.at(-1)?.cursor ?? 0);
   const row = rows[Math.min(cursor, rows.length - 1)];
@@ -307,7 +366,7 @@ function DetailPanel({ model, ctx, box }: { model: AddModel; ctx: Ctx; box: Area
     (level?.kind === "materials" ? `${materialsOf(sources, level.brand).length} materials` : "");
   return (
     <Panel title={title} width={box.width} height={box.height}>
-      {detail ? <DetailBody detail={detail} width={inner.width} /> : null}
+      {detail ? <DetailBody detail={detail} width={inner.width} compact={compact} /> : null}
     </Panel>
   );
 }
@@ -317,7 +376,9 @@ export function FindView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
   return (
     <Box flexDirection={split.side ? "row" : "column"} flexShrink={0}>
       <ListPanel model={model} ctx={ctx} box={split.list} />
-      {split.detail.height >= 3 ? <DetailPanel model={model} ctx={ctx} box={split.detail} /> : null}
+      {split.detail.height >= 3 ? (
+        <DetailPanel model={model} ctx={ctx} box={split.detail} compact={!split.side} />
+      ) : null}
     </Box>
   );
 }

@@ -8,6 +8,7 @@ import type { Ctx } from "../../core/types.js";
 import {
   Bar,
   Busy,
+  type Cell,
   Detail,
   type DetailRow,
   Line,
@@ -58,13 +59,26 @@ const TABLE_COLUMNS = Object.keys(COLUMN_TITLES) as TableColumn[];
 /** The list's own columns before and after the cells: gutter, chip and its gap, scroll thumb. */
 const LIST_EDGES = 5;
 
-/** Each column's cell width in a table `width` columns wide (a column's width counts its gap). */
+/**
+ * Each column's cell width in a table `width` columns wide (a column's width counts its gap): fitted
+ * down on a narrow table, and the name takes whatever a wide one has to spare.
+ */
 export function tableWidths(width: number): Record<TableColumn, number> {
   const { swatch: _swatch, ...columns } = PLAN_COLUMNS;
   const shrink = PLAN_SHRINK.filter(([key]) => key !== "swatch") as [TableColumn, number][];
-  const fitted = fitColumns(columns, Math.max(0, width - LIST_EDGES + 1), shrink);
+  const room = Math.max(0, width - LIST_EDGES + 1);
+  // SpoolmanDB names start with brand and material, so a narrow table drops those columns first.
+  const narrow = room < TABLE_COLUMNS.reduce((sum, key) => sum + columns[key], 0);
+  const shown = narrow ? { ...columns, brand: 0, material: 0, preset: 10 } : columns;
+  const fitted = fitColumns(
+    shown,
+    room,
+    shrink.filter(([key]) => shown[key] > 0),
+  );
+  const used = TABLE_COLUMNS.reduce((sum, key) => sum + fitted[key], 0);
+  fitted.name += Math.max(0, room - used);
   return Object.fromEntries(
-    TABLE_COLUMNS.map((key) => [key, Math.max(0, fitted[key] - 1)]),
+    TABLE_COLUMNS.map((key) => [key, fitted[key] > 0 ? fitted[key] - 1 : 0]),
   ) as Record<TableColumn, number>;
 }
 
@@ -104,16 +118,19 @@ export function tableRow(
   return {
     key: `${index}:${row.code}`,
     swatch: row.swatch,
-    cells: [
-      { text: row.name, width: widths.name },
-      { text: row.brand, width: widths.brand },
-      { text: row.material, width: widths.material },
-      { text: row.temps, width: widths.temps },
-      { text: row.code, width: widths.code, dim: true },
-      { text: row.empty, width: widths.empty, align: "right" },
-      { text: preset.text, width: widths.preset, color: preset.color },
-      { text: spool.text, width: widths.spool, color: spool.color },
-    ],
+    // Columns a narrow table drops have no width: leave their cells out, gaps and all.
+    cells: (
+      [
+        { text: row.name, width: widths.name },
+        { text: row.brand, width: widths.brand },
+        { text: row.material, width: widths.material },
+        { text: row.temps, width: widths.temps },
+        { text: row.code, width: widths.code, dim: true },
+        { text: row.empty, width: widths.empty, align: "right" },
+        { text: preset.text, width: widths.preset, color: preset.color },
+        { text: spool.text, width: widths.spool, color: spool.color },
+      ] satisfies Cell[]
+    ).filter((cell) => cell.width > 0),
   };
 }
 

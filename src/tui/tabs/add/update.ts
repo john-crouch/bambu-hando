@@ -698,7 +698,7 @@ function runFailed(model: AddModel, error: string, exitCode: 1 | 2, ctx: Ctx): R
           summary: { ok: false, lines: [`Adding filaments failed: ${error}`], exitCode },
         },
         ...reloads(ctx),
-        { type: "app/toast", text: `✗ ${error}`, tone: "failed" },
+        { type: "app/toast", text: error, tone: "failed" },
       ),
     ],
   ];
@@ -759,7 +759,7 @@ export function pageBar(model: AddModel, ctx: Ctx): PageTab[] {
     const state: PageState =
       id === "weights" && weightsNeeded(model, ctx) === false
         ? "disabled"
-        : finished || index < current
+        : index < current
           ? "done"
           : index === current
             ? "current"

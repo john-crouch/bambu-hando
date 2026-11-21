@@ -23,7 +23,7 @@ import { currentWeightItems } from "./update.js";
 function choiceText(choice: WeightChoice | undefined, sourceName: string): string {
   if (!choice) return "";
   if (choice.kind === "grams") return `${choice.grams} g`;
-  return choice.kind === "source" ? `${sourceName}'s weight` : "unspecified";
+  return choice.kind === "source" ? sourceName : "unspecified";
 }
 
 const muted = (text: string): Segment => ({ text, color: COLORS.muted });
@@ -67,6 +67,10 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
       ? "SpoolEase lists several spools for this brand: which is yours?"
       : "SpoolEase's spool lists don't have this brand.";
   const detail = panelInner(split.detail.width, split.detail.height);
+  const labelWidth = Math.min(
+    Math.max(...items.map((i) => i.label.length), 8),
+    Math.max(8, Math.floor(list.width * 0.6)),
+  );
 
   return (
     <Box flexDirection={split.side ? "row" : "column"} flexShrink={0}>
@@ -90,12 +94,8 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
                 picked
                   ? { text: "●", width: 1, color: COLORS.ok }
                   : { text: "○", width: 1, color: COLORS.muted },
-                { text: item.label, grow: true },
-                {
-                  text: item.detail,
-                  width: Math.min(28, Math.max(8, Math.floor(list.width / 3))),
-                  dim: true,
-                },
+                { text: item.label, width: labelWidth },
+                { text: item.detail, grow: true, dim: true },
               ],
             };
           })}
@@ -113,7 +113,7 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
               asked < 0
                 ? [muted(`${g.options[0]?.grams ?? 0} g · SpoolEase's only row`)]
                 : choice
-                  ? [{ text: choiceText(choice, "the source"), color: COLORS.ok }]
+                  ? [{ text: choiceText(choice, "as listed"), color: COLORS.ok }]
                   : [muted(asked === weights.step ? "choosing…" : "to choose")];
             const mark: Segment =
               asked === weights.step
@@ -129,6 +129,15 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
               />
             );
           })}
+          <Line width={detail.width} segments={[]} />
+          <Line
+            width={detail.width}
+            segments={[muted(" A new spool starts with its empty spool's weight:")]}
+          />
+          <Line
+            width={detail.width}
+            segments={[muted(" SpoolEase subtracts it from what the scale reads.")]}
+          />
           {weights.warnings.map((w) => (
             <Line
               key={w}

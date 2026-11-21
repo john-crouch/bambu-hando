@@ -249,7 +249,9 @@ function colorDetail(profile: FilamentProfile, ticked: boolean, values: FormValu
   ];
   const ready = consoleSetup(values) === "ready";
   const adds = [
-    ...printersOf(values).map((printer) => `BambuStudio preset ${profile.name} @${printer}`),
+    ...printersOf(values).map(
+      (printer) => `BambuStudio preset for ${printer.replace(/^Bambu Lab /, "")}`,
+    ),
     ...(ready ? [`SpoolEase custom filament ${profile.filamentId}`] : []),
     ...(ready && values.createSpools ? ["SpoolEase spool of it"] : []),
   ];

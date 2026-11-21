@@ -95,7 +95,7 @@ describe("weights", () => {
       "140 g",
       "SpoolEase works it out on the first full weigh",
     ]);
-    expect(currentWeightItems(d.model).at(-2)?.label).toBe("SpoolmanDB");
+    expect(currentWeightItems(d.model).at(-2)?.label).toBe("As listed in SpoolmanDB");
 
     d.key(press("down"), press("down"), press("enter"));
     expect(d.model.page).toBe("review");
@@ -273,7 +273,7 @@ describe("run and done", () => {
       { type: "app/load", resource: "check", force: true },
     ]);
     expect(d.of("app/toast")).toEqual([
-      { type: "app/toast", text: "✓ 1 filament added · 1 new spool", tone: "ok" },
+      { type: "app/toast", text: "1 filament added · 1 new spool", tone: "ok" },
     ]);
     // The run is done with the selection, so it's cleared; the page bar says Done.
     expect(d.model.selected.size).toBe(0);
@@ -281,7 +281,7 @@ describe("run and done", () => {
       pageBar(d.model, d.context)
         .map((p) => [p.title, p.state])
         .at(-1),
-    ).toEqual(["Done", "done"]);
+    ).toEqual(["Done", "current"]);
     expect(hints(d.model, d.context).map((h) => h.keys)).toEqual(["l", "n"]);
 
     d.key(press("l"));

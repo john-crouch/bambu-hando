@@ -224,7 +224,7 @@ export function runOutcome(results: SyncResult[], sourceLabel: string): RunOutco
     return {
       summary: { ok: false, lines, exitCode: 1 },
       toast: {
-        text: `✗ ${failed.length} of ${plural(results.length, "filament")} failed`,
+        text: `${failed.length} of ${plural(results.length, "filament")} failed`,
         tone: "failed",
       },
       spoolIds,
@@ -232,7 +232,7 @@ export function runOutcome(results: SyncResult[], sourceLabel: string): RunOutco
   const added = spoolIds.length > 0 ? ` · ${plural(spoolIds.length, "new spool")}` : "";
   return {
     summary: { ok: true, lines },
-    toast: { text: `✓ ${plural(results.length, "filament")} added${added}`, tone: "ok" },
+    toast: { text: `${plural(results.length, "filament")} added${added}`, tone: "ok" },
     spoolIds,
   };
 }

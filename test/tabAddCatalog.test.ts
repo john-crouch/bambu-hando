@@ -179,8 +179,8 @@ describe("findDetail", () => {
         { label: "Code", value: "PACMRED0", dim: true },
       ],
       adds: [
-        "BambuStudio preset Acme PLA Red @Bambu Lab X1 Carbon 0.4 nozzle",
-        "BambuStudio preset Acme PLA Red @Bambu Lab X1 Carbon 0.6 nozzle",
+        "BambuStudio preset for X1 Carbon 0.4 nozzle",
+        "BambuStudio preset for X1 Carbon 0.6 nozzle",
         "SpoolEase custom filament PACMRED0",
         "SpoolEase spool of it",
       ],
@@ -203,7 +203,7 @@ describe("findDetail", () => {
       dim: true,
     });
     expect(skipped?.kind === "color" && skipped.adds).toEqual([
-      "BambuStudio preset Acme PLA Red @Bambu Lab X1 Carbon 0.4 nozzle",
+      "BambuStudio preset for X1 Carbon 0.4 nozzle",
     ]);
     const noSpools = findDetail(null, row, s, none, { ...ready, createSpools: false });
     expect(noSpools?.kind === "color" && noSpools.adds.at(-1)).toBe(
