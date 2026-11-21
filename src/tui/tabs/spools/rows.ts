@@ -28,6 +28,8 @@ const LOCATION_MAX = 14;
 const ROW_CHROME = 1 + 4 + 3 + 2;
 /** The name keeps this many columns (or its whole length, when shorter) before an optional column shows. */
 const NAME_KEEP = 32;
+/** Past this many columns of name, both optional columns are worth more than an overlong name's tail. */
+const NAME_WIDE = 48;
 
 /** ▰▰▰▱▱ for a fraction; spaces when unknown. */
 export function barText(fraction: number | null, cells = BAR_CELLS): string {
@@ -63,8 +65,8 @@ const widest = (texts: string[]): number => texts.reduce((w, t) => Math.max(w, t
 
 /**
  * The columns that fit: a column no row has a value for is left out; the date shows only when every
- * name fits whole, the location when the names keep NAME_KEEP columns (or their whole length); on a
- * narrow list the bar shortens too.
+ * name fits whole (or keeps NAME_WIDE columns), the location when the names keep NAME_KEEP columns (or
+ * their whole length); on a narrow list the bar shortens too.
  */
 export function spoolLayout(
   rows: readonly InventoryRow[],
@@ -81,7 +83,7 @@ export function spoolLayout(
   // Every shown cell after the name costs its width and a one-column gap.
   const nameRoom = (bar: number, ...extra: number[]) =>
     cells - id - left - bar - 3 - extra.reduce((sum, w) => sum + (w > 0 ? w + 1 : 0), 0);
-  if (nameRoom(BAR_CELLS, location, added) >= longest)
+  if (nameRoom(BAR_CELLS, location, added) >= Math.min(longest, NAME_WIDE))
     return { id, left, bar: BAR_CELLS, location, added };
   if (nameRoom(BAR_CELLS, location) >= want)
     return { id, left, bar: BAR_CELLS, location, added: 0 };

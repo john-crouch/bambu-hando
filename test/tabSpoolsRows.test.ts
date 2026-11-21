@@ -51,6 +51,23 @@ describe("spoolLayout", () => {
     expect(spoolLayout(placed, 84, NOW)).toMatchObject({ location: 10, added: 6 });
   });
 
+  it("shows both on a wide list even when one overlong name would lose its tail", () => {
+    const long = rowsOf([
+      spool({
+        id: "1",
+        slicerFilament: "",
+        brand: "Polymaker PETG PolyLite Galaxy Dark Blue with a very long name",
+        material: "",
+        colorName: "",
+      }),
+      spool({ id: "2", location: "AMS 2 slot 1", addedTime: day(2026, 11, 16) }),
+    ]);
+    // A 100-column list: with both columns the 62-column name keeps 50, enough to know it.
+    expect(spoolLayout(long, 100, NOW)).toMatchObject({ location: 12, added: 6 });
+    // At 90 it would keep only 40: the date goes first.
+    expect(spoolLayout(long, 90, NOW)).toMatchObject({ added: 0 });
+  });
+
   it("shortens the bar on a narrow list so the name keeps more", () => {
     expect(spoolLayout(placed, 56, NOW)).toMatchObject({ location: 0, added: 0, bar: 5 });
   });
