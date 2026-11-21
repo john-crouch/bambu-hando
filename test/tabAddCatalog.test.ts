@@ -115,12 +115,6 @@ describe("trayText", () => {
 
 describe("findDetail", () => {
   const noAdds = () => null;
-  const ready = values({
-    printerPreset: "Bambu Lab X1 Carbon 0.4 nozzle, Bambu Lab X1 Carbon 0.6 nozzle",
-    skipSpoolease: false,
-    host: "10.0.0.5",
-    securityKey: "SECRET",
-  });
 
   it("shows a source's brand count", () => {
     expect(

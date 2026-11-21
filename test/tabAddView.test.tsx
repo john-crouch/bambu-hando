@@ -215,7 +215,9 @@ describe("what the pages say", () => {
     expect(out).toContain("Other color · Acme PLA");
     expect(out).toMatch(/Settings from\s+‹/);
     expect(out).toContain("Moss");
-    expect(addTab.dialog?.(after(context), context)).toBeNull();
+    const brandsPage = pages(context)[0]?.[1];
+    if (!brandsPage) throw new Error("no brands page");
+    expect(addTab.dialog?.(brandsPage, context)).toBeNull();
   });
 
   it("shows the search query and its matches", () => {

@@ -9,13 +9,7 @@ import { plural, shortPrinter } from "../../ui/format.js";
 import { type AddLine, type FindDetail, findDetail, materialsOf } from "./catalog.js";
 import { type AddMsg, peekCmd, peekConsoleCmd } from "./cmds.js";
 import { type AddModel, emptyPeek, findRow, sourcesOf } from "./model.js";
-import {
-  consoleOf,
-  createsSpools,
-  planBasis,
-  printersOf,
-  sameBasis,
-} from "./targets.js";
+import { consoleOf, createsSpools, planBasis, printersOf, sameBasis } from "./targets.js";
 
 /** The highlighted color's profile, when Find shows one. */
 function highlighted(model: AddModel, ctx: Ctx): FilamentProfile | null {
