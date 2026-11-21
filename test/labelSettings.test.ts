@@ -55,9 +55,7 @@ describe("label settings", () => {
 
   it("survives saves that overlap, ending with one whole file", async () => {
     const sizes = ["40x30mm", "50x30mm", "57x32mm", "62x29mm"];
-    await Promise.all(
-      sizes.map((size) => saveLabelSettings({ ...DEFAULT_LABEL_SETTINGS, size })),
-    );
+    await Promise.all(sizes.map((size) => saveLabelSettings({ ...DEFAULT_LABEL_SETTINGS, size })));
 
     expect(sizes).toContain(JSON.parse(await readFile(labelSettingsPath(), "utf-8")).size);
   });
