@@ -247,16 +247,17 @@ describe("what the pages say", () => {
 
 describe("Done after a failure", () => {
   it.each([
+    [60, 20],
     [80, 24],
     [120, 36],
   ])(
-    "names the filament, says what failed plainly, and to restart BambuStudio at %ix%i",
+    "names the filament, says what failed plainly and whole, and to restart BambuStudio at %ix%i",
     (columns, rows) => {
       const context = sized(columns, rows, CONSOLE);
       const running = pages(context).find(([name]) => name === "running")?.[1];
       if (!running) throw new Error("expected the running page");
       const failed: SyncResult = {
-        profileName: "Acme PLA Blue",
+        profileName: "Polymaker PolyLite PETG Galaxy Black",
         filamentId: "Pe4f21b5",
         bambuStatus: "written",
         spooleaseStatus: "failed",
@@ -265,12 +266,23 @@ describe("Done after a failure", () => {
         spoolId: null,
       };
       const done = addTab.update(running, { type: "add/runDone", results: [failed] }, context)[0];
-      const card = screen(done, context).slice(1, 6).join("\n");
-      expect(card).toContain("✗ 1 failed");
-      expect(card).not.toContain("✓ 0");
-      expect(card).not.toContain("registered");
-      expect(card).toContain("Acme PLA Blue: SpoolEase");
-      expect(card).toContain("Restart BambuStudio to see the new presets.");
+      const lines = screen(done, context);
+      expect(lines).toHaveLength(context.bodyRows);
+      const end = lines.findIndex((line, i) => i > 1 && line.startsWith("╰"));
+      const card = lines.slice(1, end + 1);
+      const words = card
+        .map((line) => line.replace(/[│╭╮╰╯─]/g, " "))
+        .join(" ")
+        .replace(/\s+/g, " ");
+      expect(words).toContain("✗ 1 failed");
+      expect(words).not.toContain("✓ 0");
+      expect(words).not.toContain("registered");
+      expect(words).toContain(
+        "Polymaker PolyLite PETG Galaxy Black: SpoolEase listed it but refused its spool (HTTP 500: boom)",
+      );
+      expect(words).toContain("Restart BambuStudio to see the new presets.");
+      // Text keeps a column off the border.
+      for (const line of card.filter((l) => l.startsWith("│"))) expect(line, line).toMatch(/ │$/);
     },
   );
 });
