@@ -1,5 +1,5 @@
 // ABOUTME: The pages inside a tab as one line, `✓ Find ─ ▸ Weights ─ Review`: done, current in accent, still to do.
-// ABOUTME: Narrow terminals lose the separators, then everything but the current page and its position.
+// ABOUTME: When the whole bar doesn't fit with a column to spare, only the current page and its position show.
 
 import { Line } from "./Line.js";
 import { type Segment, segmentsWidth } from "./text.js";
@@ -32,21 +32,59 @@ function pageSegments(page: Page): Segment[] {
   }
 }
 
-function joined(pages: readonly Page[], separator: Segment): Segment[] {
+const SEPARATOR: Segment = { text: " ─ ", color: COLORS.muted, dim: true };
+const MORE: Segment = { text: "…", color: COLORS.muted };
+
+function joined(pages: readonly Page[], separator: Segment = SEPARATOR): Segment[] {
   return pages.flatMap((page, index) => [...(index > 0 ? [separator] : []), ...pageSegments(page)]);
 }
 
-/** The bar's segments for width columns: the fullest form that fits, cut with … as the last resort. */
+/** Pages from..to (inclusive) with … where pages were left out, and the current one's position. */
+function windowSegments(pages: readonly Page[], from: number, to: number, at: number): Segment[] {
+  return [
+    ...(from > 0 ? [MORE, SEPARATOR] : []),
+    ...joined(pages.slice(from, to + 1)),
+    ...(to < pages.length - 1 ? [SEPARATOR, MORE] : []),
+    { text: `  ${at + 1}/${pages.length}`, color: COLORS.muted },
+  ];
+}
+
+/**
+ * The widest run of pages around the current one that fits width with a space at each end, taking
+ * the next page on the right first, then on the left; null when only the current page would show.
+ */
+function pageWindow(pages: readonly Page[], at: number, width: number): Segment[] | null {
+  const fits = (from: number, to: number) =>
+    segmentsWidth(windowSegments(pages, from, to, at)) + 2 <= width;
+  let from = at;
+  let to = at;
+  for (let grew = true; grew; ) {
+    grew = false;
+    if (to < pages.length - 1 && fits(from, to + 1)) {
+      to++;
+      grew = true;
+    }
+    if (from > 0 && fits(from - 1, to)) {
+      from--;
+      grew = true;
+    }
+  }
+  return from === to ? null : windowSegments(pages, from, to, at);
+}
+
+/**
+ * The bar's segments for width columns: every page joined with ─ when that fits with a space at each
+ * end (so the last page never touches a border), else the current page and its position.
+ */
 export function pageBarSegments(pages: readonly Page[], width: number): Segment[] {
   const lead: Segment = { text: " " };
-  const forms = [
-    joined(pages, { text: " ─ ", color: COLORS.muted, dim: true }),
-    joined(pages, { text: "  " }),
-  ];
-  for (const form of forms) if (segmentsWidth(form) + 1 <= width) return [lead, ...form];
+  const full = joined(pages);
+  if (segmentsWidth(full) + 2 <= width) return [lead, ...full];
   const at = pages.findIndex((page) => page.state === "current");
   const current = pages[at];
-  if (!current) return [lead, ...(forms[1] ?? [])];
+  if (!current) return [lead, ...full];
+  const window = pageWindow(pages, at, width);
+  if (window) return [lead, ...window];
   return [
     lead,
     ...pageSegments(current),

@@ -19,19 +19,32 @@ describe("weightItems", () => {
     expect(weightItems(group!, profiles, "SpoolmanDB")).toEqual([
       {
         label: "Sunlu weighed",
-        detail: "171 g · My Spools List",
+        weight: "171 g",
+        detail: "From your My Spools List on SpoolEase.",
         choice: { kind: "grams", grams: 171 },
       },
-      { label: "Sunlu - V3 - 179g", detail: "179 g", choice: { kind: "grams", grams: 179 } },
       {
-        label: "Sunlu V3 with Cardboard - 219g",
-        detail: "219 g",
+        label: "Sunlu - V3",
+        weight: "179 g",
+        detail: "From SpoolEase's spool catalog: Sunlu - V3 - 179g.",
+        choice: { kind: "grams", grams: 179 },
+      },
+      {
+        label: "Sunlu V3 with Cardboard",
+        weight: "219 g",
+        detail: "From SpoolEase's spool catalog: Sunlu V3 with Cardboard - 219g.",
         choice: { kind: "grams", grams: 219 },
       },
-      { label: "As listed in SpoolmanDB", detail: "189 g", choice: { kind: "source" } },
+      {
+        label: "As listed in SpoolmanDB",
+        weight: "189 g",
+        detail: "The empty spool weight SpoolmanDB gives for these filaments.",
+        choice: { kind: "source" },
+      },
       {
         label: "Unspecified",
-        detail: "SpoolEase works it out on the first full weigh",
+        weight: "–",
+        detail: "SpoolEase works it out on the first full weigh.",
         choice: { kind: "unspecified" },
       },
     ]);
@@ -40,21 +53,21 @@ describe("weightItems", () => {
   it("offers the source's weight and unspecified for a brand no list has", () => {
     const profiles = [profile({ brand: "Acme", coreWeight: 150 })];
     const [group] = weightGroups(profiles, entries);
-    expect(weightItems(group!, profiles, "mine.json").map((i) => [i.label, i.detail])).toEqual([
+    expect(weightItems(group!, profiles, "mine.json").map((i) => [i.label, i.weight])).toEqual([
       ["As listed in mine.json", "150 g"],
-      ["Unspecified", "SpoolEase works it out on the first full weigh"],
+      ["Unspecified", "–"],
     ]);
   });
 });
 
 describe("itemIndex", () => {
-  it("finds the item of an earlier choice, else the first", () => {
+  it("finds the item of an earlier choice, else the source's weight", () => {
     const profiles = [profile({ brand: "Sunlu", coreWeight: 189 })];
     const items = weightItems(weightGroups(profiles, entries)[0]!, profiles, "SpoolmanDB");
     expect(itemIndex(items, { kind: "grams", grams: 219 })).toBe(1);
     expect(itemIndex(items, { kind: "unspecified" })).toBe(3);
-    expect(itemIndex(items, { kind: "grams", grams: 5 })).toBe(0);
-    expect(itemIndex(items, undefined)).toBe(0);
+    expect(itemIndex(items, { kind: "grams", grams: 5 })).toBe(2);
+    expect(itemIndex(items, undefined)).toBe(2);
   });
 });
 

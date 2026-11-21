@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { placeholder } from "../src/tui/app/registry.js";
 import type { Loaders } from "../src/tui/app/resources.js";
 import { Shell } from "../src/tui/app/Shell.js";
+import type { KeyPress } from "../src/tui/core/keys.js";
+import type { AppMsg, Step, TabMsg } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
 import { values } from "./shellFixtures.js";
 
@@ -40,14 +42,22 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 async function shellAt(
   columns: number,
   rows: number,
-  options: { values?: Partial<FormValues>; loaders?: Partial<Loaders> } = {},
+  options: {
+    values?: Partial<FormValues>;
+    loaders?: Partial<Loaders>;
+    tabs?: Partial<typeof PLACEHOLDER_TABS>;
+  } = {},
 ) {
   const onExit = vi.fn();
   const app = render(
     <Shell
       initial={values(options.values)}
       start={{ query: "" }}
-      deps={{ tabs: PLACEHOLDER_TABS, loaders: loaders(options.loaders), now: () => 0 }}
+      deps={{
+        tabs: { ...PLACEHOLDER_TABS, ...options.tabs },
+        loaders: loaders(options.loaders),
+        now: () => 0,
+      }}
       onExit={onExit}
     />,
   );
@@ -151,6 +161,33 @@ describe("shell", () => {
     const long = await shellAt(80, 24, { values: { host: "printer-room-console.local" } });
     await vi.waitFor(() => expect(long.screen().split("\n")[0]).toMatch(/Settings\s+✓$/));
     long.app.unmount();
+  });
+
+  it("draws a toast over the body's last line and keeps every footer key", async () => {
+    const spools = placeholder("spools", "Spools");
+    const toasting = {
+      ...spools,
+      update: (model: { title: string }, msg: AppMsg | TabMsg) =>
+        [
+          model,
+          msg.type === "key" && (msg.key as KeyPress).input === "!"
+            ? [(dispatch: (m: AppMsg) => void) => dispatch({ type: "app/toast", text: "3 saved" })]
+            : [],
+        ] as Step<{ title: string }>,
+      hints: () => [
+        { keys: "↑↓", label: "move", primary: true },
+        { keys: "space", label: "tick" },
+        { keys: "s", label: "sort" },
+      ],
+    };
+    const { screen, press, app } = await shellAt(80, 24, { tabs: { spools: toasting } });
+    const footer = () => screen().split("\n")[23] ?? "";
+    const before = footer();
+    await press("!");
+    await vi.waitFor(() => expect(screen().split("\n")[22]).toMatch(/^ {2} ✓ 3 saved/));
+    expect(footer()).toBe(before);
+    expect(footer()).toContain("space tick  s sort");
+    app.unmount();
   });
 
   it("quits on q with exit 0", async () => {

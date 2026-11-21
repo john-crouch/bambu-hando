@@ -86,7 +86,7 @@ describe("weights", () => {
     await d.settle();
     expect(d.model.weights.state).toBe("ready");
     expect(d.model.weights.prompts.map((g) => g.brand)).toEqual(["Polymaker"]);
-    expect(currentWeightItems(d.model).map((i) => i.detail)).toEqual([
+    expect(currentWeightItems(d.model).map((i) => i.weight)).toEqual([
       "137 g",
       "149 g",
       "220 g",
@@ -94,11 +94,11 @@ describe("weights", () => {
       "139 g",
       "147 g",
       "140 g",
-      "SpoolEase works it out on the first full weigh",
+      "–",
     ]);
     expect(currentWeightItems(d.model).at(-2)?.label).toBe("As listed in SpoolmanDB");
 
-    d.key(press("down"), press("down"), press("enter"));
+    d.key(press("home"), press("down"), press("down"), press("enter"));
     expect(d.model.page).toBe("review");
     await d.settle();
     expect(d.model.review.state).toBe("ready");
@@ -149,7 +149,7 @@ describe("weights", () => {
       ["Find", "done"],
       ["Weights", "disabled"],
       ["Review", "current"],
-      ["Run", "todo"],
+      ["Done", "todo"],
     ]);
   });
 
@@ -171,7 +171,9 @@ describe("weights", () => {
     expect(hints(d.model, d.context).map((h) => h.keys)).toEqual(["r", "s", "esc"]);
     d.key(press("s"));
     await d.settle();
-    expect(d.of("app/switchTab")).toEqual([{ type: "app/switchTab", tab: "settings" }]);
+    expect(d.of("app/switchTab")).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.key" },
+    ]);
     d.context = context();
     d.key(press("r"));
     await d.settle();
@@ -264,7 +266,7 @@ describe("run and done", () => {
         type: "app/runFinished",
         summary: {
           ok: true,
-          lines: ["1 filament from SpoolmanDB: 1 written, 0 failed, 1 new spool"],
+          lines: ["1 filament from SpoolmanDB: 1 written, 1 new spool"],
         },
       },
     ]);
@@ -283,7 +285,7 @@ describe("run and done", () => {
         .map((p) => [p.title, p.state])
         .at(-1),
     ).toEqual(["Done", "current"]);
-    expect(hints(d.model, d.context).map((h) => h.keys)).toEqual(["l", "n"]);
+    expect(hints(d.model, d.context).map((h) => h.keys)).toEqual(["l", "s", "n"]);
 
     d.key(press("l"));
     await d.settle();
@@ -388,7 +390,9 @@ describe("editing a preset before the run writes it", () => {
     d.key(press("e"));
     await d.settle();
     d.key(press("enter"), press("u", { ctrl: true }), press("250"), press("enter"));
-    expect(hints(d.model, d.context).map((h) => h.label)).toEqual(expect.arrayContaining(["back"]));
+    expect(hints(d.model, d.context).map((h) => h.label)).toEqual(
+      expect.arrayContaining(["back (keeps edits)"]),
+    );
     d.key(press("a"));
     expect(d.model.review.editing).toBeNull();
     await d.settle();

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadLabelSettings } from "../src/labelSettings.js";
 import { toTab } from "../src/tui/core/types.js";
-import { listFor, OTHER, pageRows } from "../src/tui/tabs/settings/fields.js";
+import { listFor, OTHER, pageRows, shownItems } from "../src/tui/tabs/settings/fields.js";
 import { type SettingsModel, settingsLogic } from "../src/tui/tabs/settings/model.js";
 import { bambuConfigDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 import { installFakeLp } from "./fakeLp.js";
@@ -96,7 +96,7 @@ describe("init", () => {
     await h.press("enter");
     expect(h.model.open).toMatchObject({ field: "printerPreset", cursor: 0 });
     await h.run(cmds);
-    const items = listFor("printerPreset", h.ctx, h.model).items;
+    const items = shownItems(listFor("printerPreset", h.ctx, h.model), h.model.open);
     expect(items[(h.model.open as { cursor: number }).cursor]?.value).toBe(X1C_06);
   });
 
@@ -126,7 +126,7 @@ describe("init", () => {
 });
 
 describe("pages", () => {
-  it("go left and right without wrapping, keep their cursors, and esc goes to the previous one", async () => {
+  it("go left and right without wrapping and keep their cursors; esc stays", async () => {
     const h = await start();
     expect(h.model.page).toBe("bambu");
     await h.press("left");
@@ -135,7 +135,9 @@ describe("pages", () => {
     expect(h.model.page).toBe("spoolease");
     await h.press("down", "down", "right", "right", "right");
     expect(h.model.page).toBe("import");
-    await h.press("esc", "esc");
+    await h.press("esc");
+    expect(h.model.page).toBe("import");
+    await h.press("left", "left");
     expect(h.model.page).toBe("spoolease");
     expect(h.model.cursors.spoolease).toBe(2);
     await h.press("left");
@@ -146,7 +148,7 @@ describe("pages", () => {
     const h = await start({ host: "10.0.0.5", securityKey: "SECRETKEY", skipSpoolease: true });
     expect(rowsOf(h).map((r) => [r.label, r.value])).toEqual([
       ["Preset folder", "default"],
-      ["Printers", "X1 Carbon 0.4 nozzle"],
+      ["Printers", "X1C 0.4"],
       ["Overwrite presets", "off"],
     ]);
     await onPage(h, "SpoolEase");
@@ -155,7 +157,7 @@ describe("pages", () => {
       ["Port", "80", true],
       ["Security key", "set", true],
       ["Use HTTPS", "off", true],
-      ["Skip SpoolEase", "on", false],
+      ["Use SpoolEase", "off", false],
       ["Create spools", "on", true],
     ]);
     await onPage(h, "Labels");
@@ -163,7 +165,7 @@ describe("pages", () => {
       ["Fields", "QR code, brand, material, color name, temperatures, weight, spool ID"],
       ["Size", "57x32mm"],
       ["Printer", "Don't print"],
-      ["Save PDF to", "no PDF"],
+      ["Save PDF to", "No PDF"],
     ]);
     await onPage(h, "Import");
     expect(rowsOf(h).map((r) => [r.label, r.value])).toEqual([
@@ -201,7 +203,7 @@ describe("toggles", () => {
     await h.press("space");
     expect(valuesSent(h)).toEqual([{ overwritePresets: true }, { overwritePresets: false }]);
     await onPage(h, "SpoolEase");
-    await onRow(h, "Skip SpoolEase");
+    await onRow(h, "Use SpoolEase");
     await h.press("enter");
     expect(h.ctx.values.skipSpoolease).toBe(true);
     await onRow(h, "Create spools");
@@ -275,8 +277,8 @@ describe("the printers list", () => {
     await h.press("enter");
     const list = listFor("printerPreset", h.ctx, h.model);
     expect(list.multi).toBe(true);
-    expect(list.items.find((i) => i.value === X1C_06)?.label).toBe("X1 Carbon 0.6 nozzle");
-    const index = list.items.findIndex((i) => i.value === X1C_06);
+    expect(list.items.find((i) => i.value === X1C_06)?.label).toBe("X1C 0.6");
+    const index = shownItems(list, h.model.open).findIndex((i) => i.value === X1C_06);
     const cursor = (h.model.open as { cursor: number }).cursor;
     for (let i = cursor; i < index; i++) await h.press("down");
     await h.press("space");
@@ -307,11 +309,13 @@ describe("the printers list", () => {
       label: "Some Printer",
       detail: "not in BambuStudio's printers",
     });
-    await h.press("end", "space");
+    // Ticked first: X1C 0.4, Some Printer, then the rest.
+    await h.press("home", "down", "space");
     expect(h.ctx.values.printerPreset).toBe(X1C_04);
-    expect(h.model.open).toMatchObject({
-      cursor: listFor("printerPreset", h.ctx, h.model).items.length - 1,
-    });
+    expect(shownItems(listFor("printerPreset", h.ctx, h.model), h.model.open)[1]?.value).toBe(
+      X1C_06,
+    );
+    expect(h.model.open).toMatchObject({ cursor: 1 });
   });
 
   it("warns, without stopping, when the printers can't be remembered", async () => {
@@ -682,11 +686,11 @@ describe("hints", () => {
     await onRow(h, "Overwrite presets");
     expect(keys()).toEqual(["↑↓ move", "enter switch", "←→ pages"]);
     await h.press("right");
-    expect(keys()).toEqual(["↑↓ move", "enter edit", "t test connection", "←→ pages", "esc back"]);
+    expect(keys()).toEqual(["↑↓ move", "enter edit", "t test connection", "←→ pages"]);
     await h.press("left", "up", "enter");
-    expect(keys()).toEqual(["↑↓ move", "space tick", "enter done", "esc close"]);
+    expect(keys()).toEqual(["↑↓ move", "space tick", "enter done", "/ filter", "esc close"]);
     await h.press("esc", "up", "enter");
-    expect(keys()).toEqual(["↑↓ move", "enter choose", "esc close"]);
+    expect(keys()).toEqual(["↑↓ move", "enter choose", "/ filter", "esc close"]);
     await h.press("esc", "right", "enter");
     expect(keys()).toEqual(["enter save", "esc cancel"]);
   });

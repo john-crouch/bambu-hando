@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 
 import type { FormValues } from "../src/tui/core/values.js";
 import {
+  byModelAndNozzle,
   connectionOf,
   printerLabel,
   printerList,
+  shortPrinters,
   validPort,
 } from "../src/tui/tabs/settings/connection.js";
 import { TYPE_AHEAD_MS, typeAheadJump } from "../src/tui/tabs/settings/keys.js";
@@ -80,9 +82,24 @@ describe("the console connection", () => {
     expect(connectionOf({ ...VALUES, port: "x" })).toBeNull();
   });
 
-  it("splits the printers and drops the vendor for people", () => {
+  it("splits the printers and shortens them for people, nozzles of a model together", () => {
     expect(printerList(" A , ,B ")).toEqual(["A", "B"]);
-    expect(printerLabel("Bambu Lab X1 Carbon 0.4 nozzle")).toBe("X1 Carbon 0.4 nozzle");
+    expect(printerLabel("Bambu Lab X1 Carbon 0.4 nozzle")).toBe("X1C 0.4");
+    expect(
+      shortPrinters([
+        "Bambu Lab X1 Carbon 0.4 nozzle",
+        "Bambu Lab P1S 0.4 nozzle",
+        "Bambu Lab X1 Carbon 0.6 nozzle",
+        "Custom thing",
+      ]),
+    ).toBe("X1C 0.4, 0.6, P1S 0.4, Custom thing");
+    const sorted = [
+      "Bambu Lab X1 Carbon 0.6 nozzle",
+      "Bambu Lab A1 mini 0.4 nozzle",
+      "Bambu Lab X1 Carbon 0.2 nozzle",
+      "Bambu Lab A1 0.4 nozzle",
+    ].sort(byModelAndNozzle);
+    expect(sorted.map(printerLabel)).toEqual(["A1 0.4", "A1 mini 0.4", "X1C 0.2", "X1C 0.6"]);
   });
 });
 

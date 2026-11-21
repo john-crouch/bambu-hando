@@ -13,7 +13,9 @@ export type ShellMsg =
   /** A load the shell started finished; gen drops results a newer load replaced. */
   | { type: "shell/loaded"; resource: ResourceId; gen: number; result: Resource<unknown> }
   | { type: "shell/toastExpired"; id: number }
-  | { type: "shell/help" };
+  | { type: "shell/help" }
+  /** Quit, the unsaved changes already confirmed dropped (a running write still stops it). */
+  | { type: "shell/quitNow" };
 
 /** An overlay the shell itself owns: like the contract's OverlayModule, but its commands may send shell messages. */
 export interface ShellOverlay<M, Req> {
@@ -28,7 +30,10 @@ export interface ShellOverlay<M, Req> {
 /** A command palette entry; tab, when set, is shown first, so a tab's command runs where its result shows. */
 export interface PaletteItem {
   title: string;
+  /** The group, dim: the tab's title, or the shell's own (SHELL_GROUPS). */
   detail?: string;
+  /** The shortcut that does the same, at the row's right end. */
+  keys?: string;
   msg: ShellMsg;
   tab?: TabId;
 }

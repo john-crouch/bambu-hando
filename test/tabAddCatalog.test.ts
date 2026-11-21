@@ -12,7 +12,6 @@ import {
   type Sources,
   searchRows,
   selectedEntries,
-  tempsText,
   trayText,
 } from "../src/tui/tabs/add/catalog.js";
 import { PROFILES, profile, values } from "./tabAddHarness.js";
@@ -24,13 +23,6 @@ const IMPORTED = [
 
 const sources: Sources = { db: PROFILES, imported: IMPORTED, importName: "mine.json" };
 const none = new Set<string>();
-
-describe("tempsText", () => {
-  it("writes one temperature or a range with an en dash", () => {
-    expect(tempsText(220, 220)).toBe("220°C");
-    expect(tempsText(190, 230)).toBe("190–230°C");
-  });
-});
 
 describe("importSourceOf", () => {
   it("is the source when it's a file or URL, not SpoolmanDB or nothing", () => {
@@ -179,11 +171,12 @@ describe("findDetail", () => {
         { label: "Code", value: "PACMRED0", dim: true },
       ],
       adds: [
-        "BambuStudio preset for X1 Carbon 0.4 nozzle",
-        "BambuStudio preset for X1 Carbon 0.6 nozzle",
+        "BambuStudio preset for X1C 0.4",
+        "BambuStudio preset for X1C 0.6",
         "SpoolEase custom filament PACMRED0",
-        "SpoolEase spool of it",
+        "A SpoolEase spool",
       ],
+      addsShort: "preset ×2 · custom filament · spool",
     });
     expect(JSON.stringify(detail)).not.toContain("SECRET");
   });
@@ -202,9 +195,8 @@ describe("findDetail", () => {
       value: "GFL99",
       dim: true,
     });
-    expect(skipped?.kind === "color" && skipped.adds).toEqual([
-      "BambuStudio preset for X1 Carbon 0.4 nozzle",
-    ]);
+    expect(skipped?.kind === "color" && skipped.adds).toEqual(["BambuStudio preset for X1C 0.4"]);
+    expect(skipped?.kind === "color" && skipped.addsShort).toBe("preset ×1");
     const noSpools = findDetail(null, row, s, none, { ...ready, createSpools: false });
     expect(noSpools?.kind === "color" && noSpools.adds.at(-1)).toBe(
       "SpoolEase custom filament PACMRED0".replace("PACMRED0", bare.filamentId),

@@ -1,4 +1,4 @@
-// ABOUTME: The Add tab's model: pages Find → Weights → Review → Run, the selection, session colors, choices and edits.
+// ABOUTME: The Add tab's model: pages Find → Weights → Review → Done, the selection, session colors, choices and edits.
 // ABOUTME: init and the helpers that read the catalog and import out of the model and the shell's resources.
 
 import type { FilamentProfile, SyncResult } from "../../../models.js";
@@ -23,7 +23,7 @@ import {
 import { importCmd } from "./cmds.js";
 import type { ColorDialog } from "./color.js";
 import type { RowProgress } from "./plan.js";
-import { consoleSetup } from "./targets.js";
+import { consoleSetup, type PlanBasis } from "./targets.js";
 
 export type PageId = "find" | "weights" | "review" | "run";
 
@@ -66,6 +66,8 @@ export interface WeightsModel {
   error: string;
   /** The console refused the key or couldn't be reached: the fix is in Settings. */
   keyRejected: boolean;
+  /** Filament IDs the console has a spool of already: the run makes no spool for them, so no weight is asked. */
+  spooled: ReadonlySet<string>;
 }
 
 export interface ReviewModel {
@@ -82,6 +84,8 @@ export interface ReviewModel {
   error: string;
   /** A row's preset open in the editor, as the run would write it (e); its edits go into planEdits. */
   editing: { filamentId: string; editor: EditorModel } | null;
+  /** The settings the plan was read with; when they differ from the session's, the plan is read again. */
+  basis: PlanBasis | null;
 }
 
 export interface RunModel {
@@ -121,6 +125,12 @@ export interface AddModel {
   notice: string;
   /** The catalog was asked for, so it isn't asked for again while the shell loads it. */
   catalogRequested: boolean;
+  /** Letters typed in a row for type-ahead ("3dh"), and when the last one came (ctx.now). */
+  typed: { text: string; at: number } | null;
+  /** Empty spool weights chosen this session, by brand key: preselected next time, even after a run. */
+  weightMemory: ReadonlyMap<string, WeightChoice>;
+  /** A filament ID a deep link asked for before the catalog had loaded: opened once it has. */
+  focus: string | null;
 }
 
 export function emptyWeights(): WeightsModel {
@@ -136,6 +146,7 @@ export function emptyWeights(): WeightsModel {
     cursor: 0,
     error: "",
     keyRejected: false,
+    spooled: new Set(),
   };
 }
 
@@ -149,6 +160,7 @@ export function emptyReview(seq = 0): ReviewModel {
     cursor: 0,
     error: "",
     editing: null,
+    basis: null,
   };
 }
 
@@ -247,6 +259,9 @@ export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
     run: null,
     notice: "",
     catalogRequested: false,
+    typed: null,
+    weightMemory: new Map(),
+    focus: null,
   };
   // SpoolmanDB is a download: fetched now only when the app opens on Add, else on Add's first visit.
   const [requested, cmds] = landsOnAdd(ctx.values, start)

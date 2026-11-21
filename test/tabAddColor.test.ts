@@ -62,11 +62,13 @@ describe("typedColor", () => {
 describe("the dialog", () => {
   const open = () => openColorDialog("Acme", "PLA", BASES);
 
-  it("starts on the base field with nothing chosen", () => {
+  it("starts on the base field with the first listed color chosen, or the one given", () => {
+    expect(openColorDialog("Acme", "PLA", BASES, PROFILES[0]).base).toBe(2);
+    expect(openColorDialog("Acme", "PLA", []).base).toBeNull();
     expect(open()).toMatchObject({
       brand: "Acme",
       material: "PLA",
-      base: null,
+      base: 0,
       field: "base",
       error: "",
     });
@@ -74,10 +76,17 @@ describe("the dialog", () => {
   });
 
   it("cycles the base with ←/→ and jumps to a color by its first letter", () => {
-    expect(dialogOf(keys(open(), "right")).base).toBe(0);
+    expect(dialogOf(keys(open(), "right")).base).toBe(1);
     expect(dialogOf(keys(open(), "left")).base).toBe(2);
-    expect(dialogOf(keys(open(), "right", "right", "right", "right")).base).toBe(0);
+    expect(dialogOf(keys(open(), "right", "right", "right", "right")).base).toBe(1);
     expect(dialogOf(keys(open(), "r")).base).toBe(2);
+  });
+
+  it("moves between fields with tab and shift+tab, wrapping", () => {
+    expect(dialogOf(colorDialogKey(open(), press("tab"), PROFILES)).field).toBe("name");
+    expect(dialogOf(colorDialogKey(open(), press("tab", { shift: true }), PROFILES)).field).toBe(
+      "add",
+    );
   });
 
   it("moves between fields with ↑/↓ and enter, and types into name and hex", () => {
@@ -107,9 +116,8 @@ describe("the dialog", () => {
 
   it("says what's missing, in order, and clears the message on the next key", () => {
     const toAdd = ["down", "down", "down"];
-    expect(dialogOf(keys(open(), ...toAdd, "enter")).error).toBe(
-      "Choose the listed color it's like",
-    );
+    const none = openColorDialog("Acme", "PLA", []);
+    expect(dialogOf(keys(none, ...toAdd, "enter")).error).toBe("Choose the listed color it's like");
     expect(dialogOf(keys(open(), "right", ...toAdd, "enter")).error).toBe("Type the color's name");
     expect(dialogOf(keys(open(), "right", "down", "Moss", "down", "down", "enter")).error).toBe(
       "Type the color as 6 hex digits, such as AD0000",

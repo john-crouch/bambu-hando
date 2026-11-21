@@ -62,18 +62,19 @@ function screen(model: SettingsModel, ctx: Ctx): string {
   return lines.join("\n");
 }
 
-/** The right panel's words in order, borders and line breaks gone: for text it wraps. */
-function side(text: string, ctx: Ctx): string {
-  const left = settingsLayout(ctx).left;
-  return text
-    .split("\n")
-    .map((line) => [...line].slice(left).join(""))
+/** The detail panel's words in order (beside the rows, or under them), borders and breaks gone: for text it wraps. */
+function side(text: string, ctx: Ctx, page: SettingsModel["page"] = "spoolease"): string {
+  const layout = settingsLayout(ctx, page);
+  const lines = text.split("\n");
+  return (layout.stacked ? lines.slice(1 + layout.rowsHeight) : lines)
+    .map((line) => (layout.stacked ? line : [...line].slice(layout.left).join("")))
     .join(" ")
     .replace(/[│╭╮╰╯]/g, " ")
     .replace(/\s+/g, " ");
 }
 
 describe.each([
+  [60, 20],
   [80, 24],
   [120, 36],
 ])("the Settings tab at %ix%i", (columns, rows) => {
@@ -89,11 +90,11 @@ describe.each([
     expect(text).toContain("▸ BambuStudio ─ SpoolEase ─ Labels ─ Import");
     expect(text).toContain("Preset folder      1489686194");
     expect(text).toContain("Overwrite presets  off");
-    expect(text).toContain("BambuStudio's user folder the");
+    expect(side(text, ctx, "bambu")).toContain("BambuStudio's user folder the presets go in");
   });
 
   it("lists the ticked printers beside the Printers row", () => {
-    expect(screen(on("bambu", 1), ctx)).toContain("✓ X1 Carbon 0.4 nozzle");
+    expect(screen(on("bambu", 1), ctx)).toContain("✓ X1C 0.4");
   });
 
   it("shows an open printer list with its ticks and position", () => {
@@ -102,7 +103,7 @@ describe.each([
       ctx,
     );
     expect(text).toContain("Printers · 1 ticked");
-    expect(text).toContain("[✓] X1 Carbon 0.4 nozzle");
+    expect(text).toContain("[✓] X1C 0.4");
     expect(text).toContain("41/41");
   });
 
@@ -112,8 +113,8 @@ describe.each([
       test: { state: "ok", text: "http://10.0.24.111 accepts the key" },
     };
     const text = screen(tested, ctx);
-    expect(text).toContain("Security key    set");
-    expect(text).toContain("Create spools   ✓ on");
+    expect(text).toContain("Security key   set");
+    expect(text).toContain("Create spools  ✓ on");
     expect(side(text, ctx)).toContain("✓ http://10.0.24.111 accepts the key");
     const failed = screen(
       { ...tested, test: { state: "failed", text: "http://10.0.24.111 rejects the security key" } },
@@ -171,6 +172,35 @@ describe.each([
     expect(imports).toContain("Diameter     1.75 mm");
   });
 
+  it("never cuts a value while the explanation has room: it goes under the rows below 90 columns", () => {
+    const text = screen(
+      on("bambu", 1),
+      sized(columns, rows, { ...VALUES, printerPreset: `${X1C}, Bambu Lab X1 Carbon 0.6 nozzle` }),
+    );
+    expect(text).toContain("X1C 0.4, 0.6");
+    expect(text).toContain("1489686194");
+    expect(text).not.toMatch(/14896…|X1C 0…/);
+  });
+
+  it("filters an open list, highlighting what matches", () => {
+    const text = screen(
+      {
+        ...MODEL,
+        open: {
+          kind: "list",
+          field: "printerPreset",
+          cursor: 0,
+          filter: { value: "x1", cursor: 2 },
+          filtering: true,
+        },
+      },
+      ctx,
+    );
+    expect(text).toContain("/ x1");
+    expect(text).toContain("[✓] X1C 0.4");
+    expect(text).not.toContain("Printer 00");
+  });
+
   it("says why the label printer list is short", () => {
     const text = screen(
       {
@@ -181,6 +211,6 @@ describe.each([
       ctx,
     );
     expect(text).toContain("[✓] Don't print");
-    expect(side(text, ctx)).toContain("No printers found (lpstat -e)");
+    expect(side(text, ctx, "labels")).toContain("No printers found (lpstat -e)");
   });
 });

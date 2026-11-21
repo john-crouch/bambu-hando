@@ -4,14 +4,27 @@
 import { describe, expect, it } from "vitest";
 
 import { CONFIRM, confirmWidth } from "../src/tui/app/confirm.js";
-import { GLOBAL_HELP, HELP, type HelpRequest, helpLines, wrap } from "../src/tui/app/help.js";
+import {
+  GLOBAL_HELP,
+  HELP,
+  type HelpRequest,
+  helpLines,
+  helpNote,
+  helpSize,
+  wrap,
+} from "../src/tui/app/help.js";
 import type { PaletteItem, ShellMsg } from "../src/tui/app/messages.js";
 import {
   fuzzyMatch,
   PALETTE,
   type PaletteModel,
   paletteInput,
+  paletteLayout,
+  paletteNote,
   paletteRows,
+  queryLine,
+  rowSegments,
+  SHELL_GROUPS,
 } from "../src/tui/app/palette.js";
 import { press } from "../src/tui/core/keys.js";
 import type { Cmd } from "../src/tui/core/program.js";
@@ -63,6 +76,35 @@ describe("fuzzyMatch", () => {
       "Go to Spools",
       "Reload SpoolmanDB catalog",
     ]);
+  });
+
+  it("ranks word-prefix matches first, then initials, then loose matches", () => {
+    const model: PaletteModel = {
+      items: [
+        item("Scan a barcode"),
+        item("Show sync problems"),
+        item("Go to Spools"),
+        item("Reload spools from the console"),
+      ],
+      query: "sp",
+      cursor: 0,
+    };
+    const titles = () => paletteRows(model).map((r) => r.item.title);
+    // "sp" starts a word in both Spools rows; Show sync problems only has it as initials.
+    expect(titles()).toEqual([
+      "Go to Spools",
+      "Reload spools from the console",
+      "Show sync problems",
+    ]);
+    model.query = "ssp";
+    expect(titles()[0]).toBe("Show sync problems");
+    model.query = "go sp";
+    expect(titles()).toEqual(["Go to Spools"]);
+    model.query = "barc";
+    expect(paletteRows(model)[0]).toEqual({ item: model.items[0], hits: [7, 8, 9, 10] });
+    // Loose: characters in order anywhere, after every better kind of match.
+    model.query = "cn";
+    expect(titles().sort()).toEqual(["Reload spools from the console", "Scan a barcode"]);
   });
 
   it("keeps the palette's order without a query", () => {
@@ -134,6 +176,50 @@ describe("paletteInput", () => {
   });
 });
 
+describe("palette position", () => {
+  const items = Array.from({ length: 30 }, (_, i) => item(`Command ${i}`));
+
+  it("puts the cursor's place in the bottom border once the list scrolls", () => {
+    const model: PaletteModel = { items, query: "", cursor: 2 };
+    expect(paletteNote(model, ctx())).toBe("3/30");
+    expect(paletteNote({ ...model, items: items.slice(0, 5) }, ctx())).toBe("");
+  });
+
+  it("counts the matches on the query line only while there's a query", () => {
+    const text = (model: PaletteModel) =>
+      queryLine(model, paletteRows(model).length, 40)
+        .map((s) => s.text)
+        .join("");
+    expect(text({ items, query: "", cursor: 0 }).trimEnd()).toBe("›   Type to find a command");
+    // Command 1 and 10-19 by word prefix, Command 21 loosely.
+    expect(text({ items, query: "command 1", cursor: 0 })).toMatch(/^› command 1 +12 matches$/);
+    expect(text({ items, query: "command 29", cursor: 0 })).toMatch(/ 1 match$/);
+  });
+});
+
+describe("palette rows", () => {
+  it("draws the title, the group and the shortcut in aligned columns, the key at the right end", () => {
+    const items = [
+      item("Scan a barcode", { detail: "Spools", keys: "b" }),
+      item("Go to Add", { detail: "Tab" }),
+      item("Command palette", { detail: "App", keys: "ctrl+k" }),
+    ];
+    const layout = paletteLayout(items);
+    const text = (index: number) =>
+      rowSegments(items[index] as PaletteItem, [], false, 40, layout)
+        .map((s) => s.text)
+        .join("");
+    expect(text(0)).toBe("  Scan a barcode           Spools      b");
+    expect(text(1)).toBe("  Go to Add                Tab          ");
+    expect(text(2)).toBe("  Command palette          App    ctrl+k");
+    for (const index of [0, 1, 2]) expect(text(index)).toHaveLength(40);
+  });
+
+  it("names the shell's own groups in title case", () => {
+    expect(SHELL_GROUPS).toEqual({ tab: "Tab", data: "Data", app: "App" });
+  });
+});
+
 describe("help", () => {
   const request: HelpRequest = {
     tab: "spools",
@@ -176,6 +262,22 @@ describe("help", () => {
     expect(HELP.hints(m, small).map((h) => h.keys)).toEqual(["↑↓", "any key"]);
     expect(HELP.hints(m, ctx(120, 60)).map((h) => h.keys)).toEqual(["any key"]);
   });
+
+  it("says in its bottom border which way there's more, nothing when it all fits", () => {
+    const small = ctx(80, 14);
+    const [m] = HELP.init(request, small);
+    expect(helpNote(m, small)).toBe("↓ more");
+    const [down] = HELP.update(m, { type: "key", key: press("down") }, small);
+    expect(helpNote(down, small)).toBe("↑↓ more");
+    const [end] = HELP.update(m, { type: "key", key: press("end") }, small);
+    expect(helpNote(end, small)).toBe("↑ more");
+    expect(helpNote(m, ctx(120, 60))).toBe("");
+  });
+
+  it("takes the body's full width when narrow, and every row but its border and padding", () => {
+    expect(helpSize(ctx(80, 24))).toEqual({ width: 80, rows: 18 });
+    expect(helpSize(ctx(120, 36))).toEqual({ width: 76, rows: 30 });
+  });
 });
 
 describe("confirm", () => {
@@ -205,6 +307,8 @@ describe("confirm", () => {
   it("is as wide as its longest line, within the terminal", () => {
     expect(confirmWidth(request, 120)).toBe(30);
     expect(confirmWidth({ ...request, lines: ["x".repeat(100)] }, 120)).toBe(80);
-    expect(confirmWidth({ ...request, lines: ["x".repeat(100)] }, 60)).toBe(56);
+    // Narrow: the whole width, never a sliver of the body at each side.
+    expect(confirmWidth({ ...request, lines: ["x".repeat(100)] }, 60)).toBe(60);
+    expect(confirmWidth({ ...request, lines: ["x".repeat(70)] }, 80)).toBe(80);
   });
 });

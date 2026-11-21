@@ -4,6 +4,9 @@
 import { Box } from "ink";
 import type { ReactNode } from "react";
 
+import { Backdrop } from "./backdrop.js";
+import { type Toast, ToastLine } from "./Toast.js";
+
 /** Rows the header and footer take. */
 export const FRAME_CHROME = 2;
 
@@ -19,10 +22,16 @@ export interface FrameProps {
   footer: ReactNode;
   /** Drawn centered over the body (a Dialog, which paints its own background). */
   overlay?: ReactNode;
+  /** Drawn over the body's last line (usually a panel's bottom border), two columns in, over any overlay. */
+  toast?: Toast;
   children?: ReactNode;
 }
 
-export function Frame({ columns, rows, header, footer, overlay, children }: FrameProps) {
+/** Columns a toast starts in, and the columns it leaves free at the right (a panel's "3/14" note). */
+const TOAST_LEFT = 2;
+const TOAST_RIGHT = 12;
+
+export function Frame({ columns, rows, header, footer, overlay, toast, children }: FrameProps) {
   const body = frameBody(columns, rows);
   return (
     <Box flexDirection="column" width={body.columns} height={Math.max(0, rows)} overflow="hidden">
@@ -36,7 +45,8 @@ export function Frame({ columns, rows, header, footer, overlay, children }: Fram
         flexDirection="row"
         overflow="hidden"
       >
-        {children}
+        {/* Behind an overlay the body is a backdrop: gray and dim, so the dialog stands out. */}
+        <Backdrop.Provider value={Boolean(overlay)}>{children}</Backdrop.Provider>
       </Box>
       <Box height={1} width={body.columns} flexShrink={0} overflow="hidden">
         {footer}
@@ -53,6 +63,11 @@ export function Frame({ columns, rows, header, footer, overlay, children }: Fram
           overflow="hidden"
         >
           {overlay}
+        </Box>
+      ) : null}
+      {toast && body.rows > 0 ? (
+        <Box position="absolute" top={body.rows} left={TOAST_LEFT} height={1}>
+          <ToastLine toast={toast} room={Math.max(0, body.columns - TOAST_LEFT - TOAST_RIGHT)} />
         </Box>
       ) : null}
     </Box>
