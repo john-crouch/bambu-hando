@@ -153,7 +153,10 @@ describe("bambu-hando key without a reachable keyring (binary)", () => {
   it.skipIf(process.platform !== "linux")(
     "reports a key from the environment even when the keyring can't be read",
     async () => {
-      const { code, stdout } = await cli(["key", "status"], { ...noKeyring, [TDFP.env]: KEY });
+      const { code, stdout } = await cli(["key", "status", "3dfp"], {
+        ...noKeyring,
+        [TDFP.env]: KEY,
+      });
       expect(code).toBe(0);
       expect(stdout).toMatch(
         /^3dfp {2}3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY \(can't check the system keyring \(Secret Service\)\)\n$/,

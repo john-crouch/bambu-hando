@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   loadTuiSettings,
+  rememberConsole,
   rememberWeight,
   saveTuiSettings,
   tuiSettingsPath,
@@ -114,6 +115,58 @@ describe("TUI settings", () => {
       weights: { d: { kind: "unspecified" } },
     });
     await writeFile(tuiSettingsPath(), JSON.stringify({ printers: [], weights: 7 }), "utf-8");
+    expect(await loadTuiSettings()).toEqual({ printers: [] });
+  });
+
+  it("remembers the console's host, port and HTTPS, each change kept beside the rest", async () => {
+    await saveTuiSettings({ printers: ["Printer A 0.4 nozzle"] });
+    await rememberConsole({ host: "10.0.0.5" });
+    await rememberConsole({ port: 8080 });
+    await rememberConsole({ https: true });
+    await rememberWeight("sunlu", { kind: "source" });
+    await saveTuiSettings({ printers: ["Printer B 0.4 nozzle"] });
+    expect(await loadTuiSettings()).toEqual({
+      printers: ["Printer B 0.4 nozzle"],
+      weights: { sunlu: { kind: "source" } },
+      console: { host: "10.0.0.5", port: 8080, https: true },
+    });
+  });
+
+  it("forgets the host when it's saved empty, and keeps changes made at once", async () => {
+    await Promise.all([
+      rememberConsole({ host: "spoolease.local" }),
+      rememberConsole({ port: 81 }),
+      rememberConsole({ https: false }),
+    ]);
+    expect((await loadTuiSettings()).console).toEqual({
+      host: "spoolease.local",
+      port: 81,
+      https: false,
+    });
+    await rememberConsole({ host: "  " });
+    expect((await loadTuiSettings()).console).toEqual({ port: 81, https: false });
+  });
+
+  it("never keeps a security key in the file, even one handed to it", async () => {
+    await rememberConsole({ host: "h", securityKey: "LEAKME" } as never);
+    expect(await readFile(tuiSettingsPath(), "utf-8")).not.toContain("LEAKME");
+  });
+
+  it("drops a damaged console and keeps what's good in it", async () => {
+    await mkdir(join(home, ".config", "bambu-hando"), { recursive: true });
+    await writeFile(
+      tuiSettingsPath(),
+      JSON.stringify({ printers: [], console: { host: 7, port: 70000, https: "yes" } }),
+      "utf-8",
+    );
+    expect(await loadTuiSettings()).toEqual({ printers: [] });
+    await writeFile(
+      tuiSettingsPath(),
+      JSON.stringify({ printers: [], console: { host: " h ", port: 0, https: true } }),
+      "utf-8",
+    );
+    expect(await loadTuiSettings()).toEqual({ printers: [], console: { host: "h", https: true } });
+    await writeFile(tuiSettingsPath(), JSON.stringify({ printers: [], console: "x" }), "utf-8");
     expect(await loadTuiSettings()).toEqual({ printers: [] });
   });
 });
