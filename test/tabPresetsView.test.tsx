@@ -203,6 +203,33 @@ describe.each([
     expect(screen[note + 1]).toMatch(/^╰/);
   });
 
+  it("shows the preset's file with its name in view, the folder under it when cut", () => {
+    const screen = lines(start(ctx), ctx);
+    expectExact(screen, ctx);
+    const text = screen.join("\n");
+    if (columns < 90) {
+      expect(text).not.toContain("File");
+      return;
+    }
+    const file = screen.find((line) => line.includes("File ")) ?? "";
+    expect(file).toMatch(/File +~\/…\/.*\.json +│$/);
+    expect(text).toMatch(/Folder +~\/.*filament\/base +│/);
+  });
+
+  it("ends the editor with the preset's file, its name kept", () => {
+    const screen = lines(drive(start(ctx), ctx, "s", "enter"), ctx);
+    expectExact(screen, ctx);
+    const note = screen.at(-2) ?? "";
+    // Without the side panel, the line says what the setting takes instead.
+    if (columns < 100) {
+      expect(note).toContain("Takes whole number, 0–500");
+      return;
+    }
+    expect(note).toMatch(
+      /~\/.*Sunlu PETG 2\.0 Vivid Yellow @Bambu Lab X1 Carbon 0\.4 nozzle\.json/,
+    );
+  });
+
   it("picks the printer of a filament with left and right, shown in the detail", () => {
     const sunlu = drive(start(ctx), ctx, "s", "right");
     const screen = lines(sunlu, ctx);

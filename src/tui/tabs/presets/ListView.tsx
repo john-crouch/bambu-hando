@@ -1,15 +1,14 @@
 // ABOUTME: The Presets tab's list of BambuStudio filament presets beside (or above) the highlighted preset's detail.
 // ABOUTME: Side by side from 90 columns; below that the detail is a compact panel under the list.
 
-import { basename, dirname } from "node:path";
+import { dirname } from "node:path";
 
 import { Box } from "ink";
 
-import { tildePath } from "../../../paths.js";
 import { type Preset, presetFamily } from "../../../presetEdit.js";
 import type { UserPreset } from "../../../syncCheck.js";
 import type { Ctx } from "../../core/types.js";
-import { plural } from "../../ui/format.js";
+import { fitPath, plural } from "../../ui/format.js";
 import {
   Busy,
   Detail,
@@ -240,19 +239,9 @@ function PresetList({
   );
 }
 
-/** Stands in for the folder until the value's width is known: it's cut from the left, keeping its end. */
+/** Stand in for the file and its folder until the value column's width is known. */
+const FILE = "\u0000file";
 const FOLDER = "\u0000folder";
-
-/** The text cut from the left to width columns, starting with … when cut. */
-function truncateStart(text: string, width: number): string {
-  if (textWidth(text) <= width) return text;
-  let out = "";
-  for (const char of [...text].reverse()) {
-    if (textWidth(`…${char}${out}`) > width) break;
-    out = char + out;
-  }
-  return `…${out}`;
-}
 
 /** The preset's printer; with ‹ › and its place when ←→ pick among the row's printers. */
 function printerRow(preset: UserPreset, group: PresetGroup | undefined): DetailRow {
@@ -305,7 +294,7 @@ function detailRows(
     { label: "", value: "" },
     ...presetDetail(file).rows,
     { label: "", value: "" },
-    { label: "File", value: basename(preset.path), dim: true },
+    { label: "File", value: FILE, dim: true },
     { label: "Folder", value: FOLDER, dim: true },
     ...shared,
   ];
@@ -361,11 +350,14 @@ function PresetDetail({
   const listed = detailRows(preset, file.preset, group, others, drafted, compact);
   // Detail's value column: what's left of the inside after a margin, the labels, a gap and a margin.
   const valueRoom = inner.width - 1 - labelColumn(listed) - 2 - 1;
-  const rows = listed.map((row) =>
-    row.value === FOLDER
-      ? { ...row, value: truncateStart(tildePath(dirname(preset.path)), valueRoom) }
-      : row,
-  );
+  // The file's name stays in view; the folder gets its own row when the whole path doesn't fit.
+  const whole = fitPath(preset.path, valueRoom) === fitPath(preset.path, Infinity);
+  const rows = listed.flatMap((row) => {
+    if (row.value === FILE) return [{ ...row, value: fitPath(preset.path, valueRoom) }];
+    if (row.value === FOLDER)
+      return whole ? [] : [{ ...row, value: fitPath(dirname(preset.path), valueRoom) }];
+    return [row];
+  });
   const chip: Segment[] = swatch
     ? [{ text: " " }, { text: "  ", backgroundColor: swatch }, { text: " " }]
     : [];

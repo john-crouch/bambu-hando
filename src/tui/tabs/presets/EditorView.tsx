@@ -3,8 +3,7 @@
 
 import { Box } from "ink";
 
-import { tildePath } from "../../../paths.js";
-import { plural } from "../../ui/format.js";
+import { fitPath, plural } from "../../ui/format.js";
 import {
   Detail,
   type DetailRow,
@@ -138,7 +137,12 @@ function typingSegments(
 }
 
 /** The line under the settings: an error, what's being typed takes, a locked key's reason, or the file. */
-function noteSegments(model: EditorModel, row: EditorRow | undefined, narrow: boolean): Segment[] {
+function noteSegments(
+  model: EditorModel,
+  row: EditorRow | undefined,
+  narrow: boolean,
+  width: number,
+): Segment[] {
   if (model.error)
     return [{ text: `${ICONS.failed} ${tidyUnits(model.error)}`, color: COLORS.failed }];
   const warning = editorWarning(model);
@@ -153,7 +157,7 @@ function noteSegments(model: EditorModel, row: EditorRow | undefined, narrow: bo
   if (takes) return [{ text: `Takes ${takes}`, color: COLORS.muted }];
   if (model.mode === "planned")
     return [{ text: "The preset the run writes; edits go into it", color: COLORS.muted }];
-  return model.path ? [{ text: tildePath(model.path), color: COLORS.muted, dim: true }] : [];
+  return model.path ? [{ text: fitPath(model.path, width), color: COLORS.muted, dim: true }] : [];
 }
 
 function FilterLine({ model, width }: { model: EditorModel; width: number }) {
@@ -362,7 +366,10 @@ export function EditorView({ model, width, height }: EditorViewProps) {
         />
         <Line segments={[]} width={inner.width} />
         <Line
-          segments={[{ text: spaces(1) }, ...noteSegments(model, rows[cursor], side === 0)]}
+          segments={[
+            { text: spaces(1) },
+            ...noteSegments(model, rows[cursor], side === 0, inner.width - 2),
+          ]}
           width={inner.width}
         />
       </Panel>
