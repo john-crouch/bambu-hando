@@ -90,6 +90,7 @@ import {
   initialColorForm,
 } from "./ColorForm.js";
 import { consoleUrl, LinkedText, type TextPart } from "./ConsoleLink.js";
+import type { FormValues } from "./core/values.js";
 import { Help, type HelpTopic } from "./Help.js";
 import { HomeMenu, homeInput, homeItems, initialHomeCursor } from "./HomeMenu.js";
 import {
@@ -142,7 +143,6 @@ import {
   spoolListRows,
 } from "./SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
-import type { FormValues } from "./core/values.js";
 import { useTerminalColumns, useTerminalRows } from "./screenSize.js";
 import { COLORS } from "./theme.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
