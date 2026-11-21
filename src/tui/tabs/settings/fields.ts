@@ -61,7 +61,7 @@ export const PAGE_FIELDS: Record<PageId, readonly FieldDef[]> = {
       id: "printerPreset",
       label: "Printers",
       kind: "multi",
-      about: "Each filament gets one preset per printer ticked here.",
+      about: "Each filament gets one preset per printer ticked here. Remembered for next time.",
     },
     {
       id: "overwritePresets",
@@ -201,6 +201,11 @@ const LABEL_NAMES: Record<LabelField, string> = {
 
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
+/** A label field as a list shows it, e.g. "Color name". */
+export function labelFieldName(field: LabelField): string {
+  return capital(LABEL_NAMES[field]);
+}
+
 const DEFAULT_FOLDER_NOTE = "used when not logged in to BambuStudio";
 
 function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, "value" | "tone"> {
@@ -285,6 +290,17 @@ export function fieldKind(field: FieldId): FieldKind {
   }
   throw new Error(`unknown setting ${field}`);
 }
+
+/** What an empty text field suggests. */
+export const PLACEHOLDERS: Partial<Record<FieldId, string>> = {
+  host: "e.g. 192.168.1.50 or spoolease.local",
+  port: "80",
+  securityKey: "the key set on the console",
+  source: "a .json file or an https:// URL",
+  labelOutput: "e.g. ~/labels.pdf; empty for none",
+  labelSize: "e.g. 40x30mm or 2x1in",
+  diameter: "e.g. 1.75",
+};
 
 /** The value a list item has that opens a text field for a value the list doesn't have. */
 export const OTHER = "\u0000other";
@@ -376,7 +392,7 @@ export function listFor(field: FieldId, ctx: Ctx, sources: Sources): ListSpec {
         multi: true,
         items: LABEL_FIELDS.map((f) => ({
           value: f.key,
-          label: capital(LABEL_NAMES[f.key]),
+          label: labelFieldName(f.key),
           detail: f.description,
         })),
         ticked: labels?.fields ?? [],

@@ -36,7 +36,12 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const start = (values = {}) => Harness.start("settings", settingsLogic, ctxOf(values));
+/** Starts the tab and gives it a key, which loads the lists it reads only once it's used. */
+async function start(values = {}): Promise<Harness<SettingsModel>> {
+  const h = await Harness.start("settings", settingsLogic, ctxOf(values));
+  await h.press("home");
+  return h;
+}
 
 const rowsOf = (h: Harness<SettingsModel>) => pageRows(h.model.page, h.ctx, h.model);
 const valuesSent = (h: Harness<SettingsModel>) => h.of("app/values").map((m) => m.values);
@@ -62,6 +67,39 @@ function pageTitle(h: Harness<SettingsModel>): string {
 }
 
 describe("init", () => {
+  it("reads the folders and label settings, and the printer lists only once the tab is used", async () => {
+    const h = await Harness.start("settings", settingsLogic, ctxOf());
+    expect(h.model.folders).toEqual({ state: "ready", value: ["1234567", "default"] });
+    expect(h.model.labels).toMatchObject({ state: "ready" });
+    expect(h.model.printers).toEqual({ state: "loading" });
+    expect(h.model.labelPrinters).toEqual({ state: "loading" });
+    const [, cmds] = h.step({
+      type: "key",
+      key: { name: "down", input: "", ctrl: false, shift: false, meta: false },
+    });
+    expect(cmds).toHaveLength(2);
+    await h.press("down");
+    const [, again] = h.step({
+      type: "key",
+      key: { name: "down", input: "", ctrl: false, shift: false, meta: false },
+    });
+    expect(again).toHaveLength(0);
+  });
+
+  it("puts an open list's cursor on the current value once its items arrive", async () => {
+    const h = await Harness.start("settings", settingsLogic, ctxOf({ printerPreset: X1C_06 }));
+    const [opened, cmds] = h.step({
+      type: "key",
+      key: { name: "down", input: "", ctrl: false, shift: false, meta: false },
+    });
+    h.model = opened;
+    await h.press("enter");
+    expect(h.model.open).toMatchObject({ field: "printerPreset", cursor: 0 });
+    await h.run(cmds);
+    const items = listFor("printerPreset", h.ctx, h.model).items;
+    expect(items[(h.model.open as { cursor: number }).cursor]?.value).toBe(X1C_06);
+  });
+
   it("reads BambuStudio's folders and printers, the label settings and the CUPS printers", async () => {
     const h = await start();
     expect(h.model.folders).toEqual({ state: "ready", value: ["1234567", "default"] });

@@ -44,6 +44,7 @@ import {
   tickItem,
 } from "./fields.js";
 import { type Typed, typeAheadJump } from "./keys.js";
+import { listRows } from "./layout.js";
 
 export type Open =
   | { kind: "list"; field: FieldId; cursor: number; typed?: Typed }
@@ -66,12 +67,16 @@ export interface SettingsModel extends Sources {
   test: TestState;
   /** Bumped by every test and every connection change, so a late answer about older settings is dropped. */
   testSeq: number;
+  /** Whether the lists that cost a moment to read (BambuStudio's printers, CUPS) have been asked for. */
+  asked: boolean;
 }
 
-/** Rows a list moves by on pgup/pgdn: about the body less its chrome. */
-function pageSize(ctx: Ctx): number {
-  return Math.max(1, ctx.bodyRows - 6);
-}
+/** What each list is made from, beyond the session's values. */
+const LIST_SOURCES: Partial<Record<FieldId, LoadWhat>> = {
+  presetFolder: "folders",
+  printerPreset: "printers",
+  labelPrinter: "labelPrinters",
+};
 
 function init(_ctx: Ctx): Step<SettingsModel> {
   return [
@@ -82,12 +87,14 @@ function init(_ctx: Ctx): Step<SettingsModel> {
       error: "",
       test: { state: "idle" },
       testSeq: 0,
+      asked: false,
       folders: { state: "loading" },
       printers: { state: "loading" },
       labelPrinters: { state: "loading" },
       labels: { state: "loading" },
     },
-    [loadFolders(), loadPrinters(), loadLabels(), loadLabelPrinters()],
+    // The printer lists wait for the tab's first key, so starting the TUI doesn't read them.
+    [loadFolders(), loadLabels()],
   ];
 }
 
@@ -184,7 +191,7 @@ function listKey(
   const list = listFor(open.field, ctx, model);
   const close = { ...model, open: null };
   if (key.name === "esc") return step(close);
-  const moved = moveCursor(open.cursor, key, list.items.length, pageSize(ctx));
+  const moved = moveCursor(open.cursor, key, list.items.length, listRows(ctx));
   if (moved !== null) return step({ ...model, open: { ...open, cursor: moved } });
   const item = list.items[open.cursor];
   if (list.multi) {
@@ -252,7 +259,7 @@ function keyStep(model: SettingsModel, key: KeyPress, ctx: Ctx): Step<SettingsMo
   if (key.name === "left" || key.name === "esc") return toPage(index - 1);
   if (key.name === "right") return toPage(index + 1);
   const fields = pageFieldIds(model.page);
-  const moved = moveCursor(model.cursors[model.page], key, fields.length, pageSize(ctx));
+  const moved = moveCursor(model.cursors[model.page], key, fields.length, fields.length);
   if (moved !== null) return step({ ...model, cursors: { ...model.cursors, [model.page]: moved } });
   if (key.name === "enter" || key.name === "space") return openRow(model, ctx);
   if (model.page === "spoolease" && letter(key) === "t") return startTest(model, ctx);
@@ -263,7 +270,9 @@ function update(model: SettingsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<Sett
   switch (msg.type) {
     case "key": {
       const key = (msg as Extract<AppMsg, { type: "key" }>).key;
-      return keyStep({ ...model, error: "" }, key, ctx);
+      if (model.asked) return keyStep({ ...model, error: "" }, key, ctx);
+      const [next, cmds] = keyStep({ ...model, error: "", asked: true }, key, ctx);
+      return [next, [loadPrinters(), loadLabelPrinters(), ...cmds]];
     }
     case "paste": {
       const open = model.open;
@@ -281,7 +290,15 @@ function update(model: SettingsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<Sett
         typeof msg.error === "string"
           ? { state: "failed", error: msg.error, ...(previous ? { value: previous } : {}) }
           : { state: "ready", value: msg.value };
-      return step({ ...model, [what]: loaded });
+      const next = { ...model, [what]: loaded } as SettingsModel;
+      // A list opened before its items arrived: put the cursor on the current value, now it's listed.
+      const open = next.open;
+      if (!previous && open?.kind === "list" && LIST_SOURCES[open.field] === what) {
+        const list = listFor(open.field, ctx, next);
+        const cursor = list.items.findIndex((item) => list.ticked.includes(item.value));
+        if (cursor >= 0) return step({ ...next, open: { ...open, cursor } });
+      }
+      return step(next);
     }
     case "settings/tested": {
       if (msg.seq !== model.testSeq) return step(model);
