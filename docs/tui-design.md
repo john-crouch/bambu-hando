@@ -152,8 +152,9 @@ Lists for every value that can come from a list; text only where nothing can.
 - Rounded borders, dim; the focused panel's border and title in accent.
 - Ink 8 measures `✓ ✗ ▰ ▱ ▸ ╭ ─ ° · …` as one column, as terminals draw them, so they're fine in fixed-width
   cells and in panel title lines; still check every screen with `tui:snap` at 80 and 110 columns.
-- Values for people: `220°C` (or `190–230°C`), `564 g`, `56%`, dates as `2026-10-30`; codes and IDs in
-  the detail panel, dim.
+- Values for people: `220°C` (or `190–230°C`), `564 g`, `56%`, dates as `Oct 30` in the current year and
+  `2025-11-11` before it (Spools' `addedText`; label PDFs print their own full date); codes and IDs in the
+  detail panel, dim.
 
 ## Design system API (`src/tui/ui/`)
 

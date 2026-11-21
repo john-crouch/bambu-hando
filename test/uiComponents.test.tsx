@@ -864,8 +864,10 @@ describe("Dialog", () => {
     expect(dialogWidth(120, 76)).toBe(76);
     expect(dialogWidth(100, 76)).toBe(76);
     expect(dialogWidth(80, 40)).toBe(40);
-    expect(dialogWidth(80, 64)).toBe(64);
-    // 7 columns a side would show only slivers of the body beside the halo.
+    expect(dialogWidth(80, 56)).toBe(56);
+    // 11 columns a side would show only strips of cut words beside the halo.
+    expect(dialogWidth(100, 78)).toBe(100);
+    expect(dialogWidth(80, 64)).toBe(80);
     expect(dialogWidth(80, 66)).toBe(80);
     expect(dialogWidth(80, 76)).toBe(80);
     expect(dialogWidth(60, 56)).toBe(60);
