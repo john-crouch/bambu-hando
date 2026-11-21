@@ -169,6 +169,17 @@ describe("exitCode", () => {
 });
 
 describe("summaryText", () => {
+  it("strips control characters, so text from the console can't drive the terminal after the TUI exits", () => {
+    expect(
+      summaryText([
+        {
+          ok: false,
+          lines: ["spool rejected: HTTP 500: \u001B]0;pwned\u0007boom\u001B[2J", "tab\there"],
+        },
+      ]),
+    ).toBe("spool rejected: HTTP 500: ]0;pwnedboom[2J\ntab here\n");
+  });
+
   it("prints each run's lines, a blank line between runs, nothing without runs", () => {
     expect(summaryText([])).toBe("");
     expect(

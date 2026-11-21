@@ -89,7 +89,16 @@ export function exitCode(summaries: RunSummary[]): number {
 
 /** What the session's runs said, for the normal screen once the alternate screen is gone; "" without runs. */
 export function summaryText(summaries: RunSummary[]): string {
-  return summaries.map((s) => `${s.lines.join("\n")}\n`).join("\n");
+  return summaries.map((s) => `${s.lines.map(printable).join("\n")}\n`).join("\n");
+}
+
+/**
+ * A line as plain text for the normal screen: it's written outside Ink, and can hold text the console sent
+ * (an error body), so control characters (escape sequences) are dropped and a tab becomes a space.
+ */
+function printable(line: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point.
+  return line.replace(/\t/g, " ").replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
 }
 
 /** In the order they give way when the footer is narrow (Footer drops from the left, never ? help). */
