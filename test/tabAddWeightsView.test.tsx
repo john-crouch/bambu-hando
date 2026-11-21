@@ -126,6 +126,54 @@ describe.each([
   });
 });
 
+describe("Weights with two brands to choose for", () => {
+  it.each([
+    [60, 20],
+    [80, 24],
+    [120, 36],
+  ])("cuts nothing in the detail at %ix%i", (columns, rows) => {
+    const c = sized(columns, rows);
+    let [model] = addTab.init(c, { query: "" });
+    // Acme PLA Blue, then Sunlu PLA White from the brands.
+    for (const key of [
+      "enter",
+      "down",
+      "enter",
+      "down",
+      "space",
+      "esc",
+      "esc",
+      "down",
+      "enter",
+      "space",
+      "right",
+    ])
+      [model] = addTab.update(model, { type: "key", key: press(key) }, c);
+    [model] = addTab.update(
+      model,
+      {
+        type: "add/weightsRead",
+        signature: model.weights.signature,
+        entries: [
+          ...ENTRIES,
+          ...parseSpoolWeightList("Sunlu - Plastic - 117g,117,Sunlu - Plastic - 150g,150"),
+        ],
+        warnings: [],
+        spooled: [],
+        remembered: {},
+      },
+      c,
+    );
+    expect(model.weights.prompts).toHaveLength(2);
+    const lines = screen(model, c);
+    // "choosing…" is the brand being chosen for; any other … is a cut.
+    expect(lines.join("\n").replaceAll("choosing…", "")).not.toContain("…");
+    const text = prose(lines);
+    expect(text).toContain("Acme choosing…");
+    expect(text).toContain("Sunlu to choose");
+  });
+});
+
 describe("Weights in a narrow terminal", () => {
   it("leaves out where rows are from before it cuts a name", () => {
     const c = sized(60, 20);

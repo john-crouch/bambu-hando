@@ -1150,7 +1150,7 @@ export function hints(model: AddModel, ctx: Ctx): Hint[] {
       return [
         h("↑↓", "move", true),
         h("enter", "choose", true),
-        h("→", "use ●"),
+        h("→", "continue"),
         h("esc", "back", true),
       ];
     }
