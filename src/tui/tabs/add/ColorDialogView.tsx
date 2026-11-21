@@ -9,6 +9,7 @@ import {
   DIALOG_WIDTH,
   Dialog,
   dialogInner,
+  dialogWidth,
   Line,
   type Segment,
   TextField,
@@ -49,7 +50,7 @@ function baseChoice(base: FilamentProfile, width: number): Segment[] {
 }
 
 export function ColorDialogView({ dialog, columns }: { dialog: ColorDialog; columns: number }) {
-  const width = Math.min(DIALOG_WIDTH + 8, Math.max(30, columns - 4));
+  const width = dialogWidth(columns, Math.min(DIALOG_WIDTH + 8, columns));
   const inner = dialogInner(width);
   const value = Math.max(0, inner - LABEL);
   const base = dialog.base === null ? undefined : dialog.bases[dialog.base];
@@ -59,12 +60,7 @@ export function ColorDialogView({ dialog, columns }: { dialog: ColorDialog; colu
     ? baseChoice(base, value)
     : [{ text: "‹ choose with ←→ ›", color: at("base") ? COLORS.accent2 : COLORS.muted }];
   return (
-    <Dialog
-      title={`Other color · ${dialog.brand} ${dialog.material}`}
-      width={width}
-      // The footer has the dialog's keys (the tab is modal meanwhile): no second key line in here.
-      hints={[]}
-    >
+    <Dialog title={`Other color · ${dialog.brand} ${dialog.material}`} width={width}>
       <Line
         width={inner}
         segments={[

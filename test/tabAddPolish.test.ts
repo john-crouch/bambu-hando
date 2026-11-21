@@ -12,7 +12,13 @@ import type { Ctx } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
 import { addTab } from "../src/tui/tabs/add/index.js";
 import { type AddModel, init, ticked } from "../src/tui/tabs/add/model.js";
-import { currentWeightItems, findRows, hints, update } from "../src/tui/tabs/add/update.js";
+import {
+  commands,
+  currentWeightItems,
+  findRows,
+  hints,
+  update,
+} from "../src/tui/tabs/add/update.js";
 import { baseFilamentDir, installBambuStudio, X1C_04 } from "./bambuStudioSetup.js";
 import {
   SPOOLS_CATALOG,
@@ -118,6 +124,17 @@ describe("the shell's contract", () => {
     expect(d.model.dialog?.field).toBe("base");
     d.key(press("q"));
     expect(d.model.dialog).not.toBeNull();
+  });
+});
+
+describe("palette", () => {
+  it("shows the keys that do the same, and has no reload of its own", () => {
+    const d = tick(start({ createSpools: false }), "punkfil");
+    expect(commands(d.model, d.context).map((c) => [c.title, c.keys])).toEqual([
+      ["Search SpoolmanDB", "/"],
+      ["Review the 1 ticked", "→"],
+      ["Untick everything", undefined],
+    ]);
   });
 });
 
