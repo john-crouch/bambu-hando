@@ -18,7 +18,6 @@ import {
 } from "../presets/index.js";
 import {
   dbKey,
-  type Entry,
   type FindRow,
   importKey,
   importName,
@@ -1100,6 +1099,7 @@ function findHints(model: AddModel, ctx: Ctx): Hint[] {
       h("↑↓", "field", true),
       ...(field === "base" ? [h("←→", "listed color", true)] : []),
       ...(field === "add" ? [h("enter", "add color", true)] : [h("enter", "next", true)]),
+      h("tab", "next field"),
       h("esc", "cancel", true),
     ];
   }

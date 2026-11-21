@@ -3,7 +3,7 @@
 
 import { Box } from "ink";
 
-import type { Hint } from "../../core/types.js";
+import { formatGrams, formatRange } from "../../ui/format.js";
 import {
   DIALOG_WIDTH,
   Dialog,
@@ -14,7 +14,6 @@ import {
 } from "../../ui/index.js";
 import { swatchSegments } from "../../ui/Swatch.js";
 import { COLORS } from "../../ui/theme.js";
-import { tempsText } from "./catalog.js";
 import { type ColorDialog, type ColorField, typedColor } from "./color.js";
 
 const LABEL = 17;
@@ -23,15 +22,6 @@ function label(text: string, focused: boolean): Segment[] {
   return [
     { text: focused ? "▸ " : "  ", color: COLORS.accent },
     { text: text.padEnd(LABEL - 2), color: focused ? COLORS.accent : COLORS.muted, bold: focused },
-  ];
-}
-
-export function dialogHints(field: ColorField): Hint[] {
-  return [
-    { keys: "↑↓", label: "field" },
-    ...(field === "base" ? [{ keys: "←→", label: "listed color" }] : []),
-    { keys: "enter", label: field === "add" ? "add color" : "next" },
-    { keys: "esc", label: "cancel" },
   ];
 }
 
@@ -48,7 +38,7 @@ export function ColorDialogView({ dialog, columns }: { dialog: ColorDialog; colu
         ...swatchSegments(`#${base.colorRgba.slice(0, 6)}`, 2),
         { text: ` ${base.colorName}` },
         {
-          text: ` · ${tempsText(base.nozzleTempMin, base.nozzleTempMax)}${base.labelWeight ? ` · ${base.labelWeight} g` : ""}`,
+          text: ` · ${formatRange(base.nozzleTempMin, base.nozzleTempMax)}${base.labelWeight ? ` · ${formatGrams(base.labelWeight)}` : ""}`,
           color: COLORS.muted,
         },
         { text: " ›", color: COLORS.muted },
@@ -58,7 +48,8 @@ export function ColorDialogView({ dialog, columns }: { dialog: ColorDialog; colu
     <Dialog
       title={`Other color · ${dialog.brand} ${dialog.material}`}
       width={width}
-      hints={dialogHints(dialog.field)}
+      // The footer has the dialog's keys (the tab is modal meanwhile): no second key line in here.
+      hints={[]}
     >
       <Line
         width={inner}

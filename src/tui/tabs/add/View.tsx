@@ -1,9 +1,10 @@
-// ABOUTME: The Add tab's body: page bar, the current page (Find, Weights, Review, Run/Done), and the status line.
+// ABOUTME: The Add tab's body: page bar, the current page (Find, Weights, Review, Done), and the status line.
 // ABOUTME: The Other color dialog draws centered over the page; everything is sized from ctx's body.
 
 import { Box } from "ink";
 
 import type { Ctx } from "../../core/types.js";
+import { shortPrinter } from "../../ui/format.js";
 import { Line, PageBar, type Segment } from "../../ui/index.js";
 import { COLORS } from "../../ui/theme.js";
 import { EditorView } from "../presets/index.js";
@@ -19,13 +20,16 @@ import { WeightsView } from "./WeightsView.js";
 /** The bottom line: what the last key needs, else a warning, else what's ticked across brands. */
 export function statusSegments(model: AddModel, ctx: Ctx): Segment[] {
   if (model.notice) return [{ text: ` ! ${model.notice}`, color: COLORS.warning }];
-  if (model.page === "review" && model.review.editing)
+  if (model.page === "review" && model.review.editing) {
+    // The footer says esc keeps the edits; this line says where they go.
+    const { editor } = model.review.editing;
     return [
       {
-        text: " Editing the preset the run writes: esc keeps the changes for the run",
+        text: ` ✎ The run writes this preset for ${shortPrinter(editor.printer)} with these changes`,
         color: COLORS.muted,
       },
     ];
+  }
   const [warning] = model.page === "find" ? catalogWarnings(ctx) : [];
   if (warning) return [{ text: ` ! ${warning}`, color: COLORS.warning }];
   if (model.run?.state === "done" && model.run.results.length > 0)
