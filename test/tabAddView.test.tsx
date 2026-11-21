@@ -238,10 +238,41 @@ describe("what the pages say", () => {
   it("shows progress while running and the outcome when done", () => {
     expect(running).toContain("Running");
     expect(running).toContain("Starting…");
-    expect(done).toContain("✓ 2 written · 2 new spools");
+    expect(done).toContain("✓ 2 filaments written · 2 new spools");
+    expect(done).toContain("Restart BambuStudio to see the new presets.");
     expect(done).not.toContain("failed");
     expect(done).toContain("▸ Done");
   });
+});
+
+describe("Done after a failure", () => {
+  it.each([
+    [80, 24],
+    [120, 36],
+  ])(
+    "names the filament, says what failed plainly, and to restart BambuStudio at %ix%i",
+    (columns, rows) => {
+      const context = sized(columns, rows, CONSOLE);
+      const running = pages(context).find(([name]) => name === "running")?.[1];
+      if (!running) throw new Error("expected the running page");
+      const failed: SyncResult = {
+        profileName: "Acme PLA Blue",
+        filamentId: "Pe4f21b5",
+        bambuStatus: "written",
+        spooleaseStatus: "failed",
+        detail: "registered Pe4f21b5; spool rejected: HTTP 500: boom",
+        coreWeight: 200,
+        spoolId: null,
+      };
+      const done = addTab.update(running, { type: "add/runDone", results: [failed] }, context)[0];
+      const card = screen(done, context).slice(1, 6).join("\n");
+      expect(card).toContain("✗ 1 failed");
+      expect(card).not.toContain("✓ 0");
+      expect(card).not.toContain("registered");
+      expect(card).toContain("Acme PLA Blue: SpoolEase");
+      expect(card).toContain("Restart BambuStudio to see the new presets.");
+    },
+  );
 });
 
 describe("the preset editor on Review", () => {
@@ -296,7 +327,7 @@ describe("the preset editor on Review", () => {
     )[0];
     const plan80 = screen(back, context).join("\n");
     expect(plan80).toContain("✎ Black");
-    expect(plan80).toContain("✎ Acme PLA Black: 1 change goes into the 1 preset the run writes");
+    expect(plan80).toContain("✎ Acme PLA Black: 1 change goes into the preset the run writes");
   });
 });
 

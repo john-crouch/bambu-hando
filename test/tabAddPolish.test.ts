@@ -310,7 +310,7 @@ describe("review", () => {
       d.model.planChanges,
     );
     expect(notes[0]?.text).toBe(
-      "✎ RatRig ABS Punkfil Brute Black: Nozzle 245°C → 250°C goes into the 1 preset the run writes",
+      "✎ RatRig ABS Punkfil Brute Black: Nozzle 245°C → 250°C goes into the preset the run writes",
     );
   });
 

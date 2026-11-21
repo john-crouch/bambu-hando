@@ -139,7 +139,7 @@ describe("planNotes", () => {
   it("says which presets the plan's edits go into", () => {
     expect(planNotes([LONG], [plan({ presets: 2, existingPresets: 1 })], false, edits)).toEqual([
       {
-        text: "✎ Polymaker PolyLite PETG Galaxy Black: 1 change goes into the 1 preset the run writes",
+        text: "✎ Polymaker PolyLite PETG Galaxy Black: 1 change goes into the preset the run writes",
         tone: "warning",
       },
       {
@@ -267,6 +267,61 @@ describe("runOutcome", () => {
       lines: ["2 filaments from mine.json: 1 written, 1 failed", "Acme PLA Blue: HTTP 500"],
     });
     expect(outcome.toast).toEqual({ text: "1 of 2 filaments failed", tone: "failed" });
+  });
+
+  it("counts filaments the run left as they were apart from those it wrote", () => {
+    const kept = result({
+      profileName: "Acme PLA Blue",
+      bambuStatus: "skipped",
+      spooleaseStatus: "skipped",
+    });
+    expect(runOutcome([result({}), kept], "SpoolmanDB").summary.lines).toEqual([
+      "2 filaments from SpoolmanDB: 1 written, 1 skipped",
+    ]);
+    expect(runOutcome([kept], "SpoolmanDB")).toMatchObject({
+      summary: { ok: true, lines: ["1 filament from SpoolmanDB: 1 skipped"] },
+      toast: { text: "1 filament there already", tone: "ok" },
+    });
+  });
+
+  it("says each failure by the filament's name in plain words", () => {
+    const failures = runOutcome(
+      [
+        result({
+          spooleaseStatus: "failed",
+          detail: "registered Pe4f21b5; spool rejected: HTTP 500: boom",
+        }),
+        result({
+          profileName: "Acme PLA Blue",
+          bambuStatus: "failed",
+          spooleaseStatus: "failed",
+          detail: "BambuStudio preset: EACCES: permission denied; custom filaments CSV: HTTP 500",
+        }),
+        result({
+          profileName: "Acme PLA Black",
+          spooleaseStatus: "failed",
+          detail: "registered P1; spool request error: connect ECONNREFUSED",
+        }),
+        result({
+          profileName: "Acme PLA Green",
+          spooleaseStatus: "failed",
+          detail: "custom filaments CSV: reading current list failed: timeout",
+        }),
+        result({
+          profileName: "Acme PLA White",
+          spooleaseStatus: "failed",
+          detail: "registered P1; listing spools failed: HTTP 500: db locked",
+        }),
+      ],
+      "SpoolmanDB",
+    ).summary.lines.slice(1);
+    expect(failures).toEqual([
+      "Acme PLA Red: SpoolEase listed it but refused its spool (HTTP 500: boom)",
+      "Acme PLA Blue: BambuStudio's preset couldn't be written (EACCES: permission denied); SpoolEase refused the custom filament list (HTTP 500)",
+      "Acme PLA Black: SpoolEase listed it but its spool couldn't be sent (connect ECONNREFUSED)",
+      "Acme PLA Green: SpoolEase's custom filament list couldn't be read, so nothing was sent (timeout)",
+      "Acme PLA White: SpoolEase listed it but its spools couldn't be read, so no spool was made (HTTP 500: db locked)",
+    ]);
   });
 });
 
