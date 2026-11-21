@@ -47,7 +47,9 @@ function fakeTab(id: TabId): AnyTab {
           ? `key:${(msg.key as KeyPress).name ?? (msg.key as KeyPress).input}`
           : msg.type === "app/loaded"
             ? `loaded:${String(msg.resource)}:${(msg.result as { state: string }).state}`
-            : msg.type;
+            : msg.type === "app/switchTab" && msg.focus !== undefined
+              ? `app/switchTab:${String(msg.focus)}`
+              : msg.type;
       const next = { ...model, seen: [...model.seen, label] };
       if (msg.type === "key" && (msg.key as KeyPress).input === "t" && !model.typing)
         return [{ ...next, typing: true }, []];
@@ -190,6 +192,19 @@ describe("tabs", () => {
     expect(model.active).toBe("check");
     expect(seen(model, "presets")).toEqual(["presets/done"]);
     expect(seen(model, "check")).toEqual(["app/switchTab"]);
+  });
+
+  it("passes a deep link's focus to the tab it shows; keyboard switches send none", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, {
+      type: "app/switchTab",
+      tab: "settings",
+      focus: "spoolease.host",
+    });
+    expect(model.active).toBe("settings");
+    expect(seen(model, "settings")).toEqual(["app/switchTab:spoolease.host"]);
+    model = await drive(shell, model, key("tab"));
+    expect(seen(model, "spools")).toEqual(["app/switchTab"]);
   });
 
   it("sends resize to every tab and keeps the size", async () => {

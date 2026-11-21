@@ -271,9 +271,16 @@ export function createShell(deps: ShellDeps) {
     return toAll(setResource(model, id, kept), { type: "app/loaded", resource: id, result: kept });
   }
 
-  /** Makes a tab the active one and tells it, so it can load what it needs on its first visit. */
-  function show(model: ShellModel, tab: TabId): Step {
-    return toTab({ ...model, active: tab }, tab, { type: "app/switchTab", tab });
+  /**
+   * Makes a tab the active one and tells it, so it can load what it needs on its first visit; focus,
+   * from a deep link, is what it should open on.
+   */
+  function show(model: ShellModel, tab: TabId, focus?: string): Step {
+    return toTab({ ...model, active: tab }, tab, {
+      type: "app/switchTab",
+      tab,
+      ...(focus === undefined ? {} : { focus }),
+    });
   }
 
   /** A toast that clears itself after toastMs. */
@@ -383,7 +390,7 @@ export function createShell(deps: ShellDeps) {
       case "overlay":
         return toOverlay(model, msg.msg);
       case "app/switchTab":
-        return show(model, msg.tab);
+        return show(model, msg.tab, msg.focus);
       case "app/load":
         if (!msg.force && model.requested.includes(msg.resource)) return [model, []];
         return load(model, msg.resource);
