@@ -210,7 +210,7 @@ describe("the report", () => {
     await h.press("enter");
     expect(keys()).toEqual([
       "↑↓ move",
-      "enter sync it in Add",
+      "enter find it in Add",
       "esc sections",
       "f give 1 preset an ID",
       "r check again",

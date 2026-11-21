@@ -138,7 +138,8 @@ export function checkHeadline(sections: CheckSection[], ctx: Ctx): Headline {
 
 /** Where enter on an item goes: the tab and the thing to open there, or the ID review for some presets. */
 export type ItemTarget =
-  | { kind: "add"; id: string }
+  /** name, when known, lets Add search for a filament it can't find by ID. */
+  | { kind: "add"; id: string; name?: string }
   | { kind: "spools"; id: string }
   | { kind: "ids"; paths: string[] };
 
@@ -157,10 +158,17 @@ export interface ItemView {
 }
 
 /** What enter does on each kind of target, for the footer. */
-export function targetLabel(section: CheckSection["key"], target: ItemTarget): string {
+export function targetLabel(target: ItemTarget): string {
   if (target.kind === "ids") return "give it an ID";
   if (target.kind === "spools") return "show it in Spools";
-  return section === "unknownCode" ? "find it in Add" : "sync it in Add";
+  // Add opens on the filament, searches for it by name, or says how to import it: "sync" would promise too much.
+  return "find it in Add";
+}
+
+/** Add's deep link for a filament: "id:<filament ID>|name:<name>" (the name without "|", left out when empty). */
+export function addFocus(target: Extract<ItemTarget, { kind: "add" }>): string {
+  const name = target.name?.replaceAll("|", " ").trim();
+  return name ? `id:${target.id}|name:${name}` : `id:${target.id}`;
 }
 
 /** "name (code)" at the end of an item. */
@@ -199,14 +207,20 @@ function itemView(
     case "csvOnly": {
       const [, name, code] = WITH_CODE.exec(text) ?? [];
       return name !== undefined && code
-        ? { text, name, code, target: { kind: "add", id: code } }
+        ? { text, name, code, target: { kind: "add", id: code, name } }
         : plain;
     }
     case "unknownCode": {
       const [, rest, code] = WITH_CODE.exec(text) ?? [];
       const [, spool, name] = SPOOL.exec(rest ?? "") ?? [];
       return spool && code
-        ? { text, name: name ?? "", code, spool, target: { kind: "add", id: code } }
+        ? {
+            text,
+            name: name ?? "",
+            code,
+            spool,
+            target: { kind: "add", id: code, ...(name ? { name } : {}) },
+          }
         : plain;
     }
     case "noCode": {
@@ -227,7 +241,7 @@ function itemView(
             name: first.name,
             code: first.filamentId,
             printers,
-            target: { kind: "add", id: first.filamentId },
+            target: { kind: "add", id: first.filamentId, name: first.name },
           }
         : {
             text,

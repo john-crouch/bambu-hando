@@ -17,8 +17,10 @@ import type {
 } from "../../core/types.js";
 import { toTab } from "../../core/types.js";
 import { moveCursor, plural } from "../../ui/index.js";
+import { consoleProblem } from "../settings/connection.js";
 import { writeIds } from "./cmds.js";
 import {
+  addFocus,
   checkView,
   consoleConfigured,
   firstWithItems,
@@ -133,7 +135,8 @@ function idsKey(model: CheckModel, ids: IdsPage, key: KeyPress, ctx: Ctx): Step<
 /** Where an item's fix is: another tab (a deep link), or the ID review here. */
 function goToFix(model: CheckModel, target: ItemTarget, ctx: Ctx): Step<CheckModel> {
   if (target.kind === "ids") return openIds(model, ctx, target.paths);
-  return step(model, send<AppMsg>({ type: "app/switchTab", tab: target.kind, focus: target.id }));
+  const focus = target.kind === "add" ? addFocus(target) : target.id;
+  return step(model, send<AppMsg>({ type: "app/switchTab", tab: target.kind, focus }));
 }
 
 /** The highlighted section's items to act on; none for a section the console couldn't tell about. */
@@ -151,12 +154,16 @@ function offlineSection(model: CheckModel, ctx: Ctx): boolean {
   return Boolean(view.offline && section && needsConsole(section.key));
 }
 
-const toConsoleSettings = (ctx: Ctx) =>
-  send<AppMsg>({
-    type: "app/switchTab",
-    tab: "settings",
-    focus: ctx.values.skipSpoolease ? "spoolease.skip" : "spoolease.host",
-  });
+/** Settings, on the row to fix: Use SpoolEase while skipped, else the row the console's error points at. */
+function toConsoleSettings(ctx: Ctx) {
+  const view = checkView(ctx);
+  const focus = ctx.values.skipSpoolease
+    ? "spoolease.skip"
+    : view.kind === "failed" && view.error
+      ? consoleProblem(view.error).focus
+      : "spoolease.host";
+  return send<AppMsg>({ type: "app/switchTab", tab: "settings", focus });
+}
 
 function reportKey(model: CheckModel, key: KeyPress, ctx: Ctx): Step<CheckModel> {
   const typed = letter(key);
@@ -302,19 +309,18 @@ function hints(model: CheckModel, ctx: Ctx): Hint[] {
   if (!view.data) return again;
   if (model.focus === "items") {
     const item = currentItems(model, ctx)[model.item];
-    const section = view.data.sections[model.section];
+    const target = item?.target;
     return [
       { keys: "↑↓", label: "move" },
-      ...(item?.target && section
-        ? [{ keys: "enter", label: targetLabel(section.key, item.target), primary: true }]
-        : []),
+      ...(target ? [{ keys: "enter", label: targetLabel(target), primary: true }] : []),
       // Below NARROW_BELOW the sections pane is hidden meanwhile: esc is the way back to it.
       {
         keys: "esc",
         label: "sections",
         ...(ctx.bodyColumns < NARROW_BELOW ? { primary: true } : {}),
       },
-      ...fix,
+      // On a preset without an ID, enter already gives it one: f would say the same fix twice.
+      ...(target?.kind === "ids" && !model.ids?.running ? [] : fix),
       ...again,
     ];
   }
