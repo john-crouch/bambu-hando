@@ -64,7 +64,10 @@ describe("readUserPresets", () => {
       JSON.stringify({ inherits: "", filament_id: "PA000002" }),
     );
 
-    const { presets, warnings } = await readUserPresets("default");
+    const { presets, warnings, inherited } = await readUserPresets("default");
+
+    // Counted, so the TUI can say how many it leaves out and why.
+    expect(inherited).toBe(1);
 
     expect(presets).toEqual([
       {
@@ -92,7 +95,7 @@ describe("readUserPresets", () => {
   });
 
   it("finds no presets in a folder that doesn't exist", async () => {
-    expect(await readUserPresets("nobody")).toEqual({ presets: [], warnings: [] });
+    expect(await readUserPresets("nobody")).toEqual({ presets: [], warnings: [], inherited: 0 });
   });
 });
 
