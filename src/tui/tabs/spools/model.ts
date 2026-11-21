@@ -31,8 +31,14 @@ import { pasted, textState } from "./local.js";
 
 /** The most copies one dialog adds. */
 export const MAX_COPIES = 8;
-/** Body lines the list panel doesn't give to rows: its borders, the summary line and a gap. */
-const LIST_CHROME = 5;
+/** Body lines the list panel doesn't give to rows: its borders, the summary line and the filter line. */
+const LIST_CHROME = 4;
+/** From this many body columns the detail panel sits beside the list; below, enter opens it instead. */
+export const WIDE_COLUMNS = 90;
+
+export function isWide(ctx: Ctx): boolean {
+  return ctx.bodyColumns >= WIDE_COLUMNS;
+}
 
 /** A barcode to scan or type. pending holds a scan made before the known barcodes were read. */
 export interface ScanDialog {
@@ -325,7 +331,8 @@ function listKey(model: SpoolsModel, key: KeyPress, ctx: Ctx): Step<SpoolsModel>
       : [...model.ticked, id];
     return [settle({ ...model, ticked }, rows, Math.min(rows.length - 1, index + 1)), []];
   }
-  if (key.name === "enter") return [{ ...model, detailOpen: !model.detailOpen }, []];
+  if (key.name === "enter")
+    return isWide(ctx) ? [model, []] : [{ ...model, detailOpen: !model.detailOpen }, []];
   if (key.name === "esc") {
     if (model.filter.value) {
       const cleared = { ...model, filter: textState("") };
@@ -655,7 +662,7 @@ function highlightedRow(model: SpoolsModel, ctx: Ctx): InventoryRow | undefined 
   return rows[cursorIndex(model, rows)];
 }
 
-function dialogHints(dialog: Dialog): Hint[] {
+export function dialogHints(dialog: Dialog): Hint[] {
   switch (dialog.kind) {
     case "scan":
       return [
@@ -735,7 +742,9 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
     ...(row?.spool.slicerFilament ? [{ keys: "+", label: "more like this", primary: true }] : []),
     { keys: "b", label: "scan", primary: true },
     { keys: "r", label: "reload" },
-    { keys: "enter", label: model.detailOpen ? "hide details" : "details" },
+    ...(isWide(ctx)
+      ? []
+      : [{ keys: "enter", label: model.detailOpen ? "back to the list" : "details" }]),
   ];
 }
 

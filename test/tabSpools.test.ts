@@ -230,10 +230,13 @@ describe("the list", () => {
     ]);
   });
 
-  it("toggles the detail with enter, and esc closes it", () => {
-    const model = keys(start(), ["enter"]);
+  it("opens the detail with enter on a narrow terminal, and esc closes it", () => {
+    const narrow = { ...CTX, bodyColumns: 80 };
+    const model = keys(start(), ["enter"], narrow);
     expect(model.detailOpen).toBe(true);
-    expect(keys(model, ["esc"]).detailOpen).toBe(false);
+    expect(keys(model, ["esc"], narrow).detailOpen).toBe(false);
+    // Beside the list there's nothing to open.
+    expect(keys(start(), ["enter"]).detailOpen).toBe(false);
   });
 });
 
@@ -330,7 +333,7 @@ describe("more spools like this one", () => {
         summary: {
           ok: false,
           lines: [
-            "1 spool of Zeta PLA Blue added to http://127.0.0.1:80: #7",
+            "1 spool of Zeta PLA Blue added to http://127.0.0.1: #7",
             "spool 2 of 2: Spool storage full",
           ],
           exitCode: 1,
@@ -352,7 +355,7 @@ describe("more spools like this one", () => {
     const msgs = await sent(done);
     expect(msgs[0]).toEqual({
       type: "app/runFinished",
-      summary: { ok: true, lines: ["1 spool of Zeta PLA Blue added to http://127.0.0.1:80: #9"] },
+      summary: { ok: true, lines: ["1 spool of Zeta PLA Blue added to http://127.0.0.1: #9"] },
     });
     expect(msgs[1]).toEqual({
       type: "app/toast",
@@ -592,8 +595,9 @@ describe("hints and commands", () => {
       "+",
       "b",
       "r",
-      "enter",
     ]);
+    const narrow = { ...CTX, bodyColumns: 80 };
+    expect(keysOf(start(narrow), narrow)).toContain("enter");
     const label = hints(keys(start(), ["space", "space"]), CTX).find((h) => h.keys === "l");
     expect(label?.label).toBe("labels for 2");
     expect(hints(keys(start(), ["down"]), CTX).find((h) => h.keys === "+")).toBeDefined();

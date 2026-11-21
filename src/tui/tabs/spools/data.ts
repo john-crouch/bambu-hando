@@ -27,10 +27,8 @@ export function consoleConnection(values: FormValues): SpoolEaseConnection | nul
   return { host, port: Number(values.port), securityKey: values.securityKey, https: values.https };
 }
 
-/** The console's address, as SpoolEaseClient.baseUrl has it; never carries the key. */
-export function consoleUrl(conn: SpoolEaseConnection): string {
-  return `${conn.https ? "https" : "http"}://${conn.host}:${conn.port}`;
-}
+/** The console's web address (the design system's consoleUrl); never carries the key. */
+export { consoleUrl } from "../../ui/index.js";
 
 /** The console data to show: the loaded value, else the last good one kept while reloading or after a failure. */
 export function consoleValue(resource: Resource<ConsoleData>): ConsoleData | undefined {
