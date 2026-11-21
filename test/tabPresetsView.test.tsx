@@ -181,6 +181,28 @@ describe.each([
     expect(text).toMatch(/Printer +X1C 0\.4/);
   });
 
+  it("says how many presets inherit a system one, which the list leaves to BambuStudio", () => {
+    const inheriting: Ctx = {
+      ...ctx,
+      resources: {
+        ...ctx.resources,
+        presets: {
+          state: "ready",
+          value: { presets: PRESETS, warnings: [], inherited: 25 },
+          at: 0,
+        },
+      },
+    };
+    const screen = lines(start(inheriting), inheriting);
+    expectExact(screen, inheriting);
+    const note = screen.findIndex((line) =>
+      line.includes("25 more inherit a system preset: edit those in BambuStudio"),
+    );
+    expect(note).toBeGreaterThan(0);
+    // The list panel's last line inside, above its bottom border.
+    expect(screen[note + 1]).toMatch(/^╰/);
+  });
+
   it("picks the printer of a filament with left and right, shown in the detail", () => {
     const sunlu = drive(start(ctx), ctx, "s", "right");
     const screen = lines(sunlu, ctx);
@@ -358,6 +380,35 @@ it("says where to look when the folder has no presets of its own", () => {
   const screen = lines(presetsTab.init(empty, { query: "" })[0], empty);
   expectExact(screen, empty);
   expect(screen.join("\n")).toContain("No filament presets of your own yet");
+});
+
+it("keeps the list's names whole at 60 columns while shorter printers fit beside them", () => {
+  const ctx = ctxFor(60, 20);
+  const long = "OVERTURE PC PROFESSIONAL Transparent";
+  const many: Ctx = {
+    ...ctx,
+    values: { ...ctx.values, presetFolder: "1489686194" },
+    resources: {
+      ...ctx.resources,
+      presets: {
+        state: "ready",
+        value: {
+          presets: [
+            ...PRESETS.slice(0, 4),
+            ...Array.from({ length: 12 }, (_, i) => preset(`${long} ${i}`, X1C_04, `P00000${i}`)),
+          ],
+          warnings: [],
+          inherited: 1,
+        },
+        at: 0,
+      },
+    },
+  };
+  const screen = lines(start(many), many);
+  expectExact(screen, many);
+  expect(screen.join("\n")).toContain(`${long} 0`);
+  expect(screen[0]).not.toContain("…");
+  expect(screen.join("\n")).toContain("1 more inherits a system preset");
 });
 
 it("wraps the review's notes at 60 columns instead of cutting them", () => {

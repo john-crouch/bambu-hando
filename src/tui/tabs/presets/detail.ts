@@ -101,42 +101,66 @@ export function presetGroups(presets: readonly UserPreset[], filter: string): Pr
 /** What a list row shows, for sizing its columns. */
 export interface ListCells {
   name: string;
-  printers: string;
+  /** BambuStudio's names of the row's printers. */
+  printers: readonly string[];
   /** A preset of the row has unsaved edits. */
   edited: boolean;
   /** "" when the row's presets have none. */
   id: string;
 }
 
-/** Columns of a list row's gutter mark and scroll thumb. */
-const ROW_EDGES = 2;
-const MIN_PRINTERS = 7;
+/** The columns of a row's cells. */
+export interface ListWidths {
+  name: number;
+  printers: number;
+  status: number;
+  id: number;
+}
+
+/** The gutter mark and the scroll thumb's column; a scrolling list keeps one more free before the thumb. */
+function rowEdges(scrolls: boolean): number {
+  return scrolls ? 3 : 2;
+}
+
 const NO_ID = "no ID";
 const EDITED = "edited";
 
+/** printersText's forms, longest first, as narrow as their widest row: the widths the column can take. */
+const PRINTER_FORMS = [Infinity, 11, 7];
+
 /**
- * Column widths for the list's rows in width columns, the name taking the rest: every column when the
- * names fit, else the ID goes first, then the printers shrink (to "X1C 0.4", "X1C ×2"). The ID column says "no ID"
- * where there's none; status says "edited", and "no ID" too once the IDs are gone; it shows only when a
- * row has something to say there.
+ * Column widths for the list's rows in width columns: the name gets its widest, with every other column
+ * when that fits; else the ID goes first, then the printers take a shorter form ("X1C 0.4/0.6", "X1C ×2"),
+ * and only then is a name cut. The ID column says "no ID" where there's none; status says "edited", and
+ * "no ID" too once the IDs are gone; it shows only when a row has something to say there. Each column is
+ * as wide as its widest value, so a short printer sits next to its name.
  */
 export function listColumns(
   width: number,
   rows: readonly ListCells[],
-): { printers: number; status: number; id: number } {
-  const cells = Math.max(0, width - ROW_EDGES);
+  scrolls = false,
+): ListWidths {
+  const cells = Math.max(0, width - rowEdges(scrolls));
   const name = Math.max(0, ...rows.map((r) => textWidth(r.name)));
-  const printers = Math.max(0, ...rows.map((r) => textWidth(r.printers)));
+  const printersAt = (form: number) =>
+    Math.max(0, ...rows.map((r) => textWidth(printersText(r.printers, form))));
   const id = Math.min(10, Math.max(0, ...rows.map((r) => textWidth(r.id || NO_ID))));
   const edited = rows.some((r) => r.edited) ? EDITED.length : 0;
-  const noId = rows.some((r) => !r.id) ? EDITED.length : 0;
+  const noId = rows.some((r) => !r.id) ? NO_ID.length : 0;
   const room = (n: number) => (n > 0 ? n + 1 : 0);
-  if (name + room(printers) + room(edited) + room(id) <= cells)
-    return { printers, status: edited, id };
-  const status = Math.max(edited, noId);
-  if (name + room(printers) + room(status) <= cells) return { printers, status, id: 0 };
-  const left = cells - name - room(status) - 1;
-  return { printers: Math.min(printers, Math.max(MIN_PRINTERS, left)), status, id: 0 };
+  const plans: Omit<ListWidths, "name">[] = [
+    { printers: printersAt(Infinity), status: edited, id },
+    ...PRINTER_FORMS.map((form) => ({
+      printers: printersAt(form),
+      status: Math.max(edited, noId),
+      id: 0,
+    })),
+  ];
+  for (const plan of plans)
+    if (name + room(plan.printers) + room(plan.status) + room(plan.id) <= cells)
+      return { name, ...plan };
+  const last = plans.at(-1) as Omit<ListWidths, "name">;
+  return { name: Math.max(1, cells - room(last.printers) - room(last.status)), ...last };
 }
 
 /** A row's status and ID cells as listColumns sized them. */

@@ -259,31 +259,48 @@ describe("printersText", () => {
 describe("listColumns", () => {
   const row = (name: string, id = "P1234567", edited = false) => ({
     name,
-    printers: "X1C 0.4, 0.6",
+    printers: [X1C_04, X1C_06],
     edited,
     id,
   });
 
   it("shows every column when the names fit, saying no ID in the ID column", () => {
     const widths = listColumns(80, [row("Acme PLA Red"), row("Bolt PETG", "")]);
-    expect(widths).toEqual({ printers: 12, status: 0, id: 8 });
+    expect(widths).toEqual({ name: 12, printers: 12, status: 0, id: 8 });
     expect(statusCells(row("Bolt PETG", ""), widths)).toEqual({ status: "", id: "no ID" });
     const edited = listColumns(80, [row("Acme PLA Red", "P1234567", true)]);
-    expect(edited).toEqual({ printers: 12, status: 6, id: 8 });
+    expect(edited).toEqual({ name: 12, printers: 12, status: 6, id: 8 });
     expect(statusCells(row("Acme", "P1", true), edited)).toEqual({ status: "edited", id: "P1" });
   });
 
-  it("drops the ID, then shrinks the printers, before a name is cut; no ID moves to status", () => {
+  it("drops the ID, then shortens the printers, before a name is cut; no ID moves to status", () => {
     const long = "Polymaker PolyLite PETG Galaxy Dark Blue"; // 40 columns
     expect(listColumns(64, [row(long, "P1234567", true)])).toEqual({
+      name: 40,
       printers: 12,
       status: 6,
       id: 0,
     });
-    expect(listColumns(58, [row(long, "")])).toEqual({ printers: 8, status: 6, id: 0 });
+    expect(listColumns(58, [row(long, "")])).toEqual({ name: 40, printers: 6, status: 5, id: 0 });
     expect(statusCells(row(long, ""), { id: 0 })).toEqual({ status: "no ID", id: "" });
-    expect(listColumns(56, [row(long)])).toEqual({ printers: 12, status: 0, id: 0 });
-    expect(listColumns(40, [row(long, "", true)])).toEqual({ printers: 7, status: 6, id: 0 });
+    expect(listColumns(56, [row(long)])).toEqual({ name: 40, printers: 12, status: 0, id: 0 });
+    expect(listColumns(40, [row(long, "", true)])).toEqual({
+      name: 24,
+      printers: 6,
+      status: 6,
+      id: 0,
+    });
+  });
+
+  it("leaves the scroll thumb its gap column", () => {
+    const long = "Polymaker PolyLite PETG Galaxy Dark Blue";
+    expect(listColumns(55, [row(long)])).toMatchObject({ name: 40, printers: 12 });
+    expect(listColumns(55, [row(long)], true)).toMatchObject({ name: 40, printers: 11 });
+  });
+
+  it("sizes the printers column from the form its rows are shown in", () => {
+    const one = { name: "Acme PLA Red", printers: [X1C_04], edited: false, id: "P1" };
+    expect(listColumns(80, [one])).toMatchObject({ printers: 7 });
   });
 });
 
