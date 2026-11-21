@@ -153,7 +153,10 @@ function open(model: PresetsModel, preset: UserPreset): Step<PresetsModel> {
   const files = model.files.has(preset.path)
     ? model.files
     : new Map(model.files).set(preset.path, { state: "loading" } as FileState);
-  return [{ ...model, path: preset.path, opening: preset, files }, [readPresetCmd(preset.path)]];
+  return [
+    { ...model, path: preset.path, opening: preset, files },
+    [readPresetCmd(preset.path, preset.printer)],
+  ];
 }
 
 /** The group's preset for printer, else its first: moving between filaments keeps the printer. */
@@ -356,6 +359,7 @@ function onRead(model: PresetsModel, msg: PresetFileMsg): Step<PresetsModel> {
     path: opening.path,
     original: msg.preset,
     ...(draft ? { edits: draft } : {}),
+    ...(msg.nozzleType ? { nozzleType: msg.nozzleType } : {}),
     mode: "preset",
   });
   return [

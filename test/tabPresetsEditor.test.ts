@@ -11,6 +11,7 @@ import {
   type EditorOutcome,
   editedPreset,
   editorCapturesText,
+  editorChanges,
   editorCurrentRow,
   editorHints,
   editorPages,
@@ -307,16 +308,88 @@ describe("variants", () => {
       "down",
     ).model;
 
-  it("names each nozzle type's value when they differ", () => {
+  const highFlow = () =>
+    keys(
+      initEditor({
+        name: "Acme",
+        printer: "",
+        original: VARIANTS,
+        mode: "preset",
+        nozzleType: "High Flow",
+      }),
+      "right",
+      "right",
+      "down",
+    ).model;
+
+  it("names each nozzle type's value when they differ, ● on the one the printer uses", () => {
     expect(editorCurrentRow(flow())).toMatchObject({
       key: "filament_max_volumetric_speed",
-      value: "standard 22 · high flow 29 mm³/s",
+      value: "● standard 22 · ○ high flow 29 mm³/s",
+    });
+    expect(editorCurrentRow(highFlow())?.value).toBe("○ standard 22 · ● high flow 29 mm³/s");
+  });
+
+  it("says which nozzle type an edit goes to, and n for every one", () => {
+    expect(editorTakes(flow())).toBe("a number, 0.1–200; for standard (n: every nozzle type)");
+    expect(editorTakes(keys(flow(), "n").model)).toBe(
+      "a number, 0.1–200; for every nozzle type (n: standard only)",
+    );
+    expect(editorTakes(keys(flow(), "up").model)).toBe("a number, 0.01–2");
+    expect(editorHints(flow()).map((h) => `${h.keys} ${h.label}`)).toContain("n every nozzle type");
+    expect(editorHints(keys(flow(), "n").model).map((h) => `${h.keys} ${h.label}`)).toContain(
+      "n standard only",
+    );
+    // Only where the nozzle types differ.
+    expect(editorHints(keys(flow(), "up").model).map((h) => h.keys)).not.toContain("n");
+  });
+
+  it("edits the printer's nozzle type and keeps the other's own value", () => {
+    const set = keys(flow(), "enter", "right", "enter").model;
+    expect(set.edits.get("filament_max_volumetric_speed")).toEqual({
+      variant: "Direct Drive Standard",
+      value: "22.5",
+    });
+    expect(editedPreset(set).filament_max_volumetric_speed).toEqual(["22.5", "29"]);
+    expect(editorCurrentRow(set)?.value).toBe("● standard 22.5 · ○ high flow 29 mm³/s");
+    expect(editorChanges(set)).toEqual([
+      {
+        key: "filament_max_volumetric_speed",
+        label: "Max volumetric speed",
+        from: "standard 22 · high flow 29 mm³/s",
+        to: "standard 22.5 · high flow 29 mm³/s",
+      },
+    ]);
+    // The stepper and the text start from the printer's nozzle type.
+    const fast = keys(highFlow(), "enter", "right", "enter").model;
+    expect(editedPreset(fast).filament_max_volumetric_speed).toEqual(["22", "29.5"]);
+  });
+
+  it("puts an edit into every nozzle type with n, before or after typing it", () => {
+    const after = keys(flow(), "enter", "right", "enter", "n").model;
+    expect(after.edits.get("filament_max_volumetric_speed")).toEqual({ every: "22.5" });
+    expect(editorCurrentRow(after)?.value).toBe("22.5 mm³/s");
+    const before = keys(flow(), "n", "enter", "right", "enter").model;
+    expect(before.edits.get("filament_max_volumetric_speed")).toEqual({ every: "22.5" });
+    // n again: back to the printer's nozzle type only.
+    const back = keys(after, "n").model;
+    expect(back.edits.get("filament_max_volumetric_speed")).toEqual({
+      variant: "Direct Drive Standard",
+      value: "22.5",
     });
   });
 
-  it("says that one value goes to every nozzle type", () => {
-    expect(editorTakes(flow())).toBe("a number, 0.1–200; one value for every nozzle type");
-    expect(editorTakes(keys(flow(), "up").model)).toBe("a number, 0.01–2");
+  it("toggles a switch from the printer's nozzle type, leaving the other's", () => {
+    const pa: Preset = { ...VARIANTS, enable_pressure_advance: ["1", "0"] };
+    const model = initEditor({ name: "Acme", printer: "", original: pa, mode: "preset" });
+    const at = keys(model, "right", "right", "down", "down").model;
+    expect(editorCurrentRow(at)?.key).toBe("enable_pressure_advance");
+    const off = keys(at, "enter").model;
+    expect(editedPreset(off).enable_pressure_advance).toEqual(["0", "0"]);
+    expect(off.edits.get("enable_pressure_advance")).toEqual({
+      variant: "Direct Drive Standard",
+      value: "0",
+    });
   });
 
   it("records no edit for a field confirmed as it was: its variants stay apart", () => {
@@ -334,9 +407,8 @@ describe("variants", () => {
       "enter",
     ).model;
     expect(atTop.edits.size).toBe(0);
-    // A value that really changes still goes into every variant.
-    const set = keys(flow(), "enter", "right", "enter").model;
-    expect(set.edits.get("filament_max_volumetric_speed")).toEqual({ every: "22.5" });
+    // A value that really changes is an edit.
+    expect(keys(flow(), "enter", "right", "enter").model.edits.size).toBe(1);
   });
 
   it("records no edit for a printer's-value field confirmed empty", () => {
@@ -349,7 +421,11 @@ describe("variants", () => {
     expect(editorCurrentRow(at)?.key).toBe("filament_retraction_length");
     expect(keys(at, "enter", "enter").model.edits.size).toBe(0);
     const typed = keys(at, "enter", "1", "enter").model;
-    expect(typed.edits.get("filament_retraction_length")).toEqual({ every: "1" });
+    expect(typed.edits.get("filament_retraction_length")).toEqual({
+      variant: "Direct Drive Standard",
+      value: "1",
+    });
+    expect(editedPreset(typed).filament_retraction_length).toEqual(["1", "0.4"]);
   });
 });
 

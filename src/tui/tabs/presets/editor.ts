@@ -33,6 +33,7 @@
  */
 
 import {
+  activeVariant,
   applyEdits,
   EDIT_FIELDS,
   type EditChange,
@@ -50,6 +51,7 @@ import {
   rangeError,
   rawText,
   shownValue,
+  variantNames,
 } from "../../../presetEdit.js";
 import { type KeyPress, typed } from "../../core/keys.js";
 import type { Hint } from "../../core/types.js";
@@ -72,6 +74,8 @@ export interface EditorInit {
   original: Preset;
   edits?: Edits;
   mode: EditorMode;
+  /** The printer's nozzle type in BambuStudio ("Standard", "High Flow"): the variant edits go to. */
+  nozzleType?: string;
 }
 
 export interface EditorModel {
@@ -81,6 +85,10 @@ export interface EditorModel {
   readonly mode: EditorMode;
   readonly original: Preset;
   readonly edits: Edits;
+  /** The variant (filament_extruder_variant index) the printer uses: where edits go, and typing starts. */
+  readonly active: number;
+  /** Fields whose edits go to every nozzle type (n), not the printer's alone. */
+  readonly everyKeys: ReadonlySet<string>;
   /** 0..EDITOR_GROUPS.length - 1 for a group, ALL_SETTINGS for every key. */
   readonly page: number;
   /** One cursor per page, kept while on other pages. */
@@ -132,13 +140,22 @@ export interface EditorPage {
 const EMPTY_TEXT: TextState = { value: "", cursor: 0 };
 
 export function initEditor(init: EditorInit): EditorModel {
+  const edits = init.edits ?? new Map();
+  // A draft's every-variant edit of nozzle types that differ was made with n.
+  const everyKeys = new Set(
+    [...edits]
+      .filter(([key, edit]) => "every" in edit && differingVariants(init.original[key]) > 0)
+      .map(([key]) => key),
+  );
   return {
     name: init.name,
     printer: init.printer,
     path: init.path,
     mode: init.mode,
     original: init.original,
-    edits: init.edits ?? new Map(),
+    edits,
+    active: activeVariant(init.original, init.nozzleType ?? "Standard"),
+    everyKeys,
     page: 0,
     cursors: Array.from({ length: ALL_SETTINGS + 1 }, () => 0),
     text: null,
@@ -153,13 +170,20 @@ export function tidyUnits(text: string): string {
   return text.replace(/ °C/g, "°C");
 }
 
-/** The changes so far, for the side panel and the review. */
+/** The changes so far, for the side panel and the review; nozzle types that differ each named. */
 export function editorChanges(model: EditorModel): EditChange[] {
+  const edited = editedPreset(model);
   return editChanges(model.original, model.edits).map((change) => ({
     ...change,
-    from: tidyUnits(change.from),
-    to: tidyUnits(change.to),
+    from: presetValueText(change.key, model.original) ?? tidyUnits(change.from),
+    to: presetValueText(change.key, edited) ?? tidyUnits(change.to),
   }));
+}
+
+/** A curated field's value in preset for people (nozzle types that differ each named); null for raw keys. */
+export function presetValueText(key: string, preset: Preset): string | null {
+  const field = editField(key);
+  return field ? fieldShown(field, preset, preset[key]) : null;
 }
 
 /** `edits` with `value` for `key`, or without it when value is null or leaves the setting as it is in `original`. */
@@ -203,9 +227,15 @@ function variantName(name: string): string {
 
 /**
  * A field's value for people: "220°C"; variants that differ each tagged with their nozzle type when
- * the preset names them ("standard 22 · high flow 29 mm³/s").
+ * the preset names them ("standard 22 · high flow 29 mm³/s"). With mark, ● names the variants an edit
+ * goes to (the active one, those equal to it, or every one) and ○ the others.
  */
-function fieldShown(field: EditField, preset: Preset, value: unknown): string {
+function fieldShown(
+  field: EditField,
+  preset: Preset,
+  value: unknown,
+  mark?: { active: number; every: boolean },
+): string {
   const names = preset.filament_extruder_variant;
   if (
     differingVariants(value) &&
@@ -216,9 +246,11 @@ function fieldShown(field: EditField, preset: Preset, value: unknown): string {
   ) {
     // The unit once, at the end: "standard 22 · high flow 29 mm³/s".
     const bare: EditField = { ...field, unit: "" };
-    const each = value.map(
-      (entry, index) => `${variantName(names[index] as string)} ${shownValue(bare, [entry])}`,
-    );
+    const each = value.map((entry, index) => {
+      const goes = mark && (mark.every || entry === value[mark.active]);
+      const lead = mark ? (goes ? "● " : "○ ") : "";
+      return `${lead}${variantName(names[index] as string)} ${shownValue(bare, [entry])}`;
+    });
     return tidyUnits(`${each.join(" · ")}${field.unit ? ` ${field.unit}` : ""}`);
   }
   return tidyUnits(shownValue(field, value));
@@ -246,7 +278,10 @@ export function editorRows(model: EditorModel): EditorRow[] {
     return {
       key: field.key,
       label: field.label,
-      value: fieldShown(field, edited, edited[field.key]),
+      value: fieldShown(field, edited, edited[field.key], {
+        active: model.active,
+        every: model.everyKeys.has(field.key),
+      }),
       ...(changed ? { was: fieldShown(field, model.original, model.original[field.key]) } : {}),
       changed,
       field,
@@ -285,6 +320,44 @@ export function editorCurrentRow(model: EditorModel): EditorRow | undefined {
   return currentRow(model);
 }
 
+/** The active variant's nozzle type for people: "standard", "high flow". */
+function activeName(model: EditorModel): string {
+  return variantName(variantNames(model.original)[model.active] ?? "Direct Drive Standard");
+}
+
+/** Whether key's nozzle types differ (on disk or edited): an edit then picks which ones it goes to. */
+function splitVariants(model: EditorModel, key: string): boolean {
+  return (
+    differingVariants(model.original[key]) > 0 || differingVariants(editedPreset(model)[key]) > 0
+  );
+}
+
+/** What setting key to value writes: the printer's nozzle type (and those equal to it), or every one with n. */
+function fieldEdit(model: EditorModel, key: string, value: string): EditValue {
+  const list = model.original[key];
+  if (!Array.isArray(list) || list.length < 2 || model.everyKeys.has(key)) return { every: value };
+  return { variant: variantNames(model.original)[model.active] ?? "Direct Drive Standard", value };
+}
+
+/** n: the highlighted field's edits go to every nozzle type, or back to the printer's alone. */
+function toggleEvery(model: EditorModel): EditorStep {
+  const row = currentRow(model);
+  if (!row?.field || !splitVariants(model, row.key)) return { model };
+  const everyKeys = new Set(model.everyKeys);
+  if (everyKeys.has(row.key)) everyKeys.delete(row.key);
+  else everyKeys.add(row.key);
+  const next = { ...model, everyKeys, error: "" };
+  const edit = model.edits.get(row.key);
+  if (!edit || "each" in edit) return { model: next };
+  const edits = withEdit(
+    model.original,
+    model.edits,
+    row.key,
+    fieldEdit(next, row.key, editedText(edit)),
+  );
+  return { model: { ...next, edits } };
+}
+
 function differingVariants(value: unknown): number {
   return Array.isArray(value) && value.length > 1 && value.some((v) => v !== value[0])
     ? value.length
@@ -306,10 +379,11 @@ export function editorTakes(model: EditorModel): string {
     return text !== "" && Number.isFinite(Number(text)) ? "a number" : "text";
   }
   const nil = field.nilable ? ", or nothing for the printer's" : "";
-  // An edit writes one value for every variant (editField's { every }).
-  const one = differingVariants(editedPreset(model)[field.key])
-    ? "; one value for every nozzle type"
-    : "";
+  const one = !splitVariants(model, field.key)
+    ? ""
+    : model.everyKeys.has(field.key)
+      ? `; for every nozzle type (n: ${activeName(model)} only)`
+      : `; for ${activeName(model)} (n: every nozzle type)`;
   switch (field.kind) {
     case "int":
       return `a whole number, ${field.min}–${field.max}${nil}${one}`;
@@ -383,6 +457,12 @@ export function editorHints(model: EditorModel): Hint[] {
       ? { keys: "space", label: "toggle", primary: true }
       : { keys: "enter", label: "edit", primary: true },
   ];
+  if (row?.field && splitVariants(model, row.key))
+    hints.push({
+      keys: "n",
+      label: model.everyKeys.has(row.key) ? `${activeName(model)} only` : "every nozzle type",
+      primary: true,
+    });
   if (row?.changed) hints.push({ keys: "u", label: "undo", primary: true });
   if (model.page === ALL_SETTINGS) hints.push({ keys: "/", label: "filter", primary: true });
   hints.push(
@@ -411,12 +491,12 @@ function commit(model: EditorModel, text: TextState): EditorStep {
   const row = currentRow(model);
   if (!row) return { model: { ...model, text: null } };
   // Confirmed as it started (enter, or stepped back): no edit, so variants that differ stay apart.
-  if (row.field && text.value === fieldText(row.field, editedPreset(model)[row.key]))
+  if (row.field && text.value === fieldText(row.field, editedPreset(model)[row.key], model.active))
     return { model: { ...model, text: null, selected: false, error: "" } };
   const parsed = row.field
     ? (() => {
         const result = parseField(row.field, text.value);
-        return "error" in result ? result : { edit: { every: result.value } };
+        return "error" in result ? result : { edit: fieldEdit(model, row.key, result.value) };
       })()
     : parseRaw(editedPreset(model)[row.key], text.value);
   if ("error" in parsed) return { model: { ...model, text, error: parsed.error } };
@@ -451,7 +531,8 @@ function stepped(model: EditorModel, field: EditField, text: string, delta: numb
   const step = stepOf(field) ?? 1;
   const from = (value: string) => (value.trim() === "" ? Number.NaN : Number(value));
   let current = from(text);
-  if (!Number.isFinite(current)) current = from(fieldText(field, editedPreset(model)[field.key]));
+  if (!Number.isFinite(current))
+    current = from(fieldText(field, editedPreset(model)[field.key], model.active));
   const low = field.min ?? -Infinity;
   const high = field.max ?? Infinity;
   const next = Number.isFinite(current)
@@ -495,17 +576,22 @@ function edit(model: EditorModel): EditorStep {
   if (!row) return { model };
   const edited = editedPreset(model);
   if (row.field?.kind === "switch") {
-    const on = fieldText(row.field, edited[row.key]) === "1";
+    const on = fieldText(row.field, edited[row.key], model.active) === "1";
     return {
       model: {
         ...model,
         error: "",
-        edits: withEdit(model.original, model.edits, row.key, { every: on ? "0" : "1" }),
+        edits: withEdit(
+          model.original,
+          model.edits,
+          row.key,
+          fieldEdit(model, row.key, on ? "0" : "1"),
+        ),
       },
     };
   }
   let value: string;
-  if (row.field) value = fieldText(row.field, edited[row.key]);
+  if (row.field) value = fieldText(row.field, edited[row.key], model.active);
   else {
     if (row.locked)
       return { model: { ...model, error: `${row.key} can't be changed here: ${row.locked}` } };
@@ -586,6 +672,7 @@ export function updateEditor(
   const text = typed(key);
   if (key.ctrl && !key.meta && key.input.toLowerCase() === "u") return undo(clear);
   if (text === "u") return undo(clear);
+  if (text === "n") return toggleEvery(clear);
   if (text === "a") return finish(model, model.mode === "preset" ? "review" : "leave");
   if (text === "/" && model.page === ALL_SETTINGS)
     return { model: { ...clear, filter: { ...model.filter, focused: true } } };

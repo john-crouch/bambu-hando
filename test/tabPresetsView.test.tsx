@@ -327,7 +327,7 @@ describe.each([
     const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
     const screen = lines(flow, ctx);
     expectExact(screen, ctx);
-    expect(screen.join("\n")).toMatch(/Max volumetric speed +standard 12 · high flow 16 mm³\/s/);
+    expect(screen.join("\n")).toMatch(/Max volumetric speed +● standard 12 · ○ high flow 16 mm³\/s/);
   });
 
   it("lists every key on All settings, filtered", () => {

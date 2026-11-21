@@ -1,11 +1,11 @@
 // ABOUTME: Tests for the Presets tab's model: the list, its detail data, drafts, the review and saving to presets and SpoolEase.
 // ABOUTME: Drives update() with press() keys and runs its commands against real files and the SpoolEase stand-in.
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Preset } from "../src/presetEdit.js";
 import type { UserPreset } from "../src/syncCheck.js";
 import { type KeyPress, press } from "../src/tui/core/keys.js";
@@ -74,8 +74,14 @@ async function writePreset(file: string, preset: Preset): Promise<string> {
   return path;
 }
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "tab-presets-"));
+  // BambuStudio.conf (the printers' nozzle types) is read from HOME: never the real one.
+  vi.stubEnv("HOME", dir);
   presets = [
     {
       name: "Acme PLA Red",
@@ -490,6 +496,29 @@ describe("list", () => {
     expect((await drive(red06, ctx, "left")).model.path).toBe(presets[0]?.path);
     expect((await drive(red06, ctx, "down")).model.path).toBe(presets[1]?.path);
     expect((await drive(red06, ctx, "down", "up")).model.path).toBe(presets[0]?.path);
+  });
+
+  it("opens the editor on the variant of the printer's nozzle type in BambuStudio.conf", async () => {
+    const two = {
+      ...presetJson("Acme PLA Red", X1C_04, "P1111111"),
+      filament_extruder_variant: ["Direct Drive Standard", "Direct Drive High Flow"],
+      filament_max_volumetric_speed: ["21", "29"],
+    };
+    await writeFile(presets[0]?.path ?? "", JSON.stringify(two));
+    const conf = join(dir, ".config", "BambuStudio");
+    await mkdir(conf, { recursive: true });
+    await writeFile(
+      join(conf, "BambuStudio.conf"),
+      JSON.stringify({ nozzle_volume_types: { [X1C_04]: "High Flow" } }),
+    );
+    const ctx = ctxWith();
+    const { model } = await drive((await start(ctx)).model, ctx, "down", "enter");
+    expect(model.editor?.preset.path).toBe(presets[0]?.path);
+    expect(model.editor?.model.active).toBe(1);
+    // Without a conf entry: Standard.
+    await writeFile(join(conf, "BambuStudio.conf"), "{}");
+    const plain = await drive((await start(ctx)).model, ctx, "down", "enter");
+    expect(plain.model.editor?.model.active).toBe(0);
   });
 
   it("opens the printer's preset: enter edits the one left and right picked", async () => {
