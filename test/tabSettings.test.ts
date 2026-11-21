@@ -467,13 +467,12 @@ describe("what the SpoolEase page keeps for next time", () => {
     expect(await loadTuiSettings()).not.toHaveProperty("console.securityKey");
   });
 
-  it("refuses a key with spaces inside, without repeating it", async () => {
+  it("takes a key with spaces inside, trimming only its ends", async () => {
     const h = await start({ securityKey: "OLDKEY" });
     await onPage(h, "SpoolEase");
-    await retype(h, "Security key", "TWO WORDS");
-    expect(h.model.error).toBe("the key contains spaces or control characters: paste only the key");
-    expect(h.ctx.values.securityKey).toBe("OLDKEY");
-    expect(h.of("app/toast")).toEqual([]);
+    await retype(h, "Security key", " TWO WORDS ");
+    expect(h.model.error).toBe("");
+    expect(h.ctx.values.securityKey).toBe("TWO WORDS");
   });
 
   it("forgets the key when the field is emptied, warning when the keyring can't be reached", async () => {

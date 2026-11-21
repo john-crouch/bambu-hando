@@ -271,7 +271,7 @@ describe("cli", () => {
   );
 
   it("says SPOOLEASE_SECURITY_KEY isn't usable without quoting it", async () => {
-    vi.stubEnv("SPOOLEASE_SECURITY_KEY", "LEAK ME");
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", "LEAK\nME");
     const { code, stdout, stderr } = await run([
       "--source",
       SOURCE_FIXTURE,

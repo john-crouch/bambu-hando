@@ -57,16 +57,27 @@ describe("the SpoolEase security key", () => {
       account: "spoolease-security-key",
       env: "SPOOLEASE_SECURITY_KEY",
       prefix: "",
+      spaces: true,
     });
   });
 
-  it("takes any key without spaces or control characters, since it has no prefix", () => {
+  it("takes any key without control characters, spaces inside included, since it has no prefix", () => {
     expect(validateSecret(" anything-goes_123\n", CONSOLE)).toBe("anything-goes_123");
-    expect(() => validateSecret("two words", CONSOLE)).toThrow(/spaces or control characters/);
+    expect(validateSecret("  two words \n", CONSOLE)).toBe("two words");
+    expect(() => validateSecret(" \n", CONSOLE)).toThrow(/empty/);
+    for (const bad of ["abc\ndef", "abc\tdef", "abc\u0007def"]) {
+      expect(() => validateSecret(bad, CONSOLE)).toThrow(
+        "the key contains control characters: paste only the key",
+      );
+    }
+  });
+
+  it("still refuses spaces inside a 3DFilamentProfiles key", () => {
+    expect(() => validateSecret("3dfp_two words", TDFP)).toThrow(/spaces or control characters/);
   });
 
   it("refuses a mangled one in SPOOLEASE_SECURITY_KEY, naming the variable without echoing it", async () => {
-    const err: unknown = await loadSecret(CONSOLE, { [CONSOLE.env]: "LEAK ME" }).catch(
+    const err: unknown = await loadSecret(CONSOLE, { [CONSOLE.env]: "LEAK\tME" }).catch(
       (e: unknown) => e,
     );
     expect(err).toBeInstanceOf(InvalidSecretError);

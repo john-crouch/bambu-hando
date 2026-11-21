@@ -13,6 +13,8 @@ export interface SecretSpec {
   env: string;
   /** What every key of this service starts with, to catch a wrong paste; empty when its keys have no common start. */
   prefix: string;
+  /** Spaces may be part of a key: a console's key is whatever its owner typed. */
+  spaces?: boolean;
 }
 
 export const SECRETS = {
@@ -30,6 +32,7 @@ export const SECRETS = {
     env: "SPOOLEASE_SECURITY_KEY",
     // Set by whoever set up the console: any text at all.
     prefix: "",
+    spaces: true,
   },
 } as const satisfies Record<string, SecretSpec>;
 
@@ -66,8 +69,11 @@ export function keyringName(platform: string = process.platform): string {
 export function validateSecret(value: string, spec?: SecretSpec): string {
   const key = value.trim();
   if (key === "") throw new Error("the key is empty");
-  // Spaces or control characters inside mean a mangled paste (or two lines), not a key.
-  if (/[\s\p{Cc}]/u.test(key))
+  // Control characters inside mean a mangled paste (or two lines), not a key; so do spaces, for keys without any.
+  if (spec?.spaces) {
+    if (/\p{Cc}/u.test(key))
+      throw new Error("the key contains control characters: paste only the key");
+  } else if (/[\s\p{Cc}]/u.test(key))
     throw new Error("the key contains spaces or control characters: paste only the key");
   if (spec?.prefix && !key.startsWith(spec.prefix))
     throw new Error(`${spec.label}s start with ${spec.prefix}: that doesn't look like one`);
