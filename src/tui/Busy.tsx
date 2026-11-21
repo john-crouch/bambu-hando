@@ -15,7 +15,7 @@ export function Busy({ message, color }: { message: string; color?: string }) {
     return () => clearInterval(timer);
   }, []);
   return (
-    <Text color={color}>
+    <Text {...(color ? { color } : {})}>
       {SPINNER_FRAMES[frame]} {message}
     </Text>
   );

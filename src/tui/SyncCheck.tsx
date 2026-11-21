@@ -65,7 +65,7 @@ interface Props {
   /** Presets without a filament ID that [f] can give one. */
   fixable?: number;
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function SyncCheck({ sections, top, compared, warnings, fixable = 0, height }: Props) {
@@ -78,7 +78,7 @@ export function SyncCheck({ sections, top, compared, warnings, fixable = 0, heig
   return (
     <Box flexDirection="column">
       <Text bold>Sync check: {compared}</Text>
-      <Text bold color={summary === "Everything lines up" ? "green" : undefined}>
+      <Text bold {...(summary === "Everything lines up" ? { color: "green" } : {})}>
         {summary}
       </Text>
       {warnings.map((w) => (
@@ -93,8 +93,8 @@ export function SyncCheck({ sections, top, compared, warnings, fixable = 0, heig
             // biome-ignore lint/suspicious/noArrayIndexKey: the key is the line's position in the whole list (top + index), which stays with the line while scrolling; lines can repeat text.
             key={top + index}
             wrap="truncate-end"
-            color={TONES[line.tone].color}
-            dimColor={TONES[line.tone].dim}
+            {...(TONES[line.tone].color ? { color: TONES[line.tone].color } : {})}
+            {...(TONES[line.tone].dim ? { dimColor: TONES[line.tone].dim } : {})}
           >
             {line.text}
           </Text>

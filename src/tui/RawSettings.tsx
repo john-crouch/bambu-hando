@@ -121,7 +121,7 @@ interface Props {
   edits: Edits;
   state: RawSettingsState;
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function RawSettings({ preset, edited, edits, state, height }: Props) {
@@ -152,7 +152,7 @@ export function RawSettings({ preset, edited, edits, state, height }: Props) {
             <Box width={COLUMNS.key} flexShrink={0} paddingRight={1}>
               <Text
                 wrap="truncate-end"
-                color={active ? "cyan" : undefined}
+                {...(active ? { color: "cyan" } : {})}
                 dimColor={!active && Boolean(lockedReason(key))}
               >
                 {key}
@@ -166,7 +166,7 @@ export function RawSettings({ preset, edited, edits, state, height }: Props) {
             ) : (
               <Text
                 wrap="truncate-end"
-                color={edits.has(key) ? "yellow" : undefined}
+                {...(edits.has(key) ? { color: "yellow" } : {})}
                 dimColor={!edits.has(key) && Boolean(lockedReason(key))}
               >
                 {value === "" ? '""' : value}

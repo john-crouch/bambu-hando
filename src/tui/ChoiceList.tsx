@@ -24,7 +24,7 @@ export interface ChoiceItem {
   label: string;
   detail?: string;
   /** "#RRGGBB" drawn as a color swatch before the label. */
-  swatch?: string;
+  swatch?: string | undefined;
 }
 
 export interface ChoiceState {
@@ -100,7 +100,7 @@ interface Props {
   state: ChoiceState;
   multi: boolean;
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function ChoiceList({ title, items, state, multi, height }: Props) {
@@ -124,11 +124,13 @@ export function ChoiceList({ title, items, state, multi, height }: Props) {
               </Box>
               {swatches ? (
                 <Box width={3} flexShrink={0}>
-                  <Text backgroundColor={item.swatch}>{item.swatch ? "  " : ""}</Text>
+                  <Text {...(item.swatch ? { backgroundColor: item.swatch } : {})}>
+                    {item.swatch ? "  " : ""}
+                  </Text>
                 </Box>
               ) : null}
               <Box width={LABEL_WIDTH} flexShrink={0} paddingRight={1}>
-                <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
+                <Text wrap="truncate-end" {...(active ? { color: "cyan" } : {})}>
                   {item.label}
                 </Text>
               </Box>

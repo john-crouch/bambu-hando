@@ -81,7 +81,7 @@ interface Props {
   sourceName: string;
   warnings: string[];
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function WeightMenu({
@@ -133,7 +133,7 @@ export function WeightMenu({
                 <Text>{active ? "›" : ""}</Text>
               </Box>
               <Box width={LABEL_WIDTH} flexShrink={0} paddingRight={1}>
-                <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
+                <Text wrap="truncate-end" {...(active ? { color: "cyan" } : {})}>
                   {item.label}
                 </Text>
               </Box>

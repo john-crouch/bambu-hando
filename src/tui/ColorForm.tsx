@@ -127,7 +127,7 @@ export function ColorForm({ state, brand, material }: Props) {
           <Text>{active ? "›" : ""}</Text>
         </Box>
         <Box width={KEY_WIDTH}>
-          <Text color={active ? "cyan" : undefined}>{label}</Text>
+          <Text {...(active ? { color: "cyan" } : {})}>{label}</Text>
         </Box>
         <Box width={VALUE_WIDTH} paddingRight={1}>
           {value}

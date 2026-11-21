@@ -77,13 +77,13 @@ function Cell({
 }: {
   width: number;
   children: string;
-  color?: string;
+  color?: string | undefined;
   dim?: boolean;
   shrink?: boolean;
 }) {
   return (
     <Box width={width} flexShrink={shrink ? 1 : 0} paddingRight={1}>
-      <Text wrap="truncate-end" color={color} dimColor={dim}>
+      <Text wrap="truncate-end" {...(color ? { color } : {})} {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
     </Box>
@@ -100,7 +100,7 @@ interface Props {
   state: PresetListState;
   warnings: string[];
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function PresetList({ matches, total, folder, drafts, state, warnings, height }: Props) {

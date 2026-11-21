@@ -36,7 +36,7 @@ export interface BrowseState {
   brandCursor: number;
   materialCursor: number;
   /** Letters typed for type-ahead, and when. */
-  typed?: Typed;
+  typed?: Typed | undefined;
 }
 
 export type BrowseRow =
@@ -212,11 +212,11 @@ function Cell({
   width: number;
   children: string;
   dim?: boolean;
-  color?: string;
+  color?: string | undefined;
 }) {
   return (
     <Box width={width} paddingRight={1}>
-      <Text wrap="truncate-end" dimColor={dim} color={color}>
+      <Text wrap="truncate-end" {...(dim ? { dimColor: dim } : {})} {...(color ? { color } : {})}>
         {children}
       </Text>
     </Box>
@@ -229,7 +229,7 @@ interface Props {
   selected: ReadonlySet<string>;
   warnings: string[];
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function Browse({ state, profiles, selected, warnings, height }: Props) {

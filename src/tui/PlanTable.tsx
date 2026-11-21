@@ -57,7 +57,7 @@ function PlanCell({ plan }: { plan: { text: string; tone: Tone } | null }) {
   if (!plan) return <Text dimColor>·</Text>;
   const { color, dim } = TONE_COLORS[plan.tone];
   return (
-    <Text color={color} dimColor={dim} wrap="truncate-end">
+    <Text {...(color ? { color } : {})} {...(dim ? { dimColor: dim } : {})} wrap="truncate-end">
       {plan.text}
     </Text>
   );
@@ -87,7 +87,7 @@ function StatusCell({ status, active }: { status: Status | undefined; active: bo
 function Cell({ width, children, dim }: { width: number; children: string; dim?: boolean }) {
   return (
     <Box width={width} paddingRight={1}>
-      <Text wrap="truncate-end" dimColor={dim}>
+      <Text wrap="truncate-end" {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
     </Box>

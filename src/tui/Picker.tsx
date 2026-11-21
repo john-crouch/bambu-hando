@@ -100,7 +100,7 @@ export function visibleRange(cursor: number, total: number, rows: number): [numb
 function Cell({ width, children, dim }: { width: number; children: string; dim?: boolean }) {
   return (
     <Box width={width}>
-      <Text wrap="truncate-end" dimColor={dim}>
+      <Text wrap="truncate-end" {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
     </Box>
@@ -113,7 +113,7 @@ interface Props {
   state: PickerState;
   warnings: string[];
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function Picker({ catalogSize, matches, state, warnings, height }: Props) {
@@ -152,7 +152,7 @@ export function Picker({ catalogSize, matches, state, warnings, height }: Props)
               <Text backgroundColor={`#${profile.colorRgba.slice(0, 6)}`}>{"  "}</Text>
             </Box>
             <Box width={COLUMNS.name}>
-              <Text wrap="truncate-end" color={active ? "cyan" : undefined}>
+              <Text wrap="truncate-end" {...(active ? { color: "cyan" } : {})}>
                 {profile.name}
               </Text>
             </Box>

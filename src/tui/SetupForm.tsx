@@ -113,7 +113,7 @@ export function SetupForm({
           return (
             <Box key={field.key}>
               <Box width={LABEL_WIDTH}>
-                <Text color={isFocused ? "cyan" : undefined} dimColor={dimmed}>
+                <Text {...(isFocused ? { color: "cyan" } : {})} dimColor={dimmed}>
                   {isFocused ? "› " : "  "}
                   {field.label}
                 </Text>
@@ -121,14 +121,14 @@ export function SetupForm({
               {field.kind === "toggle" ? (
                 <Text dimColor={dimmed}>{values[field.key] ? "[x]" : "[ ]"}</Text>
               ) : field.kind === "choice" ? (
-                <Text color={isFocused ? "cyan" : undefined}>{values[field.key]}</Text>
+                <Text {...(isFocused ? { color: "cyan" } : {})}>{values[field.key]}</Text>
               ) : field.kind === "section" ? (
                 <Text dimColor={dimmed}>{connectionSummary(values)}</Text>
               ) : (
                 <TextInput
                   value={values[field.key]}
                   focus={isFocused}
-                  mask={field.kind === "secret" ? "*" : undefined}
+                  {...(field.kind === "secret" ? { mask: "*" } : {})}
                   onChange={(value) => onChange({ ...values, [field.key]: value })}
                   onSubmit={down}
                 />

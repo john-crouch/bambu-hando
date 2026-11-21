@@ -38,8 +38,8 @@ export interface FillProgress {
 
 export interface CatalogSearch {
   words?: string;
-  brand?: string;
-  material?: string;
+  brand?: string | undefined;
+  material?: string | undefined;
 }
 
 /** Whole days since the full record was fetched; null when there is none. */

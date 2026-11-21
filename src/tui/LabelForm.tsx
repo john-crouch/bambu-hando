@@ -154,7 +154,7 @@ export function LabelForm({ state, spoolIds, fresh }: Props) {
           <Text>{active ? "›" : ""}</Text>
         </Box>
         <Box width={KEY_WIDTH}>
-          <Text color={active ? "cyan" : undefined}>{label}</Text>
+          <Text {...(active ? { color: "cyan" } : {})}>{label}</Text>
         </Box>
         <Text>{value}</Text>
         {hint ? <Text dimColor> {hint}</Text> : null}

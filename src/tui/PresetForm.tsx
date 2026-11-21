@@ -159,13 +159,18 @@ function Cell({
 }: {
   width: number;
   children: React.ReactNode;
-  color?: string;
+  color?: string | undefined;
   dim?: boolean;
   bold?: boolean;
 }) {
   return (
     <Box width={width} flexShrink={0} paddingRight={1}>
-      <Text wrap="truncate-end" color={color} dimColor={dim} bold={bold}>
+      <Text
+        wrap="truncate-end"
+        {...(color ? { color } : {})}
+        {...(dim ? { dimColor: dim } : {})}
+        {...(bold ? { bold } : {})}
+      >
         {children}
       </Text>
     </Box>
@@ -183,7 +188,7 @@ interface Props {
   /** Opened from the plan: the preset is the one the run writes, and the form goes back to the plan. */
   planned?: boolean;
   /** The terminal's height in rows, when known. */
-  height?: number;
+  height?: number | undefined;
 }
 
 export function PresetForm({
@@ -246,7 +251,7 @@ export function PresetForm({
               <Text inverse> </Text>
             </Text>
           ) : (
-            <Text wrap="truncate-end" color={changed ? "yellow" : undefined}>
+            <Text wrap="truncate-end" {...(changed ? { color: "yellow" } : {})}>
               {shownValue(field, edited[field.key])}
             </Text>
           )}

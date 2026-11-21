@@ -143,7 +143,7 @@ export interface FillResult {
 export interface FillOptions {
   reserve?: number;
   /** Waits between calls, to stay gentle with the API. */
-  pause?: () => Promise<void>;
+  pause?: (() => Promise<void>) | undefined;
 }
 
 /**

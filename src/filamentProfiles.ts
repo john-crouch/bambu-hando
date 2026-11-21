@@ -90,9 +90,9 @@ export type AddedSpool =
   | { created: false; existing: string[] };
 
 export interface FilamentFilters {
-  q?: string;
-  brand?: string;
-  material?: string;
+  q?: string | undefined;
+  brand?: string | undefined;
+  material?: string | undefined;
   type?: string;
   gtin?: string;
   page?: number;
@@ -287,7 +287,7 @@ export class FilamentProfilesClient {
           "User-Agent": "bambu-hando",
           ...(body ? { "Content-Type": "application/json" } : {}),
         },
-        body: body ? JSON.stringify(body) : undefined,
+        ...(body ? { body: JSON.stringify(body) } : {}),
         // A redirect could carry the key to another host: never follow one.
         redirect: "manual",
         signal: AbortSignal.timeout(this.options.timeoutMs ?? REQUEST_TIMEOUT_MS),
