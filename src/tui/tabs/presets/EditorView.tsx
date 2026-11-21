@@ -24,7 +24,7 @@ import { rowSegments } from "../../ui/List.js";
 import { textFieldSegments } from "../../ui/TextField.js";
 import { padSegments, spaces, truncate } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
-import { printerLabel } from "./detail.js";
+import { printerLabel, wrapDetailRows } from "./detail.js";
 import {
   ALL_SETTINGS,
   type EditorModel,
@@ -265,7 +265,7 @@ function SidePanel({
           label: index === 0 ? "Key" : "",
           value: part,
         }))
-      : [fact],
+      : wrapDetailRows([fact], keyRoom),
   );
   const changes = editorChanges(model);
   // Two lines a change, under the setting's rows, a gap and the heading.

@@ -326,3 +326,51 @@ export function compactDetail(preset: Preset, width = Infinity): DetailRow[] {
   ];
   return rows.filter((row) => row.value);
 }
+
+/** Words packed into lines of at most width columns (a word longer than that keeps a line of its own). */
+function packWords(words: readonly string[], width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && textWidth(next) > width) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  return line ? [...lines, line] : lines;
+}
+
+/** A value in lines of at most width columns: broken after a " · " where it can be, else between words. */
+function wrapValue(value: string, width: number): string[] {
+  const pieces = value
+    .split(" · ")
+    .map((piece, index, all) => (index < all.length - 1 ? `${piece} ·` : piece));
+  const lines: string[] = [];
+  let line = "";
+  for (const piece of pieces) {
+    const next = line ? `${line} ${piece}` : piece;
+    if (textWidth(next) <= width) {
+      line = next;
+      continue;
+    }
+    if (line) lines.push(line);
+    if (textWidth(piece) <= width) line = piece;
+    else {
+      const words = packWords(piece.split(" "), width);
+      lines.push(...words.slice(0, -1));
+      line = words.at(-1) ?? "";
+    }
+  }
+  return line ? [...lines, line] : lines;
+}
+
+/** Rows whose values are too long for width columns go on over rows without a label, never cut. */
+export function wrapDetailRows<R extends DetailRow>(rows: readonly R[], width: number): R[] {
+  return rows.flatMap((row) => {
+    if (textWidth(row.value) <= width) return [row];
+    return wrapValue(row.value, width).map((value, index) =>
+      index === 0 ? { ...row, value } : { ...row, label: "", value },
+    );
+  });
+}

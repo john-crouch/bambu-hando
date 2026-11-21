@@ -176,7 +176,8 @@ describe.each([
     expect(text.match(/Sunlu PETG 2\.0 Vivid Yellow/g)).toHaveLength(1);
     expect(text).toMatch(/OVERTURE ROCK PLA +BBL X1C +no ID/);
     expect(text).toContain("Polymaker PolyLite™ PETG Galaxy Dark Blue With A Lo");
-    expect(text).not.toContain("X1 Carbon");
+    // Printers short in the list (the detail's File row is the file's own name).
+    expect(screen.map((line) => line.split("││")[0]).join("\n")).not.toContain("X1 Carbon");
     expect(text).toMatch(/Nozzle +255°C/);
     expect(text).toMatch(/Printer +X1C 0\.4/);
   });
@@ -211,9 +212,15 @@ describe.each([
       expect(text).not.toContain("File");
       return;
     }
-    const file = screen.find((line) => line.includes("File ")) ?? "";
-    expect(file).toMatch(/File +~\/…\/.*\.json +│$/);
+    // The name whole, over the rows it takes, never cut; the folder fitted to one row.
+    const file = screen.findIndex((line) => line.includes("File "));
+    const words = screen
+      .slice(file, file + 4)
+      .map((line) => (line.split("││")[1] ?? "").replace(/^\s*(File)?\s*|\s*│$/g, ""))
+      .join(" ");
+    expect(words).toContain("OVERTURE PLA Basic @Bambu Lab X1 Carbon 0.4 nozzle.json");
     expect(text).toMatch(/Folder +~\/.*filament\/base +│/);
+    expect(text).not.toMatch(/Max flow .*…/);
   });
 
   it("ends the editor with the preset's file, its name kept", () => {

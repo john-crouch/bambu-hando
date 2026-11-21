@@ -1,7 +1,7 @@
 // ABOUTME: The Presets tab's list of BambuStudio filament presets beside (or above) the highlighted preset's detail.
 // ABOUTME: Side by side from 90 columns; below that the detail is a compact panel under the list.
 
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 
 import { Box } from "ink";
 
@@ -40,6 +40,7 @@ import {
   printerLabel,
   printersText,
   statusCells,
+  wrapDetailRows,
 } from "./detail.js";
 import { type FileState, type PresetsModel, visibleGroups } from "./model.js";
 
@@ -354,14 +355,16 @@ function PresetDetail({
   const listed = detailRows(preset, file.preset, group, others, drafted, compact, compactValues);
   // Detail's value column: what's left of the inside after a margin, the labels, a gap and a margin.
   const valueRoom = inner.width - 1 - labelColumn(listed) - 2 - 1;
-  // The file's name stays in view; the folder gets its own row when the whole path doesn't fit.
+  // The whole path when it fits; else the file's name, whole over as many rows as it takes, and its folder.
   const whole = fitPath(preset.path, valueRoom) === fitPath(preset.path, Infinity);
-  const rows = listed.flatMap((row) => {
-    if (row.value === FILE) return [{ ...row, value: fitPath(preset.path, valueRoom) }];
+  const placed = listed.flatMap((row) => {
+    if (row.value === FILE)
+      return [{ ...row, value: whole ? fitPath(preset.path, valueRoom) : basename(preset.path) }];
     if (row.value === FOLDER)
       return whole ? [] : [{ ...row, value: fitPath(dirname(preset.path), valueRoom) }];
     return [row];
   });
+  const rows = compact ? placed : wrapDetailRows(placed, valueRoom);
   const chip: Segment[] = swatch
     ? [{ text: " " }, { text: "  ", backgroundColor: swatch }, { text: " " }]
     : [];

@@ -20,6 +20,7 @@ import {
   presetRows,
   printersText,
   statusCells,
+  wrapDetailRows,
 } from "../src/tui/tabs/presets/detail.js";
 import { ALL_SETTINGS } from "../src/tui/tabs/presets/editor.js";
 import { presetsTab } from "../src/tui/tabs/presets/index.js";
@@ -355,6 +356,28 @@ describe("presetDetail", () => {
       { label: "Nozzle", value: "220°C" },
       { label: "Flow", value: "ratio 0.98 · fan 100%" },
       { label: "Max flow", value: "standard 22 · high flow 29 mm³/s" },
+    ]);
+  });
+});
+
+describe("wrapDetailRows", () => {
+  it("continues a value too long for its column on rows of its own, at · first, then at spaces", () => {
+    expect(
+      wrapDetailRows(
+        [
+          { label: "Max flow", value: "standard 22 · high flow 29 mm³/s", dim: true },
+          { label: "File", value: "eSUN PLA Matte @Bambu Lab X1 Carbon 0.6 nozzle.json" },
+          { label: "Fan", value: "100%" },
+        ],
+        24,
+      ),
+    ).toEqual([
+      { label: "Max flow", value: "standard 22 ·", dim: true },
+      { label: "", value: "high flow 29 mm³/s", dim: true },
+      { label: "File", value: "eSUN PLA Matte @Bambu" },
+      { label: "", value: "Lab X1 Carbon 0.6" },
+      { label: "", value: "nozzle.json" },
+      { label: "Fan", value: "100%" },
     ]);
   });
 });
