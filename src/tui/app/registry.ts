@@ -28,7 +28,8 @@ function PlaceholderView({ model, ctx }: { model: PlaceholderModel; ctx: Ctx }) 
   });
 }
 
-function placeholder(id: TabId, title: string): TabModule<PlaceholderModel> {
+/** A tab that only shows its title: the shell's own tests use these, so they test the shell alone. */
+export function placeholder(id: TabId, title: string): TabModule<PlaceholderModel> {
   return {
     id,
     title,
