@@ -88,6 +88,11 @@ export interface Ctx {
   bodyRows: number;
   /** Today, for "added 3 days ago" and stale checks; injected so tests are stable. */
   now: number;
+  /**
+   * The tab on screen. A tab whose result is already on screen skips its toast; a hidden one (a run that
+   * finished while you looked at Spools) still toasts. Set by the shell; tests may leave it out.
+   */
+  activeTab?: TabId;
 }
 
 /** A run's result as the session summary keeps it: printed after the TUI exits, and decides the exit code. */

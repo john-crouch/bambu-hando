@@ -132,6 +132,7 @@ export function createShell(deps: ShellDeps) {
       // The error banner takes the body's first line.
       bodyRows: Math.max(1, body.rows - (model.error ? 1 : 0)),
       now: deps.now(),
+      activeTab: model.active,
     };
   }
 

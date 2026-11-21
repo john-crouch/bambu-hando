@@ -197,6 +197,13 @@ describe("tabs", () => {
     expect(seen(model, "settings")).toEqual(["app/switchTab"]);
   });
 
+  it("tells every tab which tab is shown, so a hidden one can still toast and a shown one needn't", async () => {
+    let { shell, model } = start();
+    expect(shell.ctx(model).activeTab).toBe("spools");
+    model = await drive(shell, model, key("tab"));
+    expect(shell.ctx(model).activeTab).toBe("add");
+  });
+
   it("switches on app/switchTab and routes tab messages even to hidden tabs", async () => {
     let { shell, model } = start();
     model = await drive(
