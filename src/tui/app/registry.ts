@@ -5,6 +5,7 @@ import { createElement } from "react";
 
 import type { Ctx, LabelsRequest, OverlayModule, TabId, TabModule } from "../core/types.js";
 import { labelsOverlay } from "../overlays/labels/index.js";
+import { addTab } from "../tabs/add/index.js";
 import { checkTab } from "../tabs/check/index.js";
 import { presetsTab } from "../tabs/presets/index.js";
 import { settingsTab } from "../tabs/settings/index.js";
@@ -46,7 +47,7 @@ export function placeholder(id: TabId, title: string): TabModule<PlaceholderMode
 
 export const TABS: Record<TabId, AnyTab> = {
   spools: spoolsTab,
-  add: placeholder("add", "Add"),
+  add: addTab,
   presets: presetsTab,
   check: checkTab,
   settings: settingsTab,
