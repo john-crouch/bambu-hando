@@ -1,12 +1,14 @@
 // ABOUTME: Per-profile table showing color swatches, plan details, and live sync status.
 // ABOUTME: Used for both the pre-apply plan and the progress/summary views.
 
+import { Badge, ProgressBar, Spinner } from "@inkjs/ui";
 import { Box, Text } from "ink";
-import Spinner from "ink-spinner";
 
 import type { FilamentProfile, Status } from "../models.js";
 import type { ProfilePlan } from "../planPreview.js";
 import type { Edits } from "../presetEdit.js";
+import { fitColumns } from "./screenSize.js";
+import { COLORS } from "./theme.js";
 
 // The swatch shows the color, so the table leaves its RGBA out and keeps the width for what the run does.
 const COLUMNS = {
@@ -20,6 +22,14 @@ const COLUMNS = {
   preset: 12,
   spool: 14,
 } as const;
+
+type Column = keyof typeof COLUMNS;
+
+// On a narrow terminal the name gives up columns first, down to this, then the brand; nothing else does.
+const SHRINK: readonly (readonly [Column, number])[] = [
+  ["name", 10],
+  ["brand", 5],
+];
 
 type Tone = "new" | "same" | "change";
 
@@ -68,25 +78,49 @@ export interface RowProgress {
   spool?: Status;
 }
 
+const STATUS_COLORS: Record<Status, string> = {
+  written: COLORS.ok,
+  failed: COLORS.failed,
+  planned: COLORS.warning,
+  skipped: COLORS.muted,
+};
+
 function StatusCell({ status, active }: { status: Status | undefined; active: boolean }) {
-  if (status === "written") return <Text color="green">✓ written</Text>;
-  if (status === "failed") return <Text color="red">✗ failed</Text>;
-  if (status === "planned") return <Text color="yellow">○ planned</Text>;
-  if (status === "skipped") return <Text dimColor>– skipped</Text>;
-  if (active) {
-    return (
-      <Text color="cyan">
-        <Spinner type="dots" /> working
-      </Text>
-    );
-  }
+  if (status) return <Badge color={STATUS_COLORS[status]}>{status}</Badge>;
+  if (active) return <Spinner type="dots" label="working" />;
   return <Text dimColor>·</Text>;
 }
 
-/** A column cell: truncated to its width, keeping one blank column before the next cell. */
+/** Profiles the run is done with: both their preset and their SpoolEase status are in. */
+export function finishedProfiles(progress: RowProgress[]): number {
+  return progress.filter((row) => row.preset && row.spool).length;
+}
+
+const PROGRESS_WIDTH = 30;
+
+/** A bar of the profiles finished out of the run's total, with the count beside it. */
+export function RunProgress({ progress, total }: { progress: RowProgress[]; total: number }) {
+  const finished = finishedProfiles(progress);
+  return (
+    <Box gap={1}>
+      <Box width={PROGRESS_WIDTH} flexShrink={0}>
+        <ProgressBar value={total > 0 ? (finished / total) * 100 : 0} />
+      </Box>
+      <Text wrap="truncate-end">
+        {finished}/{total} profiles finished
+      </Text>
+    </Box>
+  );
+}
+
+/**
+ * A column cell: truncated to its width, keeping one blank column before the next cell.
+ * Widths come from fitColumns in whole columns, so no cell shrinks (a cell laid out a fraction
+ * narrower draws its text over the gap).
+ */
 function Cell({ width, children, dim }: { width: number; children: string; dim?: boolean }) {
   return (
-    <Box width={width} paddingRight={1}>
+    <Box width={width} paddingRight={1} flexShrink={0}>
       <Text wrap="truncate-end" {...(dim ? { dimColor: dim } : {})}>
         {children}
       </Text>
@@ -102,6 +136,8 @@ interface Props {
   overwrite?: boolean;
   activePresets: boolean;
   activeSpools: boolean;
+  /** The terminal's width, to fit the table into; undefined keeps every column whole. */
+  columns?: number | undefined;
 }
 
 export function PlanTable({
@@ -111,37 +147,39 @@ export function PlanTable({
   overwrite = false,
   activePresets,
   activeSpools,
+  columns,
 }: Props) {
+  const width = fitColumns(COLUMNS, columns, SHRINK);
   // Once a run starts, every row shows its live status instead of the plan.
   const started = activePresets || activeSpools || progress.length > 0;
   return (
     <Box flexDirection="column">
       <Box>
-        <Cell width={COLUMNS.swatch} dim>
+        <Cell width={width.swatch} dim>
           {""}
         </Cell>
-        <Cell width={COLUMNS.name} dim>
+        <Cell width={width.name} dim>
           Name
         </Cell>
-        <Cell width={COLUMNS.brand} dim>
+        <Cell width={width.brand} dim>
           Brand
         </Cell>
-        <Cell width={COLUMNS.material} dim>
+        <Cell width={width.material} dim>
           Material
         </Cell>
-        <Cell width={COLUMNS.temps} dim>
+        <Cell width={width.temps} dim>
           Nozzle°C
         </Cell>
-        <Cell width={COLUMNS.code} dim>
+        <Cell width={width.code} dim>
           Code
         </Cell>
-        <Cell width={COLUMNS.empty} dim>
+        <Cell width={width.empty} dim>
           Empty
         </Cell>
-        <Cell width={COLUMNS.preset} dim>
+        <Cell width={width.preset} dim>
           Preset
         </Cell>
-        <Cell width={COLUMNS.spool} dim>
+        <Cell width={width.spool} dim>
           SpoolEase
         </Cell>
       </Box>
@@ -157,25 +195,23 @@ export function PlanTable({
             // biome-ignore lint/suspicious/noArrayIndexKey: profiles aren't deduplicated (a JSON source can repeat a name or filament ID), so the row's position is part of its identity; the list never reorders while shown.
             key={`${index}-${profile.name}`}
           >
-            <Box width={COLUMNS.swatch}>
+            <Box width={width.swatch} flexShrink={0}>
               <Text backgroundColor={`#${profile.colorRgba.slice(0, 6)}`}>{"  "}</Text>
             </Box>
-            <Cell width={COLUMNS.name}>{profile.name}</Cell>
-            <Cell width={COLUMNS.brand}>{profile.brand}</Cell>
-            <Cell width={COLUMNS.material}>{profile.material}</Cell>
-            <Cell width={COLUMNS.temps}>{`${range.low}-${range.high}`}</Cell>
-            <Cell width={COLUMNS.code}>{profile.filamentId}</Cell>
-            <Cell width={COLUMNS.empty}>
-              {profile.coreWeight ? `${profile.coreWeight} g` : "–"}
-            </Cell>
-            <Box width={COLUMNS.preset} paddingRight={1}>
+            <Cell width={width.name}>{profile.name}</Cell>
+            <Cell width={width.brand}>{profile.brand}</Cell>
+            <Cell width={width.material}>{profile.material}</Cell>
+            <Cell width={width.temps}>{`${range.low}-${range.high}`}</Cell>
+            <Cell width={width.code}>{profile.filamentId}</Cell>
+            <Cell width={width.empty}>{profile.coreWeight ? `${profile.coreWeight} g` : "–"}</Cell>
+            <Box width={width.preset} paddingRight={1} flexShrink={0}>
               {plan ? (
                 <PlanCell plan={presetPlanText(plan, overwrite)} />
               ) : (
                 <StatusCell status={row.preset} active={activePresets} />
               )}
             </Box>
-            <Box width={COLUMNS.spool}>
+            <Box width={width.spool} flexShrink={0}>
               {plan ? (
                 <PlanCell plan={spoolEasePlanText(plan)} />
               ) : (
