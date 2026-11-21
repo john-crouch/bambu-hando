@@ -66,10 +66,13 @@ export function keyringName(platform: string = process.platform): string {
   return platform === "darwin" ? "the macOS Keychain" : "the system keyring (Secret Service)";
 }
 
-/** The key without the whitespace a paste or pipe adds; never quotes the value in its errors. */
+/**
+ * The key without what a paste or pipe adds: surrounding whitespace, or for keys that may hold spaces (`spaces`) only
+ * the trailing line end, since spaces around such a key may be part of it. Never quotes the value in its errors.
+ */
 export function validateSecret(value: string, spec?: SecretSpec): string {
-  const key = value.trim();
-  if (key === "") throw new Error("the key is empty");
+  const key = spec?.spaces ? value.replace(/[\r\n]+$/, "") : value.trim();
+  if (key.trim() === "") throw new Error("the key is empty");
   // Control characters inside mean a mangled paste (or two lines), not a key; so do spaces, for keys without any.
   if (spec?.spaces) {
     if (/\p{Cc}/u.test(key))
@@ -132,8 +135,8 @@ export async function loadSecret(
   env: Record<string, string | undefined> = process.env,
 ): Promise<LoadedSecret | null> {
   // Checked like `key set` checks a paste: a mangled value would end up in a header, and in fetch's error about it.
-  const fromEnv = env[spec.env]?.trim();
-  if (fromEnv) {
+  const fromEnv = env[spec.env];
+  if (fromEnv?.trim()) {
     try {
       return { value: validateSecret(fromEnv, spec), from: "env" };
     } catch (err) {
@@ -149,5 +152,5 @@ export async function loadSecret(
     throw new InvalidSecretError(
       `the ${spec.label} stored in ${keyringName()} isn't usable: ${problem}; store it again with \`bambu-hando key set ${spec.name}\``,
     );
-  return { value: stored.trim(), from: "keyring" };
+  return { value: validateSecret(stored, spec), from: "keyring" };
 }

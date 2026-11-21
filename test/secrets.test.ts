@@ -62,14 +62,28 @@ describe("the SpoolEase security key", () => {
   });
 
   it("takes any key without control characters, spaces inside included, since it has no prefix", () => {
-    expect(validateSecret(" anything-goes_123\n", CONSOLE)).toBe("anything-goes_123");
-    expect(validateSecret("  two words \n", CONSOLE)).toBe("two words");
+    expect(validateSecret("anything-goes_123\n", CONSOLE)).toBe("anything-goes_123");
+    expect(validateSecret("two words", CONSOLE)).toBe("two words");
     expect(() => validateSecret(" \n", CONSOLE)).toThrow(/empty/);
     for (const bad of ["abc\ndef", "abc\tdef", "abc\u0007def"]) {
       expect(() => validateSecret(bad, CONSOLE)).toThrow(
         "the key contains control characters: paste only the key",
       );
     }
+  });
+
+  it("keeps the key as typed, surrounding spaces included, dropping only the line end a paste or pipe adds", () => {
+    expect(validateSecret("  two words \n", CONSOLE)).toBe("  two words ");
+    expect(validateSecret(" key\r\n", CONSOLE)).toBe(" key");
+    expect(validateSecret("key\n\n", CONSOLE)).toBe("key");
+    expect(() => validateSecret("\tkey", CONSOLE)).toThrow(/control characters/);
+  });
+
+  it("keeps SPOOLEASE_SECURITY_KEY as set, surrounding spaces included", async () => {
+    expect(await loadSecret(CONSOLE, { [CONSOLE.env]: " spaced key " })).toEqual({
+      value: " spaced key ",
+      from: "env",
+    });
   });
 
   it("still refuses spaces inside a 3DFilamentProfiles key", () => {
@@ -156,6 +170,11 @@ describe.skipIf(!privateKeyringSupported)("secrets in the system keyring", () =>
     expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
     expect(await removeSecret(CONSOLE)).toBe(true);
     expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
+  });
+
+  it("reads the SpoolEase key back as it was stored, surrounding spaces included", async () => {
+    await storeSecret(CONSOLE, " spaced key ");
+    expect(await loadSecret(CONSOLE, {})).toEqual({ value: " spaced key ", from: "keyring" });
   });
 
   it("refuses a mangled SpoolEase key in the keyring, says how to replace it, and never echoes it", async () => {
