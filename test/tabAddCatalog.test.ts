@@ -114,22 +114,17 @@ describe("trayText", () => {
 });
 
 describe("findDetail", () => {
-  const ready = values({
-    printerPreset: "Bambu Lab X1 Carbon 0.4 nozzle, Bambu Lab X1 Carbon 0.6 nozzle",
-    skipSpoolease: false,
-    host: "10.0.0.5",
-    securityKey: "SECRET",
-  });
+  const noAdds = () => null;
 
   it("shows a source's brand count", () => {
     expect(
-      findDetail(null, levelRows({ kind: "root" }, sources, none)[0], sources, none, ready),
+      findDetail(null, levelRows({ kind: "root" }, sources, none)[0], sources, none, noAdds),
     ).toEqual({ kind: "source", title: "SpoolmanDB", lines: ["5 filaments from 2 brands"] });
   });
 
   it("shows a brand's materials with counts", () => {
     const row = levelRows({ kind: "brands" }, sources, none)[0];
-    expect(findDetail(null, row, sources, none, ready)).toEqual({
+    expect(findDetail(null, row, sources, none, noAdds)).toEqual({
       kind: "brand",
       title: "Acme",
       materials: [
@@ -142,7 +137,7 @@ describe("findDetail", () => {
   it("shows a material's colors", () => {
     const level = { kind: "materials", brand: "Acme" } as const;
     const row = levelRows(level, sources, none)[1];
-    const detail = findDetail(level, row, sources, none, ready);
+    const detail = findDetail(level, row, sources, none, noAdds);
     expect(detail).toMatchObject({ kind: "material", title: "Acme PLA" });
     expect(detail?.kind === "material" && detail.colors.map((p) => p.colorName)).toEqual([
       "Black",
@@ -151,9 +146,12 @@ describe("findDetail", () => {
     ]);
   });
 
-  it("shows a color's facts and what saving it adds, never the security key", () => {
+  it("shows a color's facts and what adding it does, never the security key", () => {
     const row = levelRows({ kind: "colors", brand: "Acme", material: "PLA" }, sources, none)[2];
-    const detail = findDetail(null, row, sources, new Set(["db:PACMRED0"]), ready);
+    const spool = { mark: "+", text: "a SpoolEase spool", short: "+ spool" } as const;
+    const detail = findDetail(null, row, sources, new Set(["db:PACMRED0"]), (p) =>
+      p.filamentId === "PACMRED0" ? [spool] : null,
+    );
     expect(detail).toEqual({
       kind: "color",
       title: "Acme PLA Red",
@@ -170,22 +168,16 @@ describe("findDetail", () => {
         { label: "Diameter", value: "1.75 mm" },
         { label: "Code", value: "PACMRED0", dim: true },
       ],
-      adds: [
-        "BambuStudio preset for X1C 0.4",
-        "BambuStudio preset for X1C 0.6",
-        "SpoolEase custom filament PACMRED0",
-        "A SpoolEase spool",
-      ],
-      addsShort: "preset ×2 · custom filament · spool",
+      adds: [spool],
     });
     expect(JSON.stringify(detail)).not.toContain("SECRET");
   });
 
-  it("says unknown weights and leaves SpoolEase out when it's skipped or spools aren't created", () => {
+  it("says unknown weights and slicer codes, and nothing about adding until it's known", () => {
     const bare = profile({ labelWeight: 0, coreWeight: 0, slicerFilamentCode: "GFL99" });
     const s: Sources = { db: [bare], imported: [], importName: null };
     const row = searchRows(s, "")[0];
-    const skipped = findDetail(null, row, s, none, values());
+    const skipped = findDetail(null, row, s, none, noAdds);
     expect(skipped?.kind === "color" && skipped.facts).toContainEqual({
       label: "Empty spool",
       value: "unknown",
@@ -195,18 +187,13 @@ describe("findDetail", () => {
       value: "GFL99",
       dim: true,
     });
-    expect(skipped?.kind === "color" && skipped.adds).toEqual(["BambuStudio preset for X1C 0.4"]);
-    expect(skipped?.kind === "color" && skipped.addsShort).toBe("preset ×1");
-    const noSpools = findDetail(null, row, s, none, { ...ready, createSpools: false });
-    expect(noSpools?.kind === "color" && noSpools.adds.at(-1)).toBe(
-      "SpoolEase custom filament PACMRED0".replace("PACMRED0", bare.filamentId),
-    );
+    expect(skipped?.kind === "color" && skipped.adds).toBeNull();
   });
 
   it("explains Other color…", () => {
     const level = { kind: "colors", brand: "Acme", material: "PLA" } as const;
     const rows = levelRows(level, sources, none);
-    expect(findDetail(level, rows.at(-1), sources, none, ready)).toEqual({
+    expect(findDetail(level, rows.at(-1), sources, none, noAdds)).toEqual({
       kind: "other",
       title: "Other color…",
       lines: [
@@ -217,6 +204,6 @@ describe("findDetail", () => {
   });
 
   it("is null without a row", () => {
-    expect(findDetail(null, undefined, sources, none, ready)).toBeNull();
+    expect(findDetail(null, undefined, sources, none, noAdds)).toBeNull();
   });
 });

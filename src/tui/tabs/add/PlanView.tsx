@@ -5,7 +5,7 @@ import { Box } from "ink";
 
 import type { Status } from "../../../models.js";
 import type { Ctx } from "../../core/types.js";
-import { plural, shortPrinter } from "../../ui/format.js";
+import { fitPath, plural, shortPrinter } from "../../ui/format.js";
 import {
   Bar,
   Busy,
@@ -20,7 +20,7 @@ import {
   panelInner,
   type Segment,
 } from "../../ui/index.js";
-import { fitText, textWidth, truncate } from "../../ui/text.js";
+import { fitText, textWidth } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import { pageArea } from "./layout.js";
 import type { AddModel } from "./model.js";
@@ -124,29 +124,21 @@ const NOTE_COLORS: Record<Note["tone"], string> = {
   muted: COLORS.muted,
 };
 
-/** A path cut from the middle so its end (the folder it is) stays: "~/.config/…/filament/base". */
-export function fitPath(path: string, width: number): string {
-  if (textWidth(path) <= width) return path;
-  const parts = path.split("/");
-  for (let keep = parts.length - 1; keep > 0; keep--) {
-    const tail = parts.slice(parts.length - keep).join("/");
-    const cut = `${parts[0]}/…/${tail}`;
-    if (textWidth(cut) <= width) return cut;
-  }
-  return truncate(path, width);
-}
-
 /** The targets card's label column and its gap, as Detail draws it. */
 const TARGET_LABEL = 11;
 
 /** The targets card: every place the run writes to. */
 function targetRows(ctx: Ctx, width: number): DetailRow[] {
   const t = runTargets(ctx.values);
+  // The words after the URL, fewer of them when the card is narrow, so none is cut.
+  const writes = t.createSpools
+    ? ["filaments + new spools", "filaments + spools", "+ new spools"]
+    : ["filaments only"];
+  const room = width - TARGET_LABEL - 1;
+  const what = writes.find((w) => textWidth(`${t.consoleUrl} · ${w}`) <= room) ?? writes.at(-1);
   const spoolease =
     t.console === "ready"
-      ? {
-          value: `${t.consoleUrl} · ${t.createSpools ? "filaments + new spools" : "filaments only"}`,
-        }
+      ? { value: `${t.consoleUrl} · ${what}` }
       : t.console === "skipped"
         ? { value: "skipped", dim: true }
         : { value: "not set up: add the host and key in Settings (s)", tone: "failed" as const };

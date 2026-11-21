@@ -16,6 +16,8 @@ export interface WeightItem {
   weight: string;
   /** Where the weight comes from, a sentence for the detail panel. */
   detail: string;
+  /** Which list the row is from, short, for the row itself: "your list", "catalog", or "" (not a list's). */
+  origin: "your list" | "catalog" | "";
   choice: WeightChoice;
 }
 
@@ -36,26 +38,39 @@ export function weightItems(
   profiles: FilamentProfile[],
   sourceName: string,
 ): WeightItem[] {
-  const rows: WeightItem[] = group.options.map((option) => ({
-    label: withoutGrams(option.label, option.grams),
-    weight: formatGrams(option.grams),
-    detail: option.mine
-      ? "From your My Spools List on SpoolEase."
-      : `From SpoolEase's spool catalog: ${option.label}.`,
-    choice: { kind: "grams", grams: option.grams },
-  }));
+  const labels = group.options.map((option) => withoutGrams(option.label, option.grams));
+  const rows: WeightItem[] = group.options.map((option, index) => {
+    const label = labels[index] ?? option.label;
+    // The catalog names some spools alike ("Sunlu - Plastic" at 117 g and 150 g): only the scale tells them apart.
+    const alike = group.options.filter((o, i) => !o.mine && labels[i] === label);
+    const twins =
+      !option.mine && alike.length > 1
+        ? ` It has more than one ${label} (${alike.map((o) => formatGrams(o.grams)).join(", ")}): weigh an empty spool to tell which is yours.`
+        : "";
+    return {
+      label,
+      weight: formatGrams(option.grams),
+      detail: option.mine
+        ? "From your My Spools List on SpoolEase."
+        : `From SpoolEase's spool catalog: ${option.label}.${twins}`,
+      origin: option.mine ? "your list" : "catalog",
+      choice: { kind: "grams", grams: option.grams },
+    };
+  });
   return [
     ...rows,
     {
       label: `As listed in ${sourceName}`,
       weight: describeSourceWeights(profiles, group),
       detail: `The empty spool weight ${sourceName} gives for these filaments.`,
+      origin: "",
       choice: { kind: "source" },
     },
     {
       label: "Unspecified",
       weight: "–",
       detail: "SpoolEase works it out on the first full weigh.",
+      origin: "",
       choice: { kind: "unspecified" },
     },
   ];

@@ -2,7 +2,7 @@
 // ABOUTME: Also hints, capturesText and palette commands; every write goes through Review and ends in app/runFinished.
 
 import type { Edits } from "../../../presetEdit.js";
-import { applyWeights, weightGroups } from "../../../spoolWeights.js";
+import { applyWeights, type WeightChoice, weightGroups } from "../../../spoolWeights.js";
 import { isCtrl, type KeyPress, letter, typed } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Hint, PaletteCommand, Step, TabMsg } from "../../core/types.js";
@@ -43,9 +43,11 @@ import { pageArea } from "./layout.js";
 import {
   type AddModel,
   dbProfiles,
+  emptyPeek,
   emptyReview,
   emptyWeights,
   type FindFrame,
+  findRows,
   importModel,
   PAGE_ORDER,
   type PageId,
@@ -54,6 +56,7 @@ import {
   sourcesOf,
   ticked,
 } from "./model.js";
+import { forgetPeeks, peekReply, peekStep } from "./peek.js";
 import { applyEvent, presetPlanText, runOutcome, spoolEasePlanText } from "./plan.js";
 import {
   consoleOf,
@@ -95,7 +98,9 @@ export function update(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result 
   const [next, cmds] = used
     ? shown(synced, (msg as { focus?: unknown }).focus, ctx)
     : route(synced, msg, ctx);
-  return [next, [...syncCmds, ...cmds]];
+  // Find's detail says what adding the highlighted color does: read it once it's highlighted.
+  const [peeked, peekCmds] = peekStep(next, ctx);
+  return [peeked, [...syncCmds, ...cmds, ...peekCmds]];
 }
 
 /** Add is shown again: a plan read with settings changed meanwhile is read again; a deep link opens its filament. */
@@ -107,21 +112,44 @@ function shown(model: AddModel, focus: unknown, ctx: Ctx): Result {
 }
 
 /**
- * A deep link to a filament ID: Find drills to it with the cursor on it, ticked. While the catalog is
- * still loading the ID waits in model.focus for it.
+ * What a deep link names: a bare filament ID, or "id:<filamentId>|name:<name>" (Check sends the name too,
+ * for a filament SpoolmanDB may list under another ID). The name is everything after "|name:".
  */
-function openFocus(model: AddModel, id: string, ctx: Ctx): Result {
+export function parseFocus(focus: string): { id: string; name: string } {
+  if (!focus.startsWith("id:")) return { id: focus.trim(), name: "" };
+  const rest = focus.slice("id:".length);
+  const at = rest.indexOf("|name:");
+  return at < 0
+    ? { id: rest.trim(), name: "" }
+    : { id: rest.slice(0, at).trim(), name: rest.slice(at + "|name:".length).trim() };
+}
+
+/**
+ * A deep link to a filament: Find drills to it with the cursor on it, ticked. One nothing lists by its
+ * ID is searched for by its name, else Find says where to add it. While the catalog is still loading
+ * the link waits in model.focus for it.
+ */
+function openFocus(model: AddModel, focus: string, ctx: Ctx): Result {
   if (model.run?.state === "running") return none({ ...model, focus: null });
+  const { id, name } = parseFocus(focus);
   const sources = sourcesOf(model, ctx);
   const hasImport = model.imported.source !== null;
   const found = sources.db.find((p) => p.filamentId === id);
   const importAt = sources.imported.findIndex((p) => p.filamentId === id);
   if (!found && importAt < 0) {
     const waiting = ctx.resources.catalog.state !== "ready" || model.imported.state === "loading";
+    if (waiting) return none({ ...model, focus });
+    const base = { ...model, focus: null, page: "find" as const, run: null, dialog: null };
+    if (name && searchRows(sources, name).length > 0)
+      return none({
+        ...base,
+        search: { text: { value: name, cursor: name.length }, cursor: 0, focus: "list" },
+        notice: `${id} isn't in SpoolmanDB${hasImport ? " or the import" : ""} by its ID: these match its name`,
+      });
     return none({
-      ...model,
-      focus: waiting ? id : null,
-      notice: waiting ? "" : `${id} isn't in SpoolmanDB${hasImport ? " or the import" : ""}`,
+      ...base,
+      search: null,
+      stack: [...rootStack(hasImport), { level: { kind: "missing", id, name }, cursor: 0 }],
     });
   }
   const key = found ? dbKey(found) : importKey(importAt);
@@ -198,12 +226,10 @@ function route(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result {
     return keyUpdate(model, { input: text, ctrl: false, shift: false, meta: false }, ctx);
   }
   if (isAddMsg(msg)) return ownUpdate(model, msg, ctx);
-  if (
-    msg.type === "app/loaded" &&
-    (msg as { resource: unknown }).resource === "catalog" &&
-    model.focus !== null
-  )
-    return openFocus(model, model.focus, ctx);
+  const loaded = msg.type === "app/loaded" ? (msg as { resource: unknown }).resource : null;
+  if (loaded === "catalog" && model.focus !== null) return openFocus(model, model.focus, ctx);
+  // Presets or the console changed (a run, the Presets or Spools tab): what's there is read again.
+  if (loaded === "presets" || loaded === "console") return none(forgetPeeks(model));
   return none(model);
 }
 
@@ -250,6 +276,9 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
           cursor: clampIndex(model.review.cursor, model.review.profiles.length),
         },
       });
+    case "add/peekConsole":
+    case "add/peeked":
+      return none(peekReply(model, msg));
     case "add/plannedPreset":
       if (msg.seq !== model.review.seq || model.page !== "review") return none(model);
       return none({
@@ -287,7 +316,7 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
       // Edits from elsewhere come without their before and after: the note counts them instead.
       const changes = new Map(model.planChanges);
       changes.delete(msg.filamentId);
-      const next = { ...model, planEdits: edits, planChanges: changes };
+      const next = forgetPeeks({ ...model, planEdits: edits, planChanges: changes });
       return next.page === "review" ? enterReview(next, ctx) : none(next);
     }
     case "add/openSearch": {
@@ -363,11 +392,7 @@ function openSearch(model: AddModel, focus: "query" | "list"): Result {
 }
 
 /** The rows Find shows now: the search results or the top level's. */
-export function findRows(model: AddModel, ctx: Ctx): FindRow[] {
-  const sources = sourcesOf(model, ctx);
-  if (model.search) return searchRows(sources, model.search.text.value);
-  return levelRows(top(model).level, sources, model.selected);
-}
+export { findRows };
 
 function findKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   if (model.dialog) return dialogKey(model, key, ctx);
@@ -386,6 +411,19 @@ function drillKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     return model.stack.length > 1
       ? none({ ...model, stack: model.stack.slice(0, -1) })
       : none(model);
+  }
+  const { level } = frame;
+  if (level.kind === "missing") {
+    if (key.name === "enter") return [model, [toSettings("import.source")]];
+    if (typed(key) === "/") {
+      const [searching] = openSearch(model, "query");
+      const value = level.name;
+      return none({
+        ...searching,
+        search: { text: { value, cursor: value.length }, cursor: 0, focus: "query" },
+      });
+    }
+    return none(model);
   }
   if (key.name === "enter") {
     if (!row) return none(model);
@@ -621,6 +659,11 @@ function cursorFor(model: AddModel, step: number): number {
   return itemIndex(itemsFor(model, step), choice);
 }
 
+/** The brand's marked (●) choice: what → takes, the one the cursor starts on. */
+export function markedChoice(model: AddModel, step = model.weights.step): WeightChoice | null {
+  return itemsFor(model, step)[cursorFor(model, step)]?.choice ?? null;
+}
+
 function toSettings(focus: string | null): ReturnType<typeof send<AppMsg>> {
   return send<AppMsg>({
     type: "app/switchTab",
@@ -682,29 +725,21 @@ function weightsKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   });
 
   if (back) return none(weights.step > 0 ? at(weights.step - 1) : { ...model, page: "find" });
-  if (key.name === "enter") {
+  // enter chooses the highlighted row; → takes the marked one (●): both go on to the next brand.
+  const choose = (choice: WeightChoice | null | undefined): Result => {
     const group = weights.prompts[weights.step];
-    const item = items[weights.cursor];
-    if (!group || !item) return none(model);
-    const weightChoices = new Map(model.weightChoices).set(group.key, item.choice);
-    const weightMemory = new Map(model.weightMemory).set(group.key, item.choice);
+    if (!group || !choice) return none(model);
+    const weightChoices = new Map(model.weightChoices).set(group.key, choice);
+    const weightMemory = new Map(model.weightMemory).set(group.key, choice);
     const next = { ...model, weightChoices, weightMemory };
-    const remember = rememberWeightCmd(group.key, group.brand, item.choice);
+    const remember = rememberWeightCmd(group.key, group.brand, choice);
     if (weights.step + 1 < weights.prompts.length)
       return [at(weights.step + 1, { weightChoices, weightMemory }), [remember]];
     const [reviewed, cmds] = enterReview(next, ctx);
     return [reviewed, [remember, ...cmds]];
-  }
-  if (key.name === "right") {
-    const group = weights.prompts[weights.step];
-    if (weights.prompts.every((g) => model.weightChoices.has(g.key)))
-      return enterReview(model, ctx);
-    if (group && model.weightChoices.has(group.key)) return none(at(weights.step + 1));
-    return none({
-      ...model,
-      notice: `Choose the empty spool weight for ${group?.brand || "this brand"} with enter`,
-    });
-  }
+  };
+  if (key.name === "enter") return choose(items[weights.cursor]?.choice);
+  if (key.name === "right") return choose(markedChoice(model));
   const moved = moveCursor(weights.cursor, key, items.length, pageRows(ctx));
   if (moved !== null) return none({ ...model, weights: { ...weights, cursor: moved } });
   const typedLetter = letter(key);
@@ -861,12 +896,12 @@ function editorKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
       changes.delete(editing.filamentId);
     }
     return enterReview(
-      {
+      forgetPeeks({
         ...model,
         planEdits: edits,
         planChanges: changes,
         review: { ...model.review, editing: null },
-      },
+      }),
       ctx,
     );
   }
@@ -949,6 +984,7 @@ function runDone(model: AddModel, results: Parameters<typeof runOutcome>[0], ctx
       planEdits: new Map(),
       planChanges: new Map(),
       review: emptyReview(model.review.seq),
+      peek: emptyPeek(),
     },
     [
       send<AppMsg>({ type: "app/runFinished", summary: outcome.summary }, ...reloads(ctx), {
@@ -1075,7 +1111,7 @@ export function hints(model: AddModel, ctx: Ctx): Hint[] {
       return [
         h("↑↓", "move", true),
         h("enter", "choose", true),
-        h("→", "next"),
+        h("→", "use ●"),
         h("esc", "back", true),
       ];
     }
@@ -1144,6 +1180,12 @@ function findHints(model: AddModel, ctx: Ctx): Hint[] {
       h("esc", "close search", true),
     ];
   }
+  if (top(model).level.kind === "missing")
+    return [
+      h("enter", "open Settings › Import", true),
+      h("/", "search", true),
+      h("esc", "back", true),
+    ];
   const rows = findRows(model, ctx);
   const row = rows[clampIndex(top(model).cursor, rows.length)];
   const isList = top(model).level.kind === "colors" || top(model).level.kind === "import";

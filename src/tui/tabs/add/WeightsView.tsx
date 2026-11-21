@@ -20,7 +20,7 @@ import { textWidth } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import { pageArea, splitPage } from "./layout.js";
 import type { AddModel } from "./model.js";
-import { currentWeightItems } from "./update.js";
+import { currentWeightItems, markedChoice } from "./update.js";
 import { wrapText } from "./wrap.js";
 
 function choiceText(choice: WeightChoice | undefined, sourceName: string): string {
@@ -30,6 +30,9 @@ function choiceText(choice: WeightChoice | undefined, sourceName: string): strin
 }
 
 const muted = (text: string): Segment => ({ text, color: COLORS.muted });
+
+/** A list row's columns around its cells: gutter, radio and its gap, the gap before the thumb, the thumb. */
+const ROW_EDGES = 5;
 const plain = (text: string): Segment => ({ text });
 
 export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
@@ -63,7 +66,6 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
   const split = splitPage(area);
   const group = weights.prompts[weights.step];
   const items = currentWeightItems(model);
-  const chosen = group ? model.weightChoices.get(group.key) : undefined;
   const list = panelInner(split.list.width, split.list.height);
   const detail = panelInner(split.detail.width, split.detail.height);
   const names = (group?.profiles ?? []).map((i) => weights.profiles[i]?.name ?? "");
@@ -71,17 +73,23 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
     group && group.options.length > 0
       ? "SpoolEase lists several spools for this brand: which is yours?"
       : "SpoolEase's spool lists don't have this brand.";
+  // One column in from each border: " text " never touches the frame.
   const prose = (text: string, lines = Number.POSITIVE_INFINITY) =>
-    wrapText(text, Math.max(1, list.width - 1), lines);
-  // A short panel keeps its rows for the choices: one line each for the names and the question.
-  const introLines = list.height >= 14 ? 2 : 1;
+    wrapText(text, Math.max(1, list.width - 2), lines);
+  // A short panel keeps its rows for the choices: the names get one line; the question is never cut.
   const intro = [
-    ...prose(names.join(", "), introLines).map(muted),
-    ...prose(why, introLines).map(plain),
+    ...prose(names.join(", "), list.height >= 14 ? 2 : 1).map(muted),
+    ...prose(why).map(plain),
   ];
   const weightWidth = Math.max(5, ...items.map((i) => textWidth(i.weight)));
+  // Where a row is from gets a column unless it would cut a name in a narrow panel (the detail says it too).
+  const longest = Math.max(0, ...items.map((i) => textWidth(i.label)));
+  const wantOrigin = Math.max(0, ...items.map((i) => textWidth(i.origin)));
+  const nameRoom = list.width - ROW_EDGES - weightWidth - 1 - (wantOrigin > 0 ? wantOrigin + 1 : 0);
+  const originWidth = list.width < 80 && longest > nameRoom ? 0 : wantOrigin;
+  const marked = JSON.stringify(markedChoice(model));
   const item = items[weights.cursor];
-  const side = (text: string) => wrapText(text, Math.max(1, detail.width - 1));
+  const side = (text: string) => wrapText(text, Math.max(1, detail.width - 2));
 
   return (
     <Box flexDirection={split.side ? "row" : "column"} flexShrink={0}>
@@ -99,19 +107,16 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
         ))}
         <Line width={list.width} segments={[]} />
         <List
-          rows={items.map((it) => {
-            const picked = JSON.stringify(it.choice) === JSON.stringify(chosen);
-            return {
-              key: it.label,
-              cells: [
-                picked
-                  ? { text: "●", width: 1, color: COLORS.ok }
-                  : { text: "○", width: 1, color: COLORS.muted },
-                { text: it.label, grow: true },
-                { text: it.weight, width: weightWidth, align: "right" as const, dim: true },
-              ],
-            };
-          })}
+          marker="radio"
+          rows={items.map((it) => ({
+            key: `${it.label}:${it.weight}`,
+            ticked: JSON.stringify(it.choice) === marked,
+            cells: [
+              { text: it.label, grow: true },
+              ...(originWidth > 0 ? [{ text: it.origin, width: originWidth, dim: true }] : []),
+              { text: it.weight, width: weightWidth, align: "right" as const },
+            ],
+          }))}
           cursor={weights.cursor}
           height={Math.max(0, list.height - intro.length - 1)}
           width={list.width}

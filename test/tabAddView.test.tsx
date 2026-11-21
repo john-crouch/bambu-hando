@@ -13,15 +13,16 @@ import { press } from "../src/tui/core/keys.js";
 import type { AppMsg, Ctx, TabMsg } from "../src/tui/core/types.js";
 import { addTab } from "../src/tui/tabs/add/index.js";
 import type { AddModel } from "../src/tui/tabs/add/model.js";
+import { planBasis } from "../src/tui/tabs/add/targets.js";
 import { textWidth, theme } from "../src/tui/ui/index.js";
-import { ctx as baseCtx } from "./tabAddHarness.js";
+import { ctx as baseCtx, catalog, profile } from "./tabAddHarness.js";
 
 function sized(columns: number, rows: number, values = {}): Ctx {
   return { ...baseCtx({ values }), columns, rows, bodyColumns: columns, bodyRows: rows - 2 };
 }
 
 /** The model after the messages, commands dropped. */
-function after(context: Ctx, ...msgs: (AppMsg | TabMsg | string)[]): AddModel {
+function afterMsgs(context: Ctx, ...msgs: (AppMsg | TabMsg | string)[]): AddModel {
   let [model] = addTab.init(context, { query: "" });
   for (const msg of msgs) {
     const m: AppMsg | TabMsg = typeof msg === "string" ? { type: "key", key: press(msg) } : msg;
@@ -59,8 +60,8 @@ const CONSOLE = {
 /** Every page the tab has, in a representative state. */
 function pages(context: Ctx): [string, AddModel][] {
   const toColors = ["enter", "down", "enter"];
-  const reviewing = after(context, ...toColors, "space", "space", "right");
-  const ready = after(context, ...toColors, "space", "space", "right", {
+  const reviewing = afterMsgs(context, ...toColors, "space", "space", "right");
+  const ready = afterMsgs(context, ...toColors, "space", "space", "right", {
     type: "add/planRead",
     seq: reviewing.review.seq,
     plans: [plan(), plan({ existingPresets: 1 })],
@@ -82,10 +83,10 @@ function pages(context: Ctx): [string, AddModel][] {
     context,
   )[0];
   return [
-    ["brands", after(context)],
-    ["colors", after(context, ...toColors, "space")],
-    ["other color", after(context, ...toColors, "end", "enter", "right", "down", "Moss")],
-    ["search", after(context, "/", "acme pla", "enter", "space")],
+    ["brands", afterMsgs(context)],
+    ["colors", afterMsgs(context, ...toColors, "space")],
+    ["other color", afterMsgs(context, ...toColors, "end", "enter", "right", "down", "Moss")],
+    ["search", afterMsgs(context, "/", "acme pla", "enter", "space")],
     ["review loading", reviewing],
     ["review", ready],
     ["running", running],
@@ -114,7 +115,7 @@ describe.each([
   it("asks for weights in a panel per brand", () => {
     const spools = { ...CONSOLE, createSpools: true };
     const c = sized(columns, rows, spools);
-    const loading = after(c, "enter", "down", "enter", "space", "right");
+    const loading = afterMsgs(c, "enter", "down", "enter", "space", "right");
     const model = addTab.update(
       loading,
       {
@@ -132,7 +133,7 @@ describe.each([
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
     const text = lines.join("\n");
     expect(text).toContain("Empty spool weight · Acme");
-    expect(text).toMatch(/Acme - Plastic\s+180 g/);
+    expect(text).toMatch(/Acme - Plastic\s+catalog\s+180 g/);
     expect(text).toContain("As listed in SpoolmanDB");
     expect(text).toContain("brand 1 of 1");
   });
@@ -157,15 +158,66 @@ describe("what the pages say", () => {
     expect(colors).toMatch(/Code\s+PACMBLU0/);
     expect(colors).not.toContain("space ticks it");
     expect(colors).toContain("+  Other color…");
-    expect(colors).toContain("Adding it writes");
-    expect(colors).toContain("+ SpoolEase custom filament");
+    expect(colors).toContain("Checking what's there already…");
+    expect(colors).not.toContain("+ a SpoolEase");
     expect(colors).toMatch(/✓ 1 ticked\s+Acme PLA/);
   });
 
-  it("draws the Other color dialog over the list", () => {
-    expect(other).toContain("Other color · Acme PLA");
-    expect(other).toMatch(/Settings from\s+‹/);
-    expect(other).toContain("Moss");
+  it("says what adding the color does once it's read, and never what's there already", () => {
+    for (const [columns, rows] of [
+      [120, 36],
+      [80, 24],
+      [60, 20],
+    ] as const) {
+      const c = sized(columns, rows, { ...CONSOLE, createSpools: true });
+      const colorsPage = afterMsgs(c, "enter", "down", "enter", "down");
+      const peeked = addTab.update(
+        addTab.update(
+          colorsPage,
+          { type: "add/peekConsole", basis: planBasis(c.values), state: null },
+          c,
+        )[0],
+        {
+          type: "add/peeked",
+          basis: planBasis(c.values),
+          filamentId: "PACMBLU0",
+          plan: plan({
+            existingPresets: 1,
+            filament: { state: "same", listed: "", becomes: "" },
+            spool: "create",
+          }),
+        },
+        c,
+      )[0];
+      const lines = screen(peeked, c);
+      for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
+      const text = lines.join("\n");
+      if (columns === 60) expect(text).toMatch(/Adding it = preset kept · = listed · \+ spool/);
+      else {
+        expect(text).toContain("= BambuStudio preset for X1C 0.4: kept");
+        expect(text).toContain("= on SpoolEase's custom filaments already");
+        expect(text).toContain("+ a SpoolEase spool");
+      }
+    }
+  });
+
+  it("gives the Other color dialog to the shell's dialog layer, not the body", () => {
+    expect(other).not.toContain("Other color · Acme PLA");
+    const model = pages(context).find(([name]) => name === "other color")?.[1];
+    if (!model) throw new Error("no other color page");
+    const dialog = addTab.dialog?.(model, context);
+    if (!dialog) throw new Error("no dialog");
+    const out = stripVTControlCharacters(
+      renderToString(<ThemeProvider theme={theme}>{dialog}</ThemeProvider>, {
+        columns: context.columns,
+      }),
+    );
+    expect(out).toContain("Other color · Acme PLA");
+    expect(out).toMatch(/Settings from\s+‹/);
+    expect(out).toContain("Moss");
+    const brandsPage = pages(context)[0]?.[1];
+    if (!brandsPage) throw new Error("no brands page");
+    expect(addTab.dialog?.(brandsPage, context)).toBeNull();
   });
 
   it("shows the search query and its matches", () => {
@@ -198,7 +250,7 @@ describe("the preset editor on Review", () => {
     [120, 36],
   ])("fills the body at %ix%i and marks the edited row back on the plan", (columns, rows) => {
     const context = sized(columns, rows);
-    const model = after(context, "enter", "down", "enter", "space", "right");
+    const model = afterMsgs(context, "enter", "down", "enter", "space", "right");
     const ready = addTab.update(
       model,
       { type: "add/planRead", seq: model.review.seq, plans: [plan()], warnings: [] },
@@ -244,14 +296,14 @@ describe("the preset editor on Review", () => {
     )[0];
     const plan80 = screen(back, context).join("\n");
     expect(plan80).toContain("✎ Black");
-    expect(plan80).toContain("✎ PACMBLK0: 1 change goes into the 1 preset the run writes");
+    expect(plan80).toContain("✎ Acme PLA Black: 1 change goes into the 1 preset the run writes");
   });
 });
 
 describe("a narrow table", () => {
   it("drops brand and material below 100 columns and keeps the code", () => {
     const context = sized(80, 24);
-    const model = after(context, "enter", "down", "enter", "space", "right");
+    const model = afterMsgs(context, "enter", "down", "enter", "space", "right");
     const ready = addTab.update(
       model,
       {
@@ -263,8 +315,78 @@ describe("a narrow table", () => {
       context,
     )[0];
     const text = screen(ready, context).join("\n");
-    expect(text).toMatch(/Name\s+Nozzle\s+Code/);
+    expect(text).toMatch(/Name\s+Range\s+Code/);
     expect(text).not.toMatch(/Brand\s+Material/);
     expect(text).toContain("PACMBLK0");
+  });
+
+  it("names the console target in fewer words before it cuts them", () => {
+    for (const columns of [60, 80]) {
+      // A long host, so the card has to choose its words at 60 columns.
+      const context = sized(columns, 20, {
+        ...CONSOLE,
+        host: "spoolease-console.local",
+        createSpools: true,
+      });
+      const weighing = afterMsgs(context, "enter", "down", "enter", "space", "right");
+      const [model] = addTab.update(
+        weighing,
+        {
+          type: "add/weightsRead",
+          signature: weighing.weights.signature,
+          entries: parseSpoolWeightList("Acme - Plastic - 180g,180"),
+          warnings: [],
+          spooled: [],
+          remembered: {},
+        },
+        context,
+      );
+      expect(model.page).toBe("review");
+      const text = screen(model, context).join("\n");
+      expect(text, `${columns}`).toMatch(
+        /SpoolEase\s+http:\/\/spoolease-console\.local · (filaments )?\+ (new )?spools/,
+      );
+      expect(text).not.toMatch(/spo…|filaments \+ new…/);
+    }
+  });
+});
+
+describe("a short detail panel", () => {
+  const many = ["Red", "Blue", "Green", "Teal", "Gold", "Grey", "Pink"].map((colorName, i) =>
+    profile({ colorName, filamentId: `PMANY${i}00`.slice(0, 8) }),
+  );
+  const materials = ["PLA", "PETG", "ABS", "ASA", "TPU", "PC"].map((material, i) =>
+    profile({ brand: "Wide", material, filamentId: `PWIDE${i}00`.slice(0, 8) }),
+  );
+  const c: Ctx = {
+    ...baseCtx({
+      resources: {
+        catalog: {
+          state: "ready",
+          value: catalog([
+            ...many,
+            profile({ material: "PETG", filamentId: "PACMPETG" }),
+            ...materials,
+          ]),
+          at: 0,
+        },
+      },
+    }),
+    columns: 60,
+    rows: 20,
+    bodyColumns: 60,
+    bodyRows: 18,
+  };
+
+  it("says how many more materials a brand has than it shows", () => {
+    const text = screen(afterMsgs(c, "down"), c).join("\n");
+    expect(text).toMatch(/Wide ─+╮/);
+    expect(text).toMatch(/… \d more/);
+  });
+
+  it("says how many more colors a material has than it shows", () => {
+    const text = screen(afterMsgs(c, "enter", "down"), c).join("\n");
+    expect(text).toMatch(/Acme PLA ─+╮/);
+    expect(text).toMatch(/… \d more/);
   });
 });

@@ -23,17 +23,17 @@ import { swatchSegments } from "../../ui/Swatch.js";
 import { fitText, textWidth } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import {
+  type AddLine,
   type FindDetail,
   type FindRow,
-  findDetail,
   type Level,
-  materialsOf,
   SPOOLMANDB_LABEL,
   swatchOf,
 } from "./catalog.js";
 import type { Box as Area } from "./layout.js";
 import { pageArea, splitPage } from "./layout.js";
 import { type AddModel, sourcesOf } from "./model.js";
+import { detailTitle, findDetailOf } from "./peek.js";
 import { findRows } from "./update.js";
 import { wrapText } from "./wrap.js";
 
@@ -109,6 +109,8 @@ export function findTitle(model: AddModel, ctx: Ctx): { title: string; subtitle:
         title: sourcesOf(model, ctx).importName ?? "Import",
         subtitle: plural(rows.length, "filament"),
       };
+    case "missing":
+      return { title: "Not in SpoolmanDB", subtitle: "" };
   }
 }
 
@@ -119,6 +121,21 @@ function currentLevel(model: AddModel): Level {
 /** What fills the list panel when there are no rows: loading, failed, or nothing found. */
 function emptyState(model: AddModel, ctx: Ctx, inner: Area) {
   const level = currentLevel(model);
+  if (!model.search && level.kind === "missing")
+    return (
+      <Empty
+        title={`${level.name || level.id} isn't in SpoolmanDB`}
+        lines={[
+          level.name
+            ? `Nothing listed has its ID (${level.id}) or its name.`
+            : "Nothing listed has its ID.",
+          "Add it from a file or URL in Settings › Import, or search for a close one.",
+        ].flatMap((line) => wrapText(line, Math.max(1, inner.width - 4)))}
+        action={{ keys: "enter", label: "open Settings › Import" }}
+        width={inner.width}
+        height={inner.height}
+      />
+    );
   if (!model.search && level.kind === "import") {
     if (model.imported.state === "failed")
       return (
@@ -216,6 +233,36 @@ function ListPanel({ model, ctx, box }: { model: AddModel; ctx: Ctx; box: Area }
 
 const muted = (text: string): Segment => ({ text, color: COLORS.muted });
 
+const CHECKING = "Checking what's there already…";
+
+const MARK_COLORS: Record<AddLine["mark"], string> = {
+  "+": COLORS.ok,
+  "=": COLORS.muted,
+  "↻": COLORS.warning,
+  "?": COLORS.warning,
+};
+
+/** What adding the color does, a line per target, each wrapped under its mark. */
+function AddLines({ adds, width }: { adds: AddLine[]; width: number }) {
+  return (
+    <>
+      <Line width={width} segments={[muted(" Adding it")]} />
+      {adds.flatMap((line) =>
+        wrapText(line.text, Math.max(1, width - 4)).map((text, index) => (
+          <Line
+            key={`${line.text}:${text}`}
+            width={width}
+            segments={[
+              { text: index === 0 ? ` ${line.mark} ` : "   ", color: MARK_COLORS[line.mark] },
+              { text, ...(line.mark === "=" ? { color: COLORS.muted } : {}) },
+            ]}
+          />
+        )),
+      )}
+    </>
+  );
+}
+
 /**
  * A color's detail in the few lines a stacked panel has: swatch and code, the facts on one line, then
  * what adding writes: a line per target when they fit, else all of them on one line.
@@ -231,7 +278,8 @@ function CompactColor({
 }) {
   const fact = (label: string) => detail.facts.find((f) => f.label === label)?.value ?? "";
   const room = height - 2;
-  const perLine = room >= detail.adds.length + 1;
+  const adds = detail.adds;
+  const perLine = adds !== null && room >= adds.length + 1;
   return (
     <>
       <Line
@@ -251,25 +299,24 @@ function CompactColor({
           },
         ]}
       />
-      {perLine ? (
+      {adds === null ? (
+        room > 0 ? (
+          <Line width={width} segments={[muted(` ${CHECKING}`)]} />
+        ) : null
+      ) : perLine ? (
         <>
-          {room >= detail.adds.length + 2 ? <Line width={width} segments={[]} /> : null}
-          <Line width={width} segments={[muted(" Adding it writes")]} />
-          {detail.adds.map((line) => (
-            <Line
-              key={line}
-              width={width}
-              segments={[{ text: " + ", color: COLORS.ok }, { text: line }]}
-            />
-          ))}
+          {room >= adds.length + 2 ? <Line width={width} segments={[]} /> : null}
+          <AddLines adds={adds} width={width} />
         </>
       ) : room > 0 ? (
         <Line
           width={width}
           segments={[
-            muted(" Writes "),
-            { text: "+ ", color: COLORS.ok },
-            { text: detail.addsShort },
+            muted(" Adding it "),
+            ...adds.flatMap((line, index) => [
+              ...(index > 0 ? [muted(" · ")] : []),
+              { text: line.short, color: MARK_COLORS[line.mark] },
+            ]),
           ]}
         />
       ) : null}
@@ -278,13 +325,27 @@ function CompactColor({
 }
 
 /** A material's colors with their nozzle ranges in one aligned column. */
+/** The rows a list in the detail panel shows: all that fit, else one fewer and "… N more". */
+function clip<T>(items: T[], height: number): { shown: T[]; more: number } {
+  if (items.length <= height) return { shown: items, more: 0 };
+  const shown = items.slice(0, Math.max(0, height - 1));
+  return { shown, more: items.length - shown.length };
+}
+
+function MoreLine({ more, width }: { more: number; width: number }) {
+  return more > 0 ? <Line width={width} segments={[muted(` … ${more} more`)]} /> : null;
+}
+
 function MaterialColors({
-  colors,
+  colors: all,
   width,
+  height,
 }: {
   colors: Extract<FindDetail, { kind: "material" }>["colors"];
   width: number;
+  height: number;
 }) {
+  const { shown: colors, more } = clip(all, height);
   const temps = colors.map((p) => formatRange(p.nozzleTempMin, p.nozzleTempMax));
   const tempWidth = Math.max(0, ...temps.map(textWidth));
   const nameWidth = Math.max(
@@ -308,6 +369,7 @@ function MaterialColors({
           ]}
         />
       ))}
+      <MoreLine more={more} width={width} />
     </>
   );
 }
@@ -335,19 +397,24 @@ function DetailBody({
             ))}
         </>
       );
-    case "brand":
+    case "brand": {
+      const { shown, more } = clip(detail.materials, height);
       return (
-        <Detail
-          width={width}
-          rows={detail.materials.map((m) => ({
-            label: m.label,
-            value: `${plural(m.count, "color")}${m.ticked ? ` · ${m.ticked} ticked` : ""}`,
-            ...(m.ticked ? { tone: "ok" as const } : {}),
-          }))}
-        />
+        <>
+          <Detail
+            width={width}
+            rows={shown.map((m) => ({
+              label: m.label,
+              value: `${plural(m.count, "color")}${m.ticked ? ` · ${m.ticked} ticked` : ""}`,
+              ...(m.ticked ? { tone: "ok" as const } : {}),
+            }))}
+          />
+          <MoreLine more={more} width={width} />
+        </>
       );
+    }
     case "material":
-      return <MaterialColors colors={detail.colors} width={width} />;
+      return <MaterialColors colors={detail.colors} width={width} height={height} />;
     case "color":
       if (compact) return <CompactColor detail={detail} width={width} height={height} />;
       return (
@@ -361,14 +428,11 @@ function DetailBody({
           <Line width={width} segments={[]} />
           <Detail width={width} rows={detail.facts} />
           <Line width={width} segments={[]} />
-          <Line width={width} segments={[muted(" Adding it writes")]} />
-          {detail.adds.map((line) => (
-            <Line
-              key={line}
-              width={width}
-              segments={[{ text: " + ", color: COLORS.ok }, { text: line }]}
-            />
-          ))}
+          {detail.adds === null ? (
+            <Line width={width} segments={[muted(` ${CHECKING}`)]} />
+          ) : (
+            <AddLines adds={detail.adds} width={width} />
+          )}
         </>
       );
   }
@@ -385,16 +449,9 @@ function DetailPanel({
   box: Area;
   compact: boolean;
 }) {
-  const rows = findRows(model, ctx);
-  const cursor = model.search ? model.search.cursor : (model.stack.at(-1)?.cursor ?? 0);
-  const row = rows[Math.min(cursor, rows.length - 1)];
-  const level = model.search ? null : currentLevel(model);
-  const sources = sourcesOf(model, ctx);
-  const detail = findDetail(level, row, sources, model.selected, ctx.values);
+  const detail = findDetailOf(model, ctx);
   const inner = panelInner(box.width, box.height);
-  const title =
-    detail?.title ??
-    (level?.kind === "materials" ? `${materialsOf(sources, level.brand).length} materials` : "");
+  const title = detailTitle(model, ctx, detail);
   return (
     <Panel title={title} width={box.width} height={box.height}>
       {detail ? (
