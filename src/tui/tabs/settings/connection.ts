@@ -1,5 +1,5 @@
 // ABOUTME: The SpoolEase console the session's settings point at: whether one is set up, and its connection.
-// ABOUTME: Shared by the Settings and Check tabs, with the printer list helpers both read.
+// ABOUTME: One connectionOf (port checked) for every tab and the shell, plus the console-problem advice and printer list helpers.
 
 import type { SpoolEaseConnection } from "../../../spoolease.js";
 import type { FormValues } from "../../core/values.js";
