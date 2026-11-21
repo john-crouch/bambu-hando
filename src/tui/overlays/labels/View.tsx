@@ -11,6 +11,7 @@ import {
   Dialog,
   dialogInner,
   dialogWidth,
+  fitPath,
   Line,
   List,
   type ListRow,
@@ -21,6 +22,7 @@ import {
   textWidth,
   truncate,
 } from "../../ui/index.js";
+import { LABEL_FIELD_NAME_MAX, labelFieldName } from "./fields.js";
 import {
   COMMON_SIZES,
   FIELD_ROWS,
@@ -37,9 +39,10 @@ import {
   SIZE_ROW,
 } from "./model.js";
 
-/** Columns of one field cell: the focus gutter, then "[✓] location". */
-const FIELD_CELL = 15;
-const LABEL_COLUMN = 10;
+/** Columns of one field cell: the focus gutter, "[✓]", a space, then the longest field name. */
+const FIELD_CELL = 5 + LABEL_FIELD_NAME_MAX;
+/** The form rows' labels, "Save PDF to" the longest; two columns follow before the value. */
+const LABEL_COLUMN = 11;
 /** Lines inside the preview card: fixed, so ticking a field never makes the dialog jump. */
 const PREVIEW_LINES = FIELD_ROWS;
 /** Body rows the full form needs (the spool IDs line included) before it drops that line. */
@@ -57,7 +60,7 @@ function fieldCell(model: LabelsModel, index: number, focused: boolean): Segment
   if (!field) return [{ text: " ".repeat(FIELD_CELL) }];
   const on = model.fields.includes(field.key);
   const bar = focused ? FOCUSED : {};
-  const text = ` ${field.key}`.padEnd(FIELD_CELL - 4);
+  const text = ` ${labelFieldName(field.key)}`.padEnd(FIELD_CELL - 4);
   return [
     gutter(focused),
     { text: "[", color: COLORS.muted, ...bar },
@@ -78,14 +81,16 @@ function Preview({ preview, width }: { preview: LabelPreview | null; width: numb
     lines.push([{ text: "No preview until the", color: COLORS.muted }]);
     lines.push([{ text: "spool is read.", color: COLORS.muted }]);
   } else {
-    const qr = preview.qr ? 5 : 0;
+    // The QR mark takes four columns and a gap; on a narrow card two.
+    const mark = width >= 22 ? "▚▞▚▞" : "▚▞";
+    const qr = preview.qr ? mark.length + 1 : 0;
     const room = width - 4 - qr;
     const overflow = preview.lines.length > PREVIEW_LINES;
     const shown = overflow ? preview.lines.slice(0, PREVIEW_LINES - 1) : preview.lines;
     for (let i = 0; i < PREVIEW_LINES; i++) {
       const line = shown[i];
       const block: Segment[] = preview.qr
-        ? [{ text: i < 3 ? "▚▞▚▞" : "    ", color: COLORS.muted }, { text: " " }]
+        ? [{ text: i < 3 ? mark : " ".repeat(mark.length), color: COLORS.muted }, { text: " " }]
         : [];
       const text: Segment[] = line
         ? [
@@ -163,7 +168,7 @@ function FormRow({
       segments={[
         gutter(focused),
         {
-          text: label.padEnd(LABEL_COLUMN + 1),
+          text: label.padEnd(LABEL_COLUMN + 2),
           ...bar,
           ...(focused ? { color: COLORS.selectionText, bold: true } : { color: COLORS.muted }),
         },
@@ -175,20 +180,28 @@ function FormRow({
   );
 }
 
-function outputLabel(choice: string): string {
-  return choice === "" ? "No PDF" : choice;
+function outputLabel(choice: string, width: number): string {
+  return choice === "" ? "No PDF" : fitPath(choice, width);
 }
 
-/** What Make labels does, named ("Print 2 labels on DYMO and save ~/labels.pdf"), or what's missing first. */
-export function makeSummary(model: LabelsModel): { ready: boolean; text: string } {
+/**
+ * What Make labels does, named ("Print 2 labels on DYMO and save ~/labels.pdf"), or what's missing
+ * first; a PDF path is shortened to fit width with its file name kept.
+ */
+export function makeSummary(
+  model: LabelsModel,
+  width = Number.POSITIVE_INFINITY,
+): { ready: boolean; text: string } {
   const target = labelTarget(model);
   if ("error" in target) return { ready: false, text: target.error };
   const count = plural(model.request.spoolIds.length, "label");
   const output = model.output.value.trim();
+  const save = (prefix: string) =>
+    `${prefix}${Number.isFinite(width) ? fitPath(output, width - textWidth(prefix)) : output}`;
   if (model.printer && output)
-    return { ready: true, text: `Print ${count} on ${model.printer} and save ${output}` };
+    return { ready: true, text: save(`Print ${count} on ${model.printer} and save `) };
   if (model.printer) return { ready: true, text: `Print ${count} on ${model.printer}` };
-  return { ready: true, text: `Save ${count} to ${output}` };
+  return { ready: true, text: save(`Save ${count} to `) };
 }
 
 /** Rows the choices get: what's left of the body under the dialog's borders, padding and prose. */
@@ -210,11 +223,15 @@ function Picker({
 }) {
   const printing = picker.row === PRINTER_ROW;
   const choices = printing ? printerChoices(model) : outputChoices(model, ctx);
+  const current = printing ? model.printer : model.output.value.trim();
+  // The radio's gutter and the "type a path" note take this much of the row.
+  const room = width - 4 - (printing ? 0 : 12);
   const rows: ListRow[] = choices.map((choice) => ({
     key: choice || "none",
+    ticked: choice === current,
     cells: [
       {
-        text: printing ? choice || "Don't print" : outputLabel(choice),
+        text: printing ? choice || "Don't print" : outputLabel(choice, room),
         grow: true,
       },
       ...(choice === OTHER_OUTPUT ? [{ text: "type a path", dim: true }] : []),
@@ -237,7 +254,7 @@ function Picker({
         width={width}
       />
       <Line segments={[]} width={width} />
-      <List rows={rows} cursor={picker.cursor} height={height} width={width} />
+      <List rows={rows} cursor={picker.cursor} height={height} width={width} marker="radio" />
     </>
   );
 }
@@ -263,7 +280,7 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
       count > pickerHeight(ctx, count) ? listPosition(model.picker.cursor, count) : undefined;
     return (
       <Dialog
-        title={`${title} · ${model.picker.row === PRINTER_ROW ? "Printer" : "Save PDF"}`}
+        title={`${title} · ${model.picker.row === PRINTER_ROW ? "Printer" : "Save PDF to"}`}
         width={width}
         {...(note ? { note } : {})}
       >
@@ -273,12 +290,16 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
   }
 
   const grid = 2 * FIELD_CELL + 1;
-  const previewWidth = inner - grid - 2;
-  const showPreview = previewWidth >= 18;
-  const showIds = ctx.bodyRows >= FULL_FORM_ROWS;
+  // Two columns between the ticks and the card, one when that keeps a narrow card readable.
+  const previewGap = inner - grid - 2 >= 22 ? 2 : 1;
+  const previewWidth = inner - grid - previewGap;
+  const showPreview = previewWidth >= 16;
+  // One spool is named on its preview card already.
+  const showIds = count > 1 && ctx.bodyRows >= FULL_FORM_ROWS;
   const focusedField = LABEL_FIELDS[model.focus];
   const size = COMMON_SIZES.find((s) => s.size === model.size);
-  const make = makeSummary(model);
+  const valueWidth = inner - LABEL_COLUMN - 3;
+  const make = makeSummary(model, valueWidth);
   const ids = truncate(model.request.spoolIds.map((id) => `#${id}`).join(" "), inner);
   const muted = (text: string): Segment => ({ text, color: COLORS.muted });
 
@@ -301,7 +322,7 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
           ))}
         </Box>
         {showPreview ? (
-          <Box marginLeft={2} flexShrink={0}>
+          <Box marginLeft={previewGap} flexShrink={0}>
             <Preview preview={labelPreview(model, ctx)} width={previewWidth} />
           </Box>
         ) : null}
@@ -331,20 +352,22 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
       />
       {model.editing ? (
         <Box flexDirection="row">
-          <FormRow label="Save PDF" value={[]} focused width={LABEL_COLUMN + 2} />
+          <FormRow label="Save PDF to" value={[]} focused width={LABEL_COLUMN + 3} />
           <TextField
             value={model.output.value}
             cursor={model.output.cursor}
             focused
             placeholder="~/labels.pdf"
-            width={inner - LABEL_COLUMN - 2}
+            width={inner - LABEL_COLUMN - 3}
           />
         </Box>
       ) : (
         <FormRow
-          label="Save PDF"
+          label="Save PDF to"
           value={[
-            model.output.value.trim() ? { text: model.output.value.trim() } : muted("No PDF"),
+            model.output.value.trim()
+              ? { text: fitPath(model.output.value.trim(), valueWidth) }
+              : muted("No PDF"),
           ]}
           focused={model.focus === OUTPUT_ROW}
           width={inner}

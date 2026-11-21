@@ -15,7 +15,7 @@ import { labelsOverlay } from "../src/tui/overlays/labels/index.js";
 import { type LabelsModel, MAKE_ROW, PRINTER_ROW } from "../src/tui/overlays/labels/model.js";
 import { spoolsTab } from "../src/tui/tabs/spools/index.js";
 import type { SpoolsModel } from "../src/tui/tabs/spools/model.js";
-import { frameBody, textWidth, theme } from "../src/tui/ui/index.js";
+import { Frame, frameBody, Line, textWidth, theme } from "../src/tui/ui/index.js";
 import { consoleOf, makeCtx, spool } from "./tabSpoolsFixtures.js";
 
 const SPOOLS = [
@@ -77,8 +77,21 @@ function draw(element: React.ReactElement, columns: number): string[] {
   return stripVTControlCharacters(out).split("\n");
 }
 
+/** The tab's body as the shell draws it: the View, with the tab's dialog (if any) on the layer above. */
 function tab(model: SpoolsModel, ctx: Ctx): string[] {
-  return draw(<spoolsTab.View model={model} ctx={ctx} />, ctx.bodyColumns);
+  const lines = draw(
+    <Frame
+      columns={ctx.columns}
+      rows={ctx.rows}
+      header={<Line segments={[]} width={ctx.columns} />}
+      footer={<Line segments={[]} width={ctx.columns} />}
+      dialog={spoolsTab.dialog?.(model, ctx) ?? null}
+    >
+      <spoolsTab.View model={model} ctx={ctx} />
+    </Frame>,
+    ctx.columns,
+  );
+  return lines.slice(1, 1 + ctx.bodyRows);
 }
 
 function start(ctx: Ctx): SpoolsModel {
@@ -96,6 +109,19 @@ function expectExact(lines: string[], ctx: Ctx): void {
     expect(textWidth(line), `line ${index}: ${line}`).toBe(ctx.bodyColumns);
 }
 
+/** A dialog's text as one line of words: what's inside its borders, over whatever it covers. */
+function flat(lines: string[]): string {
+  return lines
+    .map((line) => {
+      const inside = line.slice(1, -1);
+      const first = inside.indexOf("│");
+      const last = inside.lastIndexOf("│");
+      return first >= 0 && last > first ? inside.slice(first + 1, last) : inside;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ");
+}
+
 const SIZES: [number, number][] = [
   [60, 20],
   [80, 24],
@@ -109,12 +135,7 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     const lines = tab(start(ctx), ctx);
     expectExact(lines, ctx);
     expect(lines[0]).toContain("Spools · newest first");
-    // A short line leaves out the least useful part whole.
-    expect(lines[1]).toContain(
-      columns < 80
-        ? "4 spools · 744 g left · 2 low · ✓ in sync"
-        : "4 spools · 744 g left · 2 low · 1 not weighed · ✓ in sync",
-    );
+    expect(lines[1]).toContain("4 spools · 744 g left · 2 low · 1 unweighed · ✓ in sync");
     const text = lines.join("\n");
     expect(text).toContain("#14");
     expect(text).toContain("Sunlu PETG 2.0 Vivid Yellow");
@@ -165,12 +186,24 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     expectExact(lines, ctx);
     const text = lines.join("\n");
     expect(text).toContain("More spools like this one");
-    expect(text).toContain("Copies of spool #14 go to http://127.0.0.1");
+    // The spool copied is the filament's newest; prose wraps, so check it without the line breaks.
+    const prose = flat(lines);
+    expect(prose).toContain(
+      "Copies of spool #14 (the newest spool of this filament) go to http://127.0.0.1",
+    );
     expect(text).toContain("‹ 2 ›  new spools");
-    expect(text).toContain("The console has 1 spool of this filament.");
+    expect(prose).toContain("The console has 1 spool of this filament.");
     // Its keys are in the footer, not repeated in the dialog.
     expect(text).not.toContain("add 2 spools");
     expect(text).not.toContain("SECRETKEY");
+  });
+
+  it("leaves its dialogs to the shell's dialog layer: the View itself never draws one", () => {
+    const model = keys(start(ctx), ctx, "+");
+    const view = draw(<spoolsTab.View model={model} ctx={ctx} />, ctx.bodyColumns).join("\n");
+    expect(view).not.toContain("More spools like this one");
+    expect(spoolsTab.dialog?.(start(ctx), ctx)).toBeNull();
+    expect(tab(model, ctx).join("\n")).toContain("More spools like this one");
   });
 
   it("streams results into the count dialog and offers labels when done", () => {
@@ -181,7 +214,7 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       { type: "spools/copy", run, result: { ok: true, id: "15" } },
       ctx,
     )[0];
-    expect(tab(model, ctx).join("\n")).toContain("✓ spool #15 added");
+    expect(tab(model, ctx).join("\n")).toContain("Adding spool 2 of 2…");
     model = spoolsTab.update(
       model,
       {
@@ -195,10 +228,30 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       },
       ctx,
     )[0];
-    const text = tab(model, ctx).join("\n");
-    expect(text).toContain("✗ spool 2 of 2: storage full");
-    expect(text).toContain("1 added · 1 failed");
+    const lines = tab(model, ctx);
+    expectExact(lines, ctx);
+    const text = lines.join("\n");
+    // One outcome line, then why the failed one failed; the pre-write prose and count are gone.
+    expect(text).toContain("! 1 of 2 spools added: #15");
+    expect(text).toContain("✗ spool 2: storage full");
+    expect(text).toContain("More spools like this one");
+    expect(text).not.toContain("Added ");
+    expect(text).not.toContain("The console has");
     expect(text).not.toContain("labels for 1 new spool");
+  });
+
+  it("says a clean run in one line", () => {
+    let model = keys(start(ctx), ctx, "+", "up", "a");
+    const run = model.dialog?.kind === "count" ? model.dialog.run : 0;
+    const results = [
+      { ok: true, id: "15" },
+      { ok: true, id: "16" },
+    ];
+    model = spoolsTab.update(model, { type: "spools/copiesDone", run, results, error: "" }, ctx)[0];
+    const text = tab(model, ctx).join("\n");
+    expect(text).toContain("✓ 2 spools added: #15, #16");
+    expect(text).not.toContain("✓ spool #15");
+    expect(text).not.toContain("2 added");
   });
 
   it("draws the scan, known-barcode and choose dialogs", () => {
@@ -208,11 +261,14 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       { type: "spools/barcodes", barcodes },
       ctx,
     )[0];
-    let text = tab(keys(scan, ctx, "00"), ctx).join("\n");
+    const scanLines = tab(keys(scan, ctx, "00"), ctx);
+    let text = scanLines.join("\n");
     expect(text).toContain("Scan a barcode");
     expect(text).not.toContain("Scan the spool's barcode");
     expect(text).toContain("Barcode  00");
-    expect(text).toContain("1 known so far");
+    expect(flat(scanLines)).toContain(
+      "1 barcode known; a new one asks which filament it is, once.",
+    );
     text = tab(keys(scan, ctx, "0015\r"), ctx).join("\n");
     expect(text).toContain("Barcode 0015");
     expect(text).toContain("this barcode is");
@@ -267,9 +323,56 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       expect(text).toContain("Empty     236 g spool");
       expect(text).toContain("Location  AMS 1 · slot 2");
       expect(text).toContain("Nozzle    230–250°C");
-      expect(text).toContain("Added     2026-10-30");
+      expect(text).toContain("Added     Oct 30");
     },
   );
+});
+
+describe.each(SIZES)("the spool detail at %ix%i", (columns, rows) => {
+  const NOTE =
+    "Generated by bambu-hando for Sunlu PETG 2.0 Vivid Yellow, dried at 65°C for four hours before the first print";
+  const NAME = "Polymaker PETG PolyLite Galaxy Dark Blue Sparkle Edition with a very long name";
+  const ctx = ctxAt(columns, rows, {
+    resources: {
+      console: consoleOf(
+        [
+          spool({
+            id: "14",
+            slicerFilament: "",
+            brand: NAME,
+            material: "",
+            colorName: "",
+            note: NOTE,
+          }),
+        ],
+        FILAMENTS,
+      ),
+    },
+  });
+
+  it("names a long filament whole at the top of its count dialog", () => {
+    const coded = ctxAt(columns, rows, {
+      resources: {
+        console: consoleOf(
+          [spool({ id: "14", slicerFilament: "P4840583", colorName: "x" })],
+          new Map([["P4840583", { name: NAME, nozzleTempMin: 230, nozzleTempMax: 250 }]]),
+        ),
+      },
+    });
+    const lines = tab(keys(start(coded), coded, "+"), coded);
+    expectExact(lines, coded);
+    expect(flat(lines)).toContain(NAME);
+  });
+
+  it("wraps a long note and name instead of cutting them", () => {
+    const model = columns < 90 ? keys(start(ctx), ctx, "enter") : start(ctx);
+    const lines = tab(model, ctx);
+    expectExact(lines, ctx);
+    const detail = lines.map((line) => (columns < 90 ? line : line.slice(-46))).join(" ");
+    const words = detail.replace(/[│╭╮╰╯─]/g, " ").replace(/\s+/g, " ");
+    expect(words).toContain(NOTE);
+    expect(words).toContain(NAME.split(" ").slice(0, 6).join(" "));
+  });
 });
 
 describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
@@ -298,8 +401,11 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(ctx.bodyColumns);
     const text = lines.join("\n");
     expect(text).toContain("Labels for 2 new spools");
-    expect(text).toContain("[✓] qr");
-    expect(text).toContain("[ ] location");
+    // The same field names as Settings › Labels.
+    expect(text).toContain("[✓] QR code");
+    expect(text).toContain("[✓] Color name");
+    expect(text).toContain("[ ] Location");
+    expect(text).toContain("Save PDF to");
     expect(text).toContain("╭ #14");
     expect(text).toContain("Sunlu");
     expect(text).toContain("230–250°C");
@@ -319,6 +425,20 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     expect(text).not.toContain("✗");
     const [loading] = labelsOverlay.init({ spoolIds: ["14"], fresh: false }, ctx);
     expect(overlay(loading).join("\n")).toContain("Looking for printers…");
+  });
+
+  it("names one spool only on its preview card, not again on a line of IDs", () => {
+    const [model] = labelsOverlay.init({ spoolIds: ["14"], fresh: false }, ctx);
+    const one = labelsOverlay.update(
+      model,
+      { type: "labels/loaded", settings: DEFAULT_LABEL_SETTINGS, printers: [] },
+      ctx,
+    )[0];
+    const lines = overlay(one);
+    expect(lines.some((line) => /^│\s+#14\s+│$/.test(line))).toBe(false);
+    expect(lines.join("\n")).toContain("╭ #14");
+    const two = overlay(loaded());
+    if (rows >= 24) expect(two.some((line) => /^│\s+#14 #13\s+│$/.test(line))).toBe(true);
   });
 
   it("keeps the dialog's height when fields are ticked or unticked", () => {
@@ -348,6 +468,16 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     // A list that scrolls says where the cursor is.
     expect(overlay(many).join("\n")).toContain(" 1/31 ");
     expect(text).toContain("Don't print");
-    expect(text).toContain("DYMO");
+    // One of them is chosen: the current printer carries the radio's dot.
+    expect(text).toContain("● DYMO");
+    expect(text).toContain("○ Don't print");
+  });
+
+  it("shows a long PDF path with its file name kept", () => {
+    const path = "/home/someone/Documents/3d printing/labels/spools/october/labels-2026-10-30.pdf";
+    const model = { ...loaded(), output: { value: path, cursor: path.length } };
+    const text = overlay(model).join("\n");
+    expect(text).toContain("labels-2026-10-30.pdf");
+    expect(text).toContain("…");
   });
 });

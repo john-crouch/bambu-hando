@@ -12,7 +12,7 @@ import {
   toneColor,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
-import { barTone, type SpoolsSummary, swatchOf } from "./data.js";
+import { addedText, barTone, type SpoolsSummary, swatchOf } from "./data.js";
 
 /** Cells of the bar showing what's left; SHORT_BAR on a list too narrow to keep the name whole. */
 export const BAR_CELLS = 10;
@@ -28,6 +28,8 @@ const LOCATION_MAX = 14;
 const ROW_CHROME = 1 + 4 + 3 + 2;
 /** The name keeps this many columns (or its whole length, when shorter) before an optional column shows. */
 const NAME_KEEP = 32;
+/** Past this many columns of name, both optional columns are worth more than an overlong name's tail. */
+const NAME_WIDE = 48;
 
 /** ▰▰▰▱▱ for a fraction; spaces when unknown. */
 export function barText(fraction: number | null, cells = BAR_CELLS): string {
@@ -41,16 +43,8 @@ export function barText(fraction: number | null, cells = BAR_CELLS): string {
   return "▰".repeat(full) + "▱".repeat(cells - full);
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** When a spool came, short: "Nov 16" this year, "2025-03" before; "" when unset. Local time. */
-export function addedText(seconds: number | null, now: number): string {
-  if (!seconds) return "";
-  const date = new Date(seconds * 1000);
-  if (date.getFullYear() === new Date(now).getFullYear())
-    return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
+/** The added date's one format, shared with the detail. */
+export { addedText } from "./data.js";
 
 function leftText(row: InventoryRow): string {
   if (row.left === null) return "–";
@@ -71,8 +65,8 @@ const widest = (texts: string[]): number => texts.reduce((w, t) => Math.max(w, t
 
 /**
  * The columns that fit: a column no row has a value for is left out; the date shows only when every
- * name fits whole, the location when the names keep NAME_KEEP columns (or their whole length); on a
- * narrow list the bar shortens too.
+ * name fits whole (or keeps NAME_WIDE columns), the location when the names keep NAME_KEEP columns (or
+ * their whole length); on a narrow list the bar shortens too.
  */
 export function spoolLayout(
   rows: readonly InventoryRow[],
@@ -89,7 +83,7 @@ export function spoolLayout(
   // Every shown cell after the name costs its width and a one-column gap.
   const nameRoom = (bar: number, ...extra: number[]) =>
     cells - id - left - bar - 3 - extra.reduce((sum, w) => sum + (w > 0 ? w + 1 : 0), 0);
-  if (nameRoom(BAR_CELLS, location, added) >= longest)
+  if (nameRoom(BAR_CELLS, location, added) >= Math.min(longest, NAME_WIDE))
     return { id, left, bar: BAR_CELLS, location, added };
   if (nameRoom(BAR_CELLS, location) >= want)
     return { id, left, bar: BAR_CELLS, location, added: 0 };
@@ -143,37 +137,37 @@ export function weightText(grams: number): string {
 }
 
 /** The summary's parts, most useful first: what to drop last when the line is short. */
-function summaryParts(summary: SpoolsSummary): { order: number; segment: Segment }[] {
-  const parts: { order: number; segment: Segment }[] = [
-    { order: 0, segment: { text: plural(summary.count, "spool"), bold: true } },
-  ];
+function summaryParts(summary: SpoolsSummary): { order: number; segments: Segment[] }[] {
+  const part = (order: number, segment: Segment) => ({ order, segments: [segment] });
+  const parts = [part(0, { text: plural(summary.count, "spool"), bold: true })];
   const { sync } = summary;
-  const syncSegment: Segment | null =
+  const syncSegments: Segment[] | null =
     sync.state === "ok"
-      ? { text: "✓ in sync", color: COLORS.ok }
+      ? [{ text: "✓ in sync", color: COLORS.ok }]
       : sync.state === "problems"
-        ? { text: `! ${plural(sync.problems, "problem")}, c to see`, color: COLORS.warning }
+        ? [
+            { text: `! ${plural(sync.problems, "problem")} (`, color: COLORS.warning },
+            // The key that opens Check, drawn as the footer draws keys.
+            { text: "c", color: COLORS.accent2, bold: true },
+            { text: ")", color: COLORS.warning },
+          ]
         : sync.state === "checking"
-          ? { text: "checking sync…", color: COLORS.muted }
+          ? [{ text: "checking sync…", color: COLORS.muted }]
           : sync.state === "failed"
-            ? { text: "✗ sync check failed", color: COLORS.failed }
+            ? [{ text: "✗ sync check failed", color: COLORS.failed }]
             : null;
-  if (syncSegment) parts.push({ order: 5, segment: syncSegment });
-  parts.push({ order: 1, segment: { text: `${weightText(summary.leftGrams)} left` } });
-  if (summary.low > 0)
-    parts.push({ order: 2, segment: { text: `${summary.low} low`, color: COLORS.warning } });
+  if (syncSegments) parts.push({ order: 5, segments: syncSegments });
+  parts.push(part(1, { text: `${weightText(summary.leftGrams)} left` }));
+  if (summary.low > 0) parts.push(part(2, { text: `${summary.low} low`, color: COLORS.warning }));
   if (summary.empty > 0)
-    parts.push({ order: 3, segment: { text: `${summary.empty} empty`, color: COLORS.failed } });
+    parts.push(part(3, { text: `${summary.empty} empty`, color: COLORS.failed }));
   if (summary.unweighed > 0)
-    parts.push({
-      order: 4,
-      segment: { text: `${summary.unweighed} not weighed`, color: COLORS.muted },
-    });
+    parts.push(part(4, { text: `${summary.unweighed} unweighed`, color: COLORS.muted }));
   return parts;
 }
 
 /**
- * "18 spools · 6.8 kg left · 4 low · 1 empty · 3 not weighed · ✓ in sync", each part in the color it
+ * "18 spools · 6.8 kg left · 4 low · 1 empty · 3 unweighed · ✓ in sync", each part in the color it
  * means. Parts that don't fit `width` are left out whole, the least useful first; none is cut.
  */
 export function summarySegments(
@@ -185,7 +179,7 @@ export function summarySegments(
   const line = (kept: typeof parts) =>
     [...kept]
       .sort((a, b) => a.order - b.order)
-      .flatMap((part, index) => (index > 0 ? [dot, part.segment] : [part.segment]));
+      .flatMap((part, index) => (index > 0 ? [dot, ...part.segments] : part.segments));
   let kept = parts;
   while (kept.length > 1 && segmentsWidth(line(kept)) > width) kept = kept.slice(0, -1);
   return line(kept);

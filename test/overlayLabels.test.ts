@@ -300,9 +300,14 @@ describe("hints", () => {
     expect(hints({ ...at(loaded(), MAKE_ROW), printer: "DYMO" }, CTX)[1]?.label).toBe(
       "make labels",
     );
-    expect(keysOf(at(loaded(), 0))).toEqual(["↑↓", "←→", "space", "a", "esc"]);
-    expect(keysOf(at(loaded(), SIZE_ROW))).toEqual(["↑↓", "←→", "type", "a", "esc"]);
-    expect(keysOf(at(loaded(), PRINTER_ROW))).toEqual(["↑↓", "enter", "a", "esc"]);
+    // a makes labels only once they can be made: until then it isn't offered.
+    expect(keysOf(at(loaded(), 0))).toEqual(["↑↓", "←→", "space", "esc"]);
+    expect(keysOf(at(loaded(), SIZE_ROW))).toEqual(["↑↓", "←→", "type", "esc"]);
+    expect(keysOf(at(loaded(), PRINTER_ROW))).toEqual(["↑↓", "enter", "esc"]);
+    const ready = (row: number) => ({ ...at(loaded(), row), printer: "DYMO" });
+    expect(keysOf(ready(0))).toEqual(["↑↓", "←→", "space", "a", "esc"]);
+    expect(keysOf(ready(SIZE_ROW))).toEqual(["↑↓", "←→", "type", "a", "esc"]);
+    expect(keysOf(ready(PRINTER_ROW))).toEqual(["↑↓", "enter", "a", "esc"]);
     // On Save PDF every printable key types a path, a included.
     expect(keysOf(at(loaded(), OUTPUT_ROW))).toEqual(["↑↓", "enter", "type", "esc"]);
     expect(keysOf(keys(at(loaded(), PRINTER_ROW), ["enter"]))).toEqual(["↑↓", "enter", "esc"]);

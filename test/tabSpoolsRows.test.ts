@@ -51,6 +51,23 @@ describe("spoolLayout", () => {
     expect(spoolLayout(placed, 84, NOW)).toMatchObject({ location: 10, added: 6 });
   });
 
+  it("shows both on a wide list even when one overlong name would lose its tail", () => {
+    const long = rowsOf([
+      spool({
+        id: "1",
+        slicerFilament: "",
+        brand: "Polymaker PETG PolyLite Galaxy Dark Blue with a very long name",
+        material: "",
+        colorName: "",
+      }),
+      spool({ id: "2", location: "AMS 2 slot 1", addedTime: day(2026, 11, 16) }),
+    ]);
+    // A 100-column list: with both columns the 62-column name keeps 50, enough to know it.
+    expect(spoolLayout(long, 100, NOW)).toMatchObject({ location: 12, added: 6 });
+    // At 90 it would keep only 40: the date goes first.
+    expect(spoolLayout(long, 90, NOW)).toMatchObject({ added: 0 });
+  });
+
   it("shortens the bar on a narrow list so the name keeps more", () => {
     expect(spoolLayout(placed, 56, NOW)).toMatchObject({ location: 0, added: 0, bar: 5 });
   });
@@ -76,9 +93,9 @@ describe("spoolListRows", () => {
 });
 
 describe("addedText", () => {
-  it("is the month and day this year, else the year and month", () => {
+  it("is the month and day this year, else the whole date", () => {
     expect(addedText(day(2026, 11, 16), NOW)).toBe("Nov 16");
-    expect(addedText(day(2025, 3, 2), NOW)).toBe("2025-03");
+    expect(addedText(day(2025, 3, 2), NOW)).toBe("2025-03-02");
     expect(addedText(null, NOW)).toBe("");
   });
 });
@@ -99,14 +116,30 @@ describe("summarySegments", () => {
 
   it("counts spools, what's left, low, empty and unweighed ones, and the sync problems with their key", () => {
     expect(text(200)).toBe(
-      "18 spools · 6.8 kg left · 4 low · 1 empty · 3 not weighed · ! 7 problems, c to see",
+      "18 spools · 6.8 kg left · 4 low · 1 empty · 3 unweighed · ! 7 problems (c)",
     );
   });
 
+  it("fits every part on an 80-column list, the sync key styled as a key", () => {
+    const big = {
+      ...summary,
+      count: 11,
+      leftGrams: 2300,
+      low: 2,
+      unweighed: 5,
+      sync: { state: "problems" as const, problems: 16 },
+    };
+    expect(text(76, big)).toBe(
+      "11 spools · 2.3 kg left · 2 low · 1 empty · 5 unweighed · ! 16 problems (c)",
+    );
+    const key = summarySegments(big, 76).find((seg) => seg.text === "c");
+    expect(key).toMatchObject({ color: COLORS.accent2, bold: true });
+  });
+
   it("drops whole parts that don't fit, least useful first, never cutting one", () => {
-    expect(text(56)).toBe("18 spools · 6.8 kg left · 4 low · ! 7 problems, c to see");
+    expect(text(56)).toBe("18 spools · 6.8 kg left · 4 low · ! 7 problems (c)");
     expect(segmentsWidth(summarySegments(summary, 40))).toBeLessThanOrEqual(40);
-    expect(text(40)).toBe("18 spools · ! 7 problems, c to see");
+    expect(text(40)).toBe("18 spools · ! 7 problems (c)");
   });
 
   it("leaves out what's zero, and says 1 spool", () => {

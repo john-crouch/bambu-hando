@@ -6,7 +6,8 @@ import { type InventoryRow, type InventorySort, remainingGrams } from "../../../
 import { checkCounts } from "../../../syncCheck.js";
 import type { CheckData, ConsoleData, Resource } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
-import { formatRange } from "../../ui/index.js";
+import { formatRange, truncate } from "../../ui/index.js";
+import { wrapText } from "./local.js";
 
 /** Under this share of the label weight a spool counts as low (yellow); under LOW_RED it's red. */
 export const LOW_FRACTION = 0.25;
@@ -17,6 +18,14 @@ export const SORT_LABELS: Record<InventorySort, string> = {
   name: "by name",
   left: "least left first",
   location: "by location",
+};
+
+/** The order in a hint, short: "s sort: newest". */
+export const SORT_NAMES: Record<InventorySort, string> = {
+  newest: "newest",
+  name: "name",
+  left: "least left",
+  location: "location",
 };
 
 export type Tone = "ok" | "warning" | "failed";
@@ -53,10 +62,17 @@ export function nozzleRange(filament: CustomFilament | undefined): string {
   return formatRange(filament?.nozzleTempMin, filament?.nozzleTempMax);
 }
 
-/** A Unix-seconds time as the local date, 2026-10-30; "" when unset. */
-export function addedDate(seconds: number | null): string {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * When a spool came, one format everywhere: "Oct 30" this year, "2025-11-10" before; "" when unset.
+ * Local time.
+ */
+export function addedText(seconds: number | null, now: number): string {
   if (!seconds) return "";
   const date = new Date(seconds * 1000);
+  if (date.getFullYear() === new Date(now).getFullYear())
+    return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -155,10 +171,11 @@ function leftRow(row: InventoryRow): DetailRow {
 export function spoolDetail(
   row: InventoryRow,
   filaments: ReadonlyMap<string, CustomFilament>,
+  now: number,
 ): SpoolDetail {
   const { spool } = row;
   const nozzle = nozzleRange(filaments.get(spool.slicerFilament));
-  const added = addedDate(spool.addedTime);
+  const added = addedText(spool.addedTime, now);
   const rows: DetailRow[] = [
     leftRow(row),
     spool.coreWeight
@@ -186,6 +203,25 @@ export function spoolDetail(
   };
 }
 
+/**
+ * The Note row wrapped onto rows of its own (empty labels) at most lines long, values width columns
+ * wide; when it needs more, the last shown line ends in ….
+ */
+export function wrapNote(rows: readonly DetailRow[], width: number, lines: number): DetailRow[] {
+  return rows.flatMap((row) => {
+    if (row.label !== "Note" || width <= 0) return [row];
+    const wrapped = wrapText(row.value, width);
+    const shown =
+      wrapped.length <= lines
+        ? wrapped
+        : [
+            ...wrapped.slice(0, Math.max(0, lines - 1)),
+            truncate(`${wrapped[Math.max(0, lines - 1)] ?? ""}…`, width),
+          ];
+    return shown.map((value, index) => ({ ...row, label: index === 0 ? row.label : "", value }));
+  });
+}
+
 /** Brand · material · filament code. */
 function filamentLine({ spool }: InventoryRow): string {
   const material = [spool.material, spool.subtype].filter(Boolean).join(" ");
@@ -198,12 +234,13 @@ function filamentLine({ spool }: InventoryRow): string {
 export function compactDetail(
   row: InventoryRow,
   filaments: ReadonlyMap<string, CustomFilament>,
+  now: number,
 ): DetailRow[] {
   const { spool } = row;
   const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
   const core = spool.coreWeight ? `${spool.coreWeight} g spool` : "empty spool unknown";
   const left = leftRow(row);
-  const added = addedDate(spool.addedTime);
+  const added = addedText(spool.addedTime, now);
   const place: DetailRow = {
     label: "Place",
     value: join(

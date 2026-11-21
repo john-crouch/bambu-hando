@@ -1,5 +1,5 @@
 // ABOUTME: The Spools tab's view: the spool list with its summary and filter beside the highlighted spool's detail.
-// ABOUTME: Below 90 columns the detail replaces the list on enter; empty states say what to do; dialogs draw centered on top.
+// ABOUTME: Below 90 columns the detail replaces the list on enter; empty states say what to do. Dialogs are in Dialogs.tsx.
 
 import { Box } from "ink";
 import type { ReactNode } from "react";
@@ -13,15 +13,16 @@ import {
   Empty,
   Line,
   List,
+  labelColumn,
   listPosition,
   Panel,
   panelInner,
   type Segment,
   Swatch,
   TextField,
+  truncate,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
-import { SpoolsDialog } from "./Dialogs.js";
 import {
   compactDetail,
   consoleConnection,
@@ -30,7 +31,9 @@ import {
   spoolDetail,
   spoolsSummary,
   swatchOf,
+  wrapNote,
 } from "./data.js";
+import { wrapText } from "./local.js";
 import {
   COMPACT_DETAIL,
   cursorIndex,
@@ -134,6 +137,7 @@ function ListPanel({
 function DetailPanel({
   row,
   data,
+  now,
   ticked,
   width,
   height,
@@ -141,6 +145,7 @@ function DetailPanel({
 }: {
   row: InventoryRow | undefined;
   data: ConsoleData;
+  now: number;
   ticked: number;
   width: number;
   height: number;
@@ -153,9 +158,25 @@ function DetailPanel({
         <Empty title="No spool highlighted" width={inner.width} height={inner.height} />
       </Panel>
     );
-  const detail = spoolDetail(row, data.filaments);
+  const detail = spoolDetail(row, data.filaments, now);
   const art = inner.width - 2;
   const swatchRows = inner.height >= 24 ? 3 : 2;
+  // A long name takes two lines and the note what's left of the panel, instead of being cut.
+  const titleLines = wrapText(detail.title, art);
+  const title =
+    titleLines.length <= 2
+      ? titleLines
+      : [titleLines[0] ?? "", truncate(`${titleLines[1] ?? ""}…`, art)];
+  const used =
+    (detail.swatch ? swatchRows : 1) +
+    1 +
+    title.length +
+    2 +
+    (row.fraction !== null ? 2 : 0) +
+    detail.rows.length;
+  // Detail draws a margin, the label column and a gap before each value, and a margin after.
+  const valueWidth = inner.width - 1 - labelColumn(detail.rows) - 2 - 1;
+  const rows = wrapNote(detail.rows, valueWidth, 1 + Math.max(0, inner.height - used));
   return (
     <Panel
       title={`#${row.spool.id}`}
@@ -172,7 +193,14 @@ function DetailPanel({
         )}
       </Box>
       <Line segments={[]} width={inner.width} />
-      <Line segments={[{ text: " " }, { text: detail.title, bold: true }]} width={inner.width} />
+      {title.map((line, index) => (
+        <Line
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one name.
+          key={index}
+          segments={[{ text: " " }, { text: line, bold: true }]}
+          width={inner.width}
+        />
+      ))}
       <Line
         segments={[{ text: " " }, { text: detail.subtitle, color: COLORS.muted }]}
         width={inner.width}
@@ -184,7 +212,7 @@ function DetailPanel({
           <Line segments={[]} width={art} />
         </Box>
       ) : null}
-      <Detail rows={detail.rows} width={inner.width} />
+      <Detail rows={rows} width={inner.width} />
     </Panel>
   );
 }
@@ -193,10 +221,12 @@ function DetailPanel({
 function CompactDetail({
   row,
   data,
+  now,
   width,
 }: {
   row: InventoryRow | undefined;
   data: ConsoleData;
+  now: number;
   width: number;
 }) {
   const inner = panelInner(width, COMPACT_DETAIL);
@@ -223,7 +253,7 @@ function CompactDetail({
           </Box>
         ) : null}
         <Detail
-          rows={compactDetail(row, data.filaments)}
+          rows={compactDetail(row, data.filaments, now)}
           width={inner.width - (swatch ? 4 : 0)}
           labelWidth={8}
         />
@@ -323,6 +353,7 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
       <DetailPanel
         row={row}
         data={screen.data}
+        now={ctx.now}
         ticked={model.ticked.length}
         width={panelWidth}
         height={height}
@@ -343,7 +374,7 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
       body = (
         <Box flexDirection="column" width={width} height={height}>
           {list(width, height - COMPACT_DETAIL)}
-          <CompactDetail row={row} data={screen.data} width={width} />
+          <CompactDetail row={row} data={screen.data} now={ctx.now} width={width} />
         </Box>
       );
     } else {
@@ -353,19 +384,6 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
   return (
     <Box width={width} height={height} flexDirection="row" flexShrink={0}>
       {body}
-      {model.dialog ? (
-        <Box
-          position="absolute"
-          top={0}
-          left={0}
-          width={width}
-          height={height}
-          justifyContent="center"
-          alignItems="center"
-        >
-          <SpoolsDialog dialog={model.dialog} model={model} ctx={ctx} />
-        </Box>
-      ) : null}
     </Box>
   );
 }

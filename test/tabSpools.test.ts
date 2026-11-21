@@ -21,6 +21,7 @@ import {
   update,
   visibleRows,
 } from "../src/tui/tabs/spools/model.js";
+import { fitHints } from "../src/tui/ui/hints.js";
 import { consoleOf, FILAMENTS, makeCtx, runCmds, spool } from "./tabSpoolsFixtures.js";
 
 const SPOOLS: SpoolRecord[] = [
@@ -361,7 +362,7 @@ describe("more spools like this one", () => {
           exitCode: 1,
         },
       },
-      { type: "app/toast", text: "1 of 2 spools of Zeta PLA Blue failed", tone: "failed" },
+      // The dialog shows the outcome, so no toast repeats it.
       { type: "app/load", resource: "console", force: true },
       { type: "app/load", resource: "check", force: true },
     ]);
@@ -379,11 +380,7 @@ describe("more spools like this one", () => {
       type: "app/runFinished",
       summary: { ok: true, lines: ["1 spool of Zeta PLA Blue added to http://127.0.0.1: #9"] },
     });
-    expect(msgs[1]).toEqual({
-      type: "app/toast",
-      text: "1 spool of Zeta PLA Blue added",
-      tone: "ok",
-    });
+    expect(msgs.map((m) => m.type)).not.toContain("app/toast");
   });
 
   it("reports a rejected key as a setup error", async () => {
@@ -441,12 +438,19 @@ describe("more spools like this one", () => {
       closed,
     );
     expect(done[0].dialog).toBeNull();
-    expect((await sent(done)).map((m) => m.type)).toEqual([
+    const msgs = await sent(done);
+    expect(msgs.map((m) => m.type)).toEqual([
       "app/runFinished",
       "app/toast",
       "app/load",
       "app/load",
     ]);
+    // With the dialog gone, the toast is where the outcome shows.
+    expect(msgs[1]).toEqual({
+      type: "app/toast",
+      text: "1 spool of Zeta PLA Blue added",
+      tone: "ok",
+    });
   });
 
   it("ignores results of a run that isn't the dialog's", () => {
@@ -652,6 +656,19 @@ describe("hints and commands", () => {
     expect(keysOf(keys(start(), ["b"]))).toEqual(["type", "enter", "esc"]);
   });
 
+  it("offers done, not esc as well, once copies are added: both close the dialog", () => {
+    const running = key(keys(start(), ["down", "+"]), "a")[0];
+    const run = running.dialog?.kind === "count" ? running.dialog.run : -1;
+    const results = [{ ok: true, id: "9" }];
+    const [done] = tabMsg({ type: "spools/copiesDone", run, results, error: "" }, running);
+    expect(keysOf(done)).toEqual(["l", "enter"]);
+    const [failed] = tabMsg(
+      { type: "spools/copiesDone", run, results: [], error: "down" },
+      running,
+    );
+    expect(keysOf(failed)).toEqual(["enter"]);
+  });
+
   it("offers palette commands that reach this tab", async () => {
     const list = commands(keys(start(), ["down"]), CTX);
     // Reloading is the shell's Data command, not one of these.
@@ -775,5 +792,33 @@ describe("a kept filter", () => {
       primary: true,
     });
     expect(hints(start(), CTX).find((h) => h.keys === "esc")).toBeUndefined();
+  });
+
+  it("keeps esc clear filter in an 80-column footer, before the tab's actions", () => {
+    const narrow = { ...CTX, bodyColumns: 80 };
+    const kept = keys(start(narrow), ["/", "Zeta", "enter"], narrow);
+    const shown = fitHints(hints(kept, narrow), 80 - 8).map((h) => `${h.keys} ${h.label}`);
+    expect(shown).toContain("esc clear filter");
+    const order = hints(kept, narrow).map((h) => h.keys);
+    expect(order.indexOf("esc")).toBe(order.indexOf("/") + 1);
+  });
+});
+
+describe("the sort hint", () => {
+  it("names the order the list is in when there's room, else stays short", () => {
+    const sort = (model: SpoolsModel, ctx = CTX) => hints(model, ctx).find((h) => h.keys === "s");
+    expect(sort(start())).toEqual({ keys: "s", label: "sort: newest", primary: true });
+    const narrow = { ...CTX, columns: 60, bodyColumns: 60 };
+    expect(sort(start(narrow), narrow)).toEqual({ keys: "s", label: "sort", primary: true });
+    expect(sort(keys(start(), ["s"]))?.label).toBe("sort: name");
+    expect(sort(keys(start(), ["s", "s"]))?.label).toBe("sort: least left");
+    expect(sort(keys(start(), ["s", "s", "s"]))?.label).toBe("sort: location");
+  });
+});
+
+describe("filtering", () => {
+  it("says enter done, as every filter does", () => {
+    const filtering = keys(start(), ["/"]);
+    expect(hints(filtering, CTX).find((h) => h.keys === "enter")?.label).toBe("done");
   });
 });
