@@ -20,6 +20,7 @@ import {
   Swatch,
   TextField,
 } from "../../ui/index.js";
+import { segmentsWidth } from "../../ui/text.js";
 import { SpoolsDialog } from "./Dialogs.js";
 import { consoleConnection, consoleUrl, SORT_LABELS, spoolDetail, spoolsSummary } from "./data.js";
 import { cursorIndex, isWide, type SpoolsModel, spoolsScreen, visibleRows } from "./model.js";
@@ -57,11 +58,17 @@ function ListPanel({
   const subtitle = filtered
     ? `${rows.length} of ${data.spools.length} · ${SORT_LABELS[model.sort]}`
     : SORT_LABELS[model.sort];
-  const summary: Segment[] = [
-    { text: " " },
-    ...summarySegments(spoolsSummary(data, ctx.resources.check)),
+  const status: Segment[] = [
     ...(reloading ? [{ text: " · reloading…", color: COLORS.muted }] : []),
     ...(error ? [{ text: ` · ✗ couldn't reload: ${error}`, color: COLORS.failed }] : []),
+  ];
+  const summary: Segment[] = [
+    { text: " " },
+    ...summarySegments(
+      spoolsSummary(data, ctx.resources.check),
+      Math.max(0, inner.width - 2 - segmentsWidth(status)),
+    ),
+    ...status,
   ];
   const showFilter = model.filtering || filtered;
   return (
@@ -95,7 +102,7 @@ function ListPanel({
         />
       ) : (
         <List
-          rows={spoolListRows(rows, model.ticked, inner.width)}
+          rows={spoolListRows(rows, model.ticked, inner.width, ctx.now)}
           cursor={cursor}
           height={Math.max(0, inner.height - LIST_HEAD)}
           width={inner.width}

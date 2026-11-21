@@ -8,6 +8,7 @@ import type { CheckSection } from "../src/syncCheck.js";
 import type { CheckData, Resource } from "../src/tui/core/types.js";
 import {
   barTone,
+  compactDetail,
   consoleConnection,
   consoleUrl,
   nozzleRange,
@@ -46,15 +47,16 @@ describe("spoolsSummary", () => {
     spool({ id: "1", currentWeight: 800 }), // 600 g left
     spool({ id: "2", currentWeight: 300 }), // 100 g left: low
     spool({ id: "3", currentWeight: null }), // not weighed
+    spool({ id: "4", currentWeight: 200 }), // empty: not low too
   ];
 
   function check(sections: CheckSection[]): Resource<CheckData> {
     return { state: "ready", value: { sections, warnings: [], presets: [] }, at: 0 };
   }
 
-  it("counts spools, grams left and low spools", () => {
+  it("counts spools, grams left, and low, empty and unweighed spools", () => {
     const summary = spoolsSummary({ spools, filaments }, { state: "idle" });
-    expect(summary).toMatchObject({ count: 3, leftGrams: 700, low: 1 });
+    expect(summary).toMatchObject({ count: 4, leftGrams: 700, low: 1, empty: 1, unweighed: 1 });
   });
 
   it("reads the sync state from the check", () => {
@@ -138,7 +140,6 @@ describe("spoolDetail", () => {
       { label: "Tag", value: "04AABB", dim: true },
       { label: "Added", value: "2026-10-30" },
       { label: "Note", value: "dry first" },
-      { label: "Spool", value: "#14", dim: true },
     ]);
   });
 
@@ -157,7 +158,56 @@ describe("spoolDetail", () => {
       { label: "Empty", value: "unknown, SpoolEase learns it on the first full weigh", dim: true },
       { label: "Location", value: "not placed", dim: true },
       { label: "Tag", value: "none", dim: true },
-      { label: "Spool", value: "#1", dim: true },
+    ]);
+  });
+
+  it("says empty, in red, for a spool with nothing left", () => {
+    const [row] = inventoryRows([spool({ currentWeight: 200 })], filaments, "", "newest");
+    if (!row) throw new Error("no row");
+    expect(spoolDetail(row, filaments).rows[0]).toEqual({
+      label: "Left",
+      value: "empty (0 g of 1000 g)",
+      tone: "failed",
+    });
+  });
+});
+
+describe("compactDetail", () => {
+  it("puts the spool in three lines for a panel under the list", () => {
+    const [row] = inventoryRows(
+      [
+        spool({
+          id: "14",
+          currentWeight: 764,
+          location: "AMS 1",
+          tagId: "04AABB",
+          addedTime: Date.UTC(2026, 9, 30, 12) / 1000,
+        }),
+      ],
+      filaments,
+      "",
+      "newest",
+    );
+    if (!row) throw new Error("no row");
+    expect(compactDetail(row, filaments)).toEqual([
+      { label: "Left", value: "564 g of 1000 g · 56% · 200 g spool", tone: "ok" },
+      { label: "Place", value: "AMS 1 · tag 04AABB · added 2026-10-30" },
+      { label: "Filament", value: "Acme · PETG · P1111111 · 230–250°C" },
+    ]);
+  });
+
+  it("says what isn't known yet", () => {
+    const [row] = inventoryRows(
+      [spool({ currentWeight: null, coreWeight: null, slicerFilament: "" })],
+      filaments,
+      "",
+      "newest",
+    );
+    if (!row) throw new Error("no row");
+    expect(compactDetail(row, filaments)).toEqual([
+      { label: "Left", value: "not weighed yet · empty spool unknown", dim: true },
+      { label: "Place", value: "not placed · no tag", dim: true },
+      { label: "Filament", value: "Acme · PETG · no filament code" },
     ]);
   });
 });

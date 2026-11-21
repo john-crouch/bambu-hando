@@ -107,7 +107,7 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     const lines = tab(start(ctx), ctx);
     expectExact(lines, ctx);
     expect(lines[0]).toContain("Spools · newest first");
-    expect(lines[1]).toContain("4 spools · 744 g left · 2 low · ✓ in sync");
+    expect(lines[1]).toContain("4 spools · 744 g left · 2 low · 1 not weighed · ✓ in sync");
     const text = lines.join("\n");
     expect(text).toContain("#14");
     expect(text).toContain("Sunlu PETG 2.0 Vivid Yellow");
