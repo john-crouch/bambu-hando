@@ -598,10 +598,18 @@ function continueFind(model: AddModel, ctx: Ctx, highlighted: string | undefined
 
 // ── Weights ─────────────────────────────────────────────────────────────────
 
+/**
+ * What the weights were read for: each ticked profile by identity (import keys are only positions, so
+ * another file, a reload or another diameter gives other profiles under the same keys) and the console.
+ */
 function weightsSignature(model: AddModel, ctx: Ctx): string {
   const connection = consoleOf(ctx.values);
-  const keys = ticked(model, ctx).map((e) => e.key);
-  return `${keys.join(",")}|${connection ? consoleUrl(connection) : ""}`;
+  const from = (origin: "db" | "import") =>
+    origin === "import" ? `import(${model.imported.source ?? ""})` : "db";
+  const profiles = ticked(model, ctx).map(
+    (e) => `${e.key}=${from(e.origin)}:${e.profile.filamentId}@${e.profile.diameter}`,
+  );
+  return JSON.stringify([profiles, connection ? consoleUrl(connection) : ""]);
 }
 
 function enterWeights(model: AddModel, ctx: Ctx): Result {
@@ -777,9 +785,9 @@ function enterReview(model: AddModel, ctx: Ctx): Result {
     createsSpools(ctx.values) &&
     weights.state === "ready" &&
     weights.signature === weightsSignature(model, ctx);
-  const profiles = weighted
-    ? applyWeights(weights.profiles, weights.groups, model.weightChoices)
-    : entries.map((e) => e.profile);
+  // The weights go onto the profiles ticked now: the same ones by identity, but read afresh.
+  const current = entries.map((e) => e.profile);
+  const profiles = weighted ? applyWeights(current, weights.groups, model.weightChoices) : current;
   const seq = model.review.seq + 1;
   return [
     {

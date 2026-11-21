@@ -74,6 +74,8 @@ export function errorFocus(error: string): string {
 
 /** The settings a plan is read with: when any of them changes, the plan no longer says what a run does. */
 const BASIS_KEYS = [
+  "source",
+  "diameter",
   "presetFolder",
   "printerPreset",
   "overwritePresets",
