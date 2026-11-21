@@ -15,10 +15,11 @@ import {
   MissingKeyError,
 } from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
-import { holdsSecret, KEY_ARGUMENT_ERROR } from "./secrets.js";
+import { holdsSecret, InvalidSecretError, KEY_ARGUMENT_ERROR } from "./secrets.js";
 import { SpoolEaseClient, type SpoolRecord } from "./spoolease.js";
 import {
-  readSpoolEaseConfig,
+  type ConsoleSettings,
+  consoleSettings,
   SPOOLEASE_SETTINGS_HINT,
   spooleaseConnectionFrom,
 } from "./spooleaseConfig.js";
@@ -70,11 +71,12 @@ Options:
   --spoolease-host <host>    Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>
                              Security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>    Port (default: 80)
-  --spoolease-https          Use HTTPS
+  --spoolease-port <port>    Port (default: as saved in Settings, else 80)
+  --spoolease-https          Use HTTPS (--no-spoolease-https: don't, even if saved)
   -h, --help                 Show this help
 
-SpoolEase defaults to the settings saved in BambuStudio.
+SpoolEase defaults to the console saved in the TUI's Settings (its key kept there
+or by bambu-hando key set spoolease), then to the settings saved in BambuStudio.
 `;
 
 const OPTIONS = {
@@ -86,8 +88,8 @@ const OPTIONS = {
   refresh: { type: "boolean", default: false },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
-  "spoolease-port": { type: "string", default: "80" },
-  "spoolease-https": { type: "boolean", default: false },
+  "spoolease-port": { type: "string" },
+  "spoolease-https": { type: "boolean" },
   help: { type: "boolean", short: "h", default: false },
 } as const;
 
@@ -244,6 +246,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     args: argv,
     options: OPTIONS,
     allowPositionals: true,
+    allowNegative: true,
     strict: true,
   });
   if (values.help) {
@@ -258,10 +261,17 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     add: values.add ?? [],
     unlink: values.unlink ?? [],
   });
-  const port = Number(values["spoolease-port"]);
+  let settings: ConsoleSettings;
+  try {
+    settings = await consoleSettings(values);
+  } catch (err) {
+    // Says where the key came from, never what it is.
+    throw err instanceof InvalidSecretError ? new SyncUsageError(err.message) : err;
+  }
+  const port = Number(settings.port);
   if (!Number.isInteger(port) || port < 1 || port > 65_535)
     throw new SyncUsageError("--spoolease-port must be a port number");
-  const connection = spooleaseConnectionFrom(values, port, await readSpoolEaseConfig());
+  const connection = spooleaseConnectionFrom(settings, port);
   if (!connection)
     throw new SyncUsageError(
       `SpoolEase host and security key are required: ${SPOOLEASE_SETTINGS_HINT}`,

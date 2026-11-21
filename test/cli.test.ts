@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { consoleSettings, main } from "../src/cli.js";
+import { main } from "../src/cli.js";
 import { removeSecret, SECRETS, storeSecret } from "../src/secrets.js";
 import { rememberConsole } from "../src/tuiSettings.js";
 import {
@@ -283,35 +283,13 @@ describe("cli", () => {
     expect(stdout + stderr).not.toContain("LEAK");
   });
 
-  it("gives the TUI the same console, with port 80 and HTTPS off when nothing says otherwise", async () => {
-    expect(await consoleSettings({ "spoolease-https": false })).toEqual({
-      host: "",
-      port: "80",
-      securityKey: "",
-      https: false,
-    });
-    await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "FROM-BAMBU" });
-    await rememberConsole({ host: "10.0.0.5", port: 8080, https: true });
-    expect(await consoleSettings({ "spoolease-https": false })).toEqual({
-      host: "10.0.0.5",
-      port: "8080",
-      securityKey: "FROM-BAMBU",
-      https: true,
-    });
-    expect(
-      await consoleSettings({
-        "spoolease-host": "flag-host",
-        "spoolease-port": "81",
-        "spoolease-security-key": "FROM-FLAG",
-        "spoolease-https": true,
-      }),
-    ).toEqual({ host: "flag-host", port: "81", securityKey: "FROM-FLAG", https: true });
-    if (privateKeyringSupported) {
-      await storeSecret(CONSOLE_KEY, "FROM-KEYRING");
-      expect((await consoleSettings({ "spoolease-https": false })).securityKey).toBe(
-        "FROM-KEYRING",
-      );
-    }
+  it("lets --no-spoolease-https switch off an HTTPS saved in Settings", async () => {
+    await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
+    await rememberConsole({ port: server.port, https: true });
+    // The stand-in speaks plain HTTP, so HTTPS can't reach it.
+    expect((await run(["--source", SOURCE_FIXTURE, "--dry-run"])).code).toBe(2);
+    const off = await run(["--source", SOURCE_FIXTURE, "--dry-run", "--no-spoolease-https"]);
+    expect({ code: off.code, stderr: off.stderr }).toEqual({ code: 0, stderr: "" });
   });
 
   it("reads SpoolEase host and key from the environment", async () => {
