@@ -383,6 +383,22 @@ describe("more spools like this one", () => {
     expect(msgs.map((m) => m.type)).not.toContain("app/toast");
   });
 
+  it("still toasts a run whose dialog is open while another tab is on screen", async () => {
+    const running = key(keys(start(), ["down", "+"]), "a")[0];
+    const run = running.dialog?.kind === "count" ? running.dialog.run : -1;
+    const elsewhere: Ctx = { ...CTX, activeTab: "add" };
+    const msg: TabMsg = {
+      type: "spools/copiesDone",
+      run,
+      results: [{ ok: true, id: "9" }],
+      error: "",
+    };
+    const done = tabMsg(msg, running, elsewhere);
+    expect((await sent(done)).map((m) => m.type)).toContain("app/toast");
+    const here = tabMsg(msg, running, { ...CTX, activeTab: "spools" });
+    expect((await sent(here)).map((m) => m.type)).not.toContain("app/toast");
+  });
+
   it("reports a rejected key as a setup error", async () => {
     const running = key(keys(start(), ["down", "+"]), "a")[0];
     const run = running.dialog?.kind === "count" ? running.dialog.run : -1;
