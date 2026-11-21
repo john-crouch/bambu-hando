@@ -49,7 +49,7 @@ import {
 } from "./spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError } from "./sync.js";
 import { checkCounts, checkLines, checkSummary, readCheck } from "./syncCheck.js";
-import type { FormValues } from "./tui/App.js";
+import type { FormValues } from "./tui/core/values.js";
 import { loadTuiSettings } from "./tuiSettings.js";
 
 /** Headless SpoolmanDB runs sync at most this many filaments unless --max-filaments says otherwise. */

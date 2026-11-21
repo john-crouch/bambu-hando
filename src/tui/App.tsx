@@ -142,28 +142,12 @@ import {
   spoolListRows,
 } from "./SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
+import type { FormValues } from "./core/values.js";
 import { useTerminalColumns, useTerminalRows } from "./screenSize.js";
 import { COLORS } from "./theme.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
-export interface FormValues {
-  source: string;
-  presetFolder: string;
-  /** Comma-separated BambuStudio printer names; one preset is written per printer. */
-  printerPreset: string;
-  /** Replace BambuStudio presets that already exist. */
-  overwritePresets: boolean;
-  host: string;
-  port: string;
-  securityKey: string;
-  https: boolean;
-  skipSpoolease: boolean;
-  createSpools: boolean;
-  /** Initial SpoolmanDB search. */
-  query: string;
-  /** SpoolmanDB filament diameter in mm. */
-  diameter: number;
-}
+export type { FormValues } from "./core/values.js";
 
 type Screen =
   | { name: "home"; cursor: number }
