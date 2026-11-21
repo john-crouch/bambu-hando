@@ -969,6 +969,11 @@ function reloads(ctx: Ctx): AppMsg[] {
   return msgs;
 }
 
+/** The run's outcome as a toast, only while Add is hidden: on screen, its Done or Failed card says it. */
+function runToast(ctx: Ctx, text: string, tone: "ok" | "failed"): AppMsg[] {
+  return ctx.activeTab === "add" ? [] : [{ type: "app/toast", text, tone }];
+}
+
 function runDone(model: AddModel, results: Parameters<typeof runOutcome>[0], ctx: Ctx): Result {
   const { run } = model;
   if (run?.state !== "running") return none(model);
@@ -987,11 +992,11 @@ function runDone(model: AddModel, results: Parameters<typeof runOutcome>[0], ctx
       peek: emptyPeek(),
     },
     [
-      send<AppMsg>({ type: "app/runFinished", summary: outcome.summary }, ...reloads(ctx), {
-        type: "app/toast",
-        text: outcome.toast.text,
-        tone: outcome.toast.tone,
-      }),
+      send<AppMsg>(
+        { type: "app/runFinished", summary: outcome.summary },
+        ...reloads(ctx),
+        ...runToast(ctx, outcome.toast.text, outcome.toast.tone),
+      ),
     ],
   ];
 }
@@ -1009,7 +1014,7 @@ function runFailed(model: AddModel, error: string, exitCode: 1 | 2, ctx: Ctx): R
           summary: { ok: false, lines: [`Adding filaments failed: ${error}`], exitCode },
         },
         ...reloads(ctx),
-        { type: "app/toast", text: error, tone: "failed" },
+        ...runToast(ctx, error, "failed"),
       ),
     ],
   ];
