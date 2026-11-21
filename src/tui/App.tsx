@@ -4,6 +4,7 @@
 import { access, readdir, readFile } from "node:fs/promises";
 import { basename } from "node:path";
 
+import { StatusMessage } from "@inkjs/ui";
 import { Box, Text, useInput } from "ink";
 import { useMemo, useRef, useState } from "react";
 import { SystemProfiles } from "../bambuProfiles.js";
@@ -102,7 +103,7 @@ import {
   labelSizeItems,
 } from "./LabelForm.js";
 import { initialPickerState, Picker, pickerInput, pickerRows } from "./Picker.js";
-import { PlanNotes, PlanTable, type RowProgress } from "./PlanTable.js";
+import { PlanNotes, PlanTable, type RowProgress, RunProgress } from "./PlanTable.js";
 import {
   initialPresetForm,
   PresetForm,
@@ -141,6 +142,7 @@ import {
 } from "./SpoolList.js";
 import { checkInput, checkRows, SyncCheck } from "./SyncCheck.js";
 import { useTerminalRows } from "./screenSize.js";
+import { COLORS } from "./theme.js";
 import { itemIndex, WeightMenu, weightInput, weightItems } from "./WeightMenu.js";
 
 export interface FormValues {
@@ -1851,7 +1853,7 @@ export function App({ initial, onExit }: Props) {
   if (screen.name === "error") {
     return (
       <Box flexDirection="column">
-        <Text color="red">✗ {screen.message}</Text>
+        <StatusMessage variant="error">{screen.message}</StatusMessage>
         <Text dimColor>[b] back to settings · [q] quit · ? help</Text>
       </Box>
     );
@@ -1901,15 +1903,20 @@ export function App({ initial, onExit }: Props) {
           edits={planEdits}
         />
       ) : null}
-      {screen.name === "plan" && screen.warning ? (
-        <Text color="yellow">! {screen.warning}</Text>
+      {screen.name === "running" ? (
+        <RunProgress progress={progress} total={screen.profiles.length} />
       ) : null}
-      {screen.name === "plan" && screen.error ? <Text color="red">{screen.error}</Text> : null}
+      {screen.name === "plan" && screen.warning ? (
+        <StatusMessage variant="warning">{screen.warning}</StatusMessage>
+      ) : null}
+      {screen.name === "plan" && screen.error ? (
+        <StatusMessage variant="error">{screen.error}</StatusMessage>
+      ) : null}
       {stage ? <Busy color="cyan" message={`${STAGE_LABELS[stage]}…`} /> : null}
       {[...weightWarnings, ...warnings].map((w) => (
-        <Text key={w} color="yellow">
-          ! {w}
-        </Text>
+        <StatusMessage key={w} variant="warning">
+          {w}
+        </StatusMessage>
       ))}
       {screen.name === "plan" ? (
         <Text dimColor>
@@ -1919,18 +1926,20 @@ export function App({ initial, onExit }: Props) {
       ) : null}
       {screen.name === "done" ? (
         <Box flexDirection="column">
-          <Text bold color={failed.length ? "red" : "green"}>
-            Done: {screen.results.length - failed.length} written, {failed.length} failed
-          </Text>
-          {failed.map((r) => (
-            <Text key={r.profileName} color="red">
-              ✗ {r.profileName}: {r.detail}
+          <StatusMessage variant={failed.length ? "error" : "success"}>
+            <Text bold color={failed.length ? COLORS.failed : COLORS.ok}>
+              Done: {screen.results.length - failed.length} written, {failed.length} failed
             </Text>
+          </StatusMessage>
+          {failed.map((r) => (
+            <StatusMessage key={r.profileName} variant="error">
+              {r.profileName}: {r.detail}
+            </StatusMessage>
           ))}
           {outcome?.lines.map((line) => (
-            <Text key={line} color={outcome.ok ? "green" : "red"}>
-              {outcome.ok ? "✓" : "✗"} {line}
-            </Text>
+            <StatusMessage key={line} variant={outcome.ok ? "success" : "error"}>
+              {line}
+            </StatusMessage>
           ))}
           <Text dimColor>
             {created > 0
