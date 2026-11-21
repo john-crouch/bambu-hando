@@ -99,14 +99,30 @@ describe("summarySegments", () => {
 
   it("counts spools, what's left, low, empty and unweighed ones, and the sync problems with their key", () => {
     expect(text(200)).toBe(
-      "18 spools · 6.8 kg left · 4 low · 1 empty · 3 not weighed · ! 7 problems, c to see",
+      "18 spools · 6.8 kg left · 4 low · 1 empty · 3 unweighed · ! 7 problems (c)",
     );
   });
 
+  it("fits every part on an 80-column list, the sync key styled as a key", () => {
+    const big = {
+      ...summary,
+      count: 11,
+      leftGrams: 2300,
+      low: 2,
+      unweighed: 5,
+      sync: { state: "problems" as const, problems: 16 },
+    };
+    expect(text(76, big)).toBe(
+      "11 spools · 2.3 kg left · 2 low · 1 empty · 5 unweighed · ! 16 problems (c)",
+    );
+    const key = summarySegments(big, 76).find((seg) => seg.text === "c");
+    expect(key).toMatchObject({ color: COLORS.accent2, bold: true });
+  });
+
   it("drops whole parts that don't fit, least useful first, never cutting one", () => {
-    expect(text(56)).toBe("18 spools · 6.8 kg left · 4 low · ! 7 problems, c to see");
+    expect(text(56)).toBe("18 spools · 6.8 kg left · 4 low · ! 7 problems (c)");
     expect(segmentsWidth(summarySegments(summary, 40))).toBeLessThanOrEqual(40);
-    expect(text(40)).toBe("18 spools · ! 7 problems, c to see");
+    expect(text(40)).toBe("18 spools · ! 7 problems (c)");
   });
 
   it("leaves out what's zero, and says 1 spool", () => {

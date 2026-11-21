@@ -143,37 +143,37 @@ export function weightText(grams: number): string {
 }
 
 /** The summary's parts, most useful first: what to drop last when the line is short. */
-function summaryParts(summary: SpoolsSummary): { order: number; segment: Segment }[] {
-  const parts: { order: number; segment: Segment }[] = [
-    { order: 0, segment: { text: plural(summary.count, "spool"), bold: true } },
-  ];
+function summaryParts(summary: SpoolsSummary): { order: number; segments: Segment[] }[] {
+  const part = (order: number, segment: Segment) => ({ order, segments: [segment] });
+  const parts = [part(0, { text: plural(summary.count, "spool"), bold: true })];
   const { sync } = summary;
-  const syncSegment: Segment | null =
+  const syncSegments: Segment[] | null =
     sync.state === "ok"
-      ? { text: "✓ in sync", color: COLORS.ok }
+      ? [{ text: "✓ in sync", color: COLORS.ok }]
       : sync.state === "problems"
-        ? { text: `! ${plural(sync.problems, "problem")}, c to see`, color: COLORS.warning }
+        ? [
+            { text: `! ${plural(sync.problems, "problem")} (`, color: COLORS.warning },
+            // The key that opens Check, drawn as the footer draws keys.
+            { text: "c", color: COLORS.accent2, bold: true },
+            { text: ")", color: COLORS.warning },
+          ]
         : sync.state === "checking"
-          ? { text: "checking sync…", color: COLORS.muted }
+          ? [{ text: "checking sync…", color: COLORS.muted }]
           : sync.state === "failed"
-            ? { text: "✗ sync check failed", color: COLORS.failed }
+            ? [{ text: "✗ sync check failed", color: COLORS.failed }]
             : null;
-  if (syncSegment) parts.push({ order: 5, segment: syncSegment });
-  parts.push({ order: 1, segment: { text: `${weightText(summary.leftGrams)} left` } });
-  if (summary.low > 0)
-    parts.push({ order: 2, segment: { text: `${summary.low} low`, color: COLORS.warning } });
+  if (syncSegments) parts.push({ order: 5, segments: syncSegments });
+  parts.push(part(1, { text: `${weightText(summary.leftGrams)} left` }));
+  if (summary.low > 0) parts.push(part(2, { text: `${summary.low} low`, color: COLORS.warning }));
   if (summary.empty > 0)
-    parts.push({ order: 3, segment: { text: `${summary.empty} empty`, color: COLORS.failed } });
+    parts.push(part(3, { text: `${summary.empty} empty`, color: COLORS.failed }));
   if (summary.unweighed > 0)
-    parts.push({
-      order: 4,
-      segment: { text: `${summary.unweighed} not weighed`, color: COLORS.muted },
-    });
+    parts.push(part(4, { text: `${summary.unweighed} unweighed`, color: COLORS.muted }));
   return parts;
 }
 
 /**
- * "18 spools · 6.8 kg left · 4 low · 1 empty · 3 not weighed · ✓ in sync", each part in the color it
+ * "18 spools · 6.8 kg left · 4 low · 1 empty · 3 unweighed · ✓ in sync", each part in the color it
  * means. Parts that don't fit `width` are left out whole, the least useful first; none is cut.
  */
 export function summarySegments(
@@ -185,7 +185,7 @@ export function summarySegments(
   const line = (kept: typeof parts) =>
     [...kept]
       .sort((a, b) => a.order - b.order)
-      .flatMap((part, index) => (index > 0 ? [dot, part.segment] : [part.segment]));
+      .flatMap((part, index) => (index > 0 ? [dot, ...part.segments] : part.segments));
   let kept = parts;
   while (kept.length > 1 && segmentsWidth(line(kept)) > width) kept = kept.slice(0, -1);
   return line(kept);
