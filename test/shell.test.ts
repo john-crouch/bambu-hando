@@ -123,6 +123,12 @@ async function drive(
 const key = (what: string, mods = {}): ShellMsg => ({ type: "key", key: press(what, mods) });
 const seen = (model: ShellModel, tab: TabId): string[] => (model.tabs[tab] as FakeModel).seen;
 
+/** The open confirm dialog's request. */
+function confirmRequest(model: ShellModel): { title: string; lines: string[] } {
+  if (model.overlay?.id !== "confirm") throw new Error("no confirm dialog open");
+  return (model.overlay.model as { request: { title: string; lines: string[] } }).request;
+}
+
 function start(overrides = {}, d = deps()) {
   const shell = createShell(d);
   const [model] = shell.init(values(overrides), { query: "" }, { columns: 80, rows: 24 });
@@ -271,8 +277,7 @@ describe("global keys", () => {
     model = await drive(shell, model, key("q"));
     expect(model.exit).toBeNull();
     expect(model.overlay?.id).toBe("confirm");
-    const request = (model.overlay?.model as { request: { title: string; lines: string[] } })
-      .request;
+    const request = confirmRequest(model);
     expect(request.title).toBe("Quit and drop 3 unsaved changes?");
     expect(request.lines.join("\n")).toContain("Add");
     expect(request.lines.join("\n")).toContain("Presets");
@@ -288,9 +293,7 @@ describe("global keys", () => {
   it("quits from the unsaved-changes question with a too, and says 1 change in the singular", async () => {
     let { shell, model } = start();
     model = await drive(shell, model, key("u"), key("q"));
-    expect((model.overlay?.model as { request: { title: string } }).request.title).toBe(
-      "Quit and drop 1 unsaved change?",
-    );
+    expect(confirmRequest(model).title).toBe("Quit and drop 1 unsaved change?");
     model = await drive(shell, model, key("a"));
     expect(model.exit).toBe(0);
   });
