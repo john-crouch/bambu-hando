@@ -2,7 +2,7 @@
 // ABOUTME: Also hints, capturesText and palette commands; every write goes through Review and ends in app/runFinished.
 
 import type { Edits } from "../../../presetEdit.js";
-import { applyWeights, weightGroups } from "../../../spoolWeights.js";
+import { applyWeights, type WeightChoice, weightGroups } from "../../../spoolWeights.js";
 import { isCtrl, type KeyPress, letter, typed } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Hint, PaletteCommand, Step, TabMsg } from "../../core/types.js";
@@ -623,6 +623,11 @@ function cursorFor(model: AddModel, step: number): number {
   return itemIndex(itemsFor(model, step), choice);
 }
 
+/** The brand's marked (●) choice: what → takes, the one the cursor starts on. */
+export function markedChoice(model: AddModel, step = model.weights.step): WeightChoice | null {
+  return itemsFor(model, step)[cursorFor(model, step)]?.choice ?? null;
+}
+
 function toSettings(focus: string | null): ReturnType<typeof send<AppMsg>> {
   return send<AppMsg>({
     type: "app/switchTab",
@@ -684,29 +689,21 @@ function weightsKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   });
 
   if (back) return none(weights.step > 0 ? at(weights.step - 1) : { ...model, page: "find" });
-  if (key.name === "enter") {
+  // enter chooses the highlighted row; → takes the marked one (●): both go on to the next brand.
+  const choose = (choice: WeightChoice | null | undefined): Result => {
     const group = weights.prompts[weights.step];
-    const item = items[weights.cursor];
-    if (!group || !item) return none(model);
-    const weightChoices = new Map(model.weightChoices).set(group.key, item.choice);
-    const weightMemory = new Map(model.weightMemory).set(group.key, item.choice);
+    if (!group || !choice) return none(model);
+    const weightChoices = new Map(model.weightChoices).set(group.key, choice);
+    const weightMemory = new Map(model.weightMemory).set(group.key, choice);
     const next = { ...model, weightChoices, weightMemory };
-    const remember = rememberWeightCmd(group.key, group.brand, item.choice);
+    const remember = rememberWeightCmd(group.key, group.brand, choice);
     if (weights.step + 1 < weights.prompts.length)
       return [at(weights.step + 1, { weightChoices, weightMemory }), [remember]];
     const [reviewed, cmds] = enterReview(next, ctx);
     return [reviewed, [remember, ...cmds]];
-  }
-  if (key.name === "right") {
-    const group = weights.prompts[weights.step];
-    if (weights.prompts.every((g) => model.weightChoices.has(g.key)))
-      return enterReview(model, ctx);
-    if (group && model.weightChoices.has(group.key)) return none(at(weights.step + 1));
-    return none({
-      ...model,
-      notice: `Choose the empty spool weight for ${group?.brand || "this brand"} with enter`,
-    });
-  }
+  };
+  if (key.name === "enter") return choose(items[weights.cursor]?.choice);
+  if (key.name === "right") return choose(markedChoice(model));
   const moved = moveCursor(weights.cursor, key, items.length, pageRows(ctx));
   if (moved !== null) return none({ ...model, weights: { ...weights, cursor: moved } });
   const typedLetter = letter(key);
@@ -1078,7 +1075,7 @@ export function hints(model: AddModel, ctx: Ctx): Hint[] {
       return [
         h("↑↓", "move", true),
         h("enter", "choose", true),
-        h("→", "next"),
+        h("→", "use ●"),
         h("esc", "back", true),
       ];
     }

@@ -133,7 +133,7 @@ describe.each([
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
     const text = lines.join("\n");
     expect(text).toContain("Empty spool weight · Acme");
-    expect(text).toMatch(/Acme - Plastic\s+180 g/);
+    expect(text).toMatch(/Acme - Plastic\s+catalog\s+180 g/);
     expect(text).toContain("As listed in SpoolmanDB");
     expect(text).toContain("brand 1 of 1");
   });
