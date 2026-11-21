@@ -12,7 +12,7 @@ import { press } from "../src/tui/core/keys.js";
 import { toTab } from "../src/tui/core/types.js";
 import { listFor, OTHER, pageRows, shownItems } from "../src/tui/tabs/settings/fields.js";
 import { type SettingsModel, settingsLogic } from "../src/tui/tabs/settings/model.js";
-import { loadTuiSettings } from "../src/tuiSettings.js";
+import { loadTuiSettings, rememberConsole, tuiSettingsPath } from "../src/tuiSettings.js";
 import { bambuConfigDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 import { installFakeLp } from "./fakeLp.js";
 import {
@@ -452,6 +452,54 @@ describe("what the SpoolEase page keeps for next time", () => {
       https: false,
     });
     expect(h.of("app/toast")).toEqual([]);
+  });
+
+  it("saves the whole console shown when the port changes, so it stays bound to that host", async () => {
+    // The host came from BambuStudio, so tui.json had none: the port must not end up saved for any host.
+    const h = await start({ host: "10.0.0.9", https: true });
+    await onPage(h, "SpoolEase");
+    await retype(h, "Port", "8080");
+    expect((await loadTuiSettings()).console).toEqual({
+      host: "10.0.0.9",
+      port: 8080,
+      https: true,
+    });
+  });
+
+  it("saves the whole console shown when HTTPS changes", async () => {
+    const h = await start({ host: "10.0.0.9", port: "8443" });
+    await onPage(h, "SpoolEase");
+    await onRow(h, "Use HTTPS");
+    await h.press("enter");
+    expect((await loadTuiSettings()).console).toEqual({
+      host: "10.0.0.9",
+      port: 8443,
+      https: true,
+    });
+  });
+
+  it("saves the whole console shown, never the key, when the key is saved", async () => {
+    const h = await start({ host: "10.0.0.9", port: "8443", https: true });
+    await onPage(h, "SpoolEase");
+    await retype(h, "Security key", "NEWKEY");
+    expect((await loadTuiSettings()).console).toEqual({
+      host: "10.0.0.9",
+      port: 8443,
+      https: true,
+    });
+    expect(await readFile(tuiSettingsPath(), "utf-8")).not.toContain("NEWKEY");
+  });
+
+  it("saves the port and HTTPS shown with a changed host", async () => {
+    await rememberConsole({ host: "10.0.0.5", port: 81 });
+    const h = await start({ host: "10.0.0.5", port: "8080", https: true });
+    await onPage(h, "SpoolEase");
+    await retype(h, "Host", "10.0.0.6");
+    expect((await loadTuiSettings()).console).toEqual({
+      host: "10.0.0.6",
+      port: 8080,
+      https: true,
+    });
   });
 
   it("keeps a typed key for the session and says why when the keyring can't take it", async () => {

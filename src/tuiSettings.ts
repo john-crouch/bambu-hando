@@ -125,10 +125,13 @@ export function rememberWeight(
   });
 }
 
-/** Remembers a change to the console's host, port or HTTPS beside the rest; an empty host forgets it. */
-export function rememberConsole(change: SavedConsole, path = tuiSettingsPath()): Promise<void> {
+/**
+ * Remembers the console (host, port, HTTPS) as one, replacing the saved one, so a port or HTTPS saved for one host
+ * never stays behind for another; the parts left out (an empty host too) are forgotten.
+ */
+export function rememberConsole(console: SavedConsole, path = tuiSettingsPath()): Promise<void> {
   return serially(async () => {
-    const current = await loadTuiSettings(path);
-    await write({ ...current, console: { ...current.console, ...change } }, path);
+    const { console: _old, ...current } = await loadTuiSettings(path);
+    await write({ ...current, console }, path);
   });
 }

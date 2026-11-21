@@ -149,11 +149,9 @@ describe("TUI settings", () => {
     expect(await loadTuiSettings()).toEqual({ printers: [] });
   });
 
-  it("remembers the console's host, port and HTTPS, each change kept beside the rest", async () => {
+  it("remembers the console's host, port and HTTPS as one, beside the rest", async () => {
     await saveTuiSettings({ printers: ["Printer A 0.4 nozzle"] });
-    await rememberConsole({ host: "10.0.0.5" });
-    await rememberConsole({ port: 8080 });
-    await rememberConsole({ https: true });
+    await rememberConsole({ host: "10.0.0.5", port: 8080, https: true });
     await rememberWeight("sunlu", { kind: "source" });
     await saveTuiSettings({ printers: ["Printer B 0.4 nozzle"] });
     expect(await loadTuiSettings()).toEqual({
@@ -163,19 +161,23 @@ describe("TUI settings", () => {
     });
   });
 
-  it("forgets the host when it's saved empty, and keeps changes made at once", async () => {
-    await Promise.all([
-      rememberConsole({ host: "spoolease.local" }),
-      rememberConsole({ port: 81 }),
-      rememberConsole({ https: false }),
-    ]);
-    expect((await loadTuiSettings()).console).toEqual({
-      host: "spoolease.local",
-      port: 81,
-      https: false,
-    });
-    await rememberConsole({ host: "  " });
+  it("replaces the whole saved console, so a port or HTTPS never outlives the host it was saved with", async () => {
+    await rememberConsole({ host: "spoolease.local", port: 81, https: true });
+    await rememberConsole({ host: "10.0.0.6", port: 80 });
+    expect((await loadTuiSettings()).console).toEqual({ host: "10.0.0.6", port: 80 });
+    await rememberConsole({ host: "  ", port: 81, https: false });
     expect((await loadTuiSettings()).console).toEqual({ port: 81, https: false });
+    await rememberConsole({});
+    expect(await loadTuiSettings()).toEqual({ printers: [] });
+  });
+
+  it("ends overlapping console saves with one of them whole", async () => {
+    const consoles = [
+      { host: "a", port: 81, https: true },
+      { host: "b", port: 82, https: false },
+    ];
+    await Promise.all(consoles.map((console) => rememberConsole(console)));
+    expect(consoles).toContainEqual((await loadTuiSettings()).console);
   });
 
   it("never keeps a security key in the file, even one handed to it", async () => {

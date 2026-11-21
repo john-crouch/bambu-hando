@@ -142,14 +142,22 @@ function apply(model: SettingsModel, change: Change, ctx: Ctx): Step<SettingsMod
   return [next, cmds];
 }
 
-/** The host, port or HTTPS a change sets anew, for tui.json; null when it sets none of them. */
+/**
+ * The whole console for tui.json (the host shown, its port and HTTPS) when a change sets the host, port, HTTPS or key
+ * anew, so what's saved stays bound to one host; null otherwise. The key itself goes to the keyring, never here.
+ */
 function consoleChange(values: Partial<FormValues>, ctx: Ctx): SavedConsole | null {
-  const change: SavedConsole = {};
-  if (values.host !== undefined && values.host !== ctx.values.host) change.host = values.host;
-  if (values.port !== undefined && values.port !== ctx.values.port)
-    change.port = Number(values.port.trim());
-  if (values.https !== undefined && values.https !== ctx.values.https) change.https = values.https;
-  return Object.keys(change).length > 0 ? change : null;
+  const changed = (["host", "port", "https", "securityKey"] as const).some(
+    (key) => values[key] !== undefined && values[key] !== ctx.values[key],
+  );
+  return changed ? savedConsole({ ...ctx.values, ...values }) : null;
+}
+
+/** The console as Settings shows it, as tui.json keeps it. */
+function savedConsole(values: FormValues): SavedConsole {
+  const host = values.host.trim();
+  const port = validPort(values.port);
+  return { ...(host ? { host } : {}), ...(port === null ? {} : { port }), https: values.https };
 }
 
 function openRow(model: SettingsModel, ctx: Ctx): Step<SettingsModel> {
@@ -306,7 +314,11 @@ function textEdited(
   if (open.field !== "securityKey" || !("values" in result.change)) return [applied, cmds];
   // Saved on every commit, changed or not, so a key that came from BambuStudio or a flag can be kept.
   const key = result.change.values.securityKey ?? "";
-  return [applied, [...cmds, key ? saveKey(key) : forgetKey()]];
+  // The key stays bound to the console shown: an unchanged key is saved again, and so is its console.
+  const console = consoleChange(result.change.values, ctx)
+    ? []
+    : [saveConsole(savedConsole({ ...ctx.values, ...result.change.values }))];
+  return [applied, [...cmds, ...console, key ? saveKey(key) : forgetKey()]];
 }
 
 function keyStep(model: SettingsModel, key: KeyPress, ctx: Ctx): Step<SettingsModel> {
