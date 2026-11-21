@@ -392,8 +392,13 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   const exitCode: 1 | 2 | undefined = ok ? undefined : msg.setupError ? 2 : 1;
   const files = new Map(model.files);
   for (const result of msg.results) files.delete(result.path);
+  // The edits stay a draft on each preset they didn't save to; the edited preset's goes once it saved.
   const drafts = new Map(model.drafts);
-  drafts.delete(msg.path);
+  for (const result of msg.results) {
+    if (result.ok) {
+      if (result.path === msg.path) drafts.delete(result.path);
+    } else drafts.set(result.path, new Map([...(drafts.get(result.path) ?? []), ...review.edits]));
+  }
   const appMsgs: AppMsg[] = [
     { type: "app/runFinished", summary: { ok, lines, ...(exitCode ? { exitCode } : {}) } },
     { type: "app/load", resource: "presets", force: true },

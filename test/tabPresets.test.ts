@@ -839,6 +839,22 @@ describe("saving", () => {
     });
     // The review's own page says how it went: no toast on top of it.
     expect(sent.some((msg) => msg.type === "app/toast")).toBe(false);
+    // The edits stay a draft where they didn't save, and the saved preset's draft goes.
+    expect([...model.drafts.keys()]).toEqual([presets[2]?.path]);
+    expect(model.drafts.get(presets[2]?.path ?? "")).toEqual(reviewing.review?.edits);
+    const back = (await drive(model, ctx, "esc")).model;
+    expect([...back.drafts.keys()]).toEqual([presets[2]?.path]);
+  });
+
+  it("keeps the edits as the preset's draft when it couldn't save the preset they were made on", async () => {
+    const ctx = ctxWith();
+    const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
+    await rm(presets[0]?.path ?? "");
+    await rm(presets[2]?.path ?? "");
+    const { model } = await drive(reviewing, ctx, "a");
+    expect(model.review?.results?.map((r) => r.ok)).toEqual([false, false]);
+    expect([...model.drafts.keys()]).toEqual([presets[0]?.path, presets[2]?.path]);
+    expect(model.drafts.get(presets[0]?.path ?? "")).toEqual(reviewing.review?.edits);
   });
 
   it("counts a key SpoolEase rejects while saving its range as a setup error, exit code 2", async () => {
