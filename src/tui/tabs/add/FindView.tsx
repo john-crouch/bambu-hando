@@ -325,13 +325,27 @@ function CompactColor({
 }
 
 /** A material's colors with their nozzle ranges in one aligned column. */
+/** The rows a list in the detail panel shows: all that fit, else one fewer and "… N more". */
+function clip<T>(items: T[], height: number): { shown: T[]; more: number } {
+  if (items.length <= height) return { shown: items, more: 0 };
+  const shown = items.slice(0, Math.max(0, height - 1));
+  return { shown, more: items.length - shown.length };
+}
+
+function MoreLine({ more, width }: { more: number; width: number }) {
+  return more > 0 ? <Line width={width} segments={[muted(` … ${more} more`)]} /> : null;
+}
+
 function MaterialColors({
-  colors,
+  colors: all,
   width,
+  height,
 }: {
   colors: Extract<FindDetail, { kind: "material" }>["colors"];
   width: number;
+  height: number;
 }) {
+  const { shown: colors, more } = clip(all, height);
   const temps = colors.map((p) => formatRange(p.nozzleTempMin, p.nozzleTempMax));
   const tempWidth = Math.max(0, ...temps.map(textWidth));
   const nameWidth = Math.max(
@@ -355,6 +369,7 @@ function MaterialColors({
           ]}
         />
       ))}
+      <MoreLine more={more} width={width} />
     </>
   );
 }
@@ -382,19 +397,24 @@ function DetailBody({
             ))}
         </>
       );
-    case "brand":
+    case "brand": {
+      const { shown, more } = clip(detail.materials, height);
       return (
-        <Detail
-          width={width}
-          rows={detail.materials.map((m) => ({
-            label: m.label,
-            value: `${plural(m.count, "color")}${m.ticked ? ` · ${m.ticked} ticked` : ""}`,
-            ...(m.ticked ? { tone: "ok" as const } : {}),
-          }))}
-        />
+        <>
+          <Detail
+            width={width}
+            rows={shown.map((m) => ({
+              label: m.label,
+              value: `${plural(m.count, "color")}${m.ticked ? ` · ${m.ticked} ticked` : ""}`,
+              ...(m.ticked ? { tone: "ok" as const } : {}),
+            }))}
+          />
+          <MoreLine more={more} width={width} />
+        </>
       );
+    }
     case "material":
-      return <MaterialColors colors={detail.colors} width={width} />;
+      return <MaterialColors colors={detail.colors} width={width} height={height} />;
     case "color":
       if (compact) return <CompactColor detail={detail} width={width} height={height} />;
       return (

@@ -15,7 +15,7 @@ import { addTab } from "../src/tui/tabs/add/index.js";
 import type { AddModel } from "../src/tui/tabs/add/model.js";
 import { planBasis } from "../src/tui/tabs/add/targets.js";
 import { textWidth, theme } from "../src/tui/ui/index.js";
-import { ctx as baseCtx } from "./tabAddHarness.js";
+import { ctx as baseCtx, catalog, profile } from "./tabAddHarness.js";
 
 function sized(columns: number, rows: number, values = {}): Ctx {
   return { ...baseCtx({ values }), columns, rows, bodyColumns: columns, bodyRows: rows - 2 };
@@ -348,5 +348,45 @@ describe("a narrow table", () => {
       );
       expect(text).not.toMatch(/spo…|filaments \+ new…/);
     }
+  });
+});
+
+describe("a short detail panel", () => {
+  const many = ["Red", "Blue", "Green", "Teal", "Gold", "Grey", "Pink"].map((colorName, i) =>
+    profile({ colorName, filamentId: `PMANY${i}00`.slice(0, 8) }),
+  );
+  const materials = ["PLA", "PETG", "ABS", "ASA", "TPU", "PC"].map((material, i) =>
+    profile({ brand: "Wide", material, filamentId: `PWIDE${i}00`.slice(0, 8) }),
+  );
+  const c: Ctx = {
+    ...baseCtx({
+      resources: {
+        catalog: {
+          state: "ready",
+          value: catalog([
+            ...many,
+            profile({ material: "PETG", filamentId: "PACMPETG" }),
+            ...materials,
+          ]),
+          at: 0,
+        },
+      },
+    }),
+    columns: 60,
+    rows: 20,
+    bodyColumns: 60,
+    bodyRows: 18,
+  };
+
+  it("says how many more materials a brand has than it shows", () => {
+    const text = screen(afterMsgs(c, "down"), c).join("\n");
+    expect(text).toMatch(/Wide ─+╮/);
+    expect(text).toMatch(/… \d more/);
+  });
+
+  it("says how many more colors a material has than it shows", () => {
+    const text = screen(afterMsgs(c, "enter", "down"), c).join("\n");
+    expect(text).toMatch(/Acme PLA ─+╮/);
+    expect(text).toMatch(/… \d more/);
   });
 });
