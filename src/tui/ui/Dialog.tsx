@@ -22,8 +22,16 @@ export function dialogInner(width: number): number {
   return Math.max(0, width - 2 * SIDE);
 }
 
-/** Below this many free columns, a dialog takes the whole width: thinner margins only show slivers of the body. */
-const MIN_MARGINS = 12;
+/**
+ * Below this many free columns, a dialog takes the whole width: thinner margins (less the halo Frame
+ * clears round it) only show slivers of the body.
+ */
+const MIN_MARGINS = 16;
+
+/** Rows a dialog may take in a body of rows: all but the halo's row above and below it. */
+export function dialogRows(rows: number): number {
+  return Math.max(0, rows - 2);
+}
 
 /** A dialog's width in a body of columns: the width it wants, or all of it when the margins would be slivers. */
 export function dialogWidth(columns: number, wanted: number): number {

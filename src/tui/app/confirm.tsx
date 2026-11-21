@@ -4,7 +4,7 @@
 import { Box } from "ink";
 
 import type { ConfirmRequest, Ctx, Hint } from "../core/types.js";
-import { Dialog, dialogInner, dialogWidth, Line, textWidth } from "../ui/index.js";
+import { Dialog, dialogInner, dialogWidth, Line, textWidth, wrapText } from "../ui/index.js";
 import { closeThen, type ShellMsg, type ShellOverlay } from "./messages.js";
 
 /** The shell's own questions also take other apply keys (quit with q as well as a) and name what esc does. */
@@ -45,13 +45,22 @@ export function confirmWidth(request: ShellConfirmRequest, columns: number): num
   return dialogWidth(columns, Math.min(Math.max(30, longest + 6), 80));
 }
 
+/** The lines wrapped to width at spaces, never cut; a wrapped line's rest keeps its indent. A blank line stays. */
+export function confirmLines(lines: readonly string[], width: number): string[] {
+  return lines.flatMap((line) => {
+    const indent = /^\s*/.exec(line)?.[0] ?? "";
+    const wrapped = wrapText(line, Math.max(1, width - textWidth(indent)));
+    return wrapped.length > 0 ? wrapped.map((part) => indent + part) : [""];
+  });
+}
+
 function ConfirmView({ model, ctx }: { model: ConfirmModel; ctx: Ctx }) {
   const { request } = model;
   const width = confirmWidth(request, ctx.columns);
   return (
     <Dialog title={request.title} width={width}>
       <Box flexDirection="column">
-        {request.lines.map((line, index) => (
+        {confirmLines(request.lines, dialogInner(width)).map((line, index) => (
           // Lines may repeat (two blank ones), so the index keeps keys unique.
           // biome-ignore lint/suspicious/noArrayIndexKey: the lines never reorder.
           <Line key={index} segments={[{ text: line }]} width={dialogInner(width)} />

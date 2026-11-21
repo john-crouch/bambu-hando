@@ -313,6 +313,41 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     );
   });
 
+  it("floats help in a blank halo over the body, as the terminal draws it", async () => {
+    // Spools whose rows run under the dialog's sides, so a missing halo shows.
+    for (let id = 1; id <= 30; id++)
+      server.spools.push({
+        id: String(id),
+        brand: "Polymaker",
+        material_type: "PETG",
+        color_name: "Very Long Color Name That Runs Under The Dialog",
+        color_code: "112233FF",
+        weight_advertised: "1000",
+        weight_current: "500",
+        slicer_filament: "PABC1234",
+      });
+    const t = start(consoleFlags());
+    await t.waitFor("#30");
+
+    await t.pressEach("?");
+    const lines = await t.waitForScreen(
+      (screen) => screen.some((line) => line.includes("quit right away")),
+      "help's last key",
+    );
+    const top = lines.findIndex((line) => line.includes("╭ Help · Spools"));
+    const bottom = lines.findIndex((line, index) => index > top && line.includes("╰"));
+    const left = lines[top]?.indexOf("╭") ?? -1;
+    const right = lines[top]?.indexOf("╮", left) ?? -1;
+    expect([top > 1, bottom > top, left > 1, right > left]).toEqual([true, true, true, true]);
+    // A blank cell each side of every row of it, and blank rows above and below it.
+    for (let row = top; row <= bottom; row++) {
+      expect(lines[row]?.[left - 1], `row ${row}`).toBe(" ");
+      expect(lines[row]?.[right + 1], `row ${row}`).toBe(" ");
+    }
+    for (const row of [top - 1, bottom + 1])
+      expect(lines[row]?.slice(left - 1, right + 2).trim(), `row ${row}`).toBe("");
+  });
+
   it("finds a command in the palette with ctrl+k and runs it", async () => {
     const t = start(consoleFlags());
     await t.waitFor("Spools");

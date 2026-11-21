@@ -42,13 +42,19 @@ tab, and every action shows its consequence before it writes.
 - **Body**: the tab. Most tabs are a list panel and a detail panel side by side; below 90 columns the
   detail panel moves under the list or opens with `enter`.
 - **Footer** (1 line): the keys for the focused context, `key` in accent and its meaning dim: the
-  tab's at the left, the global ones at the right end. When narrow the tab's keys give way first; `?
-  help` is never dropped. A toast ("✓ 3 labels sent to DYMO") draws over the body's last line (a
-  panel's bottom border), two columns in, for a few seconds, so it never pushes keys out.
-- **Overlays**: help (`?`), the command palette (`ctrl+k`), confirm dialogs and small forms (a count, a
-  barcode, an unlisted color, labels) draw as a centered bordered panel over the body, which goes gray
-  and dim behind it. A dialog whose margins would be under 6 columns a side (`dialogWidth`) takes the
-  body's whole width instead, so no sliver of the body shows beside it.
+  tab's at the left (its primary keys kept first when narrow), the global ones at the right end as
+  `ctrl+k commands  tab next tab  ? help  q quit`. When narrow the global keys give way in that order
+  from the left, always the same way (ctrl+k, then tab, then q); `? help` is never dropped. A toast
+  ("✓ 3 labels sent to DYMO") takes the body's whole last row on a quiet bar for a few seconds, so it
+  never pushes keys out and nothing under it shows beside it.
+- **Dialogs**: help (`?`), the command palette (`ctrl+k`), confirm dialogs and a tab's own dialogs (a
+  count, a barcode, an unlisted color) and the labels form draw as a centered bordered panel over the
+  body, which goes gray and dim behind it. A tab never draws a dialog inside its View: it returns it
+  from `dialog(model, ctx)` and the shell draws it in the frame's dialog layer; a shell overlay opened
+  on top dims the tab's dialog too. Every dialog floats in a halo of one blank cell, so the body never
+  runs into its border; one with under 16 free columns (`dialogWidth`) takes the body's whole width
+  instead, so no sliver of the body shows beside it, and `dialogRows` is the height that leaves the
+  halo's rows. Dialog text wraps; it is never cut.
 
 ## Keys
 
@@ -69,8 +75,9 @@ tab, and every action shows its consequence before it writes.
 
 Text fields take every printable key, so `q`, `?` and letters type there; the footer says so.
 
-A tab's own dialog (`modal`) and an overlay take every key but ctrl+c, `q` and `tab` included; the
-footer then shows only their keys, and dialogs draw no key line of their own (one place for keys).
+A tab's own dialog (`modal`, drawn from `dialog`) and an overlay take every key but ctrl+c, `q` and
+`tab` included; the footer then shows only their keys, and dialogs draw no key line of their own (one
+place for keys).
 `q` with unsaved changes in any tab (`unsaved`) asks "Quit and drop N unsaved changes?" (`q`/`a` quit,
 `esc` stays); a write in progress (`busy`) still refuses to quit.
 
@@ -156,16 +163,17 @@ terminal), so components render the same in tests and in a terminal.
 | Component | Props | Draws |
 |---|---|---|
 | `theme.ts` | `COLORS` (`accent`, `accent2`, `ok`, `warning`, `failed`, `muted`, `selection`, `selectionText`, `border`), `GRADIENT`, the `@inkjs/ui` theme | colors only |
-| `Frame` | `columns`, `rows`, `header`, `footer`, `overlay?`, `children` | full-screen column: header, body (flex), footer; an overlay draws centered over the body |
+| `Frame` | `columns`, `rows`, `header`, `footer`, `dialog?`, `overlay?`, `toast?`, `children` | full-screen column: header, body (flex), footer; the tab's dialog, then the shell's overlay, draw centered over the dimmed body in a one-cell blank halo; the toast is the body's last row |
 | `Header` | `tabs: {id,title,badge?}[]`, `active`, `status: {console: "ok"\|"failed"\|"checking"\|"skipped", consoleText, printerText}`, `columns` | gradient name, tab pills (active in accent background), right-aligned status |
-| `Footer` | `hints: Hint[]`, `columns`, `toast?: {text, tone}` | `key` accent, label dim, two spaces apart; fewer hints (primary first) when narrow; toast at the right |
+| `Footer` | `hints: Hint[]`, `global?: Hint[]`, `columns` | `key` accent, label dim, two spaces apart; the tab's hints (primary first) when narrow; global hints at the right end, dropped from the left (`fitGlobal`), primary never |
 | `Panel` | `title`, `subtitle?`, `focused?`, `width?`, `height?`, `grow?`, `children`, `footerRight?` (e.g. "12/41") | rounded border; title and subtitle inside the top border line (`╭ Title · sub ───╮`), accent when focused, dim otherwise; footerRight inside the bottom border |
-| `List` | `rows: ListRow[]`, `cursor`, `height`, `width`, `marker?: "check" \| "none"`, `highlight?: string` (filter text to highlight) | scrolling rows with the cursor row as a full-width selection bar, `[✓]`/`[ ]` ticks, swatch cells, columns; keeps the cursor in view; `listWindow(cursor, count, height)` exported pure |
+| `List` | `rows: ListRow[]`, `cursor`, `height`, `width`, `marker?: "check" \| "radio" \| "none"`, `highlight?: string` (filter text to highlight) | scrolling rows with the cursor row as a full-width selection bar, `[✓]`/`[ ]` ticks, or for one-of choices `●` on the chosen (ticked) row and `○` on the rest; swatch cells, columns; keeps the cursor in view; `listWindow(cursor, count, height)` exported pure |
 | `ListRow` | `{ key, cells: Cell[], ticked?, swatch?: "#RRGGBB", dim?, tone? }`, `Cell = { text, width?: number, grow?: boolean, align?: "left"\|"right", color?, dim? }` | one cell per column; exactly one `grow` cell takes the remaining width and is cut with `…` |
 | `Detail` | `rows: {label, value, tone?, dim?}[]`, `labelWidth?` | aligned label/value lines |
 | `Swatch` | `color`, `width`, `height?` | a block of the color (background-colored spaces) |
 | `PageBar` | `pages: {id,title,state: "done"\|"current"\|"todo"\|"disabled", badge?}[]` | `✓ Find ─ ▸ Weights ─ Review`, current in accent |
-| `Dialog` | `title`, `width?`, `children`, `hints` | a centered bordered box in accent, with its own key line |
+| `Dialog` | `title`, `width?`, `note?`, `children` | a bordered box in accent (gray and dim on a backdrop), painted opaque; its keys go in the footer; `dialogWidth(columns, wanted)`, `dialogRows(rows)`, `dialogInner(width)` size it |
+| `Toast` | `toast: {text, tone?}`, `width` | the toast as one whole row on the toast bar, icon from the tone |
 | `TextField` | `value`, `cursor`, `focused`, `placeholder?`, `mask?`, `width` | an input line with a visible cursor; pure helpers `editText(state, key)` for typing, backspace, ←/→, home/end, delete, bursts |
 | `Busy` | `message` | spinner + message (existing API) |
 | `Empty` | `title`, `lines`, `action?: Hint` | a centered empty state saying what to do |
@@ -175,4 +183,6 @@ terminal), so components render the same in tests and in a terminal.
 Pure helpers live beside their component and are what tab updates call: `listWindow`, `moveCursor(cursor,
 key, count, pageRows)` (↑↓ pgup pgdn home end, no wrap), `typeAhead(labels, cursor, letter)`,
 `filterRows(labels, text)` (words in any order, case-insensitive, returns match ranges for `highlight`),
-`editText`.
+`editText`, `wrapText(text, width)` (words, never cut). `format.ts` spells values one way: `formatTemp`,
+`formatRange`, `formatGrams`, `shortPrinter`, `plural`, and `fitPath(path, width)` (HOME as `~`, folders
+cut from the middle so the file name stays: `~/…/base/Polymaker PETG @X1C 0.4.json`).
