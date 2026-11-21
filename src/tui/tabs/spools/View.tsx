@@ -299,6 +299,7 @@ function EmptyState({ ctx, width, height }: { ctx: Ctx; width: number; height: n
           title="Couldn't read the console's spools"
           lines={[
             ...wrapText(screen.error, Math.min(inner.width - 4, 60)),
+            "",
             ...wrapText(consoleProblem(screen.error).advice, Math.min(inner.width - 4, 60)),
           ]}
           action={{ keys: "enter", label: "open Settings" }}

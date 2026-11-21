@@ -83,7 +83,7 @@ export function consoleProblem(error: string): ConsoleProblem {
   if (/bad port/i.test(error))
     return {
       focus: "spoolease.port",
-      advice: "That port is one fetch refuses to use: check the port, 80 unless you changed it.",
+      advice: "That port is blocked for web requests: check the port, 80 unless you changed it.",
     };
   if (/ECONNREFUSED/.test(error))
     return {
