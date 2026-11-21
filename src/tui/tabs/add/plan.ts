@@ -131,11 +131,11 @@ function editNote(
   const goes = (named && named.length > 0 ? named.length : count) === 1 ? "goes" : "go";
   if (written === 0)
     return {
-      text: `✎ ${profile.filamentId}: the run keeps its presets, so ${named?.length ? changes : `its ${changes}`} ${goes} nowhere`,
+      text: `✎ ${profile.name}: the run keeps its presets, so ${named?.length ? changes : `its ${changes}`} ${goes} nowhere`,
       tone: "failed",
     };
   return {
-    text: `✎ ${profile.filamentId}: ${changes} ${goes} into the ${plural(written, "preset")} the run writes`,
+    text: `✎ ${profile.name}: ${changes} ${goes} into the ${plural(written, "preset")} the run writes`,
     tone: "warning",
   };
 }
@@ -159,7 +159,7 @@ export function planNotes(
     const profile = profiles[index];
     if (profile && plan.filament?.state === "update")
       notes.push({
-        text: `↻ ${profile.filamentId} is ${plan.filament.listed} on SpoolEase; the run changes it to ${plan.filament.becomes}`,
+        text: `↻ ${profile.name} is ${plan.filament.listed} on SpoolEase; the run changes it to ${plan.filament.becomes}`,
         tone: "warning",
       });
   });
@@ -273,7 +273,7 @@ export const COLUMN_TITLES: Record<TableColumn, string> = {
   name: "Name",
   brand: "Brand",
   material: "Material",
-  temps: "Nozzle",
+  temps: "Range",
   code: "Code",
   empty: "Empty",
   preset: "Preset",
@@ -350,8 +350,9 @@ const MATERIAL_MAX = 10;
 /**
  * The plan table's columns fitted to `width` (the list's width), sized from the rows' own values.
  * A brand or material all rows share moves to the title; names leave out what a column or the title
- * says. When the name would be cut, the code goes first, then the empty weight, then the brand and
- * material columns (the names then say them); past that the status columns and temperatures shrink.
+ * says. When the name would be cut, the code goes first, then the empty weight; when it would be cut
+ * below NAME_MIN, the brand and material columns too (the names then say them); past that the status
+ * columns and temperatures shrink.
  */
 export function planLayout(rows: PlanRow[], width: number): PlanLayout {
   // A column's span is its cell plus the gap after it; the last cell's gap is the one LIST_EDGES leaves.
@@ -414,6 +415,31 @@ export function planLayout(rows: PlanRow[], width: number): PlanLayout {
     );
   const fixed = () =>
     TABLE_COLUMNS.reduce((sum, key) => sum + (key === "name" ? 0 : shown[key]), 0);
+  // The name is what tells rows apart: the code and the empty weight give way before any of it is cut.
+  for (const drop of ["code", "empty"] as const) {
+    if (fixed() + nameWant() <= room) break;
+    shown[drop] = 0;
+  }
+  // Before a run the status columns needn't keep room for the run's words: the run sizes them again.
+  if (fixed() + nameWant() > room && rows.every((r) => r.preset.kind === "plan")) {
+    shown.preset = span(
+      COLUMN_TITLES.preset,
+      rows.map((r) => statusLabel(r.preset)),
+    );
+    if (shown.spool > 0)
+      shown.spool = span(
+        COLUMN_TITLES.spool,
+        rows.map((r) => statusLabel(r.spool)),
+      );
+  }
+  // Brand and material columns go too when that makes every name whole (the names then say them).
+  if (fixed() + nameWant() > room && (shown.brand > 0 || shown.material > 0)) {
+    const kept = { brand: shown.brand, material: shown.material, stripBrand, stripMaterial };
+    if (shown.brand > 0) [shown.brand, stripBrand] = [0, false];
+    if (shown.material > 0) [shown.material, stripMaterial] = [0, false];
+    if (fixed() + nameWant() > room)
+      ({ brand: shown.brand, material: shown.material, stripBrand, stripMaterial } = kept);
+  }
   const fits = () => fixed() + Math.min(nameWant(), NAME_MIN + 1) <= room;
   for (const drop of ["code", "empty", "columns"] as const) {
     if (fits()) break;

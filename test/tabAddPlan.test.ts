@@ -7,6 +7,7 @@ import type { SyncResult } from "../src/models.js";
 import type { ProfilePlan } from "../src/planPreview.js";
 import {
   applyEvent,
+  COLUMN_TITLES,
   finishedProfiles,
   fitColumns,
   type PlanRow,
@@ -126,22 +127,34 @@ describe("planRows", () => {
   });
 });
 
+describe("the table's columns", () => {
+  it("titles the temperature column for what it shows: the nozzle range SpoolEase gets", () => {
+    expect(COLUMN_TITLES.temps).toBe("Range");
+  });
+});
+
 describe("planNotes", () => {
   const edits = new Map([["P1234567", new Map([["filament_flow_ratio", { every: "0.95" }]])]]);
 
   it("says which presets the plan's edits go into", () => {
     expect(planNotes([LONG], [plan({ presets: 2, existingPresets: 1 })], false, edits)).toEqual([
-      { text: "✎ P1234567: 1 change goes into the 1 preset the run writes", tone: "warning" },
+      {
+        text: "✎ Polymaker PolyLite PETG Galaxy Black: 1 change goes into the 1 preset the run writes",
+        tone: "warning",
+      },
       {
         text: "= kept: 1 preset is there already and stays as it is; Overwrite presets in Settings replaces it",
         tone: "muted",
       },
     ]);
     expect(planNotes([LONG], [plan({ presets: 2, existingPresets: 1 })], true, edits)).toEqual([
-      { text: "✎ P1234567: 1 change goes into the 2 presets the run writes", tone: "warning" },
+      {
+        text: "✎ Polymaker PolyLite PETG Galaxy Black: 1 change goes into the 2 presets the run writes",
+        tone: "warning",
+      },
     ]);
     expect(planNotes([LONG], [plan({ existingPresets: 1 })], false, edits)[0]).toEqual({
-      text: "✎ P1234567: the run keeps its presets, so its 1 change goes nowhere",
+      text: "✎ Polymaker PolyLite PETG Galaxy Black: the run keeps its presets, so its 1 change goes nowhere",
       tone: "failed",
     });
   });
@@ -159,7 +172,7 @@ describe("planNotes", () => {
       }),
     ];
     expect(planNotes([LONG], plans, false, new Map()).map((n) => n.text)).toEqual([
-      "↻ P1234567 is Acme Black 200-220 °C on SpoolEase; the run changes it to Acme Black 230-240 °C",
+      "↻ Polymaker PolyLite PETG Galaxy Black is Acme Black 200-220 °C on SpoolEase; the run changes it to Acme Black 230-240 °C",
       "= kept: 1 preset is there already and stays as it is; Overwrite presets in Settings replaces it",
       "has spool: the console has a spool of it already, so it gets no new one",
     ]);
@@ -314,6 +327,35 @@ describe("planLayout", () => {
     const tight = planLayout(same, 46);
     expect(tight.widths.code).toBe(0);
     expect(tight.widths.empty).toBe(0);
+  });
+
+  it("keeps a name whole before it shows the code or the empty weight", () => {
+    const hojor = [
+      row({ name: "3DHoJor ABS+ Brown", brand: "3DHoJor", material: "ABS+", temps: "230–270°C" }),
+      row({
+        name: "3DHoJor PLA Crystal Rainbow Flame",
+        brand: "3DHoJor",
+        material: "PLA",
+        temps: "210–220°C",
+      }),
+    ];
+    const layout = planLayout(hojor, 78);
+    expect(layout.widths.name).toBeGreaterThanOrEqual("Crystal Rainbow Flame".length);
+    expect(layout.widths.code).toBe(0);
+    expect(planLayout(hojor, 116).widths.code).toBe(8);
+  });
+
+  it("before a run, status columns take only the plan's words when that keeps a name whole", () => {
+    const three = [
+      row({ name: "3DHoJor ABS+ Brown", brand: "3DHoJor", material: "ABS+" }),
+      row({ name: "3DHoJor PLA-CF Brown", brand: "3DHoJor", material: "PLA-CF" }),
+      row({ name: "3DHoJor PLA Crystal Rainbow Flame", brand: "3DHoJor", material: "PLA" }),
+    ];
+    const planned = planLayout(three, 60);
+    expect(planned.widths.name).toBeGreaterThanOrEqual("PLA Crystal Rainbow Flame".length);
+    expect(planned.widths.preset).toBe("Preset".length);
+    const running = three.map((r) => ({ ...r, preset: { kind: "working" as const } }));
+    expect(planLayout(running, 60).widths.preset).toBe("✓ written".length);
   });
 
   it("gives up brand and material columns on a narrow mixed table, names then whole", () => {

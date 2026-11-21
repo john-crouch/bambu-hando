@@ -130,11 +130,15 @@ const TARGET_LABEL = 11;
 /** The targets card: every place the run writes to. */
 function targetRows(ctx: Ctx, width: number): DetailRow[] {
   const t = runTargets(ctx.values);
+  // The words after the URL, fewer of them when the card is narrow, so none is cut.
+  const writes = t.createSpools
+    ? ["filaments + new spools", "filaments + spools", "+ new spools"]
+    : ["filaments only"];
+  const room = width - TARGET_LABEL - 1;
+  const what = writes.find((w) => textWidth(`${t.consoleUrl} · ${w}`) <= room) ?? writes.at(-1);
   const spoolease =
     t.console === "ready"
-      ? {
-          value: `${t.consoleUrl} · ${t.createSpools ? "filaments + new spools" : "filaments only"}`,
-        }
+      ? { value: `${t.consoleUrl} · ${what}` }
       : t.console === "skipped"
         ? { value: "skipped", dim: true }
         : { value: "not set up: add the host and key in Settings (s)", tone: "failed" as const };

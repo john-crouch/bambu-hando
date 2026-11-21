@@ -22,7 +22,7 @@ function sized(columns: number, rows: number, values = {}): Ctx {
 }
 
 /** The model after the messages, commands dropped. */
-function after(context: Ctx, ...msgs: (AppMsg | TabMsg | string)[]): AddModel {
+function afterMsgs(context: Ctx, ...msgs: (AppMsg | TabMsg | string)[]): AddModel {
   let [model] = addTab.init(context, { query: "" });
   for (const msg of msgs) {
     const m: AppMsg | TabMsg = typeof msg === "string" ? { type: "key", key: press(msg) } : msg;
@@ -60,8 +60,8 @@ const CONSOLE = {
 /** Every page the tab has, in a representative state. */
 function pages(context: Ctx): [string, AddModel][] {
   const toColors = ["enter", "down", "enter"];
-  const reviewing = after(context, ...toColors, "space", "space", "right");
-  const ready = after(context, ...toColors, "space", "space", "right", {
+  const reviewing = afterMsgs(context, ...toColors, "space", "space", "right");
+  const ready = afterMsgs(context, ...toColors, "space", "space", "right", {
     type: "add/planRead",
     seq: reviewing.review.seq,
     plans: [plan(), plan({ existingPresets: 1 })],
@@ -83,10 +83,10 @@ function pages(context: Ctx): [string, AddModel][] {
     context,
   )[0];
   return [
-    ["brands", after(context)],
-    ["colors", after(context, ...toColors, "space")],
-    ["other color", after(context, ...toColors, "end", "enter", "right", "down", "Moss")],
-    ["search", after(context, "/", "acme pla", "enter", "space")],
+    ["brands", afterMsgs(context)],
+    ["colors", afterMsgs(context, ...toColors, "space")],
+    ["other color", afterMsgs(context, ...toColors, "end", "enter", "right", "down", "Moss")],
+    ["search", afterMsgs(context, "/", "acme pla", "enter", "space")],
     ["review loading", reviewing],
     ["review", ready],
     ["running", running],
@@ -115,7 +115,7 @@ describe.each([
   it("asks for weights in a panel per brand", () => {
     const spools = { ...CONSOLE, createSpools: true };
     const c = sized(columns, rows, spools);
-    const loading = after(c, "enter", "down", "enter", "space", "right");
+    const loading = afterMsgs(c, "enter", "down", "enter", "space", "right");
     const model = addTab.update(
       loading,
       {
@@ -170,7 +170,7 @@ describe("what the pages say", () => {
       [60, 20],
     ] as const) {
       const c = sized(columns, rows, { ...CONSOLE, createSpools: true });
-      const colorsPage = after(c, "enter", "down", "enter", "down");
+      const colorsPage = afterMsgs(c, "enter", "down", "enter", "down");
       const peeked = addTab.update(
         addTab.update(
           colorsPage,
@@ -250,7 +250,7 @@ describe("the preset editor on Review", () => {
     [120, 36],
   ])("fills the body at %ix%i and marks the edited row back on the plan", (columns, rows) => {
     const context = sized(columns, rows);
-    const model = after(context, "enter", "down", "enter", "space", "right");
+    const model = afterMsgs(context, "enter", "down", "enter", "space", "right");
     const ready = addTab.update(
       model,
       { type: "add/planRead", seq: model.review.seq, plans: [plan()], warnings: [] },
@@ -296,14 +296,14 @@ describe("the preset editor on Review", () => {
     )[0];
     const plan80 = screen(back, context).join("\n");
     expect(plan80).toContain("✎ Black");
-    expect(plan80).toContain("✎ PACMBLK0: 1 change goes into the 1 preset the run writes");
+    expect(plan80).toContain("✎ Acme PLA Black: 1 change goes into the 1 preset the run writes");
   });
 });
 
 describe("a narrow table", () => {
   it("drops brand and material below 100 columns and keeps the code", () => {
     const context = sized(80, 24);
-    const model = after(context, "enter", "down", "enter", "space", "right");
+    const model = afterMsgs(context, "enter", "down", "enter", "space", "right");
     const ready = addTab.update(
       model,
       {
@@ -315,8 +315,38 @@ describe("a narrow table", () => {
       context,
     )[0];
     const text = screen(ready, context).join("\n");
-    expect(text).toMatch(/Name\s+Nozzle\s+Code/);
+    expect(text).toMatch(/Name\s+Range\s+Code/);
     expect(text).not.toMatch(/Brand\s+Material/);
     expect(text).toContain("PACMBLK0");
+  });
+
+  it("names the console target in fewer words before it cuts them", () => {
+    for (const columns of [60, 80]) {
+      // A long host, so the card has to choose its words at 60 columns.
+      const context = sized(columns, 20, {
+        ...CONSOLE,
+        host: "spoolease-console.local",
+        createSpools: true,
+      });
+      const weighing = afterMsgs(context, "enter", "down", "enter", "space", "right");
+      const [model] = addTab.update(
+        weighing,
+        {
+          type: "add/weightsRead",
+          signature: weighing.weights.signature,
+          entries: parseSpoolWeightList("Acme - Plastic - 180g,180"),
+          warnings: [],
+          spooled: [],
+          remembered: {},
+        },
+        context,
+      );
+      expect(model.page).toBe("review");
+      const text = screen(model, context).join("\n");
+      expect(text, `${columns}`).toMatch(
+        /SpoolEase\s+http:\/\/spoolease-console\.local · (filaments )?\+ (new )?spools/,
+      );
+      expect(text).not.toMatch(/spo…|filaments \+ new…/);
+    }
   });
 });
