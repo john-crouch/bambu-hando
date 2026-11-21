@@ -7,6 +7,7 @@ import {
   type EditResult,
   type Edits,
   nozzleRange,
+  nozzleSpecific,
   type Preset,
   presetFamily,
 } from "../../../presetEdit.js";
@@ -62,7 +63,11 @@ export interface ReviewModel {
   changes: EditChange[];
   /** The preset, then the others with its filament ID. */
   targets: UserPreset[];
+  /** Each target's settings, read fresh for the review (the edited one's are the editor's). */
+  contents: ReadonlyMap<string, FileState>;
+  /** The rows (rowId: a change into a target) that save: material settings everywhere, nozzle-size ones into the edited preset. */
   ticked: ReadonlySet<string>;
+  /** Over reviewRows. */
   cursor: number;
   range: RangeState;
   phase: "review" | "saving" | "done";
@@ -235,6 +240,41 @@ function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsMode
   return [model, []];
 }
 
+/** One row of the review: a change going (when ticked) into one of the targets. */
+export interface ReviewRow {
+  id: string;
+  key: string;
+  path: string;
+  /** The change's first row, which names it. */
+  first: boolean;
+}
+
+export function rowId(key: string, path: string): string {
+  return `${key}\n${path}`;
+}
+
+/** The review's rows: each change, into each target in order. */
+export function reviewRows(review: ReviewModel): ReviewRow[] {
+  return review.changes.flatMap((change) =>
+    review.targets.map((target, index) => ({
+      id: rowId(change.key, target.path),
+      key: change.key,
+      path: target.path,
+      first: index === 0,
+    })),
+  );
+}
+
+/** What saving writes: each target its ticked edits, in targets order; targets with none left out. */
+export function targetEdits(review: ReviewModel): { path: string; edits: Edits }[] {
+  return review.targets.flatMap((target) => {
+    const edits = new Map(
+      [...review.edits].filter(([key]) => review.ticked.has(rowId(key, target.path))),
+    );
+    return edits.size > 0 ? [{ path: target.path, edits }] : [];
+  });
+}
+
 /** The review of the editor's edits: the targets, and SpoolEase's range when the edit changes it. */
 function startReview(
   model: PresetsModel,
@@ -252,12 +292,26 @@ function startReview(
     range !== null &&
     preset.filamentId !== "" &&
     connection !== null;
+  // A nozzle-size (or raw) setting is tuned for the preset it was made on: the others only when ticked.
+  const ticked = new Set(
+    changes.flatMap((change) =>
+      targets
+        .filter((target) => target.path === preset.path || !nozzleSpecific(change.key))
+        .map((target) => rowId(change.key, target.path)),
+    ),
+  );
+  const others = targets.filter((target) => target.path !== preset.path);
+  const contents = new Map<string, FileState>([
+    [preset.path, { state: "ready", preset: editor.original }],
+    ...others.map((target) => [target.path, { state: "loading" }] as [string, FileState]),
+  ]);
   const review: ReviewModel = {
     preset,
     edits,
     changes,
     targets,
-    ticked: new Set(targets.map((t) => t.path)),
+    contents,
+    ticked,
     cursor: 0,
     range: checks ? { state: "checking" } : { state: "none" },
     phase: "review",
@@ -267,9 +321,12 @@ function startReview(
   };
   return [
     { ...model, view: "review", review, editor: { preset, model: editor } },
-    checks && range && connection
-      ? [rangeCmd(preset.path, preset.filamentId, range, connection)]
-      : [],
+    [
+      ...others.map((target) => readPresetCmd(target.path)),
+      ...(checks && range && connection
+        ? [rangeCmd(preset.path, preset.filamentId, range, connection)]
+        : []),
+    ],
   ];
 }
 
@@ -313,25 +370,32 @@ function reviewKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsMo
     [],
   ];
   if (key.name === "esc") return [{ ...model, view: "editor", review: null }, []];
-  const moved = moveCursor(review.cursor, key, review.targets.length, pageRows(ctx));
+  const rows = reviewRows(review);
+  const moved = moveCursor(review.cursor, key, rows.length, pageRows(ctx));
   if (moved !== null) return set({ cursor: moved });
   if (key.name === "space") {
-    const target = review.targets[review.cursor];
-    if (!target) return [model, []];
+    const row = rows[review.cursor];
+    if (!row) return [model, []];
     const ticked = new Set(review.ticked);
-    if (ticked.has(target.path)) ticked.delete(target.path);
-    else ticked.add(target.path);
+    if (ticked.has(row.id)) ticked.delete(row.id);
+    else ticked.add(row.id);
     return set({ ticked });
   }
   if (typed(key) === "a") {
-    const paths = review.targets.map((t) => t.path).filter((p) => review.ticked.has(p));
-    if (paths.length === 0) return set({ error: "Tick at least one preset to save to" });
+    const writes = targetEdits(review);
+    if (writes.length === 0) return set({ error: "Tick at least one preset to save to" });
+    if ([...review.contents.values()].some((file) => file.state === "loading"))
+      return set({ error: "Still reading the other presets" });
     if (review.range.state === "checking")
       return set({ error: "Still reading SpoolEase's nozzle range" });
-    const change = review.range.state === "change" ? review.range.change : null;
+    // SpoolEase's range follows the edited preset's: only when its range is saved.
+    const own = writes.find((write) => write.path === review.preset.path)?.edits;
+    const ownRange =
+      own?.has("nozzle_temperature_range_low") || own?.has("nozzle_temperature_range_high");
+    const change = review.range.state === "change" && ownRange ? review.range.change : null;
     return [
       { ...model, review: { ...review, phase: "saving", error: "" } },
-      [saveCmd(review.preset.path, paths, review.edits, change, spooleaseConnection(ctx.values))],
+      [saveCmd(review.preset.path, writes, change, spooleaseConnection(ctx.values))],
     ];
   }
   return [model, []];
@@ -349,6 +413,17 @@ function onRead(model: PresetsModel, msg: PresetFileMsg): Step<PresetsModel> {
       ? { state: "ready", preset: msg.preset }
       : { state: "failed", error: msg.error };
   const files = new Map(model.files).set(msg.path, file);
+  const review = model.review;
+  // A target the review is reading: its before → after shows once it's here.
+  if (review && review.contents.get(msg.path)?.state === "loading")
+    return [
+      {
+        ...model,
+        files,
+        review: { ...review, contents: new Map(review.contents).set(msg.path, file) },
+      },
+      [],
+    ];
   const opening = model.opening;
   if (opening?.path !== msg.path) return [{ ...model, files }, []];
   if (!("preset" in msg)) return [{ ...model, files, opening: undefined }, []];
@@ -397,10 +472,14 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   for (const result of msg.results) files.delete(result.path);
   // The edits stay a draft on each preset they didn't save to; the edited preset's goes once it saved.
   const drafts = new Map(model.drafts);
+  const writes = targetEdits(review);
   for (const result of msg.results) {
     if (result.ok) {
       if (result.path === msg.path) drafts.delete(result.path);
-    } else drafts.set(result.path, new Map([...(drafts.get(result.path) ?? []), ...review.edits]));
+      continue;
+    }
+    const edits = writes.find((write) => write.path === result.path)?.edits ?? review.edits;
+    drafts.set(result.path, new Map([...(drafts.get(result.path) ?? []), ...edits]));
   }
   const appMsgs: AppMsg[] = [
     { type: "app/runFinished", summary: { ok, lines, ...(exitCode ? { exitCode } : {}) } },
@@ -513,7 +592,7 @@ export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Ste
 export function busy(model: PresetsModel): string | null {
   const review = model.review;
   if (review?.phase !== "saving") return null;
-  return `Saving ${plural(review.ticked.size, "preset")} of ${review.preset.name}`;
+  return `Saving ${plural(targetEdits(review).length, "preset")} of ${review.preset.name}`;
 }
 
 /** Edits quitting would drop: every draft, the open editor's edits in place of its own draft. */

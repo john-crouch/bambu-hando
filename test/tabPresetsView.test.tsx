@@ -117,6 +117,9 @@ function drive(model: PresetsModel, ctx: Ctx, ...keys: string[]): PresetsModel {
     const loading = [...current.files].find(([, f]) => f.state === "loading")?.[0];
     if (opening && opening !== before.opening?.path) answer(reads(opening));
     if (loading) answer(reads(loading));
+    // The review reads the edited preset's family.
+    for (const [path, file] of current.review?.contents ?? [])
+      if (file.state === "loading") answer(reads(path));
   }
   return current;
 }
@@ -317,9 +320,11 @@ describe.each([
     expect(note).toContain("! 5°C is low for a nozzle (most take 150–350°C)");
     const review = lines(drive(cold, ctx, "a"), ctx);
     expectExact(review, ctx);
-    const change = review.findIndex((line) => /Nozzle +255°C → 5°C/.test(line));
+    const change = review.findIndex((line) => /Nozzle +X1C 0\.4 +255°C +→ 5°C/.test(line));
     expect(change).toBeGreaterThan(0);
-    expect(review[change + 1]).toContain("! 5°C is low for a nozzle");
+    // Under the change's rows, one per preset.
+    expect(review[change + 1]).toMatch(/X1C 0\.6 +255°C +→ 5°C/);
+    expect(review[change + 2]).toContain("! 5°C is low for a nozzle");
     expect(review.join("\n")).toContain("150–350°C)");
   });
 
@@ -327,7 +332,9 @@ describe.each([
     const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
     const screen = lines(flow, ctx);
     expectExact(screen, ctx);
-    expect(screen.join("\n")).toMatch(/Max volumetric speed +● standard 12 · ○ high flow 16 mm³\/s/);
+    expect(screen.join("\n")).toMatch(
+      /Max volumetric speed +● standard 12 · ○ high flow 16 mm³\/s/,
+    );
   });
 
   it("lists every key on All settings, filtered", () => {
@@ -363,20 +370,44 @@ describe.each([
     expectExact(screen, ctx);
     const text = screen.join("\n");
     expect(screen[0]).toMatch(/^╭ Save changes · Sunlu PETG 2.0 Vivid Yellow @ X1C 0.4 ─/);
-    expect(text).toMatch(/Nozzle +255°C → 250°C/);
-    expect(text).toContain("Into 2 presets of Sunlu PETG 2.0 Vivid Yellow");
-    expect(text).toMatch(/\[✓\] X1C 0\.4 +the one you edited/);
-    expect(text).toMatch(/\[✓\] X1C 0\.6 +same filament ID/);
+    expect(screen[1]).toMatch(/^│ 1 change · into 2 presets +│$/);
+    // A row per preset of the filament, each with its own before → after, the change named once.
+    expect(screen[2]).toMatch(/^│▌\[✓\] Nozzle {2}X1C 0\.4 {2}255°C {2}→ 250°C +│$/);
+    expect(screen[3]).toMatch(/^│ \[✓\] {9}X1C 0\.6 {2}255°C {2}→ 250°C +│$/);
     const warning = screen.findIndex((line) => line.includes("! Close BambuStudio first"));
-    const into = screen.findIndex((line) => line.includes("Into 2 presets"));
-    expect(warning).toBeGreaterThan(0);
-    expect(warning).toBeLessThan(into);
+    expect(warning).toBeGreaterThan(3);
+    expect(text).not.toContain("Flow speed, pressure advance");
   });
 
-  it("keeps the review's targets beside their names", () => {
-    const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
-    const row = lines(review, ctx).find((line) => line.includes("the one you edited")) ?? "";
-    expect(row).toMatch(/\[✓\] X1C 0\.4 the one you edited/);
+  it("ticks a nozzle-size change on the edited preset only, and says why", () => {
+    const review = drive(
+      start(ctx),
+      ctx,
+      "s",
+      "enter",
+      "right",
+      "right",
+      "down",
+      "n",
+      "enter",
+      "backspace",
+      "backspace",
+      "14",
+      "enter",
+      "a",
+    );
+    const screen = lines(review, ctx);
+    expectExact(screen, ctx);
+    const text = screen.join("\n");
+    expect(text).toContain("1 change · into 1 preset");
+    // Before → after side by side where they fit, else after right under before: never cut.
+    expect(text).toMatch(
+      /\[✓\] Max volumetric speed {2}X1C 0\.4 {2}standard 12 · high flow 16 mm³\/s +(│\n│ +)?→ 14 mm³\/s/,
+    );
+    expect(text).toMatch(/\[ \] +X1C 0\.6 {2}standard 12 · high flow 16 mm³\/s +(│\n│ +)?stays/);
+    expect(text).not.toContain("…");
+    const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+    expect(words).toContain("they go into the preset you edited unless you tick the others.");
   });
 
   it("says once that everything saved, and what to do next", () => {
@@ -401,7 +432,7 @@ describe.each([
     const screen = lines(done, ctx);
     expectExact(screen, ctx);
     const text = screen.join("\n");
-    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
+    expect(text).toMatch(/ Nozzle {2}X1C 0\.4 {2}✓ saved {2}255°C {2}→ 250°C/);
     expect(text).toContain("Restart BambuStudio to load the change");
     expect(text).not.toMatch(/presets? saved/);
   });
@@ -430,8 +461,8 @@ describe.each([
     const text = screen.join("\n");
     expect(screen[0]).toMatch(/^╭ Save changes · /);
     // Each preset's result right after its name; the line under them says what's next, once.
-    expect(text).toMatch(/ X1C 0\.4 +✓ saved +the one you edited/);
-    expect(text).toMatch(/ X1C 0\.6 +✗ couldn't write it: EACCES +same filament ID/);
+    expect(text).toMatch(/ Nozzle {2}X1C 0\.4 {2}✓ saved +255°C {2}→ 250°C/);
+    expect(text).toMatch(/ +X1C 0\.6 {2}✗ couldn't write it: EACCES {2}255°C {2}→ 250°C/);
     expect(text).not.toContain("[✓]");
     expect(text).toContain("✗ 1 of 2 presets failed: restart BambuStudio to load the saved one");
     expect(text.match(/saved/g)).toHaveLength(2);

@@ -7,7 +7,12 @@ import { basename } from "node:path";
 import { nozzleTypeFor, readBambuStudioConf } from "../../../bambuProfiles.js";
 import { errorMessage } from "../../../errors.js";
 import { bambuConfigDir } from "../../../paths.js";
-import { type EditResult, type Edits, type Preset, writePresetEdits } from "../../../presetEdit.js";
+import {
+  type EditResult,
+  type Edits,
+  type Preset,
+  writePresetTargets,
+} from "../../../presetEdit.js";
 import { SpoolEaseClient, type SpoolEaseConnection, withNozzleRange } from "../../../spoolease.js";
 import { checkKey, KeyCheckError } from "../../../sync.js";
 import type { Cmd } from "../../core/program.js";
@@ -140,16 +145,15 @@ export function rangeCmd(
   };
 }
 
-/** Writes the edits into each target, then SpoolEase's nozzle range when it changes and a preset was saved. */
+/** Writes each target its edits, then SpoolEase's nozzle range when it changes and a preset was saved. */
 export function saveCmd(
   path: string,
-  targets: string[],
-  edits: Edits,
+  writes: readonly { path: string; edits: Edits }[],
   change: RangeChange | null,
   connection: SpoolEaseConnection | null,
 ): Cmd<AppMsg> {
   return async (dispatch) => {
-    const results = await writePresetEdits(targets, edits);
+    const results = await writePresetTargets(writes);
     let spoolease: SpoolEaseOutcome | null = null;
     let setupError = false;
     if (change && connection && results.some((r) => r.ok)) {

@@ -401,6 +401,11 @@ function shownRaw(field: EditField | undefined, value: unknown): string {
   return value === undefined ? "not set" : (rawText(value) ?? JSON.stringify(value));
 }
 
+/** A setting's value for people: a curated field's as the form shows it, any other as its raw text. */
+export function shownSetting(key: string, value: unknown): string {
+  return shownRaw(editField(key), value);
+}
+
 /** What the edits change in `preset`, in the order they were made; edits that change nothing are left out. */
 export function editChanges(preset: Preset, edits: Edits): EditChange[] {
   const edited = applyEdits(preset, edits).preset;
