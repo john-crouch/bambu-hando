@@ -1,5 +1,5 @@
 // ABOUTME: The Spools tab's view: the spool list with its summary and filter beside the highlighted spool's detail.
-// ABOUTME: Below 90 columns the detail replaces the list on enter; empty states say what to do; dialogs draw centered on top.
+// ABOUTME: Below 90 columns the detail replaces the list on enter; empty states say what to do. Dialogs are in Dialogs.tsx.
 
 import { Box } from "ink";
 import type { ReactNode } from "react";
@@ -21,7 +21,6 @@ import {
   TextField,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
-import { SpoolsDialog } from "./Dialogs.js";
 import {
   compactDetail,
   consoleConnection,
@@ -358,19 +357,6 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
   return (
     <Box width={width} height={height} flexDirection="row" flexShrink={0}>
       {body}
-      {model.dialog ? (
-        <Box
-          position="absolute"
-          top={0}
-          left={0}
-          width={width}
-          height={height}
-          justifyContent="center"
-          alignItems="center"
-        >
-          <SpoolsDialog dialog={model.dialog} model={model} ctx={ctx} />
-        </Box>
-      ) : null}
     </Box>
   );
 }

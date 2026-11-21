@@ -15,7 +15,7 @@ import { labelsOverlay } from "../src/tui/overlays/labels/index.js";
 import { type LabelsModel, MAKE_ROW, PRINTER_ROW } from "../src/tui/overlays/labels/model.js";
 import { spoolsTab } from "../src/tui/tabs/spools/index.js";
 import type { SpoolsModel } from "../src/tui/tabs/spools/model.js";
-import { frameBody, textWidth, theme } from "../src/tui/ui/index.js";
+import { Frame, frameBody, Line, textWidth, theme } from "../src/tui/ui/index.js";
 import { consoleOf, makeCtx, spool } from "./tabSpoolsFixtures.js";
 
 const SPOOLS = [
@@ -77,8 +77,21 @@ function draw(element: React.ReactElement, columns: number): string[] {
   return stripVTControlCharacters(out).split("\n");
 }
 
+/** The tab's body as the shell draws it: the View, with the tab's dialog (if any) on the layer above. */
 function tab(model: SpoolsModel, ctx: Ctx): string[] {
-  return draw(<spoolsTab.View model={model} ctx={ctx} />, ctx.bodyColumns);
+  const lines = draw(
+    <Frame
+      columns={ctx.columns}
+      rows={ctx.rows}
+      header={<Line segments={[]} width={ctx.columns} />}
+      footer={<Line segments={[]} width={ctx.columns} />}
+      dialog={spoolsTab.dialog?.(model, ctx) ?? null}
+    >
+      <spoolsTab.View model={model} ctx={ctx} />
+    </Frame>,
+    ctx.columns,
+  );
+  return lines.slice(1, 1 + ctx.bodyRows);
 }
 
 function start(ctx: Ctx): SpoolsModel {
@@ -183,6 +196,14 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     // Its keys are in the footer, not repeated in the dialog.
     expect(text).not.toContain("add 2 spools");
     expect(text).not.toContain("SECRETKEY");
+  });
+
+  it("leaves its dialogs to the shell's dialog layer: the View itself never draws one", () => {
+    const model = keys(start(ctx), ctx, "+");
+    const view = draw(<spoolsTab.View model={model} ctx={ctx} />, ctx.bodyColumns).join("\n");
+    expect(view).not.toContain("More spools like this one");
+    expect(spoolsTab.dialog?.(start(ctx), ctx)).toBeNull();
+    expect(tab(model, ctx).join("\n")).toContain("More spools like this one");
   });
 
   it("streams results into the count dialog and offers labels when done", () => {

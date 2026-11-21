@@ -1,7 +1,8 @@
 // ABOUTME: The Spools tab as the shell's TabModule: the console's spools, what's left, labels, more spools and scans.
-// ABOUTME: Model and update live in model.ts, the view in View.tsx.
+// ABOUTME: Model and update live in model.ts, the view in View.tsx, its dialogs in Dialogs.tsx.
 
 import type { TabModule } from "../../core/types.js";
+import { spoolsDialog } from "./Dialogs.js";
 import {
   busy,
   capturesText,
@@ -20,6 +21,7 @@ export const spoolsTab: TabModule<SpoolsModel> = {
   init,
   update,
   View: SpoolsView,
+  dialog: spoolsDialog,
   hints,
   capturesText,
   busy,

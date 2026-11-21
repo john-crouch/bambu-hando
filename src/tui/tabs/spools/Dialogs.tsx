@@ -1,8 +1,8 @@
 // ABOUTME: The Spools tab's dialogs: how many spools to add (then their results), a barcode scan, and its filament choices.
-// ABOUTME: Each names what it acts on (the filament, the spool it copies, the console); their keys are in the footer.
+// ABOUTME: spoolsDialog hands the open one to the shell's dialog layer; each names what it acts on; keys are in the footer.
 
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import type { CopyableFilament } from "../../../spoolCopies.js";
 import type { Ctx } from "../../core/types.js";
@@ -335,8 +335,8 @@ function title(dialog: SpoolsDialogState): string {
   }
 }
 
-/** Dialog rows other than the content: borders and padding. */
-const DIALOG_CHROME = 4;
+/** Dialog rows other than the content: borders and padding, and the cleared row the shell keeps round it. */
+const DIALOG_CHROME = 4 + 2;
 
 export function SpoolsDialog({
   dialog,
@@ -383,4 +383,9 @@ export function SpoolsDialog({
       {body}
     </Dialog>
   );
+}
+
+/** The tab's open dialog for the shell to draw over the dimmed body, else null. */
+export function spoolsDialog(model: SpoolsModel, ctx: Ctx): ReactElement | null {
+  return model.dialog ? <SpoolsDialog dialog={model.dialog} model={model} ctx={ctx} /> : null;
 }
