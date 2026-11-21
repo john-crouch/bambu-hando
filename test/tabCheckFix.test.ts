@@ -350,6 +350,16 @@ describe("a console that can't be reached", () => {
     ]);
   });
 
+  it("opens Settings from the failed check before BambuStudio's presets are read", async () => {
+    const ctx = ctxOf(CONSOLE, { check: failed });
+    const h = await Harness.start("check", checkLogic, ctx);
+    expect(hintText(h)).toEqual(["enter open Settings", "r check again"]);
+    await h.press("enter");
+    expect(h.of("app/switchTab")).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.host" },
+    ]);
+  });
+
   it("opens Settings on the row the console's problem points at", async () => {
     const cases: [string, string][] = [
       ["SpoolEase key validation failed", "spoolease.key"],

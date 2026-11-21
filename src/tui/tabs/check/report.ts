@@ -4,7 +4,7 @@
 import { type CheckSection, checkCounts, checkSync, type UserPreset } from "../../../syncCheck.js";
 import type { CheckData, Ctx } from "../../core/types.js";
 import { consoleUrl, panelInner, plural, textWidth } from "../../ui/index.js";
-import { connectionOf, shortPrinters } from "../settings/connection.js";
+import { connectionOf, consoleProblem, shortPrinters } from "../settings/connection.js";
 import { wrapText } from "../settings/wrap.js";
 
 /** none: no console to check against (SpoolEase skipped or not set up). */
@@ -112,7 +112,7 @@ export interface Headline {
   text: string;
   /** Notes alone are fine: only problems turn the headline red. */
   tone: "ok" | "problem";
-  /** What was compared: the preset folder and the console's URL. */
+  /** What was compared: "BambuStudio <preset folder> with <the console's URL>". */
   compared: string;
 }
 
@@ -132,7 +132,7 @@ export function checkHeadline(sections: CheckSection[], ctx: Ctx): Headline {
     compared: [
       `BambuStudio ${ctx.values.presetFolder.trim()}`,
       ...(connection ? [consoleUrl(connection)] : []),
-    ].join(" · "),
+    ].join(" with "),
   };
 }
 
@@ -154,6 +154,8 @@ export interface ItemView {
   printers?: string;
   /** A spool's ID, without the #. */
   spool?: string;
+  /** A preset's files, one per printer. */
+  files?: number;
   target: ItemTarget | null;
 }
 
@@ -235,18 +237,21 @@ function itemView(
       const first = group?.[0];
       if (!group || !first) return plain;
       const printers = shortPrinters(group.map((p) => p.printer));
+      const files = group.length;
       return first.filamentId
         ? {
             text,
             name: first.name,
             code: first.filamentId,
             printers,
+            files,
             target: { kind: "add", id: first.filamentId, name: first.name },
           }
         : {
             text,
             name: first.name,
             printers,
+            files,
             target: { kind: "ids", paths: group.map((p) => p.path) },
           };
     }
@@ -288,17 +293,24 @@ export function sectionTitles(ctx: Ctx): Record<CheckSection["key"], string> {
   return ctx.bodyColumns >= WIDE_FROM ? SHORT_TITLES : TINY_TITLES;
 }
 
-/** The items pane's title: the longest of the section's titles that fits beside the subtitle. */
+/**
+ * The items pane's title and subtitle: the longest title that fits beside the longest subtitle, then
+ * shorter subtitles (counts long first), so neither is cut.
+ */
 export function itemsTitle(
   ctx: Ctx,
   section: CheckSection,
-  subtitle: string,
+  subtitles: readonly string[],
   width: number,
-): string {
-  // Two corners, a space each side of the title, " · " before the subtitle, and a dash or two of border.
-  const room = width - textWidth(subtitle) - 9;
+): { title: string; subtitle: string } {
   const titles = [section.title, SHORT_TITLES[section.key], TINY_TITLES[section.key]];
-  return titles.find((title) => textWidth(title) <= room) ?? sectionTitles(ctx)[section.key];
+  for (const subtitle of subtitles) {
+    // Two corners, a space each side of the title, " · " before the subtitle, and a dash or two of border.
+    const room = width - (subtitle ? textWidth(subtitle) + 3 : 0) - 6;
+    const title = titles.find((t) => textWidth(t) <= room);
+    if (title) return { title, subtitle };
+  }
+  return { title: sectionTitles(ctx)[section.key], subtitle: subtitles.at(-1) ?? "" };
 }
 
 /** The warnings shown above the panes: the first, and how many more. */
@@ -363,10 +375,42 @@ export function whyLines(
   return wrapText(section.why, panelInner(right, height).width - 2 * PAD);
 }
 
-/** Why a section needing the console wasn't checked: the read's error, wrapped to the items pane. */
-export function offlineLines(ctx: Ctx, data: CheckData | undefined, error: string): string[] {
+/**
+ * Why a section needing the console wasn't checked: the read's error, then what to check (a gap
+ * between), wrapped to the items pane. The key that opens Settings is the footer's alone.
+ */
+export function offlineLines(
+  ctx: Ctx,
+  data: CheckData | undefined,
+  error: string,
+): { error: string[]; advice: string[] } {
   const { right, height } = checkLayout(ctx, data);
-  return wrapText(`Not checked: ${error}`, panelInner(right, height).width - 2 * PAD);
+  const width = panelInner(right, height).width - 2 * PAD;
+  return {
+    error: wrapText(`Not checked: ${error}`, width),
+    advice: wrapText(consoleProblem(error).advice, width),
+  };
+}
+
+/**
+ * A section's count as its pane's subtitle, long first: presets for the preset sections (and their
+ * files when a preset has several, as the ID review writes files), else problems or notes.
+ */
+export function itemCount(section: CheckSection, items: readonly ItemView[]): string[] {
+  if (items.length === 0) return ["none"];
+  if (section.key === "presetsOnly" || section.key === "presetsNoId") {
+    const files = items.reduce((sum, item) => sum + (item.files ?? 1), 0);
+    const presets = plural(items.length, "preset");
+    return files === items.length ? [presets] : [`${presets}, ${plural(files, "file")}`, presets];
+  }
+  return [plural(items.length, section.problem ? "problem" : "note")];
+}
+
+/** How many presets and files a set of fixes writes: "1 preset", "1 preset, 2 files". */
+export function fixCount(fixes: readonly { name: string }[]): string {
+  const presets = new Set(fixes.map((fix) => fix.name)).size;
+  const text = plural(presets, "preset");
+  return fixes.length === presets ? text : `${text}, ${plural(fixes.length, "file")}`;
 }
 
 /** Items the items pane shows at once, below the section's why and a gap. */
@@ -389,7 +433,7 @@ export const IDS_NOTE =
   "Logged in to Bambu, BambuStudio uploads the change on its next sync; restart BambuStudio to load it.";
 
 export interface IdsLayout {
-  /** The review panel's height, borders included (the page bar is above it). */
+  /** The review panel's height, borders included. */
   height: number;
   intro: string[];
   note: string[];
@@ -397,9 +441,9 @@ export interface IdsLayout {
   rows: number;
 }
 
-/** The ID review: page bar, then a panel with the intro, the files, the status line and the note. */
+/** The ID review: a panel (its title says where you are) with the intro, the files, the status line and the note. */
 export function idsLayout(ctx: Ctx): IdsLayout {
-  const height = Math.max(3, ctx.bodyRows - 1);
+  const height = Math.max(3, ctx.bodyRows);
   const inner = panelInner(ctx.bodyColumns, height);
   const intro = wrapText(IDS_INTRO, inner.width - 2 * PAD);
   const note = wrapText(IDS_NOTE, inner.width - 2 * PAD);

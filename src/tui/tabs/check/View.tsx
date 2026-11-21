@@ -18,7 +18,6 @@ import {
   List,
   type ListRow,
   listPosition,
-  PageBar,
   Panel,
   panelInner,
   plural,
@@ -26,13 +25,16 @@ import {
   textWidth,
   truncate,
 } from "../../ui/index.js";
+import { consoleProblem } from "../settings/connection.js";
 import type { CheckModel, IdsPage } from "./model.js";
 import {
   checkHeadline,
   checkLayout,
   checkView,
+  fixCount,
   type ItemView,
   idsLayout,
+  itemCount,
   itemRows,
   itemsTitle,
   itemViews,
@@ -80,7 +82,7 @@ function Centered({
 function headlineSegments(ctx: Ctx, data: CheckData): Segment[] {
   const view = checkView(ctx);
   const headline = checkHeadline(data.sections, ctx);
-  const compared: Segment = { text: `  ${headline.compared}`, color: COLORS.muted };
+  const compared: Segment = { text: ` · ${headline.compared}`, color: COLORS.muted };
   if (view.offline)
     return [
       { text: `${ICONS.failed} Couldn't check the console`, color: COLORS.failed, bold: true },
@@ -91,14 +93,14 @@ function headlineSegments(ctx: Ctx, data: CheckData): Segment[] {
       { text: `${ICONS.failed} Couldn't check again: ${view.error}`, color: COLORS.failed },
       { text: " · showing the last check", color: COLORS.muted },
     ];
-  return [
-    {
-      text: `${headline.tone === "ok" ? ICONS.ok : ICONS.failed} ${headline.text}`,
-      color: headline.tone === "ok" ? COLORS.ok : COLORS.failed,
-      bold: true,
-    },
-    compared,
-  ];
+  const counts: Segment = {
+    text: `${headline.tone === "ok" ? ICONS.ok : ICONS.failed} ${headline.text}`,
+    color: headline.tone === "ok" ? COLORS.ok : COLORS.failed,
+    bold: true,
+  };
+  // What was compared goes whole or not at all: a URL cut in the middle says nothing.
+  const fits = PAD + textWidth(counts.text) + textWidth(compared.text) <= ctx.bodyColumns;
+  return fits ? [counts, compared] : [counts];
 }
 
 function Headline({ ctx, data }: { ctx: Ctx; data: CheckData }) {
@@ -207,17 +209,22 @@ function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: Check
   const items = section && !notChecked ? itemViews(section, data) : [];
   const shown = section ? itemRows(ctx, data, section, model.focus) : 0;
   const position = items.length > shown ? listPosition(model.item, items.length) : "";
-  const tone = section ? (items.length === 0 ? "ok" : section.problem ? "problem" : "note") : "ok";
-  const subtitle = notChecked
-    ? "not checked"
-    : items.length === 0
-      ? "none"
-      : plural(items.length, tone === "problem" ? "problem" : "note");
-  const legend = legendLines(leftInner.width, leftInner.height - data.sections.length - 1, offline);
-  const explain = notChecked
-    ? offlineLines(ctx, data, view.error ?? "").map((line) =>
-        pad([{ text: line, color: COLORS.failed }]),
+  const heading = section
+    ? itemsTitle(
+        ctx,
+        section,
+        notChecked ? ["not checked", ""] : itemCount(section, items),
+        layout.right,
       )
+    : { title: "", subtitle: "" };
+  const offlineText = notChecked ? offlineLines(ctx, data, view.error ?? "") : null;
+  const legend = legendLines(leftInner.width, leftInner.height - data.sections.length - 1, offline);
+  const explain = offlineText
+    ? [
+        ...offlineText.error.map((line) => pad([{ text: line, color: COLORS.failed }])),
+        [],
+        ...offlineText.advice.map((line) => pad([{ text: line, color: COLORS.muted }])),
+      ]
     : section
       ? whyLines(ctx, data, section, model.focus).map((line) =>
           pad([{ text: line, color: COLORS.muted }]),
@@ -259,8 +266,8 @@ function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: Check
           </Panel>
         ) : null}
         <Panel
-          title={section ? itemsTitle(ctx, section, subtitle, layout.right) : ""}
-          subtitle={subtitle}
+          title={heading.title}
+          subtitle={heading.subtitle}
           focused={model.focus === "items"}
           width={layout.right}
           height={layout.height}
@@ -271,15 +278,7 @@ function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: Check
             <Line key={index} segments={segments} width={rightInner.width} />
           ))}
           <Line segments={[]} width={rightInner.width} />
-          {notChecked ? (
-            <Line
-              segments={pad([
-                { text: "enter", color: COLORS.accent2, bold: true },
-                { text: " open Settings", color: COLORS.muted },
-              ])}
-              width={rightInner.width}
-            />
-          ) : items.length === 0 ? (
+          {notChecked ? null : items.length === 0 ? (
             <Line
               segments={pad([{ text: `${ICONS.ok} Nothing here`, color: COLORS.ok }])}
               width={rightInner.width}
@@ -299,15 +298,21 @@ function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: Check
   );
 }
 
-/** The review's columns: the file (the rest), its new ID, and the write's result. */
-function idColumns(width: number): { file: number; id: number; result: number } {
+/** The review's columns: the file (the rest), its new ID, and the results' room once there are any. */
+function idColumns(width: number, ids: IdsPage): { file: number; id: number; result: number } {
   const id = 11;
-  const result = Math.min(36, Math.floor(width * 0.4));
-  return { file: Math.max(8, width - 2 * PAD - id - result - 2), id, result };
+  const widest = Math.max(
+    0,
+    ...(ids.results ?? []).map((r) =>
+      textWidth(r.ok ? `${ICONS.ok} written` : `${ICONS.failed} ${r.detail}`),
+    ),
+  );
+  const result = Math.min(widest, 36, Math.floor(width * 0.4));
+  return { file: Math.max(8, width - 2 * PAD - id - 1 - (result ? result + 1 : 0)), id, result };
 }
 
-function headerSegments(width: number): Segment[] {
-  const columns = idColumns(width);
+function headerSegments(width: number, ids: IdsPage): Segment[] {
+  const columns = idColumns(width, ids);
   return pad([
     { text: `${fitText("Preset file", columns.file)} `, color: COLORS.muted },
     { text: `${fitText("Filament ID", columns.id)} `, color: COLORS.muted },
@@ -321,7 +326,7 @@ function resultSegments(
   width: number,
 ): Segment[] {
   const result = ids.results?.[index];
-  const columns = idColumns(width);
+  const columns = idColumns(width, ids);
   const status: Segment = !result
     ? { text: "" }
     : result.ok
@@ -348,13 +353,8 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
     ids.fixes.length > layout.rows
       ? `${ids.scroll + 1}–${ids.scroll + shown.length} of ${ids.fixes.length}`
       : "";
-  const pages = [
-    { id: "report", title: "Sync check", state: "done" as const },
-    { id: "ids", title: "Filament IDs", state: "current" as const },
-  ];
   return (
     <Box flexDirection="column" flexShrink={0}>
-      <PageBar pages={pages} width={ctx.bodyColumns} />
       <Panel
         title={`Give ${plural(presets, "preset")} a filament ID`}
         subtitle={`BambuStudio ${ctx.values.presetFolder.trim()}`}
@@ -371,7 +371,7 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
           />
         ))}
         <Line segments={[]} width={inner.width} />
-        <Line segments={headerSegments(inner.width)} width={inner.width} />
+        <Line segments={headerSegments(inner.width, ids)} width={inner.width} />
         {shown.map((fix, offset) => (
           <Line
             key={fix.path}
@@ -392,12 +392,7 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
           <Line
             segments={pad(
               ids.results === null
-                ? [
-                    {
-                      text: `${plural(ids.fixes.length, "file")} to write`,
-                      color: COLORS.muted,
-                    },
-                  ]
+                ? [{ text: `${fixCount(ids.fixes)} to write`, color: COLORS.muted }]
                 : failed
                   ? [
                       {
@@ -458,8 +453,7 @@ export function CheckView({ model, ctx }: { model: CheckModel; ctx: Ctx }) {
         width={width}
         height={height}
         title="Couldn't check"
-        lines={[view.error ?? ""]}
-        action={{ keys: "r", label: "check again" }}
+        lines={[view.error ?? "", consoleProblem(view.error ?? "").advice]}
       />
     );
   return (

@@ -37,7 +37,8 @@ export function printerLabel(printer: string): string {
 
 /** A printer's model and nozzle: "X1C 0.4" → ["X1C", 0.4]; no nozzle → NaN. */
 function modelAndNozzle(printer: string): [string, number] {
-  const short = shortPrinter(printer);
+  // "BBL X1C" is how BambuStudio names a printer in its own preset files.
+  const short = shortPrinter(printer).replace(/^BBL /, "");
   const match = /^(.*) (\d+(?:\.\d+)?)$/.exec(short);
   return match ? [match[1] ?? short, Number(match[2])] : [short, Number.NaN];
 }

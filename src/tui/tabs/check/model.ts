@@ -147,6 +147,12 @@ function currentItems(model: CheckModel, ctx: Ctx) {
   return itemViews(section, view.data);
 }
 
+/** The check failed with nothing to show: not even BambuStudio's presets yet. */
+function failedBlank(ctx: Ctx): boolean {
+  const view = checkView(ctx);
+  return view.kind === "failed" && !view.data;
+}
+
 /** The highlighted section waits for a console that couldn't be read. */
 function offlineSection(model: CheckModel, ctx: Ctx): boolean {
   const view = checkView(ctx);
@@ -178,7 +184,7 @@ function reportKey(model: CheckModel, key: KeyPress, ctx: Ctx): Step<CheckModel>
     const moved = moveCursor(model.item, key, items.length, shownItems(model, ctx));
     return moved === null ? step(model) : step({ ...model, item: moved });
   }
-  if (key.name === "enter" && offlineSection(model, ctx))
+  if (key.name === "enter" && (offlineSection(model, ctx) || failedBlank(ctx)))
     return step(model, toConsoleSettings(ctx));
   if ((key.name === "enter" || key.name === "right") && items.length > 0)
     return step({ ...model, focus: "items" });
@@ -306,7 +312,10 @@ function hints(model: CheckModel, ctx: Ctx): Hint[] {
         ? [{ keys: "f", label: "see the IDs being written", primary: true }]
         : [];
   const again: Hint[] = view.kind === "loading" ? [] : [{ keys: "r", label: "check again" }];
-  if (!view.data) return again;
+  if (!view.data)
+    return view.kind === "failed"
+      ? [{ keys: "enter", label: "open Settings", primary: true }, ...again]
+      : again;
   if (model.focus === "items") {
     const item = currentItems(model, ctx)[model.item];
     const target = item?.target;

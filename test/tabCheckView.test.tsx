@@ -104,7 +104,8 @@ describe.each([
     expect(lines).toHaveLength(ctx.bodyRows);
     const text = lines.join("\n");
     expect(lines[0]).toContain("✗ 3 problems · 32 notes");
-    if (columns >= 80) expect(lines[0]).toContain("BambuStudio default · http://10.0.24.111");
+    if (columns >= 80)
+      expect(lines[0]).toContain("32 notes · BambuStudio default with http://10.0.24.111");
     expect(text).toContain(columns >= 100 ? "Filaments without a preset" : "No preset");
     expect(text).toContain("Acme PLA Blue");
     expect(text).not.toMatch(/Filament…|Spools o…|Presets…/);
@@ -159,9 +160,55 @@ describe.each([
     expect(lines[0]).toContain("✗ Couldn't check the console");
     expect(text).toContain("Not checked: SpoolEase");
     expect(text).toContain("unreachable");
-    expect(text).toContain("enter open Settings");
+    // What to check is said; the key that goes there is the footer's alone.
+    expect(text).toContain("check the host");
+    expect(text).not.toContain("enter open Settings");
     const presets = screen({ ...MODEL, section: 4 }, offline).join("\n");
     expect(presets).toContain("Rock");
+  });
+
+  it("counts a preset section's presets, and its files when a preset has several", () => {
+    const value = data();
+    const twoFiles = [...PRESETS, { ...PRESETS.at(-1)!, printer: "X1C 0.6", path: "/p/r6.json" }];
+    const ctx = sized(
+      columns,
+      rows,
+      ready({
+        ...value,
+        sections: checkSync({ presets: twoFiles, csv: "", spools: [] }),
+        presets: twoFiles,
+      }),
+    );
+    const noId =
+      ctx.resources.check.state === "ready"
+        ? ctx.resources.check.value.sections.findIndex((s) => s.key === "presetsNoId")
+        : -1;
+    const lines = screen({ ...MODEL, section: noId }, ctx);
+    fits(lines, ctx);
+    // Where both don't fit beside the title, the files go before anything is cut.
+    expect(lines.join("\n")).toContain(
+      columns >= 80 ? "1 preset, 2 files" : "No filament ID · 1 preset ─",
+    );
+    expect(lines.join("\n")).not.toMatch(/2…|presets?…/);
+    expect(
+      screen({ ...MODEL, section: 3 }, sized(columns, rows, ready(value))).join("\n"),
+    ).toContain("30 presets");
+  });
+
+  it("shows BambuStudio's own printer names short too", () => {
+    const presets = [
+      { name: "Rock", filamentId: "", printer: "BBL X1C", path: "/p/a.json" },
+      { name: "Rock", filamentId: "", printer: "BBL X1", path: "/p/b.json" },
+    ];
+    const ctx = sized(
+      columns,
+      rows,
+      ready({ sections: checkSync({ presets, csv: "", spools: [] }), warnings: [], presets }),
+    );
+    const noId = 4;
+    const text = screen({ ...MODEL, section: noId }, ctx).join("\n");
+    expect(text).not.toContain("BBL");
+    expect(text).toContain("X1C, X1");
   });
 
   it("says an empty section has nothing in it", () => {
@@ -210,20 +257,42 @@ describe.each([
     fits(lines, ctx);
     expect(lines).toHaveLength(ctx.bodyRows);
     const text = lines.join("\n");
-    expect(text).toContain("✓ Sync check ─ ▸ Filament IDs");
-    expect(text).toContain("Give 1 preset a filament ID");
+    // The title says where you are: no page bar for a page reached only from the check.
+    expect(text).not.toContain("Sync check ─");
+    expect(lines[0]).toContain("Give 1 preset a filament ID");
     expect(text).toContain("BambuStudio default");
     expect(text).toMatch(/Preset file +Filament ID/);
     expect(text).toContain(`Rock @X1C.json`);
     expect(text).toContain(fix.id);
     expect(text).not.toContain("until you press a");
-    expect(text).toContain("1 file to write");
+    expect(text).toContain("1 preset to write");
+    const two = { ...ids, fixes: [fix, { ...fix, path: "/p/Rock @X1C 0.6.json" }] };
+    expect(screen({ ...MODEL, page: "ids", ids: two }, ctx).join("\n")).toContain(
+      "1 preset, 2 files to write",
+    );
     const done = screen(
       { ...MODEL, page: "ids", ids: { ...ids, results: [{ ...fix, ok: true, detail: "" }] } },
       ctx,
     ).join("\n");
     expect(done).toContain("✓ written");
     expect(done).toContain("✓ 1 preset given an ID");
+  });
+
+  it("gives the file names the room the results don't use yet", () => {
+    const ctx = sized(columns, rows, ready(data()));
+    const name = "Acme Rock PLA @Bambu Lab X1 Carbon 0.4 nozzle.json";
+    const fix = { path: `/p/${name}`, name: "Acme Rock PLA", printer: "X1C", id: "P1234567" };
+    const ids = { fixes: [fix], results: null, running: false, scroll: 0 };
+    const lines = screen({ ...MODEL, page: "ids", ids }, ctx);
+    fits(lines, ctx);
+    if (columns >= 80) expect(lines.join("\n")).toContain(name);
+    const failed = {
+      ...ids,
+      results: [{ ...fix, ok: false, detail: "EACCES: permission denied" }],
+    };
+    const after = screen({ ...MODEL, page: "ids", ids: failed }, ctx);
+    fits(after, ctx);
+    expect(after.join("\n")).toContain("✗ EACCES");
   });
 
   it("sends you to Settings without a console", () => {
@@ -242,7 +311,9 @@ describe.each([
     });
     const text = screen(MODEL, ctx).join("\n");
     expect(text).toContain("Couldn't check");
-    expect(text).toContain("r check again");
+    expect(text).toContain("check the host");
+    // The keys (enter open Settings, r check again) are the footer's.
+    expect(text).not.toContain("r check again");
   });
 
   it("waits with a spinner for the first check", () => {
