@@ -2,13 +2,19 @@
 // ABOUTME: Uses a private gnome-keyring, and checks the typed key is never echoed to the terminal.
 
 import { execFile, spawn as spawnProcess } from "node:child_process";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type IPty, spawn } from "node-pty";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { removeSecret, SECRETS, storedSecret } from "../src/secrets.js";
+import { installBambuStudio, installSpoolEaseConfig } from "./bambuStudioSetup.js";
 import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
+import { SOURCE_FIXTURE } from "./parity.js";
+import { startSpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const TDFP = SECRETS["3dfp"];
@@ -162,6 +168,27 @@ describe("bambu-hando key without a reachable keyring (binary)", () => {
         /^3dfp {2}3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY \(can't check the system keyring \(Secret Service\)\)\n$/,
       );
       expect(stdout).not.toContain("fake_key");
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "falls back to BambuStudio's console key when the keyring can't be read",
+    async () => {
+      const home = await mkdtemp(join(tmpdir(), "bh-nokeyring-"));
+      await installBambuStudio(home);
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
+      const server = await startSpoolEaseServer();
+      try {
+        const { code, stdout, stderr } = await cli(
+          ["--source", SOURCE_FIXTURE, "--dry-run", "--spoolease-port", String(server.port)],
+          { ...noKeyring, HOME: home },
+        );
+        expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+        expect(server.requests[0]?.path).toBe("/api/test-key");
+        expect(stdout).not.toContain(TEST_SECURITY_KEY);
+      } finally {
+        await server.close();
+      }
     },
   );
 });

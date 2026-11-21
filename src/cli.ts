@@ -24,14 +24,10 @@ import {
 } from "./labels.js";
 import { type FilamentProfile, resultFailed, type Status, type SyncResult } from "./models.js";
 import type { SecretInput } from "./secretPrompt.js";
+import { InvalidSecretError, KeyringError, loadSecret, SECRETS } from "./secrets.js";
 import { loadProfiles } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
-import {
-  readSpoolEaseConfig,
-  SPOOLEASE_SETTINGS_HINT,
-  type SpoolEaseFlags,
-  spooleaseConnectionFrom,
-} from "./spooleaseConfig.js";
+import { readSpoolEaseConfig, type SpoolEaseFlags } from "./spooleaseConfig.js";
 import {
   filterProfiles,
   loadSpoolmanDb,
@@ -85,9 +81,11 @@ Options:
   --dry-run                       Plan operations without writing
   --spoolease-host <host>         SpoolEase console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  SpoolEase security key (env: SPOOLEASE_SECURITY_KEY)
-                                  Both default to the SpoolEase settings saved in BambuStudio
-  --spoolease-port <port>         SpoolEase port (default: 80)
-  --spoolease-https               Use HTTPS for SpoolEase
+                                  Both default to the console saved in the TUI's Settings (the
+                                  key kept by it or by bambu-hando key set spoolease), then to
+                                  the SpoolEase settings saved in BambuStudio
+  --spoolease-port <port>         SpoolEase port (default: the one saved in Settings, else 80)
+  --spoolease-https               Use HTTPS for SpoolEase (default: as saved in Settings)
   --skip-spoolease                Skip SpoolEase API updates
   --skip-spools                   Register filaments in SpoolEase without creating spools
                                   (by default each filament without a spool gets one)
@@ -124,7 +122,7 @@ const OPTIONS = {
   "dry-run": { type: "boolean", default: false },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
-  "spoolease-port": { type: "string", default: "80" },
+  "spoolease-port": { type: "string" },
   "spoolease-https": { type: "boolean", default: false },
   "skip-spoolease": { type: "boolean", default: false },
   "skip-spools": { type: "boolean", default: false },
@@ -171,6 +169,9 @@ Options (each one prefills Settings for this session):
   --spoolease-security-key <key>  Its security key (env: SPOOLEASE_SECURITY_KEY)
   --spoolease-port <port>         SpoolEase port (default: 80)
   --spoolease-https               Use HTTPS for SpoolEase
+                                  Without these, the console saved in Settings last time (its
+                                  key in the system keyring, also stored by
+                                  bambu-hando key set spoolease), then BambuStudio's
   --skip-spoolease                Leave SpoolEase out
   --skip-spools                   Don't create a spool for each new filament
   --brand, --material, --match    Open Add searching for these
@@ -213,7 +214,8 @@ Output:
   --printer <name>                Print with CUPS (lp), asking for the label's media size
   --print-option <key=value>      Extra lp option, e.g. Darkness=14; repeat for several
 
-SpoolEase (default: the SpoolEase settings saved in BambuStudio):
+SpoolEase (default: the console saved in the TUI's Settings, its key kept there or by
+bambu-hando key set spoolease, then the SpoolEase settings saved in BambuStudio):
   --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
   --spoolease-port <port>         Port (default: 80)
@@ -240,7 +242,7 @@ const LABEL_OPTIONS = {
   "print-option": { type: "string", multiple: true },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
-  "spoolease-port": { type: "string", default: "80" },
+  "spoolease-port": { type: "string" },
   "spoolease-https": { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false },
 } as const;
@@ -263,7 +265,8 @@ Options:
   --spoolease-https               Use HTTPS
   -h, --help                      Show this help
 
-SpoolEase defaults to the SpoolEase settings saved in BambuStudio.
+SpoolEase defaults to the console saved in the TUI's Settings (its key kept there or by
+bambu-hando key set spoolease), then to the SpoolEase settings saved in BambuStudio.
 
 Exit codes: 0 no problems (notes don't count), 1 problems or a failed read,
 2 invalid arguments or SpoolEase key check failed.
@@ -274,7 +277,7 @@ const CHECK_OPTIONS = {
   json: { type: "boolean", default: false },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
-  "spoolease-port": { type: "string", default: "80" },
+  "spoolease-port": { type: "string" },
   "spoolease-https": { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false },
 } as const;
@@ -340,18 +343,63 @@ function parsePort(value: string): number {
   return port;
 }
 
-/** Flags, then environment, then the SpoolEase settings saved in BambuStudio. */
+/** How to give bambu-hando the console's address and key, for "required" errors. */
+const CONSOLE_HINT =
+  "pass --spoolease-host and --spoolease-security-key, set SPOOLEASE_HOST and SPOOLEASE_SECURITY_KEY, save them in the TUI's Settings (the key also with bambu-hando key set spoolease), or configure SpoolEase in BambuStudio";
+
+/** The SpoolEase console as the flags, the environment and what was saved give it; empty when unknown. */
+export interface ConsoleSettings {
+  host: string;
+  port: string;
+  securityKey: string;
+  https: boolean;
+}
+
+/** The key from SPOOLEASE_SECURITY_KEY or the keyring; null when neither has one or the keyring can't be reached. */
+async function savedConsoleKey(env: Record<string, string | undefined>): Promise<string | null> {
+  try {
+    return (await loadSecret(SECRETS.spoolease, env))?.value ?? null;
+  } catch (err) {
+    // A keyring that can't be reached only means there's no saved key here; BambuStudio's may do.
+    if (err instanceof KeyringError) return null;
+    // Says where the key came from, never what it is.
+    if (err instanceof InvalidSecretError) throw new UsageError(err.message);
+    throw err;
+  }
+}
+
+/**
+ * The console every command and the TUI use. Host: flag, SPOOLEASE_HOST, the TUI's saved console,
+ * BambuStudio's. Key: flag, SPOOLEASE_SECURITY_KEY, the keyring, BambuStudio's. Port and HTTPS: flag,
+ * the TUI's saved console, then 80 and off. The keyring is only read when no flag gives the key.
+ */
+export async function consoleSettings(
+  flags: SpoolEaseFlags & { "spoolease-port"?: string },
+  env: Record<string, string | undefined> = process.env,
+): Promise<ConsoleSettings> {
+  const [bambu, remembered] = await Promise.all([readSpoolEaseConfig(), loadTuiSettings()]);
+  const saved = remembered.console ?? {};
+  const host = flags["spoolease-host"] || env.SPOOLEASE_HOST || saved.host || bambu.host || "";
+  const securityKey =
+    flags["spoolease-security-key"] || (await savedConsoleKey(env)) || bambu.securityKey || "";
+  return {
+    host,
+    port: flags["spoolease-port"] ?? String(saved.port ?? 80),
+    securityKey,
+    https: flags["spoolease-https"] || saved.https || false,
+  };
+}
+
+/** The console to talk to, from consoleSettings; a usage error without both a host and a key. */
 async function spooleaseConnection(
-  values: SpoolEaseFlags,
-  port: number,
+  values: SpoolEaseFlags & { "spoolease-port"?: string },
   unless = "",
 ): Promise<SpoolEaseConnection> {
-  const connection = spooleaseConnectionFrom(values, port, await readSpoolEaseConfig());
-  if (!connection)
-    throw new UsageError(
-      `SpoolEase host and security key are required${unless}: ${SPOOLEASE_SETTINGS_HINT}`,
-    );
-  return connection;
+  const settings = await consoleSettings(values);
+  const port = parsePort(settings.port);
+  if (!settings.host || !settings.securityKey)
+    throw new UsageError(`SpoolEase host and security key are required${unless}: ${CONSOLE_HINT}`);
+  return { host: settings.host, port, securityKey: settings.securityKey, https: settings.https };
 }
 
 export interface SpoolmanDbSelection extends ProfileFilters {
@@ -419,10 +467,10 @@ async function parseSettings(
     );
   }
 
-  const port = parsePort(values["spoolease-port"]);
+  if (values["spoolease-port"] !== undefined) parsePort(values["spoolease-port"]);
   const spoolease = values["skip-spoolease"]
     ? null
-    : await spooleaseConnection(values, port, " unless --skip-spoolease is set");
+    : await spooleaseConnection(values, " unless --skip-spoolease is set");
 
   const createSpools = !values["skip-spools"];
   const spoolWeights: Settings["spoolWeights"] = new Map();
@@ -623,10 +671,10 @@ async function parseTuiValues(
   const { values } = asUsage(() => parseArgs({ args: argv, options: TUI_OPTIONS, strict: true }));
   if (values.help) return { values: null, help: true };
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
-  const [defaults, saved, remembered] = await Promise.all([
+  const [defaults, remembered, spoolease] = await Promise.all([
     bambuDefaults(),
-    readSpoolEaseConfig(),
     loadTuiSettings(),
+    consoleSettings(values),
   ]);
   // --printer-preset, else the printers of the last TUI run, else the printer selected in BambuStudio.
   const printerList =
@@ -640,14 +688,10 @@ async function parseTuiValues(
       presetFolder: values["preset-folder"] ?? defaults.presetFolder,
       printerPreset: printerList.join(", "),
       overwritePresets: values["overwrite-presets"],
-      host: values["spoolease-host"] || process.env.SPOOLEASE_HOST || saved.host || "",
-      port: values["spoolease-port"],
-      securityKey:
-        values["spoolease-security-key"] ||
-        process.env.SPOOLEASE_SECURITY_KEY ||
-        saved.securityKey ||
-        "",
-      https: values["spoolease-https"],
+      host: spoolease.host,
+      port: spoolease.port,
+      securityKey: spoolease.securityKey,
+      https: spoolease.https,
       skipSpoolease: values["skip-spoolease"],
       createSpools: !values["skip-spools"],
       query: [values.brand, values.material, values.match].filter(Boolean).join(" "),
@@ -706,7 +750,7 @@ async function parseLabelsSettings(
   } catch (err) {
     throw new UsageError(err instanceof Error ? err.message : String(err));
   }
-  const spoolease = await spooleaseConnection(values, parsePort(values["spoolease-port"]));
+  const spoolease = await spooleaseConnection(values);
 
   return {
     help: false,
@@ -783,7 +827,7 @@ async function checkCommand(argv: string[], io: Io): Promise<number> {
       io.stdout(CHECK_USAGE);
       return 0;
     }
-    spoolease = await spooleaseConnection(values, parsePort(values["spoolease-port"]));
+    spoolease = await spooleaseConnection(values);
   } catch (err) {
     io.stderr(`bambu-hando: error: ${errorMessage(err)}\n\n${CHECK_USAGE}`);
     return 2;
