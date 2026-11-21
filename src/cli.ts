@@ -81,10 +81,11 @@ Options:
   --dry-run                       Plan operations without writing
   --spoolease-host <host>         SpoolEase console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  SpoolEase security key (env: SPOOLEASE_SECURITY_KEY)
-                                  Both default to the console saved in the TUI's Settings (the
-                                  key kept by it or by bambu-hando key set spoolease), then to
-                                  the SpoolEase settings saved in BambuStudio
-  --spoolease-port <port>         SpoolEase port (default: the one saved in Settings, else 80)
+                                  Both default to the console saved in the TUI's
+                                  Settings (its key in the system keyring, also
+                                  stored by bambu-hando key set spoolease), then
+                                  to the SpoolEase settings saved in BambuStudio
+  --spoolease-port <port>         SpoolEase port (default: as saved in Settings, else 80)
   --spoolease-https               Use HTTPS for SpoolEase (default: as saved in Settings)
   --skip-spoolease                Skip SpoolEase API updates
   --skip-spools                   Register filaments in SpoolEase without creating spools
@@ -169,9 +170,10 @@ Options (each one prefills Settings for this session):
   --spoolease-security-key <key>  Its security key (env: SPOOLEASE_SECURITY_KEY)
   --spoolease-port <port>         SpoolEase port (default: 80)
   --spoolease-https               Use HTTPS for SpoolEase
-                                  Without these, the console saved in Settings last time (its
-                                  key in the system keyring, also stored by
-                                  bambu-hando key set spoolease), then BambuStudio's
+                                  Without these: the console saved in Settings
+                                  (its key in the system keyring, also stored
+                                  by bambu-hando key set spoolease), then the
+                                  SpoolEase settings saved in BambuStudio
   --skip-spoolease                Leave SpoolEase out
   --skip-spools                   Don't create a spool for each new filament
   --brand, --material, --match    Open Add searching for these
@@ -214,8 +216,9 @@ Output:
   --printer <name>                Print with CUPS (lp), asking for the label's media size
   --print-option <key=value>      Extra lp option, e.g. Darkness=14; repeat for several
 
-SpoolEase (default: the console saved in the TUI's Settings, its key kept there or by
-bambu-hando key set spoolease, then the SpoolEase settings saved in BambuStudio):
+SpoolEase (default: the console saved in the TUI's Settings, its key kept there
+or by bambu-hando key set spoolease, then the SpoolEase settings saved in
+BambuStudio):
   --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
   --spoolease-port <port>         Port (default: 80)
@@ -265,8 +268,9 @@ Options:
   --spoolease-https               Use HTTPS
   -h, --help                      Show this help
 
-SpoolEase defaults to the console saved in the TUI's Settings (its key kept there or by
-bambu-hando key set spoolease), then to the SpoolEase settings saved in BambuStudio.
+SpoolEase defaults to the console saved in the TUI's Settings (its key kept there
+or by bambu-hando key set spoolease), then to the SpoolEase settings saved in
+BambuStudio.
 
 Exit codes: 0 no problems (notes don't count), 1 problems or a failed read,
 2 invalid arguments or SpoolEase key check failed.

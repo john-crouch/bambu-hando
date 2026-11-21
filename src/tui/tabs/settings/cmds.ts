@@ -1,5 +1,5 @@
 // ABOUTME: The Settings tab's side work: reading BambuStudio's folders and printers, CUPS printers and label settings,
-// ABOUTME: saving remembered choices, and testing the SpoolEase connection; each reports back as a settings/* message.
+// ABOUTME: saving remembered choices (the console key in the keyring), and testing the console; replies as settings/* messages.
 
 import { readdir } from "node:fs/promises";
 
@@ -12,8 +12,9 @@ import {
   saveLabelSettings,
 } from "../../../labelSettings.js";
 import { bambuConfigDir, bambuUserRoot } from "../../../paths.js";
+import { keyringName, removeSecret, SECRETS, storeSecret } from "../../../secrets.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "../../../spoolease.js";
-import { saveTuiSettings } from "../../../tuiSettings.js";
+import { rememberConsole, type SavedConsole, saveTuiSettings } from "../../../tuiSettings.js";
 import type { Cmd } from "../../core/program.js";
 import { type AppMsg, toTab } from "../../core/types.js";
 import { consoleUrl } from "../../ui/index.js";
@@ -59,6 +60,68 @@ export function savePrinters(printers: string[]): Cmd<AppMsg> {
       dispatch({
         type: "app/toast",
         text: `Couldn't remember these printers: ${errorMessage(err)}`,
+        tone: "warning",
+      });
+    }
+  };
+}
+
+/** Remembers a change to the console's host, port or HTTPS; a failure is a warning, the session keeps it. */
+export function saveConsole(change: SavedConsole): Cmd<AppMsg> {
+  return async (dispatch) => {
+    try {
+      await rememberConsole(change);
+    } catch (err) {
+      dispatch({
+        type: "app/toast",
+        text: `Couldn't remember the console: ${errorMessage(err)}`,
+        tone: "warning",
+      });
+    }
+  };
+}
+
+/** Stores the console's key in the keyring; when it can't, the session keeps it. Never says the key. */
+export function saveKey(key: string): Cmd<AppMsg> {
+  const spec = SECRETS.spoolease;
+  return async (dispatch) => {
+    try {
+      await storeSecret(spec, key);
+    } catch (err) {
+      dispatch({
+        type: "app/toast",
+        text: `SpoolEase key kept for this session only: ${errorMessage(err)}`,
+        tone: "warning",
+      });
+      return;
+    }
+    const overridden = process.env[spec.env]?.trim()
+      ? `; ${spec.env} overrides it while it's set`
+      : "";
+    dispatch({
+      type: "app/toast",
+      text: `SpoolEase key saved in ${keyringName()}${overridden}`,
+      tone: "ok",
+    });
+  };
+}
+
+/** Removes the console's key from the keyring, saying whether one was there. */
+export function forgetKey(): Cmd<AppMsg> {
+  return async (dispatch) => {
+    try {
+      const removed = await removeSecret(SECRETS.spoolease);
+      dispatch({
+        type: "app/toast",
+        text: removed
+          ? `SpoolEase key removed from ${keyringName()}`
+          : `SpoolEase key cleared for this session; none was stored in ${keyringName()}`,
+        tone: "ok",
+      });
+    } catch (err) {
+      dispatch({
+        type: "app/toast",
+        text: `Couldn't forget the stored SpoolEase key: ${errorMessage(err)}`,
         tone: "warning",
       });
     }

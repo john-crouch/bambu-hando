@@ -353,7 +353,11 @@ function DetailPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
     ...(editing && fieldKind(row.field) === "secret"
       ? [
           [],
-          ...wrapped("Typed as dots; never shown or logged.", inner.width, { color: COLORS.muted }),
+          ...wrapped(
+            "Typed as dots; never shown or logged. Save it empty to forget it.",
+            inner.width,
+            { color: COLORS.muted },
+          ),
         ]
       : []),
     ...errorLines(model.error, inner.width),

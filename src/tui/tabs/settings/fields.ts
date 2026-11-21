@@ -3,6 +3,7 @@
 
 import type { LabelSettings } from "../../../labelSettings.js";
 import { LABEL_FIELDS, type LabelField, parseLabelSize } from "../../../labels.js";
+import { SECRETS, validateSecret } from "../../../secrets.js";
 import type { Ctx } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
 import { labelFieldList, labelFieldName } from "../../overlays/labels/fields.js";
@@ -88,28 +89,32 @@ export const PAGE_FIELDS: Record<PageId, readonly FieldDef[]> = {
       label: "Host",
       kind: "text",
       spoolease: true,
-      about: "The SpoolEase console's address on your network.",
+      kept: true,
+      about: "The SpoolEase console's address on your network. Remembered for next time.",
     },
     {
       id: "port",
       label: "Port",
       kind: "text",
       spoolease: true,
-      about: "The console's web port: 80 unless you changed it.",
+      kept: true,
+      about: "The console's web port: 80 unless you changed it. Remembered for next time.",
     },
     {
       id: "securityKey",
       label: "Security key",
       kind: "secret",
       spoolease: true,
-      about: "The key set on the console. It's never shown.",
+      kept: true,
+      about: "The key set on the console, kept in the system keyring. It's never shown.",
     },
     {
       id: "https",
       label: "Use HTTPS",
       kind: "toggle",
       spoolease: true,
-      about: "On when the console is behind an HTTPS proxy.",
+      kept: true,
+      about: "On when the console is behind an HTTPS proxy. Remembered for next time.",
     },
     {
       id: "skipSpoolease",
@@ -580,8 +585,15 @@ export function commitText(field: FieldId, text: string): { change: Change } | {
       return validPort(text) === null
         ? { error: PORT_ERROR }
         : { change: { values: { port: text.trim() } } };
-    case "securityKey":
-      return { change: { values: { securityKey: text } } };
+    case "securityKey": {
+      // Empty forgets the key; anything else is checked as `key set` checks a paste, never quoting it.
+      if (text.trim() === "") return { change: { values: { securityKey: "" } } };
+      try {
+        return { change: { values: { securityKey: validateSecret(text, SECRETS.spoolease) } } };
+      } catch (err) {
+        return { error: (err as Error).message };
+      }
+    }
     case "source":
       return { change: { values: { source: isSpoolmanDb(text) ? "spoolmandb" : text.trim() } } };
     case "labelOutput":

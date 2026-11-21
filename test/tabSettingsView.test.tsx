@@ -240,7 +240,9 @@ describe.each([
   it("says which settings last only this session and which are kept", () => {
     expect(screen(on("bambu", 0), ctx)).toContain("this session only");
     expect(screen(on("bambu", 1), ctx)).toContain("saved for next time");
-    expect(screen(on("spoolease", 0), ctx)).toContain("this session only");
+    expect(screen(on("spoolease", 0), ctx)).toContain("saved for next time");
+    expect(screen(on("spoolease", 2), ctx)).toContain("saved for next time");
+    expect(screen(on("spoolease", 4), ctx)).toContain("this session only");
     expect(screen(on("labels", 0), ctx)).toContain("saved for next time");
     expect(screen(on("bambu", 0), ctx)).not.toContain("applies at once");
   });
