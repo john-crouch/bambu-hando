@@ -182,18 +182,22 @@ export function variantNames(preset: Preset): string[] {
     : DEFAULT_VARIANTS;
 }
 
+/** BambuStudio's extruder types, in the order a variant for the nozzle type is looked for. */
+const EXTRUDER_TYPES = ["Direct Drive", "Bowden"];
+
 /**
  * The variant BambuStudio prints with for the printer's nozzle type (BambuStudio.conf's
- * nozzle_volume_types: "Standard", "High Flow"): the one named for it, Direct Drive first; the first
- * when the preset has none for it, as BambuStudio falls back.
+ * nozzle_volume_types: "Standard", "High Flow"): the one named exactly "<extruder type> <nozzle type>",
+ * Direct Drive first; the first when the preset has none of those names, as BambuStudio falls back.
  */
 export function activeVariant(preset: Preset, nozzleType: string): number {
   const names = variantNames(preset);
   if (!nozzleType) return 0;
-  const exact = names.indexOf(`Direct Drive ${nozzleType}`);
-  if (exact >= 0) return exact;
-  const any = names.findIndex((name) => name.endsWith(` ${nozzleType}`));
-  return Math.max(0, any);
+  for (const extruder of EXTRUDER_TYPES) {
+    const index = names.indexOf(`${extruder} ${nozzleType}`);
+    if (index >= 0) return index;
+  }
+  return 0;
 }
 
 const LOCKED: Record<string, string> = {
