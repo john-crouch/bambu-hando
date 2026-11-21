@@ -4,7 +4,8 @@
 import type { FilamentProfile } from "../../../models.js";
 import { derivedFilamentId } from "../../../sources.js";
 import { type KeyPress, letter } from "../../core/keys.js";
-import { editText, moveCursor, type TextState, textState, typeAhead } from "./lists.js";
+import { moveCursor, typeAhead } from "../../ui/list.js";
+import { editText, type TextState } from "../../ui/textField.js";
 
 export const COLOR_FIELDS = ["base", "name", "hex", "add"] as const;
 export type ColorField = (typeof COLOR_FIELDS)[number];
@@ -43,8 +44,8 @@ export function openColorDialog(
     material,
     bases: sorted,
     base: null,
-    name: textState(""),
-    hex: textState(""),
+    name: { value: "", cursor: 0 },
+    hex: { value: "", cursor: 0 },
     field: "base",
     error: "",
   };
@@ -144,7 +145,14 @@ export function colorDialogKey(
   }
   if (dialog.field === "name" || dialog.field === "hex") {
     const edited = editText(dialog[dialog.field], key);
-    if (edited) return next({ [dialog.field]: edited });
+    if (edited) {
+      // A paste or burst ending in enter fills the field and moves on, like typing it then enter.
+      const text = { value: edited.value, cursor: edited.cursor };
+      return next({
+        [dialog.field]: text,
+        ...(edited.submit ? { field: COLOR_FIELDS[index + 1] ?? "add" } : {}),
+      });
+    }
   }
   return { dialog };
 }

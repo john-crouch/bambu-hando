@@ -1,11 +1,12 @@
 // ABOUTME: Where an Add run writes, from the session's settings: preset folder, printers and the SpoolEase console.
 // ABOUTME: The console is named by its URL only; the security key never leaves the connection object.
 
-import { isIP } from "node:net";
-
 import { bambuBaseFilamentDir, tildePath } from "../../../paths.js";
 import type { SpoolEaseConnection } from "../../../spoolease.js";
 import type { FormValues } from "../../core/values.js";
+import { consoleUrl } from "../../ui/ConsoleLink.js";
+
+export { consoleUrl };
 
 export function printersOf(values: FormValues): string[] {
   return values.printerPreset
@@ -31,20 +32,6 @@ export function consoleOf(values: FormValues): SpoolEaseConnection | null {
     securityKey: values.securityKey,
     https: values.https,
   };
-}
-
-/** The console's web UI, with the port only when it's a valid port other than the scheme's default. */
-export function consoleUrl({
-  host,
-  port,
-  https,
-}: Pick<SpoolEaseConnection, "host" | "port" | "https">): string {
-  const scheme = https ? "https" : "http";
-  const bare = host.replace(/^\[|\]$/g, "");
-  // An IPv6 address goes in brackets, its zone ID's "%" written "%25" (RFC 6874).
-  const name = isIP(bare.split("%")[0] ?? "") === 6 ? `[${bare.replace(/%(?!25)/, "%25")}]` : host;
-  const shown = Number.isInteger(port) && port > 0 && port <= 65535 && port !== (https ? 443 : 80);
-  return shown ? `${scheme}://${name}:${port}` : `${scheme}://${name}`;
 }
 
 /** Whether a run creates spools: only with a console to create them on. */

@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import {
   consoleOf,
   consoleSetup,
-  consoleUrl,
   createsSpools,
   printersOf,
   runError,
@@ -45,14 +44,6 @@ describe("console setup", () => {
     expect(createsSpools(ready)).toBe(true);
     expect(createsSpools({ ...ready, createSpools: false })).toBe(false);
     expect(createsSpools(values({ createSpools: true }))).toBe(false);
-  });
-
-  it("names the console by URL, with the port only when it isn't the default", () => {
-    expect(consoleUrl({ host: "10.0.0.5", port: 80, https: false })).toBe("http://10.0.0.5");
-    expect(consoleUrl({ host: "c.local", port: 8443, https: true })).toBe("https://c.local:8443");
-    expect(consoleUrl({ host: "fe80::1%eth0", port: 80, https: false })).toBe(
-      "http://[fe80::1%25eth0]",
-    );
   });
 });
 

@@ -9,6 +9,7 @@ import type { WeightChoice, WeightGroup } from "../../../spoolWeights.js";
 import type { SyncStage } from "../../../sync.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Resource, StartOptions, Step } from "../../core/types.js";
+import type { TextState } from "../../ui/textField.js";
 import {
   type Entry,
   importName,
@@ -19,8 +20,6 @@ import {
 } from "./catalog.js";
 import { importCmd } from "./cmds.js";
 import type { ColorDialog } from "./color.js";
-import type { TextState } from "./lists.js";
-import { textState } from "./lists.js";
 import type { RowProgress } from "./plan.js";
 
 export type PageId = "find" | "weights" | "review" | "run";
@@ -194,7 +193,9 @@ export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
   const model: AddModel = {
     page: "find",
     stack: rootStack(source !== null),
-    search: query ? { text: textState(query), cursor: 0, focus: "list" } : null,
+    search: query
+      ? { text: { value: query, cursor: query.length }, cursor: 0, focus: "list" }
+      : null,
     selected: new Set(),
     extra: [],
     imported: importModel(source),

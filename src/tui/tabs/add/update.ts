@@ -5,6 +5,8 @@ import { applyWeights, weightGroups } from "../../../spoolWeights.js";
 import { isCtrl, type KeyPress, letter, typed } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Hint, PaletteCommand, Step, TabMsg } from "../../core/types.js";
+import { moveCursor, typeAhead } from "../../ui/list.js";
+import { editText } from "../../ui/textField.js";
 import {
   dbKey,
   type FindRow,
@@ -25,7 +27,6 @@ import {
   weightsCmd,
 } from "./cmds.js";
 import { colorDialogKey, openColorDialog } from "./color.js";
-import { editText, moveCursor, typeAhead } from "./lists.js";
 import {
   type AddModel,
   dbProfiles,
@@ -333,7 +334,12 @@ function searchKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     if (key.name === "enter" || key.name === "down")
       return none(rows.length > 0 ? withSearch({ focus: "list" }) : model);
     const edited = editText(search.text, key);
-    if (edited) return none(withSearch({ text: edited, cursor: 0 }));
+    if (edited) {
+      // A paste ending in enter searches and goes to the results, as typing then enter does.
+      const text = { value: edited.value, cursor: edited.cursor };
+      const focus = edited.submit && rows.length > 0 ? "list" : "query";
+      return none(withSearch({ text, cursor: 0, focus }));
+    }
     return none(model);
   }
 

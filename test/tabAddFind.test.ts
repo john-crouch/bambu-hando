@@ -180,6 +180,7 @@ describe("search", () => {
     d.key(press("/"));
     d.msg({ type: "paste", text: "sunlu\n" });
     expect(d.model.search?.text.value).toBe("sunlu");
+    expect(d.model.search?.focus).toBe("list");
   });
 
   it("ticks every match with ctrl+a", () => {
