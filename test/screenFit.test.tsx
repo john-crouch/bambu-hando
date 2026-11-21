@@ -252,7 +252,7 @@ describe("lists sized to the terminal", () => {
       <SyncCheck
         sections={sections}
         top={5}
-        compared="BambuStudio default"
+        compared={["BambuStudio default"]}
         warnings={warnings}
         height={HEIGHT}
       />,

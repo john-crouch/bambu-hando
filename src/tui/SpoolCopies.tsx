@@ -5,6 +5,7 @@ import { Box, Text } from "ink";
 import type { CopyableFilament } from "../spoolCopies.js";
 import type { SpoolEaseWrite } from "../spoolease.js";
 import { Busy } from "./Busy.js";
+import { LinkedText, type TextPart } from "./ConsoleLink.js";
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -19,8 +20,8 @@ export function weightSummary(labelWeight: number | null, coreWeight: number | n
 interface Props {
   filament: CopyableFilament;
   count: number;
-  /** Where the spools go, e.g. http://host:port. */
-  target: string;
+  /** Where the spools go, e.g. http://host:port, linked to the console. */
+  target: TextPart;
   /** null before applying; one entry per copy made so far while running and after. */
   results: SpoolEaseWrite[] | null;
   running: boolean;
@@ -41,8 +42,8 @@ export function SpoolCopies({ filament, count, target, results, running, outcome
         Add {plural(count, "spool")} of {filament.name}
       </Text>
       <Text>
-        SpoolEase: {target} · copies of spool #{spool.id} ({plural(filament.count, "spool")} of it
-        now)
+        SpoolEase: <LinkedText parts={[target]} /> · copies of spool #{spool.id} (
+        {plural(filament.count, "spool")} of it now)
       </Text>
       <Box marginY={1}>
         {color ? <Text backgroundColor={`#${color}`}>{"  "}</Text> : null}

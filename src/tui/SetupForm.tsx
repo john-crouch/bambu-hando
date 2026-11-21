@@ -5,6 +5,7 @@ import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
 
 import type { FormValues } from "./App.js";
+import { Title } from "./Title.js";
 
 type TextKey = "source" | "host" | "port" | "securityKey";
 export type ChoiceKey = "presetFolder" | "printerPreset";
@@ -105,7 +106,7 @@ export function SetupForm({
 
   return (
     <Box flexDirection="column">
-      <Text bold>bambu-hando: sync filament profiles to BambuStudio and SpoolEase</Text>
+      <Title />
       <Box flexDirection="column" marginY={1}>
         {fields.map((field, index) => {
           const isFocused = index === focus;
