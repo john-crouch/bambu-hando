@@ -36,6 +36,12 @@ describe("consoleUrl", () => {
     expect(consoleUrl(conn("[fe80::1]", 80))).toBe("http://[fe80::1]");
   });
 
+  it("percent-encodes an IPv6 zone ID (RFC 6874)", () => {
+    expect(consoleUrl(conn("fe80::1%eth0", 8080))).toBe("http://[fe80::1%25eth0]:8080");
+    expect(consoleUrl(conn("[fe80::1%eth0]", 80))).toBe("http://[fe80::1%25eth0]");
+    expect(consoleUrl(conn("[fe80::1%25eth0]", 80))).toBe("http://[fe80::1%25eth0]");
+  });
+
   it("never carries the security key", () => {
     expect(consoleUrl(conn("host", 80))).not.toContain("secret");
   });

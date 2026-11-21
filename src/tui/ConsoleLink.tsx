@@ -11,7 +11,10 @@ export type TextPart = string | { text: string; url: string };
 /** The console's web UI, with the port only when it isn't the scheme's default. */
 export function consoleUrl({ host, port, https }: SpoolEaseConnection): string {
   const scheme = https ? "https" : "http";
-  const name = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  // An IPv6 address goes in brackets, its zone ID's "%" written "%25" (RFC 6874).
+  const name = host.includes(":")
+    ? `[${host.replace(/^\[|\]$/g, "").replace(/%(?!25)/, "%25")}]`
+    : host;
   return port === (https ? 443 : 80) ? `${scheme}://${name}` : `${scheme}://${name}:${port}`;
 }
 
