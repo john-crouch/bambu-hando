@@ -91,7 +91,8 @@ Options:
                                   Settings (its key in the system keyring, also
                                   stored by bambu-hando key set spoolease), then
                                   to the SpoolEase settings saved in BambuStudio
-  --spoolease-port <port>         SpoolEase port (default: as saved in Settings, else 80)
+  --spoolease-port <port>         SpoolEase port (default: as saved in Settings with its
+                                  host, else 80)
   --spoolease-https               Use HTTPS for SpoolEase (default: as saved in Settings;
                                   --no-spoolease-https turns a saved one off)
   --skip-spoolease                Skip SpoolEase API updates
@@ -228,7 +229,7 @@ or by bambu-hando key set spoolease, then the SpoolEase settings saved in
 BambuStudio):
   --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>         Port (default: as saved in Settings, else 80)
+  --spoolease-port <port>         Port (default: as saved in Settings with its host, else 80)
   --spoolease-https               Use HTTPS (--no-spoolease-https: don't, even if saved)
   -h, --help                      Show this help
 
@@ -271,7 +272,7 @@ Options:
   --json                          Print a snake_case JSON report instead of text
   --spoolease-host <host>         Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  Security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>         Port (default: as saved in Settings, else 80)
+  --spoolease-port <port>         Port (default: as saved in Settings with its host, else 80)
   --spoolease-https               Use HTTPS (--no-spoolease-https: don't, even if saved)
   -h, --help                      Show this help
 

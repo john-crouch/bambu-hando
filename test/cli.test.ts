@@ -215,29 +215,44 @@ describe("cli", () => {
   );
 
   it.skipIf(!privateKeyringSupported)(
-    "takes the key from the flag, then the environment, then the keyring, then BambuStudio",
+    "takes BambuStudio's console's key from the flag, then the environment, then BambuStudio, then the keyring",
     async () => {
       const port = ["--spoolease-port", String(server.port)];
-      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "WRONG" });
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
+      await storeSecret(CONSOLE_KEY, "WRONG-TOO");
+      expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
+
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "" });
       await storeSecret(CONSOLE_KEY, TEST_SECURITY_KEY);
       expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
 
-      await storeSecret(CONSOLE_KEY, "WRONG-TOO");
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "WRONG" });
       vi.stubEnv("SPOOLEASE_SECURITY_KEY", TEST_SECURITY_KEY);
       expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
 
-      vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
+      vi.stubEnv("SPOOLEASE_SECURITY_KEY", "WRONG-TOO");
       const flag = ["--spoolease-security-key", TEST_SECURITY_KEY];
       expect((await run(["--source", SOURCE_FIXTURE, ...port, ...flag])).code).toBe(0);
 
-      // Neither: the keyring's wrong key is the one tried, and the console refuses it.
+      // Neither: BambuStudio's wrong key is the one tried, and the console refuses it.
+      vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
       const refused = await run(["--source", SOURCE_FIXTURE, ...port]);
       expect(refused.code).toBe(2);
-      expect(refused.stdout + refused.stderr).not.toContain("WRONG-TOO");
+      expect(refused.stdout + refused.stderr).not.toContain("WRONG");
     },
   );
 
+  it("never sends BambuStudio's key to the console saved in Settings", async () => {
+    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: TEST_SECURITY_KEY });
+    await rememberConsole({ host: "127.0.0.1", port: server.port });
+    const { code, stderr } = await run(["--source", SOURCE_FIXTURE]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("SpoolEase host and security key are required");
+    expect(server.requests).toEqual([]);
+  });
+
   it("takes host, port and HTTPS from flags and environment before tui.json, and tui.json before BambuStudio", async () => {
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", TEST_SECURITY_KEY);
     await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: TEST_SECURITY_KEY });
     await rememberConsole({ host: "127.0.0.1", port: server.port });
     expect((await run(["--source", SOURCE_FIXTURE])).code).toBe(0);
@@ -246,9 +261,10 @@ describe("cli", () => {
     await rememberConsole({ host: "127.0.0.1", port: 1 });
     const port = ["--spoolease-port", String(server.port)];
     expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
-    await rememberConsole({ host: "192.0.2.1", port: server.port });
+    // The stand-in speaks plain HTTP: tui.json's HTTPS belongs to its own host, not to SPOOLEASE_HOST's.
+    await rememberConsole({ host: "192.0.2.1", port: 1, https: true });
     vi.stubEnv("SPOOLEASE_HOST", "127.0.0.1");
-    expect((await run(["--source", SOURCE_FIXTURE])).code).toBe(0);
+    expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
   });
 
   it.skipIf(!privateKeyringSupported)(
@@ -284,8 +300,8 @@ describe("cli", () => {
   });
 
   it("lets --no-spoolease-https switch off an HTTPS saved in Settings", async () => {
-    await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
-    await rememberConsole({ port: server.port, https: true });
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", TEST_SECURITY_KEY);
+    await rememberConsole({ host: "127.0.0.1", port: server.port, https: true });
     // The stand-in speaks plain HTTP, so HTTPS can't reach it.
     expect((await run(["--source", SOURCE_FIXTURE, "--dry-run"])).code).toBe(2);
     const off = await run(["--source", SOURCE_FIXTURE, "--dry-run", "--no-spoolease-https"]);

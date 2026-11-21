@@ -63,23 +63,36 @@ export interface ConsoleSettings {
   https: boolean;
 }
 
-/** The key from SPOOLEASE_SECURITY_KEY or the keyring; null when neither has one or the keyring can't be reached. */
-async function savedKey(env: Record<string, string | undefined>): Promise<string | null> {
+/** The key in the keyring; null when none is stored or the keyring can't be reached. */
+async function keyringKey(): Promise<string | null> {
   try {
-    return (await loadSecret(SECRETS.spoolease, env))?.value ?? null;
+    return (await loadSecret(SECRETS.spoolease, {}))?.value ?? null;
   } catch (err) {
-    // A keyring that can't be reached only means there's no saved key here; BambuStudio's may do.
+    // A keyring that can't be reached only means there's no saved key here.
     if (err instanceof KeyringError) return null;
     throw err;
   }
 }
 
+/** The key from SPOOLEASE_SECURITY_KEY; null when it isn't set. Never reads the keyring. */
+async function envKey(env: Record<string, string | undefined>): Promise<string | null> {
+  if (!env[SECRETS.spoolease.env]?.trim()) return null;
+  return (await loadSecret(SECRETS.spoolease, env))?.value ?? null;
+}
+
+/** Where the console's host came from: everything else about the console follows it. */
+type HostSource = "argument" | "tui" | "bambu" | "none";
+
 /**
- * The console every command and the TUI use. Host: flag, SPOOLEASE_HOST, the TUI's saved console,
- * BambuStudio's. Key: flag, SPOOLEASE_SECURITY_KEY, the keyring, BambuStudio's. Port and HTTPS: flag,
- * the TUI's saved console, then 80 and off. The keyring is only read when neither the flag nor the
- * variable gives the key. An unusable key from the variable or the keyring throws InvalidSecretError,
- * which says where it came from and never what it is.
+ * The console every command and the TUI use. Each value belongs to the console the host names, so no two come
+ * from different consoles:
+ * - Host: --spoolease-host, SPOOLEASE_HOST, the TUI's saved console (tui.json), BambuStudio's.
+ * - Port and HTTPS: the flags, else tui.json's only when the host came from tui.json, else 80 and off
+ *   (BambuStudio's address port is its HTTPS port, never ours).
+ * - Key: --spoolease-security-key, SPOOLEASE_SECURITY_KEY, else the host's own: BambuStudio's key for
+ *   BambuStudio's host (then the keyring, when BambuStudio has none), the keyring for every other host.
+ * The keyring is only read when nothing before it gives the key. An unusable key from the variable or the
+ * keyring throws InvalidSecretError, which says where it came from and never what it is.
  */
 export async function consoleSettings(
   flags: SpoolEaseFlags,
@@ -87,14 +100,24 @@ export async function consoleSettings(
 ): Promise<ConsoleSettings> {
   const [bambu, remembered] = await Promise.all([readSpoolEaseConfig(), loadTuiSettings()]);
   const saved = remembered.console ?? {};
-  const host = flags["spoolease-host"] || env.SPOOLEASE_HOST || saved.host || bambu.host || "";
+  const given = flags["spoolease-host"] || env.SPOOLEASE_HOST;
+  const [host, source]: [string, HostSource] = given
+    ? [given, "argument"]
+    : saved.host
+      ? [saved.host, "tui"]
+      : bambu.host
+        ? [bambu.host, "bambu"]
+        : ["", "none"];
+  const ownKey = async () =>
+    source === "bambu" ? bambu.securityKey || (await keyringKey()) : await keyringKey();
   const securityKey =
-    flags["spoolease-security-key"] || (await savedKey(env)) || bambu.securityKey || "";
+    flags["spoolease-security-key"] || (await envKey(env)) || (await ownKey()) || "";
+  const fromTui = source === "tui";
   return {
     host,
-    port: flags["spoolease-port"] ?? String(saved.port ?? 80),
+    port: flags["spoolease-port"] ?? String((fromTui ? saved.port : undefined) ?? 80),
     securityKey,
-    https: flags["spoolease-https"] ?? saved.https ?? false,
+    https: flags["spoolease-https"] ?? (fromTui ? saved.https : undefined) ?? false,
   };
 }
 

@@ -71,7 +71,7 @@ Options:
   --spoolease-host <host>    Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>
                              Security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>    Port (default: as saved in Settings, else 80)
+  --spoolease-port <port>    Port (default: as saved in Settings with its host, else 80)
   --spoolease-https          Use HTTPS (--no-spoolease-https: don't, even if saved)
   -h, --help                 Show this help
 

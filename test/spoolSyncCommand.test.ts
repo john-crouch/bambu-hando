@@ -320,28 +320,39 @@ describe("bambu-hando 3dfp sync", () => {
     return { code, output };
   }
 
-  it("finds the console as every command does: tui.json's address, BambuStudio's key", async () => {
+  it("finds the console as every command does: tui.json's address with its port, the key from the environment", async () => {
     vi.stubEnv("SPOOLEASE_HOST", "");
-    vi.stubEnv("SPOOLEASE_SECURITY_KEY", "");
-    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: TEST_SECURITY_KEY });
+    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: "WRONG" });
     await rememberConsole({ host: "127.0.0.1", port: spoolease.port });
     expect(await bareSync()).toMatchObject({ code: 0 });
     expect(spoolease.requests[0]?.path).toBe("/api/test-key");
   });
 
+  it("never sends BambuStudio's key to the console saved in Settings", async () => {
+    vi.stubEnv("SPOOLEASE_HOST", "");
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", "");
+    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: TEST_SECURITY_KEY });
+    await rememberConsole({ host: "127.0.0.1", port: spoolease.port });
+    expect((await bareSync()).output).toMatch(/SpoolEase host and security key are required/);
+    expect(spoolease.requests).toEqual([]);
+  });
+
   it.skipIf(!privateKeyringSupported)(
-    "takes the console's key from the keyring before BambuStudio's",
+    "takes the key for BambuStudio's console from the keyring when BambuStudio has none",
     async () => {
+      vi.stubEnv("SPOOLEASE_HOST", "");
       vi.stubEnv("SPOOLEASE_SECURITY_KEY", "");
-      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "WRONG" });
-      await rememberConsole({ port: spoolease.port });
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "" });
       await storeSecret(SECRETS.spoolease, TEST_SECURITY_KEY);
-      expect(await bareSync()).toMatchObject({ code: 0 });
+      expect(await bareSync("--spoolease-port", String(spoolease.port))).toMatchObject({
+        code: 0,
+      });
     },
   );
 
   it("lets --no-spoolease-https switch off an HTTPS saved in Settings", async () => {
-    await rememberConsole({ https: true });
+    vi.stubEnv("SPOOLEASE_HOST", "");
+    await rememberConsole({ host: "127.0.0.1", port: spoolease.port, https: true });
     expect((await sync("--dry-run")).code).not.toBe(0);
     expect(await sync("--dry-run", "--no-spoolease-https")).toMatchObject({ code: 0 });
   });
