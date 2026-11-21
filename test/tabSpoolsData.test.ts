@@ -15,6 +15,7 @@ import {
   spoolDetail,
   spoolsSummary,
   swatchOf,
+  wrapNote,
 } from "../src/tui/tabs/spools/data.js";
 import { FILAMENTS, spool, VALUES } from "./tabSpoolsFixtures.js";
 
@@ -221,5 +222,34 @@ describe("compactDetail", () => {
       { label: "Place", value: "not placed · no tag", dim: true },
       { label: "Filament", value: "Acme · PETG · no filament code" },
     ]);
+  });
+});
+
+describe("wrapNote", () => {
+  const rows = [
+    { label: "Left", value: "564 g" },
+    { label: "Note", value: "dry it first at 65°C for four hours before printing" },
+  ];
+
+  it("wraps the note onto lines of its own under its label, other rows untouched", () => {
+    expect(wrapNote(rows, 20, 10)).toEqual([
+      { label: "Left", value: "564 g" },
+      { label: "Note", value: "dry it first at 65°C" },
+      { label: "", value: "for four hours" },
+      { label: "", value: "before printing" },
+    ]);
+  });
+
+  it("stops at the lines there are, ending the last one with …", () => {
+    expect(wrapNote(rows, 20, 2)).toEqual([
+      { label: "Left", value: "564 g" },
+      { label: "Note", value: "dry it first at 65°C" },
+      { label: "", value: "for four hours…" },
+    ]);
+    expect(wrapNote(rows, 20, 1)[1]).toEqual({ label: "Note", value: "dry it first at 65°…" });
+  });
+
+  it("leaves rows without a note as they are", () => {
+    expect(wrapNote(rows.slice(0, 1), 20, 5)).toEqual(rows.slice(0, 1));
   });
 });

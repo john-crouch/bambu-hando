@@ -6,7 +6,8 @@ import { type InventoryRow, type InventorySort, remainingGrams } from "../../../
 import { checkCounts } from "../../../syncCheck.js";
 import type { CheckData, ConsoleData, Resource } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
-import { formatRange } from "../../ui/index.js";
+import { formatRange, truncate } from "../../ui/index.js";
+import { wrapText } from "./local.js";
 
 /** Under this share of the label weight a spool counts as low (yellow); under LOW_RED it's red. */
 export const LOW_FRACTION = 0.25;
@@ -200,6 +201,25 @@ export function spoolDetail(
     swatch: swatchOf(spool.colorCodes),
     rows,
   };
+}
+
+/**
+ * The Note row wrapped onto rows of its own (empty labels) at most lines long, values width columns
+ * wide; when it needs more, the last shown line ends in ….
+ */
+export function wrapNote(rows: readonly DetailRow[], width: number, lines: number): DetailRow[] {
+  return rows.flatMap((row) => {
+    if (row.label !== "Note" || width <= 0) return [row];
+    const wrapped = wrapText(row.value, width);
+    const shown =
+      wrapped.length <= lines
+        ? wrapped
+        : [
+            ...wrapped.slice(0, Math.max(0, lines - 1)),
+            truncate(`${wrapped[Math.max(0, lines - 1)] ?? ""}…`, width),
+          ];
+    return shown.map((value, index) => ({ ...row, label: index === 0 ? row.label : "", value }));
+  });
 }
 
 /** Brand · material · filament code. */

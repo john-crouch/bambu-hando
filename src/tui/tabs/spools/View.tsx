@@ -13,12 +13,14 @@ import {
   Empty,
   Line,
   List,
+  labelColumn,
   listPosition,
   Panel,
   panelInner,
   type Segment,
   Swatch,
   TextField,
+  truncate,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
 import {
@@ -29,7 +31,9 @@ import {
   spoolDetail,
   spoolsSummary,
   swatchOf,
+  wrapNote,
 } from "./data.js";
+import { wrapText } from "./local.js";
 import {
   COMPACT_DETAIL,
   cursorIndex,
@@ -157,6 +161,22 @@ function DetailPanel({
   const detail = spoolDetail(row, data.filaments, now);
   const art = inner.width - 2;
   const swatchRows = inner.height >= 24 ? 3 : 2;
+  // A long name takes two lines and the note what's left of the panel, instead of being cut.
+  const titleLines = wrapText(detail.title, art);
+  const title =
+    titleLines.length <= 2
+      ? titleLines
+      : [titleLines[0] ?? "", truncate(`${titleLines[1] ?? ""}…`, art)];
+  const used =
+    (detail.swatch ? swatchRows : 1) +
+    1 +
+    title.length +
+    2 +
+    (row.fraction !== null ? 2 : 0) +
+    detail.rows.length;
+  // Detail draws a margin, the label column and a gap before each value, and a margin after.
+  const valueWidth = inner.width - 1 - labelColumn(detail.rows) - 2 - 1;
+  const rows = wrapNote(detail.rows, valueWidth, 1 + Math.max(0, inner.height - used));
   return (
     <Panel
       title={`#${row.spool.id}`}
@@ -173,7 +193,14 @@ function DetailPanel({
         )}
       </Box>
       <Line segments={[]} width={inner.width} />
-      <Line segments={[{ text: " " }, { text: detail.title, bold: true }]} width={inner.width} />
+      {title.map((line, index) => (
+        <Line
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one name.
+          key={index}
+          segments={[{ text: " " }, { text: line, bold: true }]}
+          width={inner.width}
+        />
+      ))}
       <Line
         segments={[{ text: " " }, { text: detail.subtitle, color: COLORS.muted }]}
         width={inner.width}
@@ -185,7 +212,7 @@ function DetailPanel({
           <Line segments={[]} width={art} />
         </Box>
       ) : null}
-      <Detail rows={detail.rows} width={inner.width} />
+      <Detail rows={rows} width={inner.width} />
     </Panel>
   );
 }
