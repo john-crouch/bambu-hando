@@ -64,9 +64,7 @@ export function spoolListRows(
           width: BAR_CELLS,
           ...(tone ? { color: toneColor(tone) } : {}),
         },
-        ...(columns.location
-          ? [{ text: spool.location || "·", width: LOCATION_WIDTH, dim: !spool.location }]
-          : []),
+        ...(columns.location ? [{ text: spool.location, width: LOCATION_WIDTH }] : []),
         ...(columns.added
           ? [{ text: addedDate(spool.addedTime), width: ADDED_WIDTH, dim: true }]
           : []),

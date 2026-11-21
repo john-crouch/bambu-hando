@@ -666,7 +666,7 @@ export function dialogHints(dialog: Dialog): Hint[] {
   switch (dialog.kind) {
     case "scan":
       return [
-        { keys: "type", label: "scan or type a barcode", primary: true },
+        { keys: "type", label: "the barcode, or scan it", primary: true },
         { keys: "enter", label: "look up", primary: true },
         { keys: "esc", label: "close", primary: true },
       ];
@@ -699,7 +699,7 @@ export function dialogHints(dialog: Dialog): Hint[] {
       return [
         { keys: "↑↓", label: "how many", primary: true },
         { keys: "1-8", label: "set" },
-        { keys: "a", label: "add them", primary: true },
+        { keys: "a", label: `add ${plural(dialog.count, "spool")}`, primary: true },
         { keys: "esc", label: back, primary: true },
       ];
     }
@@ -711,7 +711,7 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
   const screen = spoolsScreen(ctx);
   switch (screen.kind) {
     case "unset":
-      return [{ keys: "enter", label: "set up SpoolEase in Settings", primary: true }];
+      return [{ keys: "enter", label: "open Settings", primary: true }];
     case "loading":
       return [];
     case "failed":
@@ -744,7 +744,11 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
     { keys: "r", label: "reload" },
     ...(isWide(ctx)
       ? []
-      : [{ keys: "enter", label: model.detailOpen ? "back to the list" : "details" }]),
+      : [
+          model.detailOpen
+            ? { keys: "enter", label: "back to the list", primary: true }
+            : { keys: "enter", label: "details" },
+        ]),
   ];
 }
 

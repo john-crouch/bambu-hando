@@ -586,16 +586,7 @@ describe("hints and commands", () => {
   const keysOf = (model: SpoolsModel, ctx: Ctx = CTX) => hints(model, ctx).map((h) => h.keys);
 
   it("lists the list's keys, labels counting the ticks", () => {
-    expect(keysOf(keys(start(), ["down"]))).toEqual([
-      "↑↓",
-      "space",
-      "/",
-      "s",
-      "l",
-      "+",
-      "b",
-      "r",
-    ]);
+    expect(keysOf(keys(start(), ["down"]))).toEqual(["↑↓", "space", "/", "s", "l", "+", "b", "r"]);
     const narrow = { ...CTX, bodyColumns: 80 };
     expect(keysOf(start(narrow), narrow)).toContain("enter");
     const label = hints(keys(start(), ["space", "space"]), CTX).find((h) => h.keys === "l");

@@ -11,6 +11,7 @@ import { LABEL_FIELDS } from "../src/labels.js";
 import { press } from "../src/tui/core/keys.js";
 import type { Ctx, Step, TabMsg } from "../src/tui/core/types.js";
 import {
+  FIELD_ROWS,
   hints,
   init,
   type LabelsModel,
@@ -112,6 +113,15 @@ describe("the form", () => {
     ]);
     model = keys(at(model, brand), ["enter"]);
     expect(model.fields).not.toContain("brand");
+  });
+
+  it("jumps between the two columns of fields with ← and →", () => {
+    expect(keys(at(loaded(), 1), ["right"]).focus).toBe(1 + FIELD_ROWS);
+    expect(keys(at(loaded(), 1 + FIELD_ROWS), ["left"]).focus).toBe(1);
+    expect(keys(at(loaded(), 1), ["left"]).focus).toBe(1);
+    expect(keys(at(loaded(), FIELD_ROWS - 1 + FIELD_ROWS), ["right"]).focus).toBe(
+      FIELD_ROWS - 1 + FIELD_ROWS,
+    );
   });
 
   it("cycles common sizes with ← and →, and typing replaces the size, then edits it", () => {
@@ -235,7 +245,7 @@ describe("hints", () => {
 
   it("follows the focused row", () => {
     expect(keysOf(init(REQUEST, CTX)[0])).toEqual(["esc"]);
-    expect(keysOf(loaded())).toEqual(["↑↓", "enter", "a", "esc"]);
+    expect(keysOf(loaded())).toEqual(["↑↓", "enter", "esc"]);
     expect(keysOf(at(loaded(), 0))).toEqual(["↑↓", "space", "a", "esc"]);
     expect(keysOf(at(loaded(), SIZE_ROW))).toEqual(["↑↓", "←→", "type", "a", "esc"]);
     expect(keysOf(at(loaded(), PRINTER_ROW))).toEqual(["↑↓", "←→", "a", "esc"]);

@@ -22,6 +22,8 @@ import { pasted, textState } from "../../tabs/spools/local.js";
 import { editText, moveCursor, type TextState } from "../../ui/index.js";
 import { loadLabelsCmd, makeLabelsCmd } from "./cmds.js";
 
+/** Fields are shown in two columns of this many; ← and → jump between them. */
+export const FIELD_ROWS = Math.ceil(LABEL_FIELDS.length / 2);
 export const SIZE_ROW = LABEL_FIELDS.length;
 export const PRINTER_ROW = SIZE_ROW + 1;
 export const OUTPUT_ROW = PRINTER_ROW + 1;
@@ -205,6 +207,16 @@ function readyKey(model: LabelsModel, key: KeyPress, ctx: Ctx): Step<LabelsModel
   if (field) {
     if (key.name === "space" || key.name === "enter")
       return [{ ...model, fields: toggle(model.fields, field) }, []];
+    const across =
+      key.name === "right"
+        ? model.focus + FIELD_ROWS
+        : key.name === "left"
+          ? model.focus - FIELD_ROWS
+          : -1;
+    if (key.name === "right" || key.name === "left")
+      return across >= 0 && across < LABEL_FIELDS.length
+        ? [{ ...model, focus: across }, []]
+        : [model, []];
   } else if (model.focus === SIZE_ROW) {
     const sized = sizeKey(model, key);
     if (sized) return [sized, []];
@@ -294,6 +306,6 @@ export function hints(model: LabelsModel, _ctx: Ctx): Hint[] {
         closeHint,
       ];
     default:
-      return [move, { keys: "enter", label: "make labels", primary: true }, makeHint, closeHint];
+      return [move, { keys: "enter", label: "make labels", primary: true }, closeHint];
   }
 }
