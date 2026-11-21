@@ -248,7 +248,7 @@ function fieldShown(
     const bare: EditField = { ...field, unit: "" };
     const each = value.map((entry, index) => {
       const goes = mark && (mark.every || entry === value[mark.active]);
-      const lead = mark ? (goes ? "● " : "○ ") : "";
+      const lead = mark ? (goes ? "●" : "○") : "";
       return `${lead}${variantName(names[index] as string)} ${shownValue(bare, [entry])}`;
     });
     return tidyUnits(`${each.join(" · ")}${field.unit ? ` ${field.unit}` : ""}`);
@@ -382,8 +382,8 @@ export function editorTakes(model: EditorModel): string {
   const one = !splitVariants(model, field.key)
     ? ""
     : model.everyKeys.has(field.key)
-      ? `; for every nozzle type (n: ${activeName(model)} only)`
-      : `; for ${activeName(model)} (n: every nozzle type)`;
+      ? `; for all types (n: ${activeName(model)} only)`
+      : `; for ${activeName(model)} (n: all types)`;
   switch (field.kind) {
     case "int":
       return `a whole number, ${field.min}–${field.max}${nil}${one}`;

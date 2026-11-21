@@ -325,15 +325,15 @@ describe("variants", () => {
   it("names each nozzle type's value when they differ, ● on the one the printer uses", () => {
     expect(editorCurrentRow(flow())).toMatchObject({
       key: "filament_max_volumetric_speed",
-      value: "● standard 22 · ○ high flow 29 mm³/s",
+      value: "●standard 22 · ○high flow 29 mm³/s",
     });
-    expect(editorCurrentRow(highFlow())?.value).toBe("○ standard 22 · ● high flow 29 mm³/s");
+    expect(editorCurrentRow(highFlow())?.value).toBe("○standard 22 · ●high flow 29 mm³/s");
   });
 
   it("says which nozzle type an edit goes to, and n for every one", () => {
-    expect(editorTakes(flow())).toBe("a number, 0.1–200; for standard (n: every nozzle type)");
+    expect(editorTakes(flow())).toBe("a number, 0.1–200; for standard (n: all types)");
     expect(editorTakes(keys(flow(), "n").model)).toBe(
-      "a number, 0.1–200; for every nozzle type (n: standard only)",
+      "a number, 0.1–200; for all types (n: standard only)",
     );
     expect(editorTakes(keys(flow(), "up").model)).toBe("a number, 0.01–2");
     expect(editorHints(flow()).map((h) => `${h.keys} ${h.label}`)).toContain("n every nozzle type");
@@ -351,7 +351,7 @@ describe("variants", () => {
       value: "22.5",
     });
     expect(editedPreset(set).filament_max_volumetric_speed).toEqual(["22.5", "29"]);
-    expect(editorCurrentRow(set)?.value).toBe("● standard 22.5 · ○ high flow 29 mm³/s");
+    expect(editorCurrentRow(set)?.value).toBe("●standard 22.5 · ○high flow 29 mm³/s");
     expect(editorChanges(set)).toEqual([
       {
         key: "filament_max_volumetric_speed",

@@ -332,9 +332,7 @@ describe.each([
     const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
     const screen = lines(flow, ctx);
     expectExact(screen, ctx);
-    expect(screen.join("\n")).toMatch(
-      /Max volumetric speed +● standard 12 · ○ high flow 16 mm³\/s/,
-    );
+    expect(screen.join("\n")).toMatch(/Max volumetric speed +●standard 12 · ○high flow 16 mm³\/s/);
   });
 
   it("lists every key on All settings, filtered", () => {
@@ -523,6 +521,40 @@ it("wraps the review's notes at 60 columns instead of cutting them", () => {
   expect(words).toContain("it may save its own copy over these presets.");
   expect(words).toContain("uploads the change on its next sync.");
   expect(screen.join("\n")).not.toContain("…");
+});
+
+it("puts a long change's new value under its old one in the editor's side panel", () => {
+  const ctx = ctxFor(120, 36);
+  const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
+  const edited = drive(flow, ctx, "enter", "backspace", "backspace", "14", "enter");
+  const screen = lines(edited, ctx);
+  expectExact(screen, ctx);
+  const side = screen.map((line) => line.slice(line.lastIndexOf("││") + 2)).join("\n");
+  expect(side).toMatch(
+    /standard 12 · high flow 16 mm³\/s +│\n +→ standard 14 · high flow 16 mm³\/s/,
+  );
+  expect(side).not.toContain("…");
+});
+
+it("keeps nozzle types' values whole at 60 columns, in the editor and the review", () => {
+  const ctx = ctxFor(60, 20);
+  const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
+  const editor = lines(flow, ctx);
+  expectExact(editor, ctx);
+  expect(editor.join("\n")).toMatch(/Max volumetric speed ●standard 12 · ○high flow 16 mm³\/s/);
+  expect(editor.join("\n")).toContain("Takes a number, 0.1–200; for standard (n: all types)");
+  const review = drive(flow, ctx, "enter", "backspace", "backspace", "14", "enter", "a");
+  const screen = lines(review, ctx);
+  expectExact(screen, ctx);
+  const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+  expect(words).toContain("standard 12 · high flow 16 mm³/s → standard 14 · high flow 16 mm³/s");
+  expect(screen.join("\n")).not.toContain("…");
+  // The rows scroll here: the other preset's is one down.
+  const next = lines(drive(review, ctx, "down"), ctx);
+  expectExact(next, ctx);
+  const below = next.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+  expect(below).toContain("X1C 0.6 standard 12 · high flow 16 mm³/s stays");
+  expect(next.join("\n")).not.toContain("…");
 });
 
 it("wraps a change's warning at 60 columns instead of cutting it", () => {

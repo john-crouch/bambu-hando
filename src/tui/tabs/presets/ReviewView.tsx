@@ -169,9 +169,17 @@ function reviewLines(review: ReviewModel, width: number): ReviewLine[] {
   const afters = rows.map((row, index) =>
     textWidth(changeCell(changes[index] as TargetChange, review.ticked.has(row.id)).text),
   );
-  // Before and after side by side when every row's fit; else after goes under before, never cut.
+  // Before and after side by side when every row's fit; else after under before; on a narrow
+  // terminal both on lines of their own under the row, wrapped: never cut.
   const stacked = widest + 2 + Math.max(0, ...afters) > room;
+  const deep = stacked && Math.max(widest, ...afters) > room;
   const beforeWidth = stacked ? 0 : widest + 1;
+  const indent = 1 + 4 + 2;
+  const valueLines = (text: string, style: Partial<Segment>): ReviewLine[] =>
+    wrapWords(text, Math.max(8, width - indent)).map((part) => ({
+      row: null,
+      segments: [{ text: spaces(indent) }, { text: part, ...style }],
+    }));
   const lines: ReviewLine[] = [];
   rows.forEach((row, index) => {
     const ticked = review.ticked.has(row.id);
@@ -191,9 +199,23 @@ function reviewLines(review: ReviewModel, width: number): ReviewLine[] {
       ? { text: befores[index] ?? "", grow: true, dim: true }
       : { text: befores[index] ?? "", width: beforeWidth, dim: true };
     const after = changeCell(change, ticked);
-    const cells = stacked ? [...lead, before] : [...lead, before, after];
-    lines.push({ row: index, listRow: { key: row.id, cells, ticked } });
-    if (stacked)
+    const style = (cell: Cell): Partial<Segment> => ({
+      ...(cell.color ? { color: cell.color } : {}),
+      ...(cell.dim ? { dim: true } : {}),
+    });
+    if (deep) {
+      // The printer takes the rest of the row; the values follow on lines of their own.
+      const named: Cell[] = lead.map((cell, at) =>
+        at === 1 ? { text: cell.text, grow: true } : cell,
+      );
+      lines.push({ row: index, listRow: { key: row.id, cells: named, ticked } });
+      if (before.text) lines.push(...valueLines(before.text, { dim: true }));
+      lines.push(...valueLines(after.text, style(after)));
+    } else {
+      const cells = stacked ? [...lead, before] : [...lead, before, after];
+      lines.push({ row: index, listRow: { key: row.id, cells, ticked } });
+    }
+    if (stacked && !deep)
       lines.push({
         row: null,
         segments: [
