@@ -537,10 +537,10 @@ export function hints(model: PresetsModel, ctx: Ctx): Hint[] {
     if (model.review.phase === "done")
       return [{ keys: "esc", label: "back to presets", primary: true }];
     return [
-      { keys: "a", label: "save", primary: true },
-      { keys: "space", label: "tick", primary: true },
-      { keys: "esc", label: "back", primary: true },
       { keys: "↑↓", label: "move" },
+      { keys: "space", label: "tick", primary: true },
+      { keys: "a", label: "save", primary: true },
+      { keys: "esc", label: "back", primary: true },
     ];
   }
   if (model.filter.focused)

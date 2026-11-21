@@ -621,10 +621,10 @@ describe("review", () => {
     const ctx = ctxWith();
     const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
     expect(hints(reviewing, ctx).map((h) => `${h.keys} ${h.label}`)).toEqual([
-      "a save",
-      "space tick",
-      "esc back",
       "↑↓ move",
+      "space tick",
+      "a save",
+      "esc back",
     ]);
   });
 });
