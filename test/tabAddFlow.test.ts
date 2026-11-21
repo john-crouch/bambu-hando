@@ -417,6 +417,70 @@ describe("editing a preset before the run writes it", () => {
   });
 });
 
+describe("palette commands while Review's editor is open", () => {
+  async function editing(): Promise<Driver<AddModel>> {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    d.key(press("enter"), press("u", { ctrl: true }), press("250"), press("enter"));
+    expect(d.model.review.editing?.editor.edits.size).toBe(1);
+    return d;
+  }
+
+  function run(d: Driver<AddModel>, title: RegExp): void {
+    const msg = commands(d.model, d.context).find((c) => title.test(c.title))?.msg;
+    if (msg?.type !== "tab") throw new Error("expected a tab message");
+    d.msg(msg.msg);
+  }
+
+  const EDITED = new Map([["nozzle_temperature", { every: "250" }]]);
+
+  it("Review the ticked keeps the editor's edits for the run", async () => {
+    const d = await editing();
+    run(d, /^Review the/);
+    await d.settle();
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.planEdits.get("P9a3bd74")).toEqual(EDITED);
+    expect(d.model.planChanges.get("P9a3bd74")?.length).toBe(1);
+    expect(d.model.page).toBe("review");
+  });
+
+  it("Search SpoolmanDB keeps the editor's edits for the run", async () => {
+    const d = await editing();
+    run(d, /^Search/);
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.planEdits.get("P9a3bd74")).toEqual(EDITED);
+    expect(d.model.page).toBe("find");
+    expect(d.model.search?.focus).toBe("query");
+  });
+
+  it("refuses while the editor's nozzle range runs high to low, keeping the editor open", async () => {
+    const d = await editing();
+    const open = d.model.review.editing;
+    if (!open) throw new Error("expected the editor");
+    const backwards = new Map([
+      ["nozzle_temperature_range_low", { every: "300" }],
+      ["nozzle_temperature_range_high", { every: "200" }],
+    ]);
+    d.model = {
+      ...d.model,
+      review: {
+        ...d.model.review,
+        editing: { ...open, editor: { ...open.editor, edits: backwards } },
+      },
+    };
+    for (const title of [/^Search/, /^Review the/]) {
+      run(d, title);
+      expect(d.model.review.editing?.editor.edits).toBe(backwards);
+      expect(d.model.page).toBe("review");
+      expect(d.model.planEdits.size).toBe(0);
+      expect(d.model.notice).toMatch(/Nozzle range/);
+    }
+  });
+});
+
 describe("palette commands", () => {
   it("offers search, and review and untick once something is ticked", async () => {
     const d = start({ createSpools: false });
