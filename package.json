@@ -21,6 +21,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
+    "lint": "biome check .",
+    "format": "biome check --write .",
     "test": "npm run build && vitest run",
     "start": "node dist/bin.js",
     "tui:snap": "npm run build && node scripts/tui-snap.mjs"
@@ -35,6 +37,7 @@
     "react": "19.3.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.5",
     "@types/node": "24.19.1",
     "@types/pdfkit": "0.17.6",
     "@types/qrcode": "1.5.6",
