@@ -97,3 +97,18 @@ export function padSegments(
   const rest = width - segmentsWidth(cut);
   return rest > 0 ? [...cut, { ...fill, text: spaces(rest) }] : cut;
 }
+
+/** text broken into lines of at most width columns at spaces; a word wider than width gets a line of its own. */
+export function wrapText(text: string, width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && textWidth(next) > width) {
+      lines.push(line);
+      line = word;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}

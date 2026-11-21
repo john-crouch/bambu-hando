@@ -15,6 +15,7 @@ import {
   type Segment,
   textWidth,
 } from "../ui/index.js";
+import { spaces, wrapText } from "../ui/text.js";
 import { closeThen, type ShellOverlay } from "./messages.js";
 
 /** One paragraph per tab: what it is for. */
@@ -59,29 +60,26 @@ export type HelpLine =
   | { kind: "heading"; text: string }
   | { kind: "text"; text: string }
   | { kind: "key"; keys: string; label: string; keyWidth: number }
+  /** A key's meaning carried on to the next line, under the meaning's column. */
+  | { kind: "label"; text: string; keyWidth: number }
   | { kind: "blank" };
 
 /** text broken into lines of at most width columns, at spaces. */
-export function wrap(text: string, width: number): string[] {
-  const lines: string[] = [];
-  let line = "";
-  for (const word of text.split(/\s+/).filter(Boolean)) {
-    const next = line ? `${line} ${word}` : word;
-    if (line && textWidth(next) > width) {
-      lines.push(line);
-      line = word;
-    } else line = next;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
+export const wrap = wrapText;
 
 /** The help page for a width, line by line. */
 export function helpLines(request: HelpRequest, width: number): HelpLine[] {
   const keyWidth =
     Math.max(...[...request.hints, ...GLOBAL_HELP].map((h) => textWidth(h.keys))) + 2;
+  // Meanings wrap under their own column, never cut.
   const keys = (hints: Hint[]): HelpLine[] =>
-    hints.map((h) => ({ kind: "key", keys: h.keys, label: h.label, keyWidth }));
+    hints.flatMap((h): HelpLine[] => {
+      const [first = "", ...rest] = wrap(h.label, Math.max(1, width - keyWidth));
+      return [
+        { kind: "key", keys: h.keys, label: first, keyWidth },
+        ...rest.map((text): HelpLine => ({ kind: "label", text, keyWidth })),
+      ];
+    });
   const lines: HelpLine[] = [
     ...wrap(TAB_ABOUT[request.tab], width).map((text): HelpLine => ({ kind: "text", text })),
     { kind: "blank" },
@@ -139,6 +137,8 @@ export function helpSegments(line: HelpLine): Segment[] {
   if (line.kind === "blank") return [];
   if (line.kind === "heading") return [{ text: line.text, color: COLORS.accent, bold: true }];
   if (line.kind === "text") return [{ text: line.text }];
+  if (line.kind === "label")
+    return [{ text: spaces(line.keyWidth) }, { text: line.text, color: COLORS.muted }];
   return [
     { text: fitText(line.keys, line.keyWidth), color: COLORS.accent2, bold: true },
     { text: line.label, color: COLORS.muted },

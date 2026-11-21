@@ -3,13 +3,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { CONFIRM, confirmWidth } from "../src/tui/app/confirm.js";
+import { CONFIRM, confirmLines, confirmWidth } from "../src/tui/app/confirm.js";
 import {
   GLOBAL_HELP,
   HELP,
+  type HelpLine,
   type HelpRequest,
   helpLines,
   helpNote,
+  helpSegments,
   helpSize,
   wrap,
 } from "../src/tui/app/help.js";
@@ -242,6 +244,32 @@ describe("help", () => {
       if (line.kind === "text") expect(line.text.length).toBeLessThanOrEqual(60);
   });
 
+  it("wraps a key's meaning under itself instead of cutting it", () => {
+    const lines = helpLines(request, 44);
+    const at = lines.findIndex((l) => l.kind === "key" && l.keys === "q");
+    const quit = lines.slice(at, at + 3);
+    expect(quit).toEqual([
+      { kind: "key", keys: "q", label: "quit (asks first with unsaved", keyWidth: 11 },
+      { kind: "label", text: "changes; exits 1 if a run failed)", keyWidth: 11 },
+      { kind: "key", keys: "ctrl+c", label: "quit right away, from anywhere", keyWidth: 11 },
+    ]);
+    for (const line of lines) {
+      const width =
+        line.kind === "key"
+          ? line.keyWidth + line.label.length
+          : line.kind === "label"
+            ? line.keyWidth + line.text.length
+            : line.kind === "blank"
+              ? 0
+              : line.text.length;
+      expect(width).toBeLessThanOrEqual(44);
+    }
+    expect(helpSegments(quit[1] as HelpLine).map((s) => s.text)).toEqual([
+      " ".repeat(11),
+      "changes; exits 1 if a run failed)",
+    ]);
+  });
+
   it("says that text fields take letters while one has focus", () => {
     const lines = helpLines({ ...request, typing: true }, 60);
     expect(lines.some((l) => l.kind === "text" && l.text.includes("letters, q and ? type"))).toBe(
@@ -287,6 +315,26 @@ describe("confirm", () => {
     onApply: { type: "app/toast", text: "done" } as const,
     applyLabel: "write",
   };
+
+  it("wraps its lines at spaces instead of cutting them, under their own indent", () => {
+    expect(
+      confirmLines(
+        [
+          "Quit and drop 3 unsaved changes in Presets and Add?",
+          "  Presets: 2 changes not saved to the files",
+          "",
+        ],
+        24,
+      ),
+    ).toEqual([
+      "Quit and drop 3 unsaved",
+      "changes in Presets and",
+      "Add?",
+      "  Presets: 2 changes not",
+      "  saved to the files",
+      "",
+    ]);
+  });
 
   it("applies with a, cancels with esc, and ignores other keys", () => {
     const [m] = CONFIRM.init(request, ctx());

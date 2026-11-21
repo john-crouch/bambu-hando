@@ -31,6 +31,6 @@ export { Swatch } from "./Swatch.js";
 export { TextField } from "./TextField.js";
 export { APP_NAME, TITLE, Title } from "./Title.js";
 export { type Toast, ToastLine, toastSegments } from "./Toast.js";
-export { fitText, type Segment, textWidth, truncate } from "./text.js";
+export { fitText, type Segment, textWidth, truncate, wrapText } from "./text.js";
 export { editText, type TextEdit, type TextState } from "./textField.js";
 export { COLORS, GRADIENT, ICONS, type Tone, theme, toneColor } from "./theme.js";
