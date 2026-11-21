@@ -370,6 +370,20 @@ export function createShell(deps: ShellDeps) {
     return [press("esc"), { ...key, meta: false }];
   }
 
+  /**
+   * Letters typed quickly can reach Ink as one input ("sl": sort, then labels), which matches no key.
+   * Outside a text field such a burst is one key per character; inside one it's typed as it came, and a
+   * run ending in enter (a barcode scan) always stays whole. Null when the key isn't such a burst.
+   */
+  function lettersApart(model: ShellModel, key: KeyPress): KeyPress[] | null {
+    if (key.name || key.ctrl || key.meta || typing(model)) return null;
+    const chars = [...new Intl.Segmenter().segment(key.input)].map((part) => part.segment);
+    if (chars.length < 2 || /[\r\n]$/.test(key.input)) return null;
+    return chars.map((char) =>
+      char === " " ? press("space") : { input: char, ctrl: false, shift: false, meta: false },
+    );
+  }
+
   function onKey(model: ShellModel, key: KeyPress): Step {
     const msg: AppMsg = { type: "key", key };
     if (model.overlay) return toOverlay(model, msg);
@@ -433,11 +447,11 @@ export function createShell(deps: ShellDeps) {
       case "key": {
         // Any key dismisses the error banner, and still does what it does.
         const current = model.error ? { ...model, error: null } : model;
-        const [first, second] = unmerged(current, msg.key);
+        const [first, ...rest] = lettersApart(current, msg.key) ?? unmerged(current, msg.key);
         const [next, cmds] = onKey(current, first as KeyPress);
-        // After esc's own commands (an overlay closing), so the key lands where esc left things.
-        return second
-          ? [next, [...cmds, send<ShellMsg>({ type: "key", key: second })]]
+        // After the first key's own commands (an overlay closing), so the rest land where it left things.
+        return rest.length > 0
+          ? [next, [...cmds, send<ShellMsg>(...rest.map((key) => ({ type: "key" as const, key })))]]
           : [next, cmds];
       }
       case "paste":

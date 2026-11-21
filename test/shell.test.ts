@@ -239,6 +239,23 @@ describe("tabs", () => {
   });
 });
 
+describe("letters typed quickly", () => {
+  it("splits a burst of letters into one key each outside a text field, and keeps it whole inside one", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("sl"));
+    expect(seen(model, "spools")).toEqual(["key:s", "key:l"]);
+    // "t" opens the fake tab's text field: a burst there is typed as it came.
+    model = await drive(shell, model, key("t"), key("ab"));
+    expect(seen(model, "spools").slice(-2)).toEqual(["key:t", "key:ab"]);
+  });
+
+  it("keeps a scanner's burst ending in enter whole", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("0015\r"));
+    expect(seen(model, "spools")).toEqual(["key:0015\r"]);
+  });
+});
+
 describe("global keys", () => {
   it("quits with q, exiting 0 when every run went well", async () => {
     let { shell, model } = start();
