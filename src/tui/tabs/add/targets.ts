@@ -45,7 +45,7 @@ export function runError(values: FormValues): string {
   if (printersOf(values).length === 0) return "Choose at least one printer in Settings";
   const setup = consoleSetup(values);
   if (setup === "missing")
-    return "SpoolEase needs a host and security key in Settings, or Skip SpoolEase on";
+    return "SpoolEase needs a host and security key in Settings, or turn Use SpoolEase off";
   if (setup === "ready") {
     const port = Number(values.port);
     if (!Number.isInteger(port) || port < 1 || port > 65_535)
