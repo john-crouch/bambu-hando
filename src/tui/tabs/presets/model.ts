@@ -26,6 +26,7 @@ import {
   type TabMsg,
   toTab,
 } from "../../core/types.js";
+import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
 import {
   type PresetFileMsg,
   type RangeMsg,
@@ -45,7 +46,6 @@ import {
   initEditor,
   updateEditor,
 } from "./editor.js";
-import { editText, moveCursor, type TextState, typeAhead } from "./helpers.js";
 
 /** A preset file as read for the detail panel (and to open it). */
 export type FileState =
@@ -181,7 +181,8 @@ function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsMode
       return moveTo(moved(key) ?? cursor);
     const edited = editText(model.filter.text, key);
     if (!edited) return [model, []];
-    return normalize({ ...model, filter: { text: edited.state, focused: true } }, presets);
+    const text = { value: edited.value, cursor: edited.cursor };
+    return normalize({ ...model, filter: { text, focused: true } }, presets);
   }
 
   if (key.name === "esc") return model.filter.text.value ? clearFilter() : [model, []];

@@ -49,7 +49,7 @@ import {
 } from "../../../presetEdit.js";
 import { type KeyPress, typed } from "../../core/keys.js";
 import type { Hint } from "../../core/types.js";
-import { editText, matchesWords, moveCursor, type TextState } from "./helpers.js";
+import { editText, filterRows, moveCursor, type TextState } from "../../ui/index.js";
 
 export type EditorMode = "preset" | "planned";
 
@@ -161,9 +161,10 @@ function groupFields(page: number): EditField[] {
 }
 
 function rawKeys(model: EditorModel): string[] {
-  return Object.keys(editedPreset(model)).filter((key) =>
-    matchesWords(key, model.filter.text.value, /[\s_]+/),
-  );
+  const keys = Object.keys(editedPreset(model));
+  // Words split on underscores too, so "range low" finds nozzle_temperature_range_low.
+  const words = model.filter.text.value.replace(/_/g, " ");
+  return filterRows(keys, words).map((match) => keys[match.index] ?? "");
 }
 
 function rawShown(value: unknown): string {
@@ -313,8 +314,9 @@ function typing(model: EditorModel, text: TextState, key: KeyPress): EditorStep 
   if (key.name === "enter") return commit(model, text);
   const edited = editText(text, key);
   if (!edited) return { model };
-  if (edited.enter) return commit(model, edited.state);
-  return { model: { ...model, text: edited.state, error: "" } };
+  const next = { value: edited.value, cursor: edited.cursor };
+  if (edited.submit) return commit(model, next);
+  return { model: { ...model, text: next, error: "" } };
 }
 
 /** Starts typing the row at the cursor, toggles a switch, or says why the row can't be edited. */
@@ -361,7 +363,14 @@ function filtering(model: EditorModel, key: KeyPress, pageRows: number): EditorS
   const edited = editText(model.filter.text, key);
   if (!edited) return { model };
   return {
-    model: withCursor({ ...model, error: "", filter: { text: edited.state, focused: true } }, 0),
+    model: withCursor(
+      {
+        ...model,
+        error: "",
+        filter: { text: { value: edited.value, cursor: edited.cursor }, focused: true },
+      },
+      0,
+    ),
   };
 }
 

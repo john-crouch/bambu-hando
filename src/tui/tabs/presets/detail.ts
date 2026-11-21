@@ -3,7 +3,7 @@
 
 import type { Preset } from "../../../presetEdit.js";
 import type { UserPreset } from "../../../syncCheck.js";
-import { matchesWords } from "./helpers.js";
+import { filterRows } from "../../ui/index.js";
 
 /** A printer as the tab shows it: without "Bambu Lab ". */
 export function printerLabel(printer: string): string {
@@ -33,8 +33,9 @@ export function presetRows(presets: readonly UserPreset[], filter: string): User
     if (known === undefined || name < known) groupName.set(group(p), name);
   }
   const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  return presets
-    .filter((p) => matchesWords(searchText(p), filter))
+  const matches = filterRows(presets.map(searchText), filter);
+  return matches
+    .map((match) => presets[match.index] as UserPreset)
     .sort(
       (a, b) =>
         compare(groupName.get(group(a)) ?? "", groupName.get(group(b)) ?? "") ||
