@@ -135,4 +135,26 @@ describe("the not-listed state", () => {
     );
     expect(words).not.toContain("…");
   });
+
+  it.each([
+    [60, 20],
+    [80, 24],
+    [120, 36],
+  ])("wraps a long name whole and draws no empty panel beside it at %ix%i", (columns, rows) => {
+    const c = { ...ctx(), columns, rows, bodyColumns: columns, bodyRows: rows - 2 };
+    const name = "Polymaker PolyTerra PLA Marble Sandstone Matte";
+    const [model] = open(`id:P4D5E6F7|name:${name}`, c);
+    const lines = screen(model, c).split("\n");
+    for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
+    // Every panel has a title: the one-panel page has no blank panel under or beside it.
+    expect(lines.filter((line) => line.includes("╭─"))).toEqual([]);
+    expect(lines.filter((line) => line.startsWith("╭"))).toHaveLength(1);
+    const inside = lines.map((line) => line.replace(/[│╭╮╰╯─]/g, " "));
+    // Text never touches the border: a space on each side.
+    for (const line of lines.filter((l) => l.startsWith("│")))
+      expect(line, line).toMatch(/^│ .* │$|^│\s*│$/);
+    const words = inside.join(" ").replace(/\s+/g, " ");
+    expect(words).toContain(`${name} isn't in SpoolmanDB`);
+    expect(words).not.toContain("…");
+  });
 });
