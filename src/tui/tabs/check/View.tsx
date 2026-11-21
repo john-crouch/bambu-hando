@@ -12,6 +12,7 @@ import {
   Busy,
   COLORS,
   Empty,
+  fitPath,
   fitText,
   ICONS,
   Line,
@@ -336,7 +337,7 @@ function resultSegments(
           color: COLORS.failed,
         };
   return pad([
-    { text: `${fitText(basename(fix.path), columns.file)} ` },
+    { text: `${fitText(fitPath(basename(fix.path), columns.file), columns.file)} ` },
     { text: `${fitText(fix.id, columns.id)} `, color: COLORS.accent2, bold: true },
     status,
   ]);

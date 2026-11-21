@@ -162,6 +162,12 @@ describe.each([
     expect(skipped).toContain("SpoolEase is skipped");
   });
 
+  it("counts the label fields where their names don't fit, never cutting one", () => {
+    const labels = screen(on("labels", 1), ctx);
+    expect(labels).not.toMatch(/Fields .*…/);
+    expect(labels).toMatch(/Fields +7 fields/);
+  });
+
   it("shows the label settings and the import page", () => {
     const labels = screen(on("labels"), ctx);
     expect(labels).toContain("Size         57x32mm");
@@ -201,6 +207,69 @@ describe.each([
     expect(text).not.toContain("Printer 00");
   });
 
+  it("marks a one-of choice with a radio, and lines its list up with the rows", () => {
+    const text = screen(
+      { ...MODEL, open: { kind: "list", field: "presetFolder", cursor: 0 } },
+      ctx,
+    );
+    expect(text).toContain("● 1489686194");
+    expect(text).toContain("○ default");
+    expect(text).not.toContain("[✓] 1489686194");
+    const printers = screen(
+      { ...on("labels", 2), open: { kind: "list", field: "labelPrinter", cursor: 0 } },
+      ctx,
+    );
+    expect(printers).toContain("○ Label-Printer");
+    const lines = text.split("\n");
+    const row = lines.findIndex((line) => line.includes("Preset folder      1489686194"));
+    const item = lines.findIndex((line) => line.includes("● 1489686194"));
+    // Side by side, the chosen item sits on its row's line; stacked, it's in the panel under the rows.
+    if (!settingsLayout(ctx, "bambu").stacked) expect(item).toBe(row);
+  });
+
+  it("dims what only matters with SpoolEase on: no ✓ while it's skipped", () => {
+    const skipped = screen(
+      on("spoolease"),
+      sized(columns, rows, { ...VALUES, skipSpoolease: true }),
+    );
+    expect(skipped).toContain("Create spools  on");
+    expect(skipped).not.toContain("Create spools  ✓ on");
+    expect(skipped).toContain("Use SpoolEase  off");
+  });
+
+  it("says which settings last only this session and which are kept", () => {
+    expect(screen(on("bambu", 0), ctx)).toContain("this session only");
+    expect(screen(on("bambu", 1), ctx)).toContain("saved for next time");
+    expect(screen(on("spoolease", 0), ctx)).toContain("this session only");
+    expect(screen(on("labels", 0), ctx)).toContain("saved for next time");
+    expect(screen(on("bambu", 0), ctx)).not.toContain("applies at once");
+  });
+
+  it("keeps a long path's file name in view", () => {
+    const output = "/srv/share/printing/labels/archive/2026/november/spool-labels-final.pdf";
+    const text = screen(
+      {
+        ...on("labels", 3),
+        labels: { state: "ready", value: { ...DEFAULT_LABEL_SETTINGS, output } },
+      },
+      ctx,
+    );
+    expect(text).toMatch(/…\/(\S+\/)*spool-labels-final\.pdf/);
+  });
+
+  it("says what the console's last read found, and what to check", () => {
+    const failed = {
+      ...sized(columns, rows),
+      resources: {
+        ...sized(columns, rows).resources,
+        console: { state: "failed" as const, error: "SpoolEase key validation failed" },
+      },
+    };
+    const text = side(screen(on("spoolease", 2), failed), failed);
+    expect(text).toContain("✗ SpoolEase key validation failed");
+    expect(text).toContain("check the security key");
+  });
+
   it("says why the label printer list is short", () => {
     const text = screen(
       {
@@ -210,7 +279,7 @@ describe.each([
       },
       ctx,
     );
-    expect(text).toContain("[✓] Don't print");
+    expect(text).toContain("● Don't print");
     expect(side(text, ctx, "labels")).toContain("No printers found (lpstat -e)");
   });
 });

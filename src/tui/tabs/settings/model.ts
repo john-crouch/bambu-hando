@@ -398,7 +398,7 @@ function hints(model: SettingsModel, _ctx: Ctx): Hint[] {
   if (open?.kind === "list" && open.filtering)
     return [
       { keys: "↑↓", label: "move" },
-      { keys: "enter", label: "keep filter", primary: true },
+      { keys: "enter", label: "done", primary: true },
       { keys: "esc", label: "clear filter", primary: true },
     ];
   if (open?.kind === "list") {

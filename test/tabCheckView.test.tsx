@@ -286,6 +286,8 @@ describe.each([
     const lines = screen({ ...MODEL, page: "ids", ids }, ctx);
     fits(lines, ctx);
     if (columns >= 80) expect(lines.join("\n")).toContain(name);
+    // Cut in its middle where it doesn't fit: the printer at the end tells the files apart.
+    else expect(lines.join("\n")).toMatch(/Acme Rock.*….*0\.4 nozzle\.json/);
     const failed = {
       ...ids,
       results: [{ ...fix, ok: false, detail: "EACCES: permission denied" }],

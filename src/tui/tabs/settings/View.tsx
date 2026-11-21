@@ -9,6 +9,7 @@ import { labelFieldName } from "../../overlays/labels/fields.js";
 import {
   Busy,
   COLORS,
+  fitPath,
   fitText,
   ICONS,
   Line,
@@ -23,7 +24,13 @@ import {
   TextField,
   textWidth,
 } from "../../ui/index.js";
-import { connectionOf, printerLabel, printerList, validPort } from "./connection.js";
+import {
+  connectionOf,
+  consoleProblem,
+  printerLabel,
+  printerList,
+  validPort,
+} from "./connection.js";
 import {
   fieldKind,
   listFor,
@@ -35,7 +42,7 @@ import {
   type SettingRow,
   shownItems,
 } from "./fields.js";
-import { listRows, settingsLayout } from "./layout.js";
+import { airLines, listRows, settingsLayout } from "./layout.js";
 import type { SettingsModel } from "./model.js";
 import { wrapText } from "./wrap.js";
 
@@ -45,13 +52,9 @@ const GAP = 2;
 
 const pad = (segments: Segment[]): Segment[] => [{ text: " ".repeat(PAD) }, ...segments];
 
-/** How a page's changes last, in its panel's bottom border. */
-const PAGE_NOTES: Record<PageId, string> = {
-  bambu: "applies at once",
-  spoolease: "applies at once",
-  labels: "saved for next time",
-  import: "applies at once",
-};
+/** How the highlighted row's change lasts, in the rows panel's bottom border. */
+const lasts = (row: SettingRow | undefined): string =>
+  row?.kept ? "saved for next time" : "this session only";
 
 /** A page wants attention: printers missing, or SpoolEase on without a usable console. */
 function pageBadge(page: PageId, ctx: Ctx): string | undefined {
@@ -75,6 +78,8 @@ function pages(model: SettingsModel, ctx: Ctx): Page[] {
 
 function valueSegment(row: SettingRow, selected: boolean): Segment {
   const strong = selected ? { bold: true } : {};
+  // Unused while SpoolEase is skipped: no ✓ or warning color to say otherwise.
+  if (row.dim) return { text: row.value, color: COLORS.muted };
   if (row.kind === "toggle")
     return row.on
       ? { text: `${ICONS.ok} on`, color: COLORS.ok, ...strong }
@@ -104,11 +109,17 @@ function rowSegments(
     ...dim,
   };
   const room = Math.max(0, width - 1 - labelWidth - GAP - PAD);
-  const value = valueSegment(row, selected && focused);
+  const whole = row.short && textWidth(row.value) > room ? { ...row, value: row.short } : row;
+  const value = valueSegment(whole, selected && focused);
   return [
     gutter,
     label,
-    { ...value, text: fitText(value.text, room), ...bar, ...dim },
+    {
+      ...value,
+      text: fitText(row.path ? fitPath(value.text, room) : value.text, room),
+      ...bar,
+      ...dim,
+    },
     { text: " ".repeat(PAD), ...bar },
   ];
 }
@@ -128,7 +139,7 @@ function RowsPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
       focused={focused}
       width={layout.left}
       height={layout.rowsHeight}
-      footerRight={PAGE_NOTES[model.page]}
+      footerRight={lasts(rows[cursor])}
     >
       {/* Side by side there's room for air above the rows; stacked, the detail needs the line. */}
       {layout.stacked ? null : <Line segments={[]} width={inner.width} />}
@@ -210,14 +221,27 @@ function connectionLines(model: SettingsModel, ctx: Ctx, width: number): Segment
     lines.push(...wrapped(`${ICONS.ok} ${test.text}`, width, { color: COLORS.ok }));
   else if (test.state === "failed")
     lines.push(...wrapped(`${ICONS.failed} ${test.text}`, width, { color: COLORS.failed }));
-  else if (test.state === "idle")
+  else if (test.state === "idle") {
+    const error = ctx.values.skipSpoolease ? undefined : consoleError(ctx);
+    // The key that tests is the footer's; here, what the last read found and what to check.
     lines.push(
-      pad([
-        { text: "t", color: COLORS.accent2, bold: true },
-        { text: " tests the connection", color: COLORS.muted },
-      ]),
+      ...(error
+        ? [
+            ...wrapped(`${ICONS.failed} ${error}`, width, { color: COLORS.failed }),
+            ...wrapped(consoleProblem(error).advice, width, { color: COLORS.muted }),
+          ]
+        : wrapped("Not tested yet.", width, { color: COLORS.muted })),
     );
+  }
   return lines;
+}
+
+/** Why the console's last read failed (its spools, else the sync check), while that's still the latest word. */
+function consoleError(ctx: Ctx): string | undefined {
+  const { console: data, check } = ctx.resources;
+  if (data.state === "failed") return data.error;
+  if (check.state === "failed") return check.error;
+  return undefined;
 }
 
 function SideLines({ lines, width }: { lines: Segment[][]; width: number }) {
@@ -267,6 +291,7 @@ function ListPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
       height={layout.sideHeight}
       {...(items.length > height ? { footerRight: listPosition(open.cursor, items.length) } : {})}
     >
+      {airLines(layout) ? <Line segments={[]} width={inner.width} /> : null}
       {filtered ? (
         <Box flexDirection="row" flexShrink={0}>
           <Line
@@ -297,7 +322,7 @@ function ListPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
           cursor={open.cursor}
           height={Math.min(height, rows.length)}
           width={inner.width}
-          marker="check"
+          marker={list.multi ? "check" : "radio"}
           {...(open.filter?.value ? { highlight: open.filter.value } : {})}
         />
       )}

@@ -691,7 +691,10 @@ describe("hints", () => {
     expect(keys()).toEqual(["↑↓ move", "space tick", "enter done", "/ filter", "esc close"]);
     await h.press("esc", "up", "enter");
     expect(keys()).toEqual(["↑↓ move", "enter choose", "/ filter", "esc close"]);
-    await h.press("esc", "right", "enter");
+    // The filter's enter says what the other tabs' filters say.
+    await h.press("/");
+    expect(keys()).toEqual(["↑↓ move", "enter done", "esc clear filter"]);
+    await h.press("esc", "esc", "right", "enter");
     expect(keys()).toEqual(["enter save", "esc cancel"]);
   });
 });

@@ -6,7 +6,7 @@ import { LABEL_FIELDS, type LabelField, parseLabelSize } from "../../../labels.j
 import type { Ctx } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
 import { labelFieldList, labelFieldName } from "../../overlays/labels/fields.js";
-import { filterRows, type TextState } from "../../ui/index.js";
+import { filterRows, plural, type TextState } from "../../ui/index.js";
 import {
   byModelAndNozzle,
   printerLabel,
@@ -52,6 +52,8 @@ interface FieldDef {
   kind: FieldKind;
   /** Only matters with SpoolEase on: dim while it's skipped. */
   spoolease?: boolean;
+  /** Saved for next time (tui.json, labels.json); the rest last this session only. */
+  kept?: boolean;
   /** What the setting does, for the detail panel. */
   about: string;
 }
@@ -69,6 +71,7 @@ export const PAGE_FIELDS: Record<PageId, readonly FieldDef[]> = {
       id: "printerPreset",
       label: "Printers",
       kind: "multi",
+      kept: true,
       about: "Each filament gets one preset per printer ticked here. Remembered for next time.",
     },
     {
@@ -126,24 +129,28 @@ export const PAGE_FIELDS: Record<PageId, readonly FieldDef[]> = {
     {
       id: "labelFields",
       label: "Fields",
+      kept: true,
       kind: "multi",
       about: "The lines a spool label prints, always in this order.",
     },
     {
       id: "labelSize",
       label: "Size",
+      kept: true,
       kind: "choice",
       about: "The label stock's size: the PDF's page size and the media the printer is sent.",
     },
     {
       id: "labelPrinter",
       label: "Printer",
+      kept: true,
       kind: "choice",
       about: "The CUPS printer labels go to.",
     },
     {
       id: "labelOutput",
       label: "Save PDF to",
+      kept: true,
       kind: "text",
       about: "A PDF of the labels, besides printing them or instead. Empty for none.",
     },
@@ -193,11 +200,21 @@ export interface SettingRow {
   tone?: "warning";
   /** What the setting does, and anything worth knowing about its value. */
   detail: string;
+  /** Saved for next time; else it lasts this session only. */
+  kept: boolean;
+  /** What to show instead where the value doesn't fit whole ("7 fields"). */
+  short?: string;
+  /** The value is a file path: shown cut in the middle so its file name stays. */
+  path?: boolean;
 }
 
 const DEFAULT_FOLDER_NOTE = "used when not logged in to BambuStudio";
 
-function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, "value" | "tone"> {
+function rowValue(
+  field: FieldId,
+  ctx: Ctx,
+  sources: Sources,
+): Pick<SettingRow, "value" | "tone" | "short"> {
   const values = ctx.values;
   const labels = sources.labels.value;
   switch (field) {
@@ -227,6 +244,7 @@ function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, 
     case "labelFields":
       return {
         value: labels ? labelFieldList(labels.fields) : "…",
+        ...(labels ? { short: plural(labels.fields.length, "field") } : {}),
       };
     case "labelSize":
       return { value: labels ? labels.size : "…" };
@@ -246,6 +264,15 @@ export function toggleOn(field: ToggleField, values: FormValues): boolean {
   return field === "skipSpoolease" ? !values.skipSpoolease : values[field];
 }
 
+/** A row whose value is a file path (a PDF to save, a JSON file to import), not a URL or a word. */
+function isPath(field: FieldId, value: string): boolean {
+  return (
+    (field === "labelOutput" || field === "source") &&
+    /^[~/.]/.test(value) &&
+    !/^[a-z]+:\/\//i.test(value)
+  );
+}
+
 function isSpoolmanDb(source: string): boolean {
   return !source.trim() || source.trim() === "spoolmandb";
 }
@@ -253,7 +280,7 @@ function isSpoolmanDb(source: string): boolean {
 /** The rows of a page, in order. */
 export function pageRows(page: PageId, ctx: Ctx, sources: Sources): SettingRow[] {
   return PAGE_FIELDS[page].map((def) => {
-    const { value, tone } = rowValue(def.id, ctx, sources);
+    const { value, tone, short } = rowValue(def.id, ctx, sources);
     const extra =
       def.id === "presetFolder" && ctx.values.presetFolder === "default"
         ? ` "default" is the one ${DEFAULT_FOLDER_NOTE}.`
@@ -266,7 +293,10 @@ export function pageRows(page: PageId, ctx: Ctx, sources: Sources): SettingRow[]
       ...(def.kind === "toggle" ? { on: toggleOn(def.id as ToggleField, ctx.values) } : {}),
       dim: Boolean(def.spoolease && ctx.values.skipSpoolease),
       ...(tone ? { tone } : {}),
+      ...(short ? { short } : {}),
       detail: def.about + extra,
+      kept: Boolean(def.kept),
+      ...(isPath(def.id, value) ? { path: true } : {}),
     };
   });
 }
