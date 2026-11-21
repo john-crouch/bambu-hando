@@ -1,7 +1,6 @@
 // ABOUTME: The Settings tab's model and pure update: pages of rows, the list or text field a row opens, and the test.
 // ABOUTME: Every change applies at once through app/values (label settings are saved instead); the key is never shown.
 
-import type { LabelSettings } from "../../../labelSettings.js";
 import { type KeyPress, letter } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type {
@@ -33,6 +32,8 @@ import {
   commitText,
   type FieldId,
   fieldKind,
+  focusTarget,
+  type ListView,
   listFor,
   OTHER,
   PAGE_FIELDS,
@@ -40,6 +41,7 @@ import {
   type PageId,
   PORT_ERROR,
   type Sources,
+  shownItems,
   textFor,
   tickItem,
 } from "./fields.js";
@@ -47,7 +49,7 @@ import { type Typed, typeAheadJump } from "./keys.js";
 import { listRows } from "./layout.js";
 
 export type Open =
-  | { kind: "list"; field: FieldId; cursor: number; typed?: Typed }
+  | ({ kind: "list"; field: FieldId; cursor: number; typed?: Typed } & ListView)
   | { kind: "text"; field: FieldId; value: string; cursor: number };
 
 export type TestState =
@@ -116,8 +118,9 @@ function apply(model: SettingsModel, change: Change, ctx: Ctx): Step<SettingsMod
   if ("labels" in change) {
     const current = model.labels.value;
     if (!current) return step({ ...model, error: "Still reading the label settings" });
-    const labels: LabelSettings = { ...current, ...change.labels };
-    return step({ ...model, labels: { state: "ready", value: labels } }, saveLabels(labels));
+    // Shown at once; the save merges the change into labels.json as it is then and reports back.
+    const labels = { ...current, ...change.labels };
+    return step({ ...model, labels: { state: "ready", value: labels } }, saveLabels(change.labels));
   }
   const values = change.values;
   const cmds: Step<SettingsModel>[1] = [send<AppMsg>({ type: "app/values", values })];
@@ -148,9 +151,11 @@ function openRow(model: SettingsModel, ctx: Ctx): Step<SettingsModel> {
     return step({ ...model, open: { kind: "text", field, value, cursor: value.length } });
   }
   const list = listFor(field, ctx, model);
+  // Ticked printers first, so the few in use aren't lost among dozens; label fields keep their print order.
+  const view: ListView = field === "printerPreset" ? { pinned: list.ticked } : {};
   const cursor = Math.max(
     0,
-    list.items.findIndex((item) => list.ticked.includes(item.value)),
+    shownItems(list, view).findIndex((item) => list.ticked.includes(item.value)),
   );
   const reload =
     field === "presetFolder"
@@ -158,7 +163,7 @@ function openRow(model: SettingsModel, ctx: Ctx): Step<SettingsModel> {
       : field === "labelPrinter"
         ? [loadLabelPrinters()]
         : [];
-  return step({ ...model, open: { kind: "list", field, cursor } }, ...reload);
+  return step({ ...model, open: { kind: "list", field, cursor, ...view } }, ...reload);
 }
 
 function startTest(model: SettingsModel, ctx: Ctx): Step<SettingsModel> {
@@ -182,18 +187,60 @@ function startTest(model: SettingsModel, ctx: Ctx): Step<SettingsModel> {
   );
 }
 
+/** Typing into an open list's / filter: enter keeps the filter and goes back to the list, esc clears it. */
+function filterKey(
+  model: SettingsModel,
+  open: Extract<Open, { kind: "list" }>,
+  key: KeyPress,
+): Step<SettingsModel> | null {
+  const filter = open.filter ?? { value: "", cursor: 0 };
+  if (key.name === "esc") return step({ ...model, open: withFilter(open, null) });
+  if (key.name === "enter") return step({ ...model, open: { ...open, filtering: false } });
+  if (key.name === "up" || key.name === "down") return null;
+  const edited = editText(filter, key);
+  if (!edited) return step(model);
+  const next = withFilter(open, { value: edited.value, cursor: edited.cursor });
+  const leaving = edited.submit ? { filtering: false } : {};
+  return step({ ...model, open: { ...next, ...leaving, cursor: 0 } });
+}
+
+/** The list with this filter (null: none), still typing into it unless cleared. */
+function withFilter(
+  open: Extract<Open, { kind: "list" }>,
+  filter: ListView["filter"] | null,
+): Extract<Open, { kind: "list" }> {
+  const { filter: _old, filtering: _was, ...rest } = open;
+  return filter ? { ...rest, filter, filtering: true } : { ...rest, cursor: 0 };
+}
+
 function listKey(
   model: SettingsModel,
   open: Extract<Open, { kind: "list" }>,
   key: KeyPress,
   ctx: Ctx,
 ): Step<SettingsModel> {
+  if (open.filtering) {
+    const filtered = filterKey(model, open, key);
+    if (filtered) return filtered;
+  }
   const list = listFor(open.field, ctx, model);
+  const items = shownItems(list, open);
   const close = { ...model, open: null };
-  if (key.name === "esc") return step(close);
-  const moved = moveCursor(open.cursor, key, list.items.length, listRows(ctx));
+  if (key.name === "esc")
+    return open.filter?.value ? step({ ...model, open: withFilter(open, null) }) : step(close);
+  if (key.input === "/" && !key.ctrl && !key.meta)
+    return step({
+      ...model,
+      open: { ...open, filter: open.filter ?? { value: "", cursor: 0 }, filtering: true },
+    });
+  const moved = moveCursor(
+    open.cursor,
+    key,
+    items.length,
+    listRows(ctx, model.page, open.filter !== undefined),
+  );
   if (moved !== null) return step({ ...model, open: { ...open, cursor: moved } });
-  const item = list.items[open.cursor];
+  const item = items[open.cursor];
   if (list.multi) {
     if (key.name === "enter") return step(close);
     if (key.name === "space" && item) {
@@ -201,8 +248,8 @@ function listKey(
       if ("error" in result) return step({ ...model, error: result.error });
       const [next, cmds] = apply(model, result.change, ctx);
       // Unticking a value the list only showed because it was ticked removes its row.
-      const after = listFor(open.field, valuesAfter(ctx, result.change), next);
-      const cursor = Math.min(open.cursor, Math.max(0, after.items.length - 1));
+      const after = shownItems(listFor(open.field, valuesAfter(ctx, result.change), next), open);
+      const cursor = Math.min(open.cursor, Math.max(0, after.length - 1));
       return [{ ...next, open: { ...open, cursor } }, cmds];
     }
   } else if ((key.name === "enter" || key.name === "space") && item) {
@@ -217,7 +264,7 @@ function listKey(
   }
   const typedLetter = letter(key);
   if (typedLetter) {
-    const labels = list.items.map((i) => i.label);
+    const labels = items.map((i) => i.label);
     const jump = typeAheadJump(labels, open.cursor, typedLetter, open.typed, ctx.now);
     return step({ ...model, open: { ...open, ...jump } });
   }
@@ -256,7 +303,8 @@ function keyStep(model: SettingsModel, key: KeyPress, ctx: Ctx): Step<SettingsMo
     const page = PAGES[Math.max(0, Math.min(to, PAGES.length - 1))];
     return step(page ? { ...model, page: page.id } : model);
   };
-  if (key.name === "left" || key.name === "esc") return toPage(index - 1);
+  // esc has nothing to go back to on a page: ← is the way to the page before.
+  if (key.name === "left") return toPage(index - 1);
   if (key.name === "right") return toPage(index + 1);
   const fields = pageFieldIds(model.page);
   const moved = moveCursor(model.cursors[model.page], key, fields.length, fields.length);
@@ -295,7 +343,7 @@ function update(model: SettingsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<Sett
       const open = next.open;
       if (!previous && open?.kind === "list" && LIST_SOURCES[open.field] === what) {
         const list = listFor(open.field, ctx, next);
-        const cursor = list.items.findIndex((item) => list.ticked.includes(item.value));
+        const cursor = shownItems(list, open).findIndex((item) => list.ticked.includes(item.value));
         if (cursor >= 0) return step({ ...next, open: { ...open, cursor } });
       }
       return step(next);
@@ -306,6 +354,15 @@ function update(model: SettingsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<Sett
         ...model,
         test: { state: msg.ok ? "ok" : "failed", text: String(msg.text) },
       });
+    }
+    case "app/switchTab": {
+      // labels.json may have changed meanwhile (the labels overlay saves there too).
+      const focus = (msg as Extract<AppMsg, { type: "app/switchTab" }>).focus;
+      const target = focus ? focusTarget(focus) : null;
+      if (!target) return step(model, loadLabels());
+      const cursors =
+        target.row === undefined ? model.cursors : { ...model.cursors, [target.page]: target.row };
+      return step({ ...model, page: target.page, cursors, open: null, error: "" }, loadLabels());
     }
     case "settings/page": {
       const page = PAGES.find((p) => p.id === msg.page)?.id ?? model.page;
@@ -338,19 +395,31 @@ function hints(model: SettingsModel, _ctx: Ctx): Hint[] {
       { keys: "enter", label: "save", primary: true },
       { keys: "esc", label: "cancel", primary: true },
     ];
-  if (open?.kind === "list")
+  if (open?.kind === "list" && open.filtering)
+    return [
+      { keys: "↑↓", label: "move" },
+      { keys: "enter", label: "keep filter", primary: true },
+      { keys: "esc", label: "clear filter", primary: true },
+    ];
+  if (open?.kind === "list") {
+    const close: Hint = open.filter?.value
+      ? { keys: "esc", label: "clear filter", primary: true }
+      : { keys: "esc", label: "close" };
     return fieldKind(open.field) === "multi"
       ? [
           { keys: "↑↓", label: "move" },
           { keys: "space", label: "tick", primary: true },
           { keys: "enter", label: "done", primary: true },
-          { keys: "esc", label: "close" },
+          { keys: "/", label: "filter" },
+          close,
         ]
       : [
           { keys: "↑↓", label: "move" },
           { keys: "enter", label: "choose", primary: true },
-          { keys: "esc", label: "close" },
+          { keys: "/", label: "filter" },
+          close,
         ];
+  }
   const field = focusedField(model);
   return [
     { keys: "↑↓", label: "move" },
@@ -359,12 +428,13 @@ function hints(model: SettingsModel, _ctx: Ctx): Hint[] {
       : []),
     ...(model.page === "spoolease" ? [{ keys: "t", label: "test connection", primary: true }] : []),
     { keys: "←→", label: "pages" },
-    ...(model.page === PAGES[0]?.id ? [] : [{ keys: "esc", label: "back" }]),
   ];
 }
 
 function capturesText(model: SettingsModel): boolean {
-  return model.open?.kind === "text";
+  return (
+    model.open?.kind === "text" || (model.open?.kind === "list" && Boolean(model.open.filtering))
+  );
 }
 
 function commands(_model: SettingsModel, _ctx: Ctx): PaletteCommand[] {

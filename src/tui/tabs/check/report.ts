@@ -1,10 +1,10 @@
 // ABOUTME: What the Check tab shows from the sync check: its state, a row per section, the headline and its layout.
 // ABOUTME: Pure functions over the shell's check resource and the session's values; the console URL never has the key.
 
-import { type CheckSection, checkCounts, checkSummary } from "../../../syncCheck.js";
+import { type CheckSection, checkCounts, checkSync, type UserPreset } from "../../../syncCheck.js";
 import type { CheckData, Ctx } from "../../core/types.js";
-import { consoleUrl, panelInner } from "../../ui/index.js";
-import { connectionOf } from "../settings/connection.js";
+import { consoleUrl, panelInner, plural, textWidth } from "../../ui/index.js";
+import { connectionOf, shortPrinters } from "../settings/connection.js";
 import { wrapText } from "../settings/wrap.js";
 
 /** none: no console to check against (SpoolEase skipped or not set up). */
@@ -13,10 +13,36 @@ export interface CheckView {
   /** The check to show: the current one, or the last good one while reloading or after a failure. */
   data?: CheckData;
   error?: string;
+  /**
+   * The console couldn't be read and there's no earlier check: data holds only what BambuStudio's presets
+   * can tell (presets without an ID), and every other section waits for the console.
+   */
+  offline?: boolean;
 }
 
 export function consoleConfigured(ctx: Ctx): boolean {
   return connectionOf(ctx.values) !== null;
+}
+
+/** Sections that need the console's filaments or spools: everything but presets without an ID. */
+export function needsConsole(key: CheckSection["key"]): boolean {
+  return key !== "presetsNoId";
+}
+
+/** The check as far as BambuStudio's presets alone go: the console's sections are empty and marked offline. */
+function presetsOnlyCheck(ctx: Ctx): CheckData | undefined {
+  const presets = ctx.resources.presets;
+  const value =
+    presets.state === "ready"
+      ? presets.value
+      : presets.state !== "idle"
+        ? presets.previous
+        : undefined;
+  if (!value) return undefined;
+  const sections = checkSync({ presets: value.presets, csv: "", spools: [] }).map((section) =>
+    needsConsole(section.key) ? { ...section, items: [] } : section,
+  );
+  return { sections, warnings: value.warnings, presets: value.presets };
 }
 
 export function checkView(ctx: Ctx): CheckView {
@@ -29,12 +55,15 @@ export function checkView(ctx: Ctx): CheckView {
       return { kind: "loading", ...(check.previous ? { data: check.previous } : {}) };
     case "ready":
       return { kind: "ready", data: check.value };
-    case "failed":
+    case "failed": {
+      if (check.previous) return { kind: "failed", error: check.error, data: check.previous };
+      const partial = presetsOnlyCheck(ctx);
       return {
         kind: "failed",
         error: check.error,
-        ...(check.previous ? { data: check.previous } : {}),
+        ...(partial ? { data: partial, offline: true } : {}),
       };
+    }
   }
 }
 
@@ -42,16 +71,26 @@ export interface SectionRow {
   key: CheckSection["key"];
   title: string;
   count: number;
-  /** ok: nothing in it; problem: it breaks a spool's link to its preset; note: worth knowing. */
-  tone: "ok" | "problem" | "note";
+  /**
+   * ok: nothing in it; problem: it breaks a spool's link to its preset; note: worth knowing;
+   * offline: not checked, the console couldn't be read.
+   */
+  tone: "ok" | "problem" | "note" | "offline";
 }
 
-export function sectionRows(sections: CheckSection[]): SectionRow[] {
+export function sectionRows(sections: CheckSection[], offline = false): SectionRow[] {
   return sections.map((section) => ({
     key: section.key,
     title: section.title,
     count: section.items.length,
-    tone: section.items.length === 0 ? "ok" : section.problem ? "problem" : "note",
+    tone:
+      offline && needsConsole(section.key)
+        ? "offline"
+        : section.items.length === 0
+          ? "ok"
+          : section.problem
+            ? "problem"
+            : "note",
   }));
 }
 
@@ -63,10 +102,16 @@ export function firstWithItems(sections: CheckSection[]): number {
   );
 }
 
+/** The section a deep link names, or -1. */
+export function sectionIndex(sections: CheckSection[], key: string): number {
+  return sections.findIndex((section) => section.key === key);
+}
+
 export interface Headline {
-  /** "Everything lines up" or "N problems, M notes". */
+  /** "Everything lines up", "No problems · M notes" or "N problems · M notes". */
   text: string;
-  tone: "ok" | "problem" | "note";
+  /** Notes alone are fine: only problems turn the headline red. */
+  tone: "ok" | "problem";
   /** What was compared: the preset folder and the console's URL. */
   compared: string;
 }
@@ -74,14 +119,132 @@ export interface Headline {
 export function checkHeadline(sections: CheckSection[], ctx: Ctx): Headline {
   const { problems, notes } = checkCounts(sections);
   const connection = connectionOf(ctx.values);
+  const text =
+    problems + notes === 0
+      ? "Everything lines up"
+      : [
+          problems ? plural(problems, "problem") : "No problems",
+          ...(notes ? [plural(notes, "note")] : []),
+        ].join(" · ");
   return {
-    text: checkSummary(sections),
-    tone: problems > 0 ? "problem" : notes > 0 ? "note" : "ok",
+    text,
+    tone: problems > 0 ? "problem" : "ok",
     compared: [
       `BambuStudio ${ctx.values.presetFolder.trim()}`,
       ...(connection ? [consoleUrl(connection)] : []),
     ].join(" · "),
   };
+}
+
+/** Where enter on an item goes: the tab and the thing to open there, or the ID review for some presets. */
+export type ItemTarget =
+  | { kind: "add"; id: string }
+  | { kind: "spools"; id: string }
+  | { kind: "ids"; paths: string[] };
+
+/** An item as the items pane draws it: the name apart from codes and printers, and what fixes it. */
+export interface ItemView {
+  /** The whole item, as the sync check says it. */
+  text: string;
+  name: string;
+  /** A filament code or ID, dim. */
+  code?: string;
+  /** Short printers: "X1C 0.4, 0.6". */
+  printers?: string;
+  /** A spool's ID, without the #. */
+  spool?: string;
+  target: ItemTarget | null;
+}
+
+/** What enter does on each kind of target, for the footer. */
+export function targetLabel(section: CheckSection["key"], target: ItemTarget): string {
+  if (target.kind === "ids") return "give it an ID";
+  if (target.kind === "spools") return "show it in Spools";
+  return section === "unknownCode" ? "find it in Add" : "sync it in Add";
+}
+
+/** "name (code)" at the end of an item. */
+const WITH_CODE = /^(.*) \(([^()]*)\)$/;
+/** "#14 Acme PLA Red", a spool as the check lists it. */
+const SPOOL = /^#(\S+) ?(.*)$/;
+
+/**
+ * The presets behind the preset items, keyed by the item's text exactly as syncCheck writes it:
+ * "<name> (<id>) · <printers>" for presets SpoolEase lacks, "<name> · <printers>" for presets without an ID.
+ */
+function presetGroups(presets: readonly UserPreset[]): Map<string, UserPreset[]> {
+  const byKey = new Map<string, UserPreset[]>();
+  for (const preset of presets) {
+    const key = preset.filamentId ? `id:${preset.filamentId}` : `name:${preset.name}`;
+    byKey.set(key, [...(byKey.get(key) ?? []), preset]);
+  }
+  const byItem = new Map<string, UserPreset[]>();
+  for (const group of byKey.values()) {
+    const first = group[0];
+    if (!first) continue;
+    const printers = group.map((p) => p.printer).join(", ");
+    const id = first.filamentId ? ` (${first.filamentId})` : "";
+    byItem.set(`${first.name}${id} · ${printers}`, group);
+  }
+  return byItem;
+}
+
+function itemView(
+  key: CheckSection["key"],
+  text: string,
+  groups: Map<string, UserPreset[]>,
+): ItemView {
+  const plain: ItemView = { text, name: text, target: null };
+  switch (key) {
+    case "csvOnly": {
+      const [, name, code] = WITH_CODE.exec(text) ?? [];
+      return name !== undefined && code
+        ? { text, name, code, target: { kind: "add", id: code } }
+        : plain;
+    }
+    case "unknownCode": {
+      const [, rest, code] = WITH_CODE.exec(text) ?? [];
+      const [, spool, name] = SPOOL.exec(rest ?? "") ?? [];
+      return spool && code
+        ? { text, name: name ?? "", code, spool, target: { kind: "add", id: code } }
+        : plain;
+    }
+    case "noCode": {
+      const [, spool, name] = SPOOL.exec(text) ?? [];
+      return spool
+        ? { text, name: name ?? "", spool, target: { kind: "spools", id: spool } }
+        : plain;
+    }
+    case "presetsOnly":
+    case "presetsNoId": {
+      const group = groups.get(text);
+      const first = group?.[0];
+      if (!group || !first) return plain;
+      const printers = shortPrinters(group.map((p) => p.printer));
+      return first.filamentId
+        ? {
+            text,
+            name: first.name,
+            code: first.filamentId,
+            printers,
+            target: { kind: "add", id: first.filamentId },
+          }
+        : {
+            text,
+            name: first.name,
+            printers,
+            target: { kind: "ids", paths: group.map((p) => p.path) },
+          };
+    }
+    case "badRows":
+      return plain;
+  }
+}
+
+/** A section's items as rows to act on. */
+export function itemViews(section: CheckSection, data: CheckData): ItemView[] {
+  const groups = presetGroups(data.presets);
+  return section.items.map((text) => itemView(section.key, text, groups));
 }
 
 /** Section titles short enough for the sections pane; the full title heads the items pane. */
@@ -94,6 +257,36 @@ export const SHORT_TITLES: Record<CheckSection["key"], string> = {
   noCode: "Spools without a code",
 };
 
+/** The titles below WIDE_FROM columns, so the items keep the room. */
+export const TINY_TITLES: Record<CheckSection["key"], string> = {
+  csvOnly: "No preset",
+  unknownCode: "Unknown filament",
+  badRows: "Misread rows",
+  presetsOnly: "Not in SpoolEase",
+  presetsNoId: "No filament ID",
+  noCode: "No filament code",
+};
+
+/** From this many body columns the sections pane has room for the short titles. */
+const WIDE_FROM = 100;
+
+export function sectionTitles(ctx: Ctx): Record<CheckSection["key"], string> {
+  return ctx.bodyColumns >= WIDE_FROM ? SHORT_TITLES : TINY_TITLES;
+}
+
+/** The items pane's title: the longest of the section's titles that fits beside the subtitle. */
+export function itemsTitle(
+  ctx: Ctx,
+  section: CheckSection,
+  subtitle: string,
+  width: number,
+): string {
+  // Two corners, a space each side of the title, " · " before the subtitle, and a dash or two of border.
+  const room = width - textWidth(subtitle) - 9;
+  const titles = [section.title, SHORT_TITLES[section.key], TINY_TITLES[section.key]];
+  return titles.find((title) => textWidth(title) <= room) ?? sectionTitles(ctx)[section.key];
+}
+
 /** The warnings shown above the panes: the first, and how many more. */
 export function warningLines(warnings: readonly string[]): string[] {
   if (warnings.length === 0) return [];
@@ -101,12 +294,11 @@ export function warningLines(warnings: readonly string[]): string[] {
   return [warnings[0] ?? "", ...(more > 0 ? [`… and ${plural(more, "more warning")}`] : [])];
 }
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-/** The sections pane's width, borders included, where there's room for it. */
-const SECTIONS_WIDTH = 37;
+/**
+ * Columns of a section row besides its title: the list's gutter, the mark and its gap, the gap and
+ * the 3-wide count, the scroll column, and the two borders.
+ */
+const SECTION_CHROME = 1 + 2 + 1 + 3 + 1 + 2;
 
 export interface CheckLayout {
   /** Lines above the panes: the headline and the warnings. */
@@ -118,10 +310,23 @@ export interface CheckLayout {
   right: number;
 }
 
-export function checkLayout(ctx: Ctx, data: CheckData | undefined): CheckLayout {
+/** Below this many body columns, items with focus take the whole width (esc brings the sections back). */
+export const NARROW_BELOW = 70;
+
+export function checkLayout(
+  ctx: Ctx,
+  data: CheckData | undefined,
+  focus: "sections" | "items" = "sections",
+): CheckLayout {
   const top = 1 + warningLines(data?.warnings ?? []).length;
-  // Room for the longest short title with its mark and count; narrower terminals give the items more.
-  const left = ctx.bodyColumns >= 80 ? SECTIONS_WIDTH : Math.floor(ctx.bodyColumns * 0.46);
+  const titles = Object.values(sectionTitles(ctx));
+  const left =
+    focus === "items" && ctx.bodyColumns < NARROW_BELOW
+      ? 0
+      : Math.min(
+          Math.max(...titles.map(textWidth)) + SECTION_CHROME,
+          Math.floor(ctx.bodyColumns / 2),
+        );
   return {
     top,
     height: Math.max(3, ctx.bodyRows - top),
@@ -134,15 +339,34 @@ export function checkLayout(ctx: Ctx, data: CheckData | undefined): CheckLayout 
 export const PAD = 1;
 
 /** The section's why, wrapped to the items pane. */
-export function whyLines(ctx: Ctx, data: CheckData | undefined, section: CheckSection): string[] {
-  const { right, height } = checkLayout(ctx, data);
+export function whyLines(
+  ctx: Ctx,
+  data: CheckData | undefined,
+  section: CheckSection,
+  focus: "sections" | "items" = "sections",
+): string[] {
+  const { right, height } = checkLayout(ctx, data, focus);
   return wrapText(section.why, panelInner(right, height).width - 2 * PAD);
 }
 
-/** Items the items pane shows at once, below the section's why and a gap. */
-export function itemRows(ctx: Ctx, data: CheckData | undefined, section: CheckSection): number {
+/** Why a section needing the console wasn't checked: the read's error, wrapped to the items pane. */
+export function offlineLines(ctx: Ctx, data: CheckData | undefined, error: string): string[] {
   const { right, height } = checkLayout(ctx, data);
-  return Math.max(1, panelInner(right, height).height - whyLines(ctx, data, section).length - 1);
+  return wrapText(`Not checked: ${error}`, panelInner(right, height).width - 2 * PAD);
+}
+
+/** Items the items pane shows at once, below the section's why and a gap. */
+export function itemRows(
+  ctx: Ctx,
+  data: CheckData | undefined,
+  section: CheckSection,
+  focus: "sections" | "items" = "sections",
+): number {
+  const { right, height } = checkLayout(ctx, data, focus);
+  return Math.max(
+    1,
+    panelInner(right, height).height - whyLines(ctx, data, section, focus).length - 1,
+  );
 }
 
 export const IDS_INTRO =

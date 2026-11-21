@@ -5,7 +5,14 @@ import type { LabelSettings } from "../../../labelSettings.js";
 import { LABEL_FIELDS, type LabelField, parseLabelSize } from "../../../labels.js";
 import type { Ctx } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
-import { printerLabel, printerList, validPort } from "./connection.js";
+import { filterRows, type TextState } from "../../ui/index.js";
+import {
+  byModelAndNozzle,
+  printerLabel,
+  printerList,
+  shortPrinters,
+  validPort,
+} from "./connection.js";
 
 export type PageId = "bambu" | "spoolease" | "labels" | "import";
 
@@ -102,9 +109,9 @@ export const PAGE_FIELDS: Record<PageId, readonly FieldDef[]> = {
     },
     {
       id: "skipSpoolease",
-      label: "Skip SpoolEase",
+      label: "Use SpoolEase",
       kind: "toggle",
-      about: "On writes BambuStudio presets only, and leaves the console alone.",
+      about: "Off writes BambuStudio presets only, and leaves the console alone.",
     },
     {
       id: "createSpools",
@@ -222,7 +229,7 @@ function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, 
     case "printerPreset": {
       const printers = printerList(values.printerPreset);
       return printers.length
-        ? { value: printers.map(printerLabel).join(", ") }
+        ? { value: shortPrinters(printers) }
         : { value: "none", tone: "warning" };
     }
     case "host":
@@ -239,7 +246,7 @@ function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, 
     case "https":
     case "skipSpoolease":
     case "createSpools":
-      return { value: values[field] ? "on" : "off" };
+      return { value: toggleOn(field, values) ? "on" : "off" };
     case "labelFields":
       return {
         value: labels
@@ -255,12 +262,17 @@ function rowValue(field: FieldId, ctx: Ctx, sources: Sources): Pick<SettingRow, 
     case "labelPrinter":
       return { value: labels ? labels.printer || "Don't print" : "…" };
     case "labelOutput":
-      return { value: labels ? labels.output || "no PDF" : "…" };
+      return { value: labels ? labels.output || "No PDF" : "…" };
     case "source":
       return { value: isSpoolmanDb(values.source) ? "none (SpoolmanDB only)" : values.source };
     case "diameter":
       return { value: `${values.diameter} mm` };
   }
+}
+
+/** Whether a toggle row reads on: Use SpoolEase is on while SpoolEase isn't skipped. */
+export function toggleOn(field: ToggleField, values: FormValues): boolean {
+  return field === "skipSpoolease" ? !values.skipSpoolease : values[field];
 }
 
 function isSpoolmanDb(source: string): boolean {
@@ -280,7 +292,7 @@ export function pageRows(page: PageId, ctx: Ctx, sources: Sources): SettingRow[]
       label: def.label,
       kind: def.kind,
       value,
-      ...(def.kind === "toggle" ? { on: ctx.values[def.id as ToggleField] } : {}),
+      ...(def.kind === "toggle" ? { on: toggleOn(def.id as ToggleField, ctx.values) } : {}),
       dim: Boolean(def.spoolease && ctx.values.skipSpoolease),
       ...(tone ? { tone } : {}),
       detail: def.about + extra,
@@ -379,7 +391,10 @@ export function listFor(field: FieldId, ctx: Ctx, sources: Sources): ListSpec {
         {
           multi: true,
           items: [
-            ...known.map((name) => ({ value: name, label: printerLabel(name) })),
+            ...[...known].sort(byModelAndNozzle).map((name) => ({
+              value: name,
+              label: printerLabel(name),
+            })),
             ...unknown.map((name) => ({
               value: name,
               label: name,
@@ -455,6 +470,76 @@ export function listFor(field: FieldId, ctx: Ctx, sources: Sources): ListSpec {
     default:
       throw new Error(`${field} has no list`);
   }
+}
+
+/** What an open list remembers beside its cursor: the ticks it opened with, and its filter. */
+export interface ListView {
+  /** Values ticked when the list opened: shown first, and kept in place while ticks change. */
+  pinned?: readonly string[];
+  /** The / filter's text; typing goes to it while filtering is true. */
+  filter?: TextState;
+  filtering?: boolean;
+}
+
+/** The items as an open list shows them: the ones ticked when it opened first, then those the filter keeps. */
+export function shownItems(
+  list: ListSpec,
+  open: ListView | { kind: string } | null | undefined,
+): ChoiceItem[] {
+  // A text field open in the list's place has no view of the list.
+  const view: ListView =
+    open && !("kind" in open && open.kind !== "list") ? (open as ListView) : {};
+  const pinned = list.multi ? (view.pinned ?? []) : [];
+  const ordered = pinned.length
+    ? [
+        ...list.items.filter((item) => pinned.includes(item.value)),
+        ...list.items.filter((item) => !pinned.includes(item.value)),
+      ]
+    : list.items;
+  const filter = view.filter?.value.trim() ?? "";
+  if (!filter) return ordered;
+  return filterRows(
+    ordered.map((item) => item.label),
+    filter,
+  ).flatMap(({ index }) => {
+    const item = ordered[index];
+    return item ? [item] : [];
+  });
+}
+
+/**
+ * Deep links (app/switchTab focus) to a page's row, as other tabs send them; a page's id alone
+ * ("bambu", "spoolease", "labels", "import") opens the page where its cursor was.
+ */
+export const FOCUS_ROWS: Record<string, FieldId> = {
+  "bambu.folder": "presetFolder",
+  "bambu.printers": "printerPreset",
+  "bambu.overwrite": "overwritePresets",
+  "spoolease.host": "host",
+  "spoolease.port": "port",
+  "spoolease.key": "securityKey",
+  "spoolease.https": "https",
+  "spoolease.skip": "skipSpoolease",
+  "spoolease.spools": "createSpools",
+  "labels.fields": "labelFields",
+  "labels.size": "labelSize",
+  "labels.printer": "labelPrinter",
+  "labels.output": "labelOutput",
+  "import.source": "source",
+  "import.diameter": "diameter",
+};
+
+/** The page and row a focus names, or null for one this tab doesn't know. */
+export function focusTarget(focus: string): { page: PageId; row?: number } | null {
+  const page = PAGES.find((p) => p.id === focus);
+  if (page) return { page: page.id };
+  const field = FOCUS_ROWS[focus];
+  if (!field) return null;
+  for (const [id, fields] of Object.entries(PAGE_FIELDS) as [PageId, readonly FieldDef[]][]) {
+    const row = fields.findIndex((f) => f.id === field);
+    if (row >= 0) return { page: id, row };
+  }
+  return null;
 }
 
 /** A change to apply: to the session's values, or to the label settings. */

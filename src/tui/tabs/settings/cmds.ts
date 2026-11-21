@@ -65,10 +65,23 @@ export function savePrinters(printers: string[]): Cmd<AppMsg> {
   };
 }
 
-export function saveLabels(settings: LabelSettings): Cmd<AppMsg> {
+/** Label saves, one after another, so each reads what the one before it wrote. */
+let labelSaves: Promise<unknown> = Promise.resolve();
+
+/**
+ * Saves a change to the label settings, merged into labels.json as it is now (the labels overlay saves
+ * there too), then reports what was saved, so the tab shows the file's settings, not a stale copy.
+ */
+export function saveLabels(change: Partial<LabelSettings>): Cmd<AppMsg> {
   return async (dispatch) => {
+    const save = labelSaves.then(async () => {
+      const next = { ...(await loadLabelSettings()), ...change };
+      await saveLabelSettings(next);
+      return next;
+    });
+    labelSaves = save.catch(() => undefined);
     try {
-      await saveLabelSettings(settings);
+      dispatch(reply({ type: "settings/loaded", what: "labels", value: await save }));
     } catch (err) {
       dispatch({
         type: "app/toast",
