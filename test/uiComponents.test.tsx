@@ -396,6 +396,21 @@ describe("List", () => {
     expect(cells(lines[1] ?? "")[2]).toMatchObject({ ch: "✓", fg: COLORS.ok });
   });
 
+  it("draws a radio marker for one-of choices: ● in accent on the chosen row, ○ muted on the rest", () => {
+    const choices: ListRow[] = [
+      { key: "a", cells: [{ text: "Spool weight from SpoolmanDB", grow: true }] },
+      { key: "b", cells: [{ text: "Unspecified", grow: true }], ticked: true },
+    ];
+    const frame = draw(<List rows={choices} cursor={0} height={2} width={40} marker="radio" />, 40);
+    expect(plain(frame).map((line) => line.trimEnd())).toEqual([
+      "▌○ Spool weight from SpoolmanDB",
+      " ● Unspecified",
+    ]);
+    const lines = frame.split("\n");
+    expect(cells(lines[1] ?? "")[1]).toMatchObject({ ch: "●", fg: COLORS.accent, bold: true });
+    expect(cells(lines[0] ?? "")[1]).toMatchObject({ ch: "○", fg: GRAY });
+  });
+
   it("draws chips in the row's color, two columns wide", () => {
     const line = draw(<List rows={rows} cursor={8} height={1} width={60} />).split("\n")[0] ?? "";
     const row = cells(line);
