@@ -1,5 +1,5 @@
 // ABOUTME: The labels overlay's model and pure update: which fields print, the label size, the printer and the PDF path.
-// ABOUTME: Also the live preview of the first spool's label, so you see what prints before making labels.
+// ABOUTME: Printer and PDF are chosen from lists; also the live preview of the first spool's label before making labels.
 
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +19,7 @@ import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Hint, LabelsRequest, Step, TabMsg } from "../../core/types.js";
 import { consoleConnection, consoleValue } from "../../tabs/spools/data.js";
 import { pasted, textState } from "../../tabs/spools/local.js";
-import { editText, moveCursor, type TextState } from "../../ui/index.js";
+import { editText, moveCursor, plural, type TextState } from "../../ui/index.js";
 import { loadLabelsCmd, makeLabelsCmd } from "./cmds.js";
 
 /** Fields are shown in two columns of this many; ← and → jump between them. */
@@ -39,6 +39,9 @@ export const COMMON_SIZES: readonly { size: string; detail?: string }[] = [
   { size: "2x1in", detail: "51x25mm" },
 ];
 
+/** The last PDF choice: a path of your own, typed. */
+export const OTHER_OUTPUT = "Other…";
+
 /** What a size is typed with: digits, the x, and the unit. */
 const SIZE_CHAR = /^[0-9.xXmMiInN]$/;
 
@@ -55,6 +58,12 @@ export interface LabelsModel {
   /** "" when the labels are only written to a PDF. */
   printer: string;
   output: TextState;
+  /** The PDF path remembered from last time, offered among the choices. */
+  rememberedOutput: string;
+  /** The PDF path is being typed (Other…): every key goes to it. */
+  editing: boolean;
+  /** The list of choices open for the Printer or Save PDF row. */
+  picker: { row: number; cursor: number } | null;
   focus: number;
   error: string;
 }
@@ -75,7 +84,9 @@ export function init(request: LabelsRequest, _ctx: Ctx): Step<LabelsModel> {
       printers: [],
       printer: "",
       output: textState(""),
-      // The choices are remembered, so making labels is usually one key away.
+      rememberedOutput: "",
+      editing: false,
+      picker: null,
       focus: MAKE_ROW,
       error: "",
     },
@@ -91,9 +102,46 @@ export function sizeChoices(model: LabelsModel): string[] {
     : common;
 }
 
-/** The printers ←/→ cycles through; "" is Don't print. */
+/** The printers to choose from; "" is Don't print. */
 export function printerChoices(model: LabelsModel): string[] {
   return ["", ...model.printers];
+}
+
+function localDate(now: number): string {
+  const date = new Date(now);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** The PDF choices: none, today's file in your home, the one remembered, then a path of your own. */
+export function outputChoices(model: LabelsModel, ctx: Ctx): string[] {
+  const today = `~/labels-${localDate(ctx.now)}.pdf`;
+  const choices = ["", today];
+  const remembered = model.rememberedOutput.trim();
+  if (remembered && remembered !== today) choices.push(remembered);
+  const current = model.output.value.trim();
+  if (current && !choices.includes(current)) choices.push(current);
+  return [...choices, OTHER_OUTPUT];
+}
+
+function choicesFor(model: LabelsModel, row: number, ctx: Ctx): string[] {
+  return row === PRINTER_ROW ? printerChoices(model) : outputChoices(model, ctx);
+}
+
+function currentChoice(model: LabelsModel, row: number): string {
+  return row === PRINTER_ROW ? model.printer : model.output.value.trim();
+}
+
+/** The row to fix before labels can be made, else MAKE_ROW. */
+export function firstMissing(model: LabelsModel): number {
+  if (model.fields.length === 0) return 0;
+  try {
+    parseLabelSize(model.size);
+  } catch {
+    return SIZE_ROW;
+  }
+  if (!model.printer && !model.output.value.trim()) return PRINTER_ROW;
+  return MAKE_ROW;
 }
 
 function expandHome(path: string, home: string): string {
@@ -166,7 +214,8 @@ const close: AppMsg = { type: "app/closeOverlay" };
 
 function make(model: LabelsModel, ctx: Ctx): Step<LabelsModel> {
   const result = labelTarget(model);
-  if ("error" in result) return [{ ...model, error: result.error }, []];
+  // The Make row already says what's missing: go there instead of repeating it.
+  if ("error" in result) return [{ ...model, focus: firstMissing(model) }, []];
   const conn = consoleConnection(ctx.values);
   if (!conn)
     return [
@@ -194,15 +243,44 @@ function sizeKey(model: LabelsModel, key: KeyPress): LabelsModel | null {
   return { ...model, size, customSize: size, sizeTyped: true };
 }
 
+function openPicker(model: LabelsModel, row: number, ctx: Ctx): LabelsModel {
+  const cursor = Math.max(0, choicesFor(model, row, ctx).indexOf(currentChoice(model, row)));
+  return { ...model, picker: { row, cursor } };
+}
+
+function pickerKey(
+  model: LabelsModel,
+  picker: { row: number; cursor: number },
+  key: KeyPress,
+  ctx: Ctx,
+): Step<LabelsModel> {
+  if (key.name === "esc") return [{ ...model, picker: null }, []];
+  const choices = choicesFor(model, picker.row, ctx);
+  const moved = moveCursor(picker.cursor, key, choices.length, 8);
+  if (moved !== null) return [{ ...model, picker: { ...picker, cursor: moved } }, []];
+  if (key.name !== "enter" && key.name !== "space") return [model, []];
+  const choice = choices[picker.cursor] ?? "";
+  if (picker.row === PRINTER_ROW) return [{ ...model, printer: choice, picker: null }, []];
+  if (choice === OTHER_OUTPUT) return [{ ...model, picker: null, editing: true }, []];
+  return [{ ...model, picker: null, output: textState(choice) }, []];
+}
+
+function editKey(model: LabelsModel, key: KeyPress): Step<LabelsModel> {
+  if (key.name === "esc") return [{ ...model, editing: false }, []];
+  if (key.name === "enter") return [{ ...model, editing: false, focus: MAKE_ROW }, []];
+  const edit = editText(model.output, key);
+  if (!edit) return [model, []];
+  const next = { ...model, output: { value: edit.value, cursor: edit.cursor } };
+  // A pasted path ending in a line break moves on, as enter does.
+  return [edit.submit ? { ...next, editing: false, focus: MAKE_ROW } : next, []];
+}
+
 function readyKey(model: LabelsModel, key: KeyPress, ctx: Ctx): Step<LabelsModel> {
+  if (model.picker) return pickerKey(model, model.picker, key, ctx);
+  if (model.editing) return editKey(model, key);
   if (key.name === "esc") return [model, [send(close)]];
   const moved = moveCursor(model.focus, key, MAKE_ROW + 1, 5);
-  // On the PDF path, home and end move in the text.
-  if (
-    moved !== null &&
-    !(model.focus === OUTPUT_ROW && (key.name === "home" || key.name === "end"))
-  )
-    return [{ ...model, focus: moved }, []];
+  if (moved !== null) return [{ ...model, focus: moved }, []];
   const field = LABEL_FIELDS[model.focus]?.key;
   if (field) {
     if (key.name === "space" || key.name === "enter")
@@ -221,16 +299,15 @@ function readyKey(model: LabelsModel, key: KeyPress, ctx: Ctx): Step<LabelsModel
     const sized = sizeKey(model, key);
     if (sized) return [sized, []];
   } else if (model.focus === PRINTER_ROW) {
-    const step = key.name === "left" ? -1 : key.name === "right" || key.name === "space" ? 1 : 0;
-    if (key.name === "enter") return make(model, ctx);
-    if (step) return [{ ...model, printer: cycle(printerChoices(model), model.printer, step) }, []];
+    if (key.name === "enter" || key.name === "space")
+      return [openPicker(model, PRINTER_ROW, ctx), []];
   } else if (model.focus === OUTPUT_ROW) {
-    if (key.name === "enter") return [{ ...model, focus: MAKE_ROW }, []];
-    const edit = editText(model.output, key);
-    if (!edit) return [model, []];
-    const next = { ...model, output: { value: edit.value, cursor: edit.cursor } };
-    // A pasted path ending in a line break moves on, as enter does.
-    return [edit.submit ? { ...next, focus: MAKE_ROW } : next, []];
+    if (key.name === "enter" || key.name === "space")
+      return [openPicker(model, OUTPUT_ROW, ctx), []];
+    // Typing on the row starts a path of your own, replacing the choice.
+    const text = typed(key);
+    if (text && !key.name) return editKey({ ...model, editing: true, output: textState("") }, key);
+    return [model, []];
   } else if (key.name === "enter") {
     return make(model, ctx);
   }
@@ -244,29 +321,31 @@ export function update(model: LabelsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step
     case "labels/loaded": {
       const { settings, printers } = m;
       const common = COMMON_SIZES.some((s) => s.size === settings.size);
-      return [
-        {
-          ...model,
-          phase: "ready",
-          fields: settings.fields,
-          size: settings.size,
-          customSize: common ? "" : settings.size,
-          sizeTyped: false,
-          printers:
-            settings.printer && !printers.includes(settings.printer)
-              ? [...printers, settings.printer]
-              : printers,
-          printer: settings.printer,
-          output: textState(settings.output),
-        },
-        [],
-      ];
+      const next: LabelsModel = {
+        ...model,
+        phase: "ready",
+        fields: settings.fields,
+        size: settings.size,
+        customSize: common ? "" : settings.size,
+        sizeTyped: false,
+        printers:
+          settings.printer && !printers.includes(settings.printer)
+            ? [...printers, settings.printer]
+            : printers,
+        printer: settings.printer,
+        output: textState(settings.output),
+        rememberedOutput: settings.output,
+      };
+      // The choices are remembered, so making labels is usually one key away; else start on what's missing.
+      return [{ ...next, focus: firstMissing(next) }, []];
     }
     case "labels/made":
       return model.phase === "making" ? [model, [send(close)]] : [model, []];
     case "paste":
       // Text goes only into the text rows, so a pasted "a" never makes labels.
-      return model.phase === "ready" && (model.focus === OUTPUT_ROW || model.focus === SIZE_ROW)
+      return model.phase === "ready" &&
+        !model.picker &&
+        (model.focus === OUTPUT_ROW || model.focus === SIZE_ROW)
         ? readyKey({ ...model, error: "" }, pasted(m.text), ctx)
         : [model, []];
     case "key": {
@@ -284,9 +363,27 @@ export function hints(model: LabelsModel, _ctx: Ctx): Hint[] {
   const closeHint: Hint = { keys: "esc", label: "close", primary: true };
   if (model.phase !== "ready") return [closeHint];
   const move: Hint = { keys: "↑↓", label: "move", primary: true };
+  if (model.picker)
+    return [
+      move,
+      { keys: "enter", label: "choose", primary: true },
+      { keys: "esc", label: "back", primary: true },
+    ];
+  if (model.editing)
+    return [
+      { keys: "type", label: "PDF path", primary: true },
+      { keys: "enter", label: "done", primary: true },
+      { keys: "esc", label: "keep it", primary: true },
+    ];
   const makeHint: Hint = { keys: "a", label: "make labels", primary: true };
   if (LABEL_FIELDS[model.focus])
-    return [move, { keys: "space", label: "tick", primary: true }, makeHint, closeHint];
+    return [
+      move,
+      { keys: "←→", label: "column" },
+      { keys: "space", label: "tick", primary: true },
+      makeHint,
+      closeHint,
+    ];
   switch (model.focus) {
     case SIZE_ROW:
       return [
@@ -297,15 +394,31 @@ export function hints(model: LabelsModel, _ctx: Ctx): Hint[] {
         closeHint,
       ];
     case PRINTER_ROW:
-      return [move, { keys: "←→", label: "printer", primary: true }, makeHint, closeHint];
+      return [move, { keys: "enter", label: "choose printer", primary: true }, makeHint, closeHint];
     case OUTPUT_ROW:
       return [
         move,
-        { keys: "type", label: "PDF path", primary: true },
-        { keys: "enter", label: "done", primary: true },
+        { keys: "enter", label: "choose", primary: true },
+        { keys: "type", label: "a path of your own" },
         closeHint,
       ];
-    default:
-      return [move, { keys: "enter", label: "make labels", primary: true }, closeHint];
+    default: {
+      const missing = MISSING_LABELS[firstMissing(model)];
+      return [move, { keys: "enter", label: missing ?? "make labels", primary: true }, closeHint];
+    }
   }
+}
+
+/** What enter on Make does while something is missing: go to that row. */
+const MISSING_LABELS: Record<number, string> = {
+  0: "pick a field",
+  [SIZE_ROW]: "fix the size",
+  [PRINTER_ROW]: "choose a printer",
+};
+
+/** What's being made right now, else null: the shell won't quit meanwhile. */
+export function busy(model: LabelsModel): string | null {
+  return model.phase === "making"
+    ? `Making ${plural(model.request.spoolIds.length, "label")}`
+    : null;
 }

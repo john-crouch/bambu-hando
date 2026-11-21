@@ -4,14 +4,18 @@
 import { describe, expect, it } from "vitest";
 
 import type { SpoolRecord } from "../src/spoolease.js";
+import type { CheckSection } from "../src/syncCheck.js";
 import { press } from "../src/tui/core/keys.js";
 import type { AppMsg, Ctx, Step, TabMsg } from "../src/tui/core/types.js";
+import type { FormValues } from "../src/tui/core/values.js";
 import {
+  busy,
   capturesText,
   commands,
   cursorIndex,
   hints,
   init,
+  modal,
   type SpoolsModel,
   spoolsScreen,
   update,
@@ -241,13 +245,30 @@ describe("the list", () => {
 });
 
 describe("empty states", () => {
-  it("sends you to Settings without a console", async () => {
-    const ctx = makeCtx({ values: { skipSpoolease: true } });
-    expect(await sent(key(start(ctx), "enter", ctx))).toEqual([
-      { type: "app/switchTab", tab: "settings" },
+  it("sends you to the Settings row that's missing without a console", async () => {
+    const to = async (values: Partial<FormValues>) => {
+      const ctx = makeCtx({ values });
+      return sent(key(start(ctx), "enter", ctx));
+    };
+    expect(await to({ skipSpoolease: true })).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.skip" },
     ]);
+    expect(await to({ host: " " })).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.host" },
+    ]);
+    expect(await to({ securityKey: "" })).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.key" },
+    ]);
+    const ctx = makeCtx({ values: { skipSpoolease: true } });
     expect(await sent(key(start(ctx), "l", ctx))).toEqual([]);
     expect(await sent(key(start(ctx), "b", ctx))).toEqual([]);
+  });
+
+  it("sends you to the console's address in Settings when it can't be read", async () => {
+    const ctx = makeCtx({ resources: { console: { state: "failed", error: "down" } } });
+    expect(await sent(key(start(ctx), "enter", ctx))).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.host" },
+    ]);
   });
 
   it("sends you to Add when the console has no spools yet", async () => {
@@ -292,31 +313,32 @@ describe("more spools like this one", () => {
     ]);
   });
 
-  it("changes the count with the arrows and digits, between 1 and 8", () => {
+  it("steps the count up with ↑ or → and down with ↓ or ←, digits set it, between 1 and 8", () => {
     const open = keys(start(), ["down", "+"]);
     const count = (m: SpoolsModel) => (m.dialog?.kind === "count" ? m.dialog.count : null);
-    expect(count(keys(open, ["up"]))).toBe(1);
-    expect(count(keys(open, ["down", "down"]))).toBe(3);
+    expect(count(keys(open, ["down"]))).toBe(1);
+    expect(count(keys(open, ["up", "up"]))).toBe(3);
     expect(count(keys(open, ["right"]))).toBe(2);
+    expect(count(keys(open, ["up", "up", "left"]))).toBe(2);
     expect(count(keys(open, ["5"]))).toBe(5);
     expect(count(keys(open, ["9"]))).toBe(1);
     expect(count(keys(open, ["end"]))).toBe(8);
-    expect(count(keys(open, ["8", "down"]))).toBe(8);
+    expect(count(keys(open, ["8", "up"]))).toBe(8);
   });
 
-  it("closes with esc before applying, and only a applies", () => {
+  it("closes with esc before applying; enter or a applies", () => {
     const open = keys(start(), ["down", "+"]);
     expect(keys(open, ["esc"]).dialog).toBeNull();
-    const [entered, cmds] = key(open, "enter");
-    expect(entered.dialog).toMatchObject({ phase: "choose" });
-    expect(cmds).toEqual([]);
-    const [applied, applyCmds] = key(keys(open, ["down"]), "a");
+    const [entered, cmds] = key(keys(open, ["up"]), "enter");
+    expect(entered.dialog).toMatchObject({ phase: "running", results: [], count: 2 });
+    expect(cmds).toHaveLength(1);
+    const [applied, applyCmds] = key(keys(open, ["up"]), "a");
     expect(applied.dialog).toMatchObject({ phase: "running", results: [], count: 2 });
     expect(applyCmds).toHaveLength(1);
   });
 
   it("streams each result into the dialog, then reports the run", async () => {
-    const running = key(keys(start(), ["down", "+", "down"]), "a")[0];
+    const running = key(keys(start(), ["down", "+", "up"]), "a")[0];
     const run = running.dialog?.kind === "count" ? running.dialog.run : -1;
     let [model] = tabMsg({ type: "spools/copy", run, result: { ok: true, id: "7" } }, running);
     expect(model.dialog).toMatchObject({ results: [{ ok: true, id: "7" }] });
@@ -392,7 +414,7 @@ describe("more spools like this one", () => {
   });
 
   it("offers labels for the new spools, and esc closes", async () => {
-    const running = key(keys(start(), ["down", "+", "down"]), "a")[0];
+    const running = key(keys(start(), ["down", "+", "up"]), "a")[0];
     const run = running.dialog?.kind === "count" ? running.dialog.run : -1;
     const results = [
       { ok: true, id: "7" },
@@ -588,7 +610,22 @@ describe("hints and commands", () => {
   it("lists the list's keys, labels counting the ticks", () => {
     expect(keysOf(keys(start(), ["down"]))).toEqual(["↑↓", "space", "/", "s", "l", "+", "b", "r"]);
     const narrow = { ...CTX, bodyColumns: 80 };
-    expect(keysOf(start(narrow), narrow)).toContain("enter");
+    expect(keysOf(start(narrow), narrow)).toEqual([
+      "↑↓",
+      "enter",
+      "space",
+      "/",
+      "s",
+      "l",
+      "b",
+      "r",
+    ]);
+    expect(hints(start(narrow), narrow)[1]).toEqual({
+      keys: "enter",
+      label: "details",
+      primary: true,
+    });
+    expect(hints(start(), CTX).find((h) => h.keys === "s")?.primary).toBe(true);
     const label = hints(keys(start(), ["space", "space"]), CTX).find((h) => h.keys === "l");
     expect(label?.label).toBe("labels for 2");
     expect(hints(keys(start(), ["down"]), CTX).find((h) => h.keys === "+")).toBeDefined();
@@ -608,20 +645,24 @@ describe("hints and commands", () => {
     const empty = makeCtx({ resources: { console: consoleOf([]) } });
     expect(keysOf(start(empty), empty)).toEqual(["enter", "r"]);
     const failed = makeCtx({ resources: { console: { state: "failed", error: "down" } } });
-    expect(keysOf(start(failed), failed)).toEqual(["r"]);
-    expect(keysOf(keys(start(), ["down", "+"]))).toEqual(["↑↓", "1-8", "a", "esc"]);
+    expect(keysOf(start(failed), failed)).toEqual(["r", "enter"]);
+    expect(hints(start(failed), failed)[1]?.label).toBe("open Settings");
+    expect(keysOf(keys(start(), ["down", "+"]))).toEqual(["↑↓", "1-8", "enter", "esc"]);
+    expect(hints(keys(start(), ["down", "+", "up"]), CTX)[2]?.label).toBe("add 2 spools");
     expect(keysOf(keys(start(), ["b"]))).toEqual(["type", "enter", "esc"]);
   });
 
   it("offers palette commands that reach this tab", async () => {
     const list = commands(keys(start(), ["down"]), CTX);
+    // Reloading is the shell's Data command, not one of these.
     expect(list.map((c) => c.title)).toEqual([
-      "Reload spools",
       "Scan a barcode",
       "Labels for the highlighted spool",
       "More spools like this one",
       "Sort spools",
     ]);
+    // Each names its shortcut, which the palette shows beside it.
+    expect(list.map((c) => c.keys)).toEqual(["b", "l", "+", "s"]);
     const scan = list.find((c) => c.title === "Scan a barcode");
     expect(scan?.msg).toEqual({
       type: "tab",
@@ -633,5 +674,106 @@ describe("hints and commands", () => {
     expect(cmds.length).toBeGreaterThan(0);
     const unset = makeCtx({ values: { skipSpoolease: true } });
     expect(commands(start(unset), unset)).toEqual([]);
+  });
+});
+
+describe("dialogs are modal", () => {
+  it("is modal while a dialog is open, and q or tab there neither quit nor leave", () => {
+    expect(modal(start())).toBe(false);
+    const counting = keys(start(), ["down", "+"]);
+    expect(modal(counting)).toBe(true);
+    for (const what of ["q", "tab"]) {
+      const [next, cmds] = key(counting, what);
+      expect(next).toEqual(counting);
+      expect(cmds).toEqual([]);
+    }
+    expect(modal(keys(start(), ["b"]))).toBe(true);
+  });
+});
+
+describe("busy", () => {
+  it("says what's being added until the run reports, even with its dialog hidden", () => {
+    expect(busy(start())).toBeNull();
+    const running = key(keys(start(), ["down", "+", "up"]), "a")[0];
+    expect(busy(running)).toBe("Adding 2 spools of Zeta PLA Blue to SpoolEase");
+    const hidden = keys(running, ["esc"]);
+    expect(hidden.dialog).toBeNull();
+    expect(busy(hidden)).toBe("Adding 2 spools of Zeta PLA Blue to SpoolEase");
+    const run = running.dialog?.kind === "count" ? running.dialog.run : -1;
+    const [done] = tabMsg({ type: "spools/copiesDone", run, results: [], error: "down" }, hidden);
+    expect(busy(done)).toBeNull();
+  });
+
+  it("says a barcode is being remembered", () => {
+    const open = tabMsg({ type: "spools/barcodes", barcodes: new Map() }, key(start(), "b")[0])[0];
+    const saving = keys(open, ["NEW1", "enter", "enter"]);
+    expect(busy(saving)).toBe("Remembering barcode NEW1");
+  });
+});
+
+describe("a new barcode's filament isn't on the console", () => {
+  it("ends the list with Other…, which goes to Add", async () => {
+    const open = tabMsg({ type: "spools/barcodes", barcodes: new Map() }, key(start(), "b")[0])[0];
+    const choose = keys(open, ["NEW1", "enter", "end"]);
+    expect(choose.dialog).toMatchObject({ kind: "choose", cursor: 2 });
+    const step = key(choose, "enter");
+    expect(step[0].dialog).toBeNull();
+    const msgs = await sent(step);
+    expect(msgs[0]).toEqual({ type: "app/switchTab", tab: "add" });
+    expect(msgs[1]).toMatchObject({ type: "app/toast", text: expect.stringContaining("NEW1") });
+  });
+});
+
+describe("deep links", () => {
+  it("opens on the spool named by app/switchTab's focus, clearing a filter that hides it", () => {
+    const filtered = keys(start(), ["/", "Zeta", "enter"]);
+    expect(highlighted(filtered)).toBe("2");
+    const [next] = update(filtered, { type: "app/switchTab", tab: "spools", focus: "1" }, CTX);
+    expect(highlighted(next)).toBe("1");
+    expect(next.filter.value).toBe("");
+    const [same] = update(start(), { type: "app/switchTab", tab: "spools", focus: "99" }, CTX);
+    expect(same).toEqual(start());
+    const [plain] = update(start(), { type: "app/switchTab", tab: "spools" }, CTX);
+    expect(plain).toEqual(start());
+  });
+});
+
+describe("the sync check", () => {
+  const problem: CheckSection = {
+    key: "csvOnly",
+    title: "t",
+    why: "w",
+    problem: true,
+    items: ["a", "b"],
+  };
+  const ctx = makeCtx({
+    resources: {
+      console: consoleOf(SPOOLS),
+      check: { state: "ready", value: { sections: [problem], warnings: [], presets: [] }, at: 0 },
+    },
+  });
+
+  it("opens Check with c, offered in the hints and the palette while it has problems", async () => {
+    expect(await sent(key(start(ctx), "c", ctx))).toEqual([
+      { type: "app/switchTab", tab: "check" },
+    ]);
+    expect(hints(start(ctx), ctx).find((h) => h.keys === "c")?.label).toBe("see 2 problems");
+    expect(
+      commands(start(ctx), ctx).find((c) => c.title === "Open Check: 2 sync problems")?.msg,
+    ).toEqual({ type: "app/switchTab", tab: "check" });
+    expect(hints(start(), CTX).find((h) => h.keys === "c")).toBeUndefined();
+    expect(await sent(key(start(), "c"))).toEqual([]);
+  });
+});
+
+describe("a kept filter", () => {
+  it("offers esc to clear it", () => {
+    const kept = keys(start(), ["/", "Zeta", "enter"]);
+    expect(hints(kept, CTX).find((h) => h.keys === "esc")).toEqual({
+      keys: "esc",
+      label: "clear filter",
+      primary: true,
+    });
+    expect(hints(start(), CTX).find((h) => h.keys === "esc")).toBeUndefined();
   });
 });

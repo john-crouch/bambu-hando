@@ -156,7 +156,7 @@ function program(ctx: Ctx) {
 describe("flows", () => {
   it("adds two spools like the highlighted one and offers their labels", async () => {
     const { prog, app, errors, keys } = program(serverCtx());
-    keys("+", "down", "a");
+    keys("+", "up", "a");
     await vi.waitFor(() => expect(prog.model.dialog).toMatchObject({ phase: "done" }));
     expect(prog.model.dialog).toMatchObject({
       results: [

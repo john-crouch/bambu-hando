@@ -11,6 +11,7 @@ import { LABEL_FIELDS } from "../src/labels.js";
 import { press } from "../src/tui/core/keys.js";
 import type { Ctx, Step, TabMsg } from "../src/tui/core/types.js";
 import {
+  busy,
   FIELD_ROWS,
   hints,
   init,
@@ -18,7 +19,9 @@ import {
   labelPreview,
   labelTarget,
   MAKE_ROW,
+  OTHER_OUTPUT,
   OUTPUT_ROW,
+  outputChoices,
   PRINTER_ROW,
   SIZE_ROW,
   update,
@@ -57,6 +60,13 @@ function keys(model: LabelsModel, what: string[], ctx: Ctx = CTX): LabelsModel {
   return what.reduce((m, k) => key(m, k, ctx)[0], model);
 }
 
+/** Today's suggested PDF, as the form names it: ~/labels-<local date>.pdf. */
+function todaysPdf(ctx: Ctx = CTX): string {
+  const d = new Date(ctx.now);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `~/labels-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.pdf`;
+}
+
 /** The model with the focus on `row`. */
 function at(model: LabelsModel, row: number): LabelsModel {
   return { ...model, focus: row };
@@ -87,12 +97,20 @@ describe("loading", () => {
       error: "",
     });
   });
+
+  it("starts on the first input that's missing", () => {
+    expect(loaded().focus).toBe(PRINTER_ROW);
+    expect(loaded({ ...DEFAULT_LABEL_SETTINGS, fields: [] }).focus).toBe(0);
+    expect(loaded({ ...DEFAULT_LABEL_SETTINGS, size: "big", printer: "DYMO" }).focus).toBe(
+      SIZE_ROW,
+    );
+  });
 });
 
 describe("the form", () => {
   it("moves between rows without wrapping", () => {
-    expect(keys(loaded(), ["down"]).focus).toBe(MAKE_ROW);
-    expect(keys(loaded(), ["up"]).focus).toBe(OUTPUT_ROW);
+    expect(keys(at(loaded(), MAKE_ROW), ["down"]).focus).toBe(MAKE_ROW);
+    expect(keys(at(loaded(), MAKE_ROW), ["up"]).focus).toBe(OUTPUT_ROW);
     expect(keys(at(loaded(), 0), ["up"]).focus).toBe(0);
     expect(keys(loaded(), ["home"]).focus).toBe(0);
   });
@@ -135,20 +153,47 @@ describe("the form", () => {
     expect(keys(typed, ["right", "left"]).size).toBe("2.5x1in");
   });
 
-  it("cycles the printer through Don't print and the printers", () => {
+  it("chooses the printer from a list that opens on the current one", () => {
     const model = at(loaded(), PRINTER_ROW);
     expect(model.printer).toBe("");
-    expect(keys(model, ["right"]).printer).toBe("DYMO");
-    expect(keys(model, ["right", "right"]).printer).toBe("Office");
-    expect(keys(model, ["right", "right", "space"]).printer).toBe("");
-    expect(keys(model, ["left"]).printer).toBe("Office");
+    const open = keys(model, ["enter"]);
+    expect(open.picker).toEqual({ row: PRINTER_ROW, cursor: 0 });
+    const chosen = keys(open, ["down", "down", "enter"]);
+    expect(chosen.printer).toBe("Office");
+    expect(chosen.picker).toBeNull();
+    expect(keys(chosen, ["space"]).picker).toEqual({ row: PRINTER_ROW, cursor: 2 });
+    // esc leaves the list and keeps the printer; ← and → don't cycle any more.
+    expect(keys(open, ["down", "esc"])).toMatchObject({ picker: null, printer: "" });
+    expect(keys(model, ["right"]).printer).toBe("");
   });
 
-  it("types every key into the PDF path, a and q included, and enter goes to Make labels", () => {
-    const model = keys(at(loaded(), OUTPUT_ROW), ["~", "/", "q", "a", "?", ".pdf"]);
+  it("offers today's PDF first, then the remembered one, then Other…", () => {
+    expect(outputChoices(loaded(), CTX)).toEqual(["", todaysPdf(), OTHER_OUTPUT]);
+    const remembered = loaded({ ...DEFAULT_LABEL_SETTINGS, output: "~/l.pdf" });
+    expect(outputChoices(remembered, CTX)).toEqual(["", todaysPdf(), "~/l.pdf", OTHER_OUTPUT]);
+    const open = keys(at(remembered, OUTPUT_ROW), ["enter"]);
+    expect(open.picker).toEqual({ row: OUTPUT_ROW, cursor: 2 });
+    const today = keys(open, ["up", "enter"]);
+    expect(today.output.value).toBe(todaysPdf());
+    expect(today.picker).toBeNull();
+    const none = keys(open, ["home", "enter"]);
+    expect(none.output.value).toBe("");
+  });
+
+  it("types a path of its own after Other…, every key included, and enter goes to Make labels", () => {
+    const other = keys(at(loaded(), OUTPUT_ROW), ["enter", "end", "enter"]);
+    expect(other).toMatchObject({ picker: null, editing: true });
+    const model = keys(other, ["~", "/", "q", "a", "?", ".pdf"]);
     expect(model.output.value).toBe("~/qa?.pdf");
     expect(model.phase).toBe("ready");
-    expect(keys(model, ["enter"]).focus).toBe(MAKE_ROW);
+    expect(keys(model, ["enter"])).toMatchObject({ focus: MAKE_ROW, editing: false });
+  });
+
+  it("starts a path of its own when typing on the Save PDF row", () => {
+    const model = keys(at(loaded(), OUTPUT_ROW), ["~", "/", "x"]);
+    expect(model).toMatchObject({ editing: true, output: { value: "~/x" } });
+    // esc leaves the field and keeps what was typed.
+    expect(keys(model, ["esc"])).toMatchObject({ editing: false, output: { value: "~/x" } });
   });
 
   it("takes a pasted PDF path, line break dropped", () => {
@@ -163,6 +208,10 @@ describe("the form", () => {
     expect(await runCmds(key(at(loaded(), OUTPUT_ROW), "esc")[1])).toEqual([
       { type: "app/closeOverlay" },
     ]);
+  });
+
+  it("ignores q and tab: only esc closes", () => {
+    for (const what of ["q", "tab"]) expect(key(at(loaded(), MAKE_ROW), what)[1]).toEqual([]);
   });
 });
 
@@ -183,15 +232,16 @@ describe("labelTarget", () => {
 });
 
 describe("making labels", () => {
-  it("shows what's missing instead of making labels", () => {
-    const [model, cmds] = key(loaded(), "a");
-    expect(model.error).toBe("Choose a printer, a PDF path, or both");
-    expect(cmds).toEqual([]);
-    expect(keys(model, ["up"]).error).toBe("");
+  it("goes to what's missing instead of making labels, without repeating why as an error", () => {
+    for (const what of ["a", "enter"]) {
+      const [model, cmds] = key(at(loaded(), MAKE_ROW), what);
+      expect(model).toMatchObject({ focus: PRINTER_ROW, error: "" });
+      expect(cmds).toEqual([]);
+    }
   });
 
   it("makes them with a or with enter on Make labels", () => {
-    const ready = { ...loaded(), printer: "DYMO" };
+    const ready = { ...at(loaded(), MAKE_ROW), printer: "DYMO" };
     for (const press of ["a", "enter"]) {
       const [model, cmds] = key(ready, press);
       expect(model.phase).toBe("making");
@@ -243,12 +293,27 @@ describe("labelPreview", () => {
 describe("hints", () => {
   const keysOf = (model: LabelsModel) => hints(model, CTX).map((h) => h.keys);
 
-  it("follows the focused row", () => {
+  it("follows the focused row, every key that works listed", () => {
     expect(keysOf(init(REQUEST, CTX)[0])).toEqual(["esc"]);
-    expect(keysOf(loaded())).toEqual(["↑↓", "enter", "esc"]);
-    expect(keysOf(at(loaded(), 0))).toEqual(["↑↓", "space", "a", "esc"]);
+    expect(keysOf(at(loaded(), MAKE_ROW))).toEqual(["↑↓", "enter", "esc"]);
+    expect(hints(at(loaded(), MAKE_ROW), CTX)[1]?.label).toBe("choose a printer");
+    expect(hints({ ...at(loaded(), MAKE_ROW), printer: "DYMO" }, CTX)[1]?.label).toBe(
+      "make labels",
+    );
+    expect(keysOf(at(loaded(), 0))).toEqual(["↑↓", "←→", "space", "a", "esc"]);
     expect(keysOf(at(loaded(), SIZE_ROW))).toEqual(["↑↓", "←→", "type", "a", "esc"]);
-    expect(keysOf(at(loaded(), PRINTER_ROW))).toEqual(["↑↓", "←→", "a", "esc"]);
-    expect(keysOf(at(loaded(), OUTPUT_ROW))).toEqual(["↑↓", "type", "enter", "esc"]);
+    expect(keysOf(at(loaded(), PRINTER_ROW))).toEqual(["↑↓", "enter", "a", "esc"]);
+    // On Save PDF every printable key types a path, a included.
+    expect(keysOf(at(loaded(), OUTPUT_ROW))).toEqual(["↑↓", "enter", "type", "esc"]);
+    expect(keysOf(keys(at(loaded(), PRINTER_ROW), ["enter"]))).toEqual(["↑↓", "enter", "esc"]);
+    expect(keysOf(keys(at(loaded(), OUTPUT_ROW), ["~"]))).toEqual(["type", "enter", "esc"]);
+  });
+});
+
+describe("busy", () => {
+  it("says labels are being made while they are", () => {
+    expect(busy(loaded())).toBeNull();
+    const [making] = key({ ...loaded(), printer: "DYMO" }, "a");
+    expect(busy(making)).toBe("Making 2 labels");
   });
 });

@@ -7,11 +7,12 @@ import { renderToString } from "ink";
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_LABEL_SETTINGS } from "../src/labelSettings.js";
+import { LABEL_FIELDS } from "../src/labels.js";
 import { press } from "../src/tui/core/keys.js";
 import type { Ctx, Resources } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
 import { labelsOverlay } from "../src/tui/overlays/labels/index.js";
-import type { LabelsModel } from "../src/tui/overlays/labels/model.js";
+import { type LabelsModel, MAKE_ROW, PRINTER_ROW } from "../src/tui/overlays/labels/model.js";
 import { spoolsTab } from "../src/tui/tabs/spools/index.js";
 import type { SpoolsModel } from "../src/tui/tabs/spools/model.js";
 import { frameBody, textWidth, theme } from "../src/tui/ui/index.js";
@@ -96,6 +97,7 @@ function expectExact(lines: string[], ctx: Ctx): void {
 }
 
 const SIZES: [number, number][] = [
+  [60, 20],
   [80, 24],
   [120, 36],
 ];
@@ -107,13 +109,18 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     const lines = tab(start(ctx), ctx);
     expectExact(lines, ctx);
     expect(lines[0]).toContain("Spools · newest first");
-    expect(lines[1]).toContain("4 spools · 744 g left · 2 low · ✓ in sync");
+    // A short line leaves out the least useful part whole.
+    expect(lines[1]).toContain(
+      columns < 80
+        ? "4 spools · 744 g left · 2 low · ✓ in sync"
+        : "4 spools · 744 g left · 2 low · 1 not weighed · ✓ in sync",
+    );
     const text = lines.join("\n");
     expect(text).toContain("#14");
     expect(text).toContain("Sunlu PETG 2.0 Vivid Yellow");
     expect(text).toContain("564 g");
     expect(text).toContain("▰▰▰▰▰▰▱▱▱▱");
-    expect(lines.at(-1)).toContain("1/4");
+    expect(text).toMatch(/╰─+ 1\/4 ─╯/);
   });
 
   it("shows the filter and its matches", () => {
@@ -133,7 +140,7 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     [
       { resources: { console: { state: "failed" as const, error: "connection refused" } } },
       "Couldn't read the console's spools",
-      "r try again",
+      "enter open Settings",
     ],
     [{ resources: { console: consoleOf([]) } }, "No spools on the console yet", "enter add spools"],
   ])("explains an empty state (%#)", (overrides, title, action) => {
@@ -153,19 +160,21 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
   });
 
   it("draws the count dialog over the list, naming the console and the spool copied", () => {
-    const model = keys(start(ctx), ctx, "+", "down");
+    const model = keys(start(ctx), ctx, "+", "up");
     const lines = tab(model, ctx);
     expectExact(lines, ctx);
     const text = lines.join("\n");
     expect(text).toContain("More spools like this one");
     expect(text).toContain("Copies of spool #14 go to http://127.0.0.1");
     expect(text).toContain("‹ 2 ›  new spools");
-    expect(text).toContain("a add 2 spools");
+    expect(text).toContain("The console has 1 spool of this filament.");
+    // Its keys are in the footer, not repeated in the dialog.
+    expect(text).not.toContain("add 2 spools");
     expect(text).not.toContain("SECRETKEY");
   });
 
   it("streams results into the count dialog and offers labels when done", () => {
-    let model = keys(start(ctx), ctx, "+", "down", "a");
+    let model = keys(start(ctx), ctx, "+", "up", "a");
     const run = model.dialog?.kind === "count" ? model.dialog.run : 0;
     model = spoolsTab.update(
       model,
@@ -188,8 +197,8 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     )[0];
     const text = tab(model, ctx).join("\n");
     expect(text).toContain("✗ spool 2 of 2: storage full");
-    expect(text).toContain("Done: 1 added, 1 failed");
-    expect(text).toContain("l labels for 1 new spool");
+    expect(text).toContain("1 added · 1 failed");
+    expect(text).not.toContain("labels for 1 new spool");
   });
 
   it("draws the scan, known-barcode and choose dialogs", () => {
@@ -201,17 +210,50 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     )[0];
     let text = tab(keys(scan, ctx, "00"), ctx).join("\n");
     expect(text).toContain("Scan a barcode");
+    expect(text).not.toContain("Scan the spool's barcode");
     expect(text).toContain("Barcode  00");
     expect(text).toContain("1 known so far");
     text = tab(keys(scan, ctx, "0015\r"), ctx).join("\n");
     expect(text).toContain("Barcode 0015");
-    expect(text).toContain("More spools of Sunlu PETG 2.0 Vivid Yellow");
+    expect(text).toContain("this barcode is");
+    expect(text).toContain("Sunlu PETG 2.0 Vivid Yellow");
+    expect(text).toContain("More spools of it");
     expect(text).toContain("A different filament");
     const choose = tab(keys(scan, ctx, "NEW\r"), ctx);
     expectExact(choose, ctx);
     expect(choose.join("\n")).toContain("Which filament is NEW?");
+    expect(choose.join("\n")).not.toContain("which filament is it");
     expect(choose.join("\n")).toContain("Acme PETG Basic White");
+    expect(choose.join("\n")).toMatch(/Other… +find it in Add/);
   });
+
+  it("says empty, in place of a bar, for a spool with nothing left", () => {
+    const emptied = ctxAt(columns, rows, {
+      resources: {
+        console: consoleOf([...SPOOLS, spool({ id: "20", currentWeight: 200 })], FILAMENTS),
+      },
+    });
+    const lines = tab(start(emptied), emptied);
+    expectExact(lines, emptied);
+    // The list's part of the line: the detail beside it at 120 has a bar of its own.
+    const row = (lines.find((line) => line.includes("] ") && line.includes("#20")) ?? "").split(
+      "││",
+    )[0];
+    expect(row, lines.join("\n")).toMatch(/empty\s*(│|┃|$)/);
+    expect(row, lines.join("\n")).not.toContain("▱");
+  });
+
+  if (columns < 90)
+    it("keeps a compact detail of the highlighted spool under the list", () => {
+      const lines = tab(start(ctx), ctx);
+      expectExact(lines, ctx);
+      const text = lines.join("\n");
+      expect(text).toContain("╭ #14 Sunlu PETG 2.0 Vivid Yellow");
+      expect(text).toContain("564 g of 1000 g · 56% · 236 g spool");
+      expect(text).toContain("AMS 1 · slot 2");
+      // The list still shows the rest of the spools.
+      expect(text).toContain("#3 ");
+    });
 
   it(
     columns < 90 ? "opens the detail in place of the list" : "shows the detail beside the list",
@@ -252,7 +294,7 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
 
   it("fits the body and shows the fields, the preview and what Make labels does", () => {
     const lines = overlay(loaded());
-    expect(lines.length).toBeLessThan(ctx.bodyRows);
+    expect(lines.length).toBeLessThanOrEqual(ctx.bodyRows);
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(ctx.bodyColumns);
     const text = lines.join("\n");
     expect(text).toContain("Labels for 2 new spools");
@@ -262,16 +304,50 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     expect(text).toContain("Sunlu");
     expect(text).toContain("230–250°C");
     expect(text).toContain("Print 2 labels on DYMO");
+    // Its keys are in the footer.
+    expect(text).not.toContain("esc close");
   });
 
-  it("shows a validation error and the loading state", () => {
+  it("says once what's missing, on the Make row", () => {
     const model = labelsOverlay.update(
-      { ...loaded(), printer: "" },
+      { ...loaded(), printer: "", focus: MAKE_ROW },
       { type: "key", key: press("enter") },
       ctx,
     )[0];
-    expect(overlay(model).join("\n")).toContain("✗ Choose a printer, a PDF path, or both");
+    const text = overlay(model).join("\n");
+    expect(text.split("Choose a printer, a PDF path, or both")).toHaveLength(2);
+    expect(text).not.toContain("✗");
     const [loading] = labelsOverlay.init({ spoolIds: ["14"], fresh: false }, ctx);
     expect(overlay(loading).join("\n")).toContain("Looking for printers…");
+  });
+
+  it("keeps the dialog's height when fields are ticked or unticked", () => {
+    const many = { ...loaded(), fields: LABEL_FIELDS.map((f) => f.key) };
+    const few = { ...loaded(), fields: ["brand" as const] };
+    expect(overlay(many)).toHaveLength(overlay(few).length);
+    expect(overlay(many).join("\n")).toMatch(/\+\d+ more/);
+  });
+
+  it("opens the printer choices as a list, Don't print first", () => {
+    const model = labelsOverlay.update(
+      { ...loaded(), focus: PRINTER_ROW },
+      { type: "key", key: press("enter") },
+      ctx,
+    )[0];
+    const text = overlay(model).join("\n");
+    expect(text).toContain("Labels for 2 new spools · Printer");
+    const many = labelsOverlay.update(
+      {
+        ...loaded(),
+        focus: PRINTER_ROW,
+        printers: Array.from({ length: 30 }, (_, i) => `Printer ${i}`),
+      },
+      { type: "key", key: press("enter") },
+      ctx,
+    )[0];
+    // A list that scrolls says where the cursor is.
+    expect(overlay(many).join("\n")).toContain(" 1/31 ");
+    expect(text).toContain("Don't print");
+    expect(text).toContain("DYMO");
   });
 });

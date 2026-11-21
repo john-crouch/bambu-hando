@@ -6,6 +6,7 @@ import { type InventoryRow, type InventorySort, remainingGrams } from "../../../
 import { checkCounts } from "../../../syncCheck.js";
 import type { CheckData, ConsoleData, Resource } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
+import { formatRange } from "../../ui/index.js";
 
 /** Under this share of the label weight a spool counts as low (yellow); under LOW_RED it's red. */
 export const LOW_FRACTION = 0.25;
@@ -49,11 +50,7 @@ export function swatchOf(colorCodes: string[]): string | undefined {
 }
 
 export function nozzleRange(filament: CustomFilament | undefined): string {
-  const low = filament?.nozzleTempMin ?? null;
-  const high = filament?.nozzleTempMax ?? null;
-  if (low === null && high === null) return "";
-  if (low === null || high === null || low === high) return `${low ?? high}°C`;
-  return `${low}–${high}°C`;
+  return formatRange(filament?.nozzleTempMin, filament?.nozzleTempMax);
 }
 
 /** A Unix-seconds time as the local date, 2026-10-30; "" when unset. */
@@ -75,8 +72,12 @@ export interface SpoolsSummary {
   count: number;
   /** Filament left on the weighed spools. */
   leftGrams: number;
-  /** Spools under LOW_FRACTION of their label weight. */
+  /** Spools under LOW_FRACTION of their label weight, empty ones not counted. */
   low: number;
+  /** Weighed spools with nothing left. */
+  empty: number;
+  /** Spools without a weight yet (new ones, until their first weigh). */
+  unweighed: number;
   sync: SyncState;
 }
 
@@ -98,13 +99,26 @@ function syncState(check: Resource<CheckData>): SyncState {
 export function spoolsSummary(data: ConsoleData, check: Resource<CheckData>): SpoolsSummary {
   let leftGrams = 0;
   let low = 0;
+  let empty = 0;
+  let unweighed = 0;
   for (const spool of data.spools) {
     const left = remainingGrams(spool);
-    if (left === null) continue;
+    if (left === null) {
+      unweighed += 1;
+      continue;
+    }
     leftGrams += left;
-    if (spool.labelWeight && left / spool.labelWeight < LOW_FRACTION) low += 1;
+    if (left === 0) empty += 1;
+    else if (spool.labelWeight && left / spool.labelWeight < LOW_FRACTION) low += 1;
   }
-  return { count: data.spools.length, leftGrams, low, sync: syncState(check) };
+  return {
+    count: data.spools.length,
+    leftGrams,
+    low,
+    empty,
+    unweighed,
+    sync: syncState(check),
+  };
 }
 
 export interface DetailRow {
@@ -125,6 +139,12 @@ export interface SpoolDetail {
 function leftRow(row: InventoryRow): DetailRow {
   const { left, fraction, spool } = row;
   if (left === null) return { label: "Left", value: "not weighed yet", dim: true };
+  if (left === 0)
+    return {
+      label: "Left",
+      value: spool.labelWeight ? `empty (0 g of ${spool.labelWeight} g)` : "empty",
+      tone: "failed",
+    };
   if (!spool.labelWeight || fraction === null) return { label: "Left", value: `${left} g` };
   const value = `${left} g of ${spool.labelWeight} g · ${Math.round(fraction * 100)}%`;
   const tone = barTone(fraction);
@@ -137,7 +157,6 @@ export function spoolDetail(
   filaments: ReadonlyMap<string, CustomFilament>,
 ): SpoolDetail {
   const { spool } = row;
-  const material = [spool.material, spool.subtype].filter(Boolean).join(" ");
   const nozzle = nozzleRange(filaments.get(spool.slicerFilament));
   const added = addedDate(spool.addedTime);
   const rows: DetailRow[] = [
@@ -158,14 +177,47 @@ export function spoolDetail(
       : { label: "Tag", value: "none", dim: true },
     ...(added ? [{ label: "Added", value: added }] : []),
     ...(spool.note ? [{ label: "Note", value: spool.note }] : []),
-    { label: "Spool", value: `#${spool.id}`, dim: true },
   ];
   return {
     title: row.name,
-    subtitle: [spool.brand, material, spool.slicerFilament || "no filament code"]
-      .filter(Boolean)
-      .join(" · "),
+    subtitle: filamentLine(row),
     swatch: swatchOf(spool.colorCodes),
     rows,
   };
+}
+
+/** Brand · material · filament code. */
+function filamentLine({ spool }: InventoryRow): string {
+  const material = [spool.material, spool.subtype].filter(Boolean).join(" ");
+  return [spool.brand, material, spool.slicerFilament || "no filament code"]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** The highlighted spool in three lines, for a panel under the list when there's no room beside it. */
+export function compactDetail(
+  row: InventoryRow,
+  filaments: ReadonlyMap<string, CustomFilament>,
+): DetailRow[] {
+  const { spool } = row;
+  const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
+  const core = spool.coreWeight ? `${spool.coreWeight} g spool` : "empty spool unknown";
+  const left = leftRow(row);
+  const added = addedDate(spool.addedTime);
+  const place: DetailRow = {
+    label: "Place",
+    value: join(
+      spool.location || "not placed",
+      spool.tagId ? `tag ${spool.tagId}` : "no tag",
+      added ? `added ${added}` : "",
+    ),
+  };
+  return [
+    { ...left, value: join(left.value, core) },
+    spool.location || spool.tagId ? place : { ...place, dim: true },
+    {
+      label: "Filament",
+      value: join(filamentLine(row), nozzleRange(filaments.get(spool.slicerFilament))),
+    },
+  ];
 }

@@ -10,6 +10,7 @@ import {
   type InventorySort,
   inventoryRows,
 } from "../../../spoolInventory.js";
+import { checkCounts } from "../../../syncCheck.js";
 import { type KeyPress, letter, typed } from "../../core/keys.js";
 import { type Cmd, send } from "../../core/program.js";
 import {
@@ -24,7 +25,7 @@ import {
   type TabMsg,
   toTab,
 } from "../../core/types.js";
-import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
+import { editText, moveCursor, plural, type TextState, typeAhead } from "../../ui/index.js";
 import { addCopiesCmd, loadBarcodesCmd, rememberBarcodeCmd } from "./cmds.js";
 import { consoleConnection, consoleUrl, consoleValue } from "./data.js";
 import { pasted, textState } from "./local.js";
@@ -38,6 +39,16 @@ export const WIDE_COLUMNS = 90;
 
 export function isWide(ctx: Ctx): boolean {
   return ctx.bodyColumns >= WIDE_COLUMNS;
+}
+
+/** The compact detail's height under the list, borders included. */
+export const COMPACT_DETAIL = 5;
+/** Below this many body rows a narrow terminal keeps the whole height for the list. */
+const STACK_ROWS = 16;
+
+/** Narrow but tall enough: the highlighted spool's compact detail sits under the list. */
+export function stacksDetail(ctx: Ctx): boolean {
+  return !isWide(ctx) && ctx.bodyRows >= STACK_ROWS;
 }
 
 /** A barcode to scan or type. pending holds a scan made before the known barcodes were read. */
@@ -192,7 +203,7 @@ export function cursorIndex(model: SpoolsModel, rows: InventoryRow[]): number {
 }
 
 function listRows(ctx: Ctx): number {
-  return Math.max(1, ctx.bodyRows - LIST_CHROME);
+  return Math.max(1, ctx.bodyRows - LIST_CHROME - (stacksDetail(ctx) ? COMPACT_DETAIL : 0));
 }
 
 /** The model with its cursor on rows[index] (or where the cursor's spool now is). */
@@ -203,10 +214,6 @@ function settle(model: SpoolsModel, rows: InventoryRow[], index = cursorIndex(mo
 function copyable(ctx: Ctx): CopyableFilament[] {
   const data = consoleValue(ctx.resources.console);
   return data ? copyableFilaments(data.spools, data.filaments) : [];
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 const toast = (text: string, tone: "ok" | "warning" | "failed"): AppMsg => ({
@@ -354,11 +361,38 @@ function listKey(model: SpoolsModel, key: KeyPress, ctx: Ctx): Step<SpoolsModel>
       return openMore(model, ctx);
     case "b":
       return openScan(model, ctx);
+    case "c":
+      return syncProblems(ctx) > 0
+        ? [model, [send<AppMsg>({ type: "app/switchTab", tab: "check" })]]
+        : [model, []];
     case "r":
       return [model, [send(...reloadMsgs)]];
     default:
       return [model, []];
   }
+}
+
+/** Problems the sync check found; 0 until it has run. */
+function syncProblems(ctx: Ctx): number {
+  const check = ctx.resources.check;
+  return check.state === "ready" ? checkCounts(check.value.sections).problems : 0;
+}
+
+/** Opens on the spool a deep link names, clearing a filter that hides it; unknown IDs change nothing. */
+function focusSpool(model: SpoolsModel, id: string, ctx: Ctx): Step<SpoolsModel> {
+  const data = consoleValue(ctx.resources.console);
+  if (!data?.spools.some((s) => s.id === id)) return [model, []];
+  const shownNow = visibleRows(model, ctx).some((r) => r.spool.id === id);
+  const next = shownNow ? model : { ...model, filter: textState(""), filtering: false };
+  const rows = visibleRows(next, ctx);
+  return [
+    settle(
+      next,
+      rows,
+      rows.findIndex((r) => r.spool.id === id),
+    ),
+    [],
+  ];
 }
 
 const LIST_MOVES = new Set(["up", "down", "pageUp", "pageDown"]);
@@ -381,11 +415,27 @@ function filterKey(model: SpoolsModel, key: KeyPress, ctx: Ctx): Step<SpoolsMode
   return [settle(next, visibleRows(next, ctx)), []];
 }
 
-function emptyKey(model: SpoolsModel, screen: SpoolsScreen, key: KeyPress): Step<SpoolsModel> {
-  if (screen.kind === "unset")
-    return key.name === "enter"
-      ? [model, [send<AppMsg>({ type: "app/switchTab", tab: "settings" })]]
-      : [model, []];
+/** The Settings row that would make the console readable: the first one missing, else its address. */
+export function settingsFocus(ctx: Ctx): string {
+  const { values } = ctx;
+  if (values.skipSpoolease) return "spoolease.skip";
+  if (!values.host.trim()) return "spoolease.host";
+  if (!values.securityKey) return "spoolease.key";
+  return "spoolease.host";
+}
+
+function emptyKey(
+  model: SpoolsModel,
+  screen: SpoolsScreen,
+  key: KeyPress,
+  ctx: Ctx,
+): Step<SpoolsModel> {
+  if ((screen.kind === "unset" || screen.kind === "failed") && key.name === "enter")
+    return [
+      model,
+      [send<AppMsg>({ type: "app/switchTab", tab: "settings", focus: settingsFocus(ctx) })],
+    ];
+  if (screen.kind === "unset") return [model, []];
   if (screen.kind === "empty" && key.name === "enter")
     return [model, [send<AppMsg>({ type: "app/switchTab", tab: "add" })]];
   if (letter(key) === "r") return [model, [send(...reloadMsgs)]];
@@ -470,12 +520,22 @@ function knownKey(
 function chooseKey(model: SpoolsModel, dialog: ChooseDialog, key: KeyPress): Step<SpoolsModel> {
   if (key.name === "esc") return withDialog(model, freshScan());
   if (dialog.saving) return [model, []];
-  const count = dialog.filaments.length;
+  // The filaments, then Other… for one the console has no spool of yet.
+  const count = dialog.filaments.length + 1;
   const moved = moveCursor(dialog.cursor, key, count, 8);
   if (moved !== null) return withDialog(model, { ...dialog, cursor: moved });
   if (key.name === "enter") {
     const filament = dialog.filaments[dialog.cursor];
-    if (!filament) return [model, []];
+    if (!filament)
+      return [
+        { ...model, dialog: null },
+        [
+          send<AppMsg>(
+            { type: "app/switchTab", tab: "add" },
+            toast(`Add the filament, then scan ${dialog.barcode} again`, "ok"),
+          ),
+        ],
+      ];
     return [
       { ...model, dialog: { ...dialog, saving: true } },
       [rememberBarcodeCmd(dialog.barcode, { code: filament.code, name: filament.name })],
@@ -508,14 +568,14 @@ function countKey(
   if (key.name === "esc") return withDialog(model, back);
   const setCount = (count: number) =>
     withDialog(model, { ...dialog, count: Math.max(1, Math.min(MAX_COPIES, count)) });
-  if (key.name === "up" || key.name === "left") return setCount(dialog.count - 1);
-  if (key.name === "down" || key.name === "right") return setCount(dialog.count + 1);
+  if (key.name === "up" || key.name === "right") return setCount(dialog.count + 1);
+  if (key.name === "down" || key.name === "left") return setCount(dialog.count - 1);
   if (key.name === "home") return setCount(1);
   if (key.name === "end") return setCount(MAX_COPIES);
   const char = letter(key);
   const digit = Number(char);
   if (char >= "1" && char <= "9" && digit <= MAX_COPIES) return setCount(digit);
-  if (char !== "a") return [model, []];
+  if (char !== "a" && key.name !== "enter") return [model, []];
   const conn = consoleConnection(ctx.values);
   if (!conn) return [model, []];
   const run = model.nextRun;
@@ -549,7 +609,7 @@ function dialogKey(model: SpoolsModel, dialog: Dialog, key: KeyPress, ctx: Ctx):
 function onKey(model: SpoolsModel, key: KeyPress, ctx: Ctx): Step<SpoolsModel> {
   if (model.dialog) return dialogKey(model, model.dialog, key, ctx);
   const screen = spoolsScreen(ctx);
-  if (screen.kind !== "list") return emptyKey(model, screen, key);
+  if (screen.kind !== "list") return emptyKey(model, screen, key, ctx);
   return model.filtering ? filterKey(model, key, ctx) : listKey(model, key, ctx);
 }
 
@@ -636,6 +696,8 @@ export function update(model: SpoolsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step
     case "paste":
       // The shell only sends a paste while capturesText: it's typed text, a scanner's burst included.
       return capturesText(model) ? onKey(model, pasted(m.text), ctx) : [model, []];
+    case "app/switchTab":
+      return m.focus && !model.dialog ? focusSpool(model, m.focus, ctx) : [model, []];
     case "app/loaded": {
       if (m.resource !== "console") return [model, []];
       const loaded: Ctx = {
@@ -655,6 +717,20 @@ export function update(model: SpoolsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step
 
 export function capturesText(model: SpoolsModel): boolean {
   return model.filtering || model.dialog?.kind === "scan";
+}
+
+/** A dialog of the tab's own is open: its keys are what work, q and tab included. */
+export function modal(model: SpoolsModel): boolean {
+  return model.dialog !== null;
+}
+
+/** What's being written: copies still being added (their dialog may be hidden), or a barcode being saved. */
+export function busy(model: SpoolsModel): string | null {
+  const run = Object.values(model.runs)[0];
+  if (run) return `Adding ${plural(run.count, "spool")} of ${run.name} to SpoolEase`;
+  if (model.dialog?.kind === "choose" && model.dialog.saving)
+    return `Remembering barcode ${model.dialog.barcode}`;
+  return null;
 }
 
 function highlightedRow(model: SpoolsModel, ctx: Ctx): InventoryRow | undefined {
@@ -699,7 +775,7 @@ export function dialogHints(dialog: Dialog): Hint[] {
       return [
         { keys: "↑↓", label: "how many", primary: true },
         { keys: "1-8", label: "set" },
-        { keys: "a", label: `add ${plural(dialog.count, "spool")}`, primary: true },
+        { keys: "enter", label: `add ${plural(dialog.count, "spool")}`, primary: true },
         { keys: "esc", label: back, primary: true },
       ];
     }
@@ -715,7 +791,10 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
     case "loading":
       return [];
     case "failed":
-      return [{ keys: "r", label: "try again", primary: true }];
+      return [
+        { keys: "r", label: "try again", primary: true },
+        { keys: "enter", label: "open Settings", primary: true },
+      ];
     case "empty":
       return [
         { keys: "enter", label: "add spools", primary: true },
@@ -733,37 +812,41 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
     ];
   const row = highlightedRow(model, ctx);
   const ticked = model.ticked.length;
+  const problems = syncProblems(ctx);
   return [
     { keys: "↑↓", label: "move", primary: true },
-    { keys: "space", label: "tick" },
-    { keys: "/", label: "filter", primary: true },
-    { keys: "s", label: "sort" },
-    { keys: "l", label: ticked > 0 ? `labels for ${ticked}` : "label", primary: true },
-    ...(row?.spool.slicerFilament ? [{ keys: "+", label: "more like this", primary: true }] : []),
-    { keys: "b", label: "scan", primary: true },
-    { keys: "r", label: "reload" },
     ...(isWide(ctx)
       ? []
       : [
           model.detailOpen
             ? { keys: "enter", label: "back to the list", primary: true }
-            : { keys: "enter", label: "details" },
+            : { keys: "enter", label: "details", primary: true },
         ]),
+    { keys: "space", label: "tick" },
+    { keys: "/", label: "filter", primary: true },
+    { keys: "s", label: "sort", primary: true },
+    { keys: "l", label: ticked > 0 ? `labels for ${ticked}` : "label", primary: true },
+    ...(row?.spool.slicerFilament ? [{ keys: "+", label: "more like this", primary: true }] : []),
+    { keys: "b", label: "scan", primary: true },
+    ...(problems > 0 ? [{ keys: "c", label: `see ${plural(problems, "problem")}` }] : []),
+    { keys: "r", label: "reload" },
+    ...(model.filter.value ? [{ keys: "esc", label: "clear filter", primary: true }] : []),
   ];
 }
 
 export function commands(model: SpoolsModel, ctx: Ctx): PaletteCommand[] {
   if (!consoleConnection(ctx.values)) return [];
-  const command = (title: string, action: SpoolsAction): PaletteCommand => ({
+  const command = (title: string, action: SpoolsAction, keys: string): PaletteCommand => ({
     title,
     detail: "Spools",
+    keys,
     msg: toTab("spools", { type: "spools/command", action }),
   });
   const row = highlightedRow(model, ctx);
   const ticked = model.ticked.length;
+  const problems = syncProblems(ctx);
   return [
-    command("Reload spools", "reload"),
-    command("Scan a barcode", "scan"),
+    command("Scan a barcode", "scan", "b"),
     ...(row
       ? [
           command(
@@ -771,10 +854,21 @@ export function commands(model: SpoolsModel, ctx: Ctx): PaletteCommand[] {
               ? `Labels for ${plural(ticked, "ticked spool")}`
               : "Labels for the highlighted spool",
             "labels",
+            "l",
           ),
         ]
       : []),
-    ...(row?.spool.slicerFilament ? [command("More spools like this one", "more")] : []),
-    command("Sort spools", "sort"),
+    ...(row?.spool.slicerFilament ? [command("More spools like this one", "more", "+")] : []),
+    command("Sort spools", "sort", "s"),
+    ...(problems > 0
+      ? [
+          {
+            title: `Open Check: ${plural(problems, "sync problem")}`,
+            detail: "Spools",
+            keys: "c",
+            msg: { type: "app/switchTab", tab: "check" } as AppMsg,
+          },
+        ]
+      : []),
   ];
 }
