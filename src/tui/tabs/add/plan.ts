@@ -140,6 +140,27 @@ function editNote(
   };
 }
 
+/** A custom filament row as planPreview words it ("<name> <low>-<high> °C"), split back up. */
+function rowParts(row: string): { name: string; range: string } {
+  const match = /^(.*) (\d+)-(\d+) °C$/.exec(row);
+  if (!match) return { name: row, range: "" };
+  return { name: match[1] ?? "", range: formatRange(Number(match[2]), Number(match[3])) };
+}
+
+/** What an update changes in SpoolEase's row, saying only what differs. */
+function updateText(listed: string, becomes: string): string {
+  const from = rowParts(listed);
+  const to = rowParts(becomes);
+  const renamed = from.name !== to.name;
+  const ranged = from.range !== to.range;
+  if (renamed && ranged)
+    return `SpoolEase lists it as ${from.name} at ${from.range}; the run changes that to ${to.name} at ${to.range}`;
+  if (renamed) return `SpoolEase lists it as ${from.name}; the run changes that to ${to.name}`;
+  if (ranged) return `SpoolEase lists it at ${from.range}; the run changes that to ${to.range}`;
+  // Name and range agree: what differs is the material, which these words don't show.
+  return "SpoolEase lists it with another material; the run changes that";
+}
+
 /** What the plan's words mean where it matters: each edit and update, and counts of kept presets and existing spools. */
 export function planNotes(
   profiles: FilamentProfile[],
@@ -159,7 +180,7 @@ export function planNotes(
     const profile = profiles[index];
     if (profile && plan.filament?.state === "update")
       notes.push({
-        text: `↻ ${profile.name} is ${plan.filament.listed} on SpoolEase; the run changes it to ${plan.filament.becomes}`,
+        text: `↻ ${profile.name}: ${updateText(plan.filament.listed, plan.filament.becomes)}`,
         tone: "warning",
       });
   });

@@ -172,10 +172,26 @@ describe("planNotes", () => {
       }),
     ];
     expect(planNotes([LONG], plans, false, new Map()).map((n) => n.text)).toEqual([
-      "↻ Polymaker PolyLite PETG Galaxy Black is Acme Black 200-220 °C on SpoolEase; the run changes it to Acme Black 230-240 °C",
+      "↻ Polymaker PolyLite PETG Galaxy Black: SpoolEase lists it at 200–220°C; the run changes that to 230–240°C",
       "= kept: 1 preset is there already and stays as it is; Overwrite presets in Settings replaces it",
       "has spool: the console has a spool of it already, so it gets no new one",
     ]);
+  });
+
+  it("says a renamed custom filament's old and new names, and the range only when it changes", () => {
+    const update = (listed: string, becomes: string) =>
+      planNotes(
+        [LONG],
+        [plan({ filament: { state: "update", listed, becomes } })],
+        false,
+        new Map(),
+      )[0]?.text;
+    expect(update("Old Name 230-240 °C", "Polymaker Galaxy 230-240 °C")).toBe(
+      "↻ Polymaker PolyLite PETG Galaxy Black: SpoolEase lists it as Old Name; the run changes that to Polymaker Galaxy",
+    );
+    expect(update("Old Name 200-220 °C", "Polymaker Galaxy 230-240 °C")).toBe(
+      "↻ Polymaker PolyLite PETG Galaxy Black: SpoolEase lists it as Old Name at 200–220°C; the run changes that to Polymaker Galaxy at 230–240°C",
+    );
   });
 
   it("is empty when there's nothing to explain", () => {
