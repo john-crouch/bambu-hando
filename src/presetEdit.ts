@@ -297,8 +297,12 @@ function applyValue(current: unknown, edit: EditValue, missingAsString: boolean)
       ? [...edit.each]
       : undefined;
   if (typeof current === "string") return edit.every;
-  if (Array.isArray(current))
-    return Array.from({ length: Math.max(1, current.length) }, () => edit.every);
+  if (Array.isArray(current)) {
+    if (current.length === 0) return [edit.every];
+    // "nil" is the printer's value: kept, as buildPreset's everyVariant keeps it, unless that's all there is.
+    const real = current.some((entry) => entry !== "nil");
+    return current.map((entry) => (real && entry === "nil" ? entry : edit.every));
+  }
   if (current === undefined) return missingAsString ? edit.every : [edit.every];
   return undefined;
 }

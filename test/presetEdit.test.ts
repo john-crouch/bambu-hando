@@ -170,10 +170,11 @@ describe("raw settings", () => {
 });
 
 describe("applyEdits", () => {
-  it("sets every variant of a list, a string as a string, and adds a missing curated key", () => {
+  it("sets every variant of a list but its printer's ones, a string as a string, and adds a missing curated key", () => {
     const edits = new Map([
       ["nozzle_temperature", { every: "215" }],
       ["filament_retraction_length", { every: "0.8" }],
+      ["filament_retraction_speed", { every: "30" }],
       ["filament_notes", { every: "Dry first" }],
       ["pressure_advance", { every: "0.03" }],
       ["empty_list", { every: "x" }],
@@ -182,7 +183,10 @@ describe("applyEdits", () => {
     expect(skipped).toEqual([]);
     expect(preset).toMatchObject({
       nozzle_temperature: ["215"],
-      filament_retraction_length: ["0.8", "0.8"],
+      // "nil" is the printer's value, kept as buildPreset's everyVariant keeps it.
+      filament_retraction_length: ["nil", "0.8"],
+      // Only the printer's: the value goes everywhere, or it couldn't be set at all.
+      filament_retraction_speed: ["30", "30"],
       filament_notes: "Dry first",
       pressure_advance: ["0.03"],
       empty_list: ["x"],
