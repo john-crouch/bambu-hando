@@ -24,9 +24,10 @@ import {
   type TabMsg,
   toTab,
 } from "../../core/types.js";
+import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
 import { addCopiesCmd, loadBarcodesCmd, rememberBarcodeCmd } from "./cmds.js";
 import { consoleConnection, consoleUrl, consoleValue } from "./data.js";
-import { editText, moveCursor, pasted, type TextState, textState, typeAhead } from "./local.js";
+import { pasted, textState } from "./local.js";
 
 /** The most copies one dialog adds. */
 export const MAX_COPIES = 8;
@@ -362,9 +363,14 @@ function filterKey(model: SpoolsModel, key: KeyPress, ctx: Ctx): Step<SpoolsMode
   }
   if (key.name === "enter") return [{ ...model, filtering: false }, []];
   if (key.name && LIST_MOVES.has(key.name)) return listKey(model, key, ctx);
-  const filter = editText(model.filter, key);
-  if (!filter) return [model, []];
-  const next = { ...model, filter };
+  const edit = editText(model.filter, key);
+  if (!edit) return [model, []];
+  // A paste ending in a line break keeps the filter, as enter does.
+  const next = {
+    ...model,
+    filter: { value: edit.value, cursor: edit.cursor },
+    filtering: !edit.submit,
+  };
   return [settle(next, visibleRows(next, ctx)), []];
 }
 
@@ -423,8 +429,13 @@ function scanKey(
   const burst = typed(key);
   const end = burst.search(/[\r\n]/);
   if (end >= 0) return submitScan(model, dialog, dialog.text.value + burst.slice(0, end), ctx);
-  const text = editText(dialog.text, key);
-  return text ? withDialog(model, { ...dialog, text, error: "" }) : [model, []];
+  const edit = editText(dialog.text, key);
+  if (!edit) return [model, []];
+  return withDialog(model, {
+    ...dialog,
+    text: { value: edit.value, cursor: edit.cursor },
+    error: "",
+  });
 }
 
 function knownKey(

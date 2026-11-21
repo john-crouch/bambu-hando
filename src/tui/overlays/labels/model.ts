@@ -18,13 +18,8 @@ import { type KeyPress, letter, typed } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Hint, LabelsRequest, Step, TabMsg } from "../../core/types.js";
 import { consoleConnection, consoleValue } from "../../tabs/spools/data.js";
-import {
-  editText,
-  moveCursor,
-  pasted,
-  type TextState,
-  textState,
-} from "../../tabs/spools/local.js";
+import { pasted, textState } from "../../tabs/spools/local.js";
+import { editText, moveCursor, type TextState } from "../../ui/index.js";
 import { loadLabelsCmd, makeLabelsCmd } from "./cmds.js";
 
 export const SIZE_ROW = LABEL_FIELDS.length;
@@ -219,8 +214,11 @@ function readyKey(model: LabelsModel, key: KeyPress, ctx: Ctx): Step<LabelsModel
     if (step) return [{ ...model, printer: cycle(printerChoices(model), model.printer, step) }, []];
   } else if (model.focus === OUTPUT_ROW) {
     if (key.name === "enter") return [{ ...model, focus: MAKE_ROW }, []];
-    const output = editText(model.output, key);
-    return output ? [{ ...model, output }, []] : [model, []];
+    const edit = editText(model.output, key);
+    if (!edit) return [model, []];
+    const next = { ...model, output: { value: edit.value, cursor: edit.cursor } };
+    // A pasted path ending in a line break moves on, as enter does.
+    return [edit.submit ? { ...next, focus: MAKE_ROW } : next, []];
   } else if (key.name === "enter") {
     return make(model, ctx);
   }
