@@ -195,6 +195,34 @@ function rawShown(value: unknown): string {
   return text === "" ? '""' : text;
 }
 
+/** "Direct Drive High Flow" → "high flow": the nozzle type a variant is for, as BambuStudio names it. */
+function variantName(name: string): string {
+  return name.replace(/^Direct Drive /, "").toLowerCase();
+}
+
+/**
+ * A field's value for people: "220°C"; variants that differ each tagged with their nozzle type when
+ * the preset names them ("standard 22 · high flow 29 mm³/s").
+ */
+function fieldShown(field: EditField, preset: Preset, value: unknown): string {
+  const names = preset.filament_extruder_variant;
+  if (
+    differingVariants(value) &&
+    Array.isArray(value) &&
+    Array.isArray(names) &&
+    names.length === value.length &&
+    names.every((n) => typeof n === "string" && n)
+  ) {
+    // The unit once, at the end: "standard 22 · high flow 29 mm³/s".
+    const bare: EditField = { ...field, unit: "" };
+    const each = value.map(
+      (entry, index) => `${variantName(names[index] as string)} ${shownValue(bare, [entry])}`,
+    );
+    return tidyUnits(`${each.join(" · ")}${field.unit ? ` ${field.unit}` : ""}`);
+  }
+  return tidyUnits(shownValue(field, value));
+}
+
 /** The current page's rows. */
 export function editorRows(model: EditorModel): EditorRow[] {
   const edited = editedPreset(model);
@@ -217,8 +245,8 @@ export function editorRows(model: EditorModel): EditorRow[] {
     return {
       key: field.key,
       label: field.label,
-      value: tidyUnits(shownValue(field, edited[field.key])),
-      ...(changed ? { was: tidyUnits(shownValue(field, model.original[field.key])) } : {}),
+      value: fieldShown(field, edited, edited[field.key]),
+      ...(changed ? { was: fieldShown(field, model.original, model.original[field.key]) } : {}),
       changed,
       field,
     };
@@ -276,19 +304,52 @@ export function editorTakes(model: EditorModel): string {
     if (/gcode|notes/.test(row.key) || text.includes("\\n")) return "text; \\n starts a new line";
     return text !== "" && Number.isFinite(Number(text)) ? "a number" : "text";
   }
-  const nil = field.nilable ? "; nothing: printer's" : "";
+  const nil = field.nilable ? ", or nothing for the printer's" : "";
+  // An edit writes one value for every variant (editField's { every }).
+  const one = differingVariants(editedPreset(model)[field.key])
+    ? "; one value for every nozzle type"
+    : "";
   switch (field.kind) {
     case "int":
-      return `whole number, ${field.min}–${field.max}${nil}`;
+      return `whole number, ${field.min}–${field.max}${nil}${one}`;
     case "decimal":
-      return `number, ${field.min}–${field.max}${nil}`;
+      return `number, ${field.min}–${field.max}${nil}${one}`;
     case "color":
-      return "6 hex digits; nothing: none";
+      return "6 hex digits, or nothing for none";
     case "text":
       return "text; \\n starts a new line";
     case "switch":
       return "on or off";
   }
+}
+
+/** Temperatures most filaments print within; outside them the editor warns but still takes the value. */
+const NOZZLE_USUAL = { low: 150, high: 350 };
+const BED_USUAL_HIGH = 120;
+
+/** Why a value typed for key looks wrong ("5°C is low for a nozzle…"); "" when it looks fine. */
+export function editWarning(key: string, value: string): string {
+  const text = value.trim();
+  const n = Number(text);
+  if (text === "" || !Number.isFinite(n)) return "";
+  if (key.startsWith("nozzle_temperature")) {
+    const usual = `(most take ${NOZZLE_USUAL.low}–${NOZZLE_USUAL.high}°C)`;
+    if (n < NOZZLE_USUAL.low) return `${n}°C is low for a nozzle ${usual}`;
+    if (n > NOZZLE_USUAL.high) return `${n}°C is high for a nozzle ${usual}`;
+  }
+  if (/_plate_temp(_initial_layer)?$/.test(key) && n > BED_USUAL_HIGH)
+    return `${n}°C is high for a bed (most go up to ${BED_USUAL_HIGH}°C)`;
+  return "";
+}
+
+/** The highlighted field's warning: for the value being typed, else for its edit; "" when it has none. */
+export function editorWarning(model: EditorModel): string {
+  const row = currentRow(model);
+  if (!row?.field) return "";
+  if (model.text !== null) return editWarning(row.key, model.text.value);
+  const edit = model.edits.get(row.key);
+  if (!edit) return "";
+  return editWarning(row.key, "every" in edit ? edit.every : (edit.each[0] ?? ""));
 }
 
 /** What the field being typed takes; "" when not typing. */

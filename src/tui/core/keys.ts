@@ -99,3 +99,54 @@ export function letter(key: KeyPress): string {
 export function isCtrl(key: KeyPress, char: string): boolean {
   return key.ctrl && key.input.toLowerCase() === char;
 }
+
+/** Typed text as a key: never read as a key name ("end" typed is text), a lone space is space. */
+function textKey(text: string): KeyPress {
+  return text === " " ? press("space") : { input: text, ctrl: false, shift: false, meta: false };
+}
+
+/** A C0 control character, or DEL. */
+function isControl(char: string): boolean {
+  const code = char.charCodeAt(0);
+  return code < 0x20 || code === 0x7f;
+}
+
+/** The key one control character stands for, when it arrives inside a burst. */
+function controlKey(char: string): KeyPress {
+  if (char === "\t") return press("tab");
+  if (char === "\r" || char === "\n") return press("enter");
+  if (char === "\u007F" || char === "\b") return press("backspace");
+  // ctrl+a … ctrl+z arrive as 0x01 … 0x1a.
+  return press(String.fromCharCode(char.charCodeAt(0) + 0x60), { ctrl: true });
+}
+
+/**
+ * Ink's input as the keys it holds. Ink splits only at escape sequences and backspaces, so on a busy
+ * machine two keys pressed quickly can arrive as one input ("\t?": tab, then ?), which matches no key.
+ * A burst holding a control character is split into its keys, and the text between them; a run of text
+ * ending in enter stays whole (a barcode scanner's "00150603Z\r" is one scan).
+ */
+export function keyPresses(input: string, key: Key): KeyPress[] {
+  const chars = [...input];
+  const controls = chars.filter(isControl);
+  const scan = controls.length === 1 && /[\r\n]$/.test(input);
+  if (chars.length <= 1 || controls.length === 0 || scan) return [keyPress(input, key)];
+  const keys: KeyPress[] = [];
+  let text = "";
+  for (const char of chars) {
+    if (!isControl(char)) {
+      text += char;
+      continue;
+    }
+    if ((char === "\r" || char === "\n") && text) {
+      keys.push(textKey(text + char));
+      text = "";
+      continue;
+    }
+    if (text) keys.push(textKey(text));
+    text = "";
+    keys.push(controlKey(char));
+  }
+  if (text) keys.push(textKey(text));
+  return keys;
+}

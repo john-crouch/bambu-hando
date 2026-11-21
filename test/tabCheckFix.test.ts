@@ -116,14 +116,14 @@ describe("items", () => {
         name: "Stone",
         code: "PB000001",
         printers: "X1C 0.4",
-        target: { kind: "add", id: "PB000001" },
+        target: { kind: "add", id: "PB000001", name: "Stone" },
       }),
     ]);
     expect(views("csvOnly")).toEqual([
       expect.objectContaining({
         name: "Acme PLA Blue",
         code: "PA000002",
-        target: { kind: "add", id: "PA000002" },
+        target: { kind: "add", id: "PA000002", name: "Acme PLA Blue" },
       }),
     ]);
     expect(views("unknownCode")).toEqual([
@@ -131,7 +131,7 @@ describe("items", () => {
         spool: "7",
         name: "Acme PLA Green",
         code: "PZZZZZZ",
-        target: { kind: "add", id: "PZZZZZZ" },
+        target: { kind: "add", id: "PZZZZZZ", name: "Acme PLA Green" },
       }),
     ]);
     expect(views("noCode")).toEqual([
@@ -160,28 +160,55 @@ describe("items", () => {
     expect(h.model.item).toBe(0);
   });
 
-  it("enter on a filament SpoolEase has but no preset has syncs it in Add", async () => {
+  it("enter on a filament SpoolEase has but no preset has finds it in Add, by ID and name", async () => {
     const value = data();
     const h = await loaded(value);
     await openSection(h, value, "csvOnly");
     expect(hintText(h)).toEqual([
       "↑↓ move",
-      "enter sync it in Add",
+      "enter find it in Add",
       "esc sections",
       "f give 1 preset an ID",
       "r check again",
     ]);
     await h.press("enter");
     expect(h.of("app/switchTab")).toEqual([
-      { type: "app/switchTab", tab: "add", focus: "PA000002" },
+      { type: "app/switchTab", tab: "add", focus: "id:PA000002|name:Acme PLA Blue" },
     ]);
+  });
+
+  it("enter on a preset SpoolEase lacks finds its filament in Add", async () => {
+    const value = data();
+    const h = await loaded(value);
+    await openSection(h, value, "presetsOnly");
+    expect(hintText(h)[1]).toBe("enter find it in Add");
+    await h.press("enter");
+    expect(h.of("app/switchTab")).toEqual([
+      { type: "app/switchTab", tab: "add", focus: "id:PB000001|name:Stone" },
+    ]);
+  });
+
+  it("enter on a spool of an unknown filament finds that filament in Add", async () => {
+    const value = data();
+    const h = await loaded(value);
+    await openSection(h, value, "unknownCode");
+    expect(hintText(h)[1]).toBe("enter find it in Add");
+    await h.press("enter");
+    const [link] = h.of("app/switchTab") as { focus?: string }[];
+    expect(link?.focus).toMatch(/^id:PZZZZZZ\|name:\S/);
   });
 
   it("enter on a preset without an ID reviews giving just that preset one", async () => {
     const value = data();
     const h = await loaded(value);
     await openSection(h, value, "presetsNoId");
-    expect(hintText(h)[1]).toBe("enter give it an ID");
+    // enter is the same fix for this preset, so f isn't offered beside it.
+    expect(hintText(h)).toEqual([
+      "↑↓ move",
+      "enter give it an ID",
+      "esc sections",
+      "r check again",
+    ]);
     await h.press("enter");
     expect(h.model.page).toBe("ids");
     expect(h.model.ids?.fixes.map((f) => f.path)).toEqual(["/p/r4.json", "/p/r6.json"]);
@@ -326,6 +353,38 @@ describe("a console that can't be reached", () => {
     expect(h.of("app/switchTab")).toEqual([
       { type: "app/switchTab", tab: "settings", focus: "spoolease.host" },
     ]);
+  });
+
+  it("opens Settings from the failed check before BambuStudio's presets are read", async () => {
+    const ctx = ctxOf(CONSOLE, { check: failed });
+    const h = await Harness.start("check", checkLogic, ctx);
+    expect(hintText(h)).toEqual(["enter open Settings", "r check again"]);
+    await h.press("enter");
+    expect(h.of("app/switchTab")).toEqual([
+      { type: "app/switchTab", tab: "settings", focus: "spoolease.host" },
+    ]);
+  });
+
+  it("opens Settings on the row the console's problem points at", async () => {
+    const cases: [string, string][] = [
+      ["SpoolEase key validation failed", "spoolease.key"],
+      [
+        "SpoolEase unreachable at http://10.0.0.5: fetch failed: connect ECONNREFUSED 10.0.0.5:81",
+        "spoolease.port",
+      ],
+      [
+        "SpoolEase unreachable at http://nope.local: fetch failed: getaddrinfo ENOTFOUND nope.local",
+        "spoolease.host",
+      ],
+      ["SpoolEase unreachable at http://10.0.0.5: This operation was aborted", "spoolease.host"],
+    ];
+    for (const [error, focus] of cases) {
+      const check: Resource<CheckData> = { state: "failed", error };
+      const ctx = ctxOf(CONSOLE, { check, presets });
+      const h = await loaded(checkView(ctx).data, ctx);
+      await h.press("home", "enter");
+      expect(h.of("app/switchTab")).toEqual([{ type: "app/switchTab", tab: "settings", focus }]);
+    }
   });
 });
 

@@ -275,6 +275,15 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     await helpFor("Settings");
   });
 
+  it("keeps both keys when tab and ? arrive in one read", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    // One write: the pty hands both keys to the app in one read, as a busy machine does.
+    await t.pressEach(`${TAB}?`);
+    await t.waitForOnScreen("Help · Add");
+  });
+
   it("keeps both keys when esc and the next key arrive in one read", async () => {
     const t = start(consoleFlags());
     await t.waitFor("Spools");

@@ -3,8 +3,7 @@
 
 import { Box } from "ink";
 
-import { tildePath } from "../../../paths.js";
-import { plural } from "../../ui/format.js";
+import { fitPath, plural } from "../../ui/format.js";
 import {
   Detail,
   type DetailRow,
@@ -25,7 +24,7 @@ import { rowSegments } from "../../ui/List.js";
 import { textFieldSegments } from "../../ui/TextField.js";
 import { padSegments, spaces, truncate } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
-import { printerLabel } from "./detail.js";
+import { printerLabel, wrapDetailRows } from "./detail.js";
 import {
   ALL_SETTINGS,
   type EditorModel,
@@ -36,6 +35,7 @@ import {
   editorRows,
   editorTakes,
   editorTypingHint,
+  editorWarning,
   tidyUnits,
 } from "./editor.js";
 
@@ -61,7 +61,10 @@ function columns(model: EditorModel, rows: readonly EditorRow[], width: number) 
     const key = Math.max(12, Math.min(widest, cells - 1 - keep));
     return { label: key, value: 0 };
   }
-  return { label: Math.min(widest, 28), value: 18 };
+  // A value gets the width it needs (named nozzle types run long); what it was takes the rest.
+  const label = Math.min(widest, 28);
+  const values = Math.max(1, ...rows.map((row) => textWidth(row.value)));
+  return { label, value: Math.max(1, Math.min(values, width - 2 - label - 2)) };
 }
 
 function cellsOf(row: EditorRow, all: boolean, widths: { label: number; value: number }) {
@@ -134,9 +137,16 @@ function typingSegments(
 }
 
 /** The line under the settings: an error, what's being typed takes, a locked key's reason, or the file. */
-function noteSegments(model: EditorModel, row: EditorRow | undefined, narrow: boolean): Segment[] {
+function noteSegments(
+  model: EditorModel,
+  row: EditorRow | undefined,
+  narrow: boolean,
+  width: number,
+): Segment[] {
   if (model.error)
     return [{ text: `${ICONS.failed} ${tidyUnits(model.error)}`, color: COLORS.failed }];
+  const warning = editorWarning(model);
+  if (warning) return [{ text: `${ICONS.warning} ${warning}`, color: COLORS.warning }];
   const typing = editorTypingHint(model);
   if (typing) return [{ text: typing, color: COLORS.muted }];
   if (row?.locked) return [{ text: `Locked: ${row.locked}`, color: COLORS.muted }];
@@ -147,7 +157,7 @@ function noteSegments(model: EditorModel, row: EditorRow | undefined, narrow: bo
   if (takes) return [{ text: `Takes ${takes}`, color: COLORS.muted }];
   if (model.mode === "planned")
     return [{ text: "The preset the run writes; edits go into it", color: COLORS.muted }];
-  return model.path ? [{ text: tildePath(model.path), color: COLORS.muted, dim: true }] : [];
+  return model.path ? [{ text: fitPath(model.path, width), color: COLORS.muted, dim: true }] : [];
 }
 
 function FilterLine({ model, width }: { model: EditorModel; width: number }) {
@@ -255,7 +265,7 @@ function SidePanel({
           label: index === 0 ? "Key" : "",
           value: part,
         }))
-      : [fact],
+      : wrapDetailRows([fact], keyRoom),
   );
   const changes = editorChanges(model);
   // Two lines a change, under the setting's rows, a gap and the heading.
@@ -356,7 +366,10 @@ export function EditorView({ model, width, height }: EditorViewProps) {
         />
         <Line segments={[]} width={inner.width} />
         <Line
-          segments={[{ text: spaces(1) }, ...noteSegments(model, rows[cursor], side === 0)]}
+          segments={[
+            { text: spaces(1) },
+            ...noteSegments(model, rows[cursor], side === 0, inner.width - 2),
+          ]}
           width={inner.width}
         />
       </Panel>
