@@ -5,7 +5,7 @@ import { Box, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useMemo } from "react";
 
 import { errorMessage } from "../../errors.js";
-import { keyPress } from "../core/keys.js";
+import { keyPresses } from "../core/keys.js";
 import { Program, useProgram } from "../core/program.js";
 import type { RunSummary, StartOptions } from "../core/types.js";
 import type { FormValues } from "../core/values.js";
@@ -124,7 +124,10 @@ export function Shell({ initial, start, deps, onExit, onSummaries }: ShellProps)
   );
 
   // The one input listener, always active: overlays and tabs get keys through the update.
-  useInput((input, key) => dispatch({ type: "key", key: keyPress(input, key) }));
+  // One message per key: keys pressed quickly can reach Ink as one input (see keyPresses).
+  useInput((input, key) => {
+    for (const each of keyPresses(input, key)) dispatch({ type: "key", key: each });
+  });
   usePaste((text) => dispatch({ type: "paste", text }));
 
   // After the first frame: start the background loads.
