@@ -47,7 +47,9 @@ export type Level =
   | { kind: "brands" }
   | { kind: "materials"; brand: string }
   | { kind: "colors"; brand: string; material: string }
-  | { kind: "import" };
+  | { kind: "import" }
+  /** A deep link to a filament nothing lists (by ID or name): an empty state saying where to add it. */
+  | { kind: "missing"; id: string; name: string };
 
 export type FindRow =
   | { kind: "source"; source: "db" | "import"; label: string; count: number; ticked: number }
@@ -169,6 +171,8 @@ export function levelRows(
   selected: ReadonlySet<string>,
 ): FindRow[] {
   switch (level.kind) {
+    case "missing":
+      return [];
     case "root": {
       const imported = importEntries(sources);
       return [

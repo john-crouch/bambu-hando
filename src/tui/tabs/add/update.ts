@@ -112,21 +112,44 @@ function shown(model: AddModel, focus: unknown, ctx: Ctx): Result {
 }
 
 /**
- * A deep link to a filament ID: Find drills to it with the cursor on it, ticked. While the catalog is
- * still loading the ID waits in model.focus for it.
+ * What a deep link names: a bare filament ID, or "id:<filamentId>|name:<name>" (Check sends the name too,
+ * for a filament SpoolmanDB may list under another ID). The name is everything after "|name:".
  */
-function openFocus(model: AddModel, id: string, ctx: Ctx): Result {
+export function parseFocus(focus: string): { id: string; name: string } {
+  if (!focus.startsWith("id:")) return { id: focus.trim(), name: "" };
+  const rest = focus.slice("id:".length);
+  const at = rest.indexOf("|name:");
+  return at < 0
+    ? { id: rest.trim(), name: "" }
+    : { id: rest.slice(0, at).trim(), name: rest.slice(at + "|name:".length).trim() };
+}
+
+/**
+ * A deep link to a filament: Find drills to it with the cursor on it, ticked. One nothing lists by its
+ * ID is searched for by its name, else Find says where to add it. While the catalog is still loading
+ * the link waits in model.focus for it.
+ */
+function openFocus(model: AddModel, focus: string, ctx: Ctx): Result {
   if (model.run?.state === "running") return none({ ...model, focus: null });
+  const { id, name } = parseFocus(focus);
   const sources = sourcesOf(model, ctx);
   const hasImport = model.imported.source !== null;
   const found = sources.db.find((p) => p.filamentId === id);
   const importAt = sources.imported.findIndex((p) => p.filamentId === id);
   if (!found && importAt < 0) {
     const waiting = ctx.resources.catalog.state !== "ready" || model.imported.state === "loading";
+    if (waiting) return none({ ...model, focus });
+    const base = { ...model, focus: null, page: "find" as const, run: null, dialog: null };
+    if (name && searchRows(sources, name).length > 0)
+      return none({
+        ...base,
+        search: { text: { value: name, cursor: name.length }, cursor: 0, focus: "list" },
+        notice: `${id} isn't in SpoolmanDB${hasImport ? " or the import" : ""} by its ID: these match its name`,
+      });
     return none({
-      ...model,
-      focus: waiting ? id : null,
-      notice: waiting ? "" : `${id} isn't in SpoolmanDB${hasImport ? " or the import" : ""}`,
+      ...base,
+      search: null,
+      stack: [...rootStack(hasImport), { level: { kind: "missing", id, name }, cursor: 0 }],
     });
   }
   const key = found ? dbKey(found) : importKey(importAt);
@@ -388,6 +411,19 @@ function drillKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     return model.stack.length > 1
       ? none({ ...model, stack: model.stack.slice(0, -1) })
       : none(model);
+  }
+  const { level } = frame;
+  if (level.kind === "missing") {
+    if (key.name === "enter") return [model, [toSettings("import.source")]];
+    if (typed(key) === "/") {
+      const [searching] = openSearch(model, "query");
+      const value = level.name;
+      return none({
+        ...searching,
+        search: { text: { value, cursor: value.length }, cursor: 0, focus: "query" },
+      });
+    }
+    return none(model);
   }
   if (key.name === "enter") {
     if (!row) return none(model);
@@ -1144,6 +1180,12 @@ function findHints(model: AddModel, ctx: Ctx): Hint[] {
       h("esc", "close search", true),
     ];
   }
+  if (top(model).level.kind === "missing")
+    return [
+      h("enter", "open Settings › Import", true),
+      h("/", "search", true),
+      h("esc", "back", true),
+    ];
   const rows = findRows(model, ctx);
   const row = rows[clampIndex(top(model).cursor, rows.length)];
   const isList = top(model).level.kind === "colors" || top(model).level.kind === "import";

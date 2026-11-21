@@ -109,6 +109,8 @@ export function findTitle(model: AddModel, ctx: Ctx): { title: string; subtitle:
         title: sourcesOf(model, ctx).importName ?? "Import",
         subtitle: plural(rows.length, "filament"),
       };
+    case "missing":
+      return { title: "Not in SpoolmanDB", subtitle: "" };
   }
 }
 
@@ -119,6 +121,21 @@ function currentLevel(model: AddModel): Level {
 /** What fills the list panel when there are no rows: loading, failed, or nothing found. */
 function emptyState(model: AddModel, ctx: Ctx, inner: Area) {
   const level = currentLevel(model);
+  if (!model.search && level.kind === "missing")
+    return (
+      <Empty
+        title={`${level.name || level.id} isn't in SpoolmanDB`}
+        lines={[
+          level.name
+            ? `Nothing listed has its ID (${level.id}) or its name.`
+            : "Nothing listed has its ID.",
+          "Add it from a file or URL in Settings › Import, or search for a close one.",
+        ].flatMap((line) => wrapText(line, Math.max(1, inner.width - 4)))}
+        action={{ keys: "enter", label: "open Settings › Import" }}
+        width={inner.width}
+        height={inner.height}
+      />
+    );
   if (!model.search && level.kind === "import") {
     if (model.imported.state === "failed")
       return (
