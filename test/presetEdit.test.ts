@@ -269,6 +269,16 @@ describe("nozzle types (filament_extruder_variant)", () => {
     expect(
       activeVariant(flow(["1", "2"], ["Bowden High Flow", "Direct Drive High Flow"]), "High Flow"),
     ).toBe(1);
+    // Only "<extruder type> <nozzle type>" exactly: a longer name that ends the same is another variant.
+    expect(
+      activeVariant(
+        flow(["1", "2"], ["Direct Drive Standard", "Direct Drive TPU High Flow"]),
+        "High Flow",
+      ),
+    ).toBe(0);
+    expect(
+      activeVariant(flow(["1", "2"], ["Direct Drive Standard", "Other High Flow"]), "High Flow"),
+    ).toBe(0);
   });
 
   it("writes the named variant and those that held its value, never one set apart", () => {

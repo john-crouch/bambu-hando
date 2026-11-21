@@ -523,6 +523,36 @@ describe("list", () => {
     expect(plain.model.editor?.model.active).toBe(0);
   });
 
+  it("opens on the printer's nozzle type whichever read of the preset comes back first", async () => {
+    const two = {
+      ...presetJson("Acme PLA Red", X1C_04, "P1111111"),
+      filament_extruder_variant: ["Direct Drive Standard", "Direct Drive High Flow"],
+      filament_max_volumetric_speed: ["21", "29"],
+    };
+    await writeFile(presets[0]?.path ?? "", JSON.stringify(two));
+    const conf = join(dir, ".config", "BambuStudio");
+    await mkdir(conf, { recursive: true });
+    await writeFile(
+      join(conf, "BambuStudio.conf"),
+      JSON.stringify({ nozzle_volume_types: { [X1C_04]: "High Flow" } }),
+    );
+    const ctx = ctxWith();
+    const started = (await start(ctx)).model;
+    // down reads the preset for its detail; enter, before that read is back, reads it again to open it.
+    const [highlighted, detailRead] = update(started, { type: "key", key: press("down") }, ctx);
+    const [opening, openRead] = update(highlighted, { type: "key", key: press("enter") }, ctx);
+    expect(detailRead).toHaveLength(1);
+    expect(openRead).toHaveLength(1);
+    for (const order of [
+      [...detailRead, ...openRead],
+      [...openRead, ...detailRead],
+    ]) {
+      const { model } = await settle(opening, ctx, order);
+      expect(model.editor?.preset.path).toBe(presets[0]?.path);
+      expect(model.editor?.model.active).toBe(1);
+    }
+  });
+
   it("opens the printer's preset: enter edits the one left and right picked", async () => {
     const ctx = ctxWith();
     const { model } = await drive((await start(ctx)).model, ctx, "down", "right", "enter");
@@ -950,6 +980,19 @@ describe("saving", () => {
     expect(sent[0]).toMatchObject({ type: "app/runFinished", summary: { ok: true } });
     expect(JSON.stringify(sent)).not.toContain("WRONG");
   });
+
+  it.each(["80x", "0", "65536", ""])(
+    "leaves SpoolEase out when the console's port isn't a valid one (%j; Settings says why)",
+    async (port) => {
+      const ctx = ctxWith(presets, { ...consoleCtx.values, port });
+      const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
+      expect(reviewing.review?.range).toEqual({ state: "none" });
+      const { model } = await drive(reviewing, ctx, "a");
+      expect(model.review?.results?.every((r) => r.ok)).toBe(true);
+      expect(model.review?.spoolease).toBeNull();
+      expect(server.requests).toEqual([]);
+    },
+  );
 
   it("leaves SpoolEase's range alone when the edited preset's range isn't saved", async () => {
     const reviewing = (await drive((await editRange(consoleCtx)).model, consoleCtx, "a")).model;
