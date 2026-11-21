@@ -70,8 +70,7 @@ function codesAgree(spool: SpoolRecord, rgb: string | null): boolean {
   return spool.colorCodes.some((code) => {
     const ours = rgbOf(code);
     return (
-      ours !== null &&
-      ours.every((channel, i) => Math.abs(channel - (theirs[i] ?? 0)) <= COLOR_TOLERANCE)
+      ours?.every((channel, i) => Math.abs(channel - (theirs[i] ?? 0)) <= COLOR_TOLERANCE) === true
     );
   });
 }

@@ -862,7 +862,7 @@ export function App({ initial, onExit }: Props) {
       {
         value: "more",
         label: `More spools of ${filament.name}`,
-        detail: plural(filament.count, "spool") + " now",
+        detail: `${plural(filament.count, "spool")} now`,
         swatch: swatchOf(filament.spool.colorCodes),
       },
       {

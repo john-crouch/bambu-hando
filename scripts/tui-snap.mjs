@@ -60,6 +60,7 @@ const PASSED_ENV = [
   "SPOOLEASE_SECURITY_KEY",
 ];
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC and BEL delimit the escape sequences this strips.
 const ANSI = /\u001B\[[0-9;?]*[ -/]*[@-~]|\u001B\][^\u0007]*\u0007/g;
 
 function usageError(message) {
@@ -165,13 +166,12 @@ async function main() {
   for (const step of steps) {
     if (step.name === "wait") {
       const deadline = Date.now() + options.timeout;
-      let index = -1;
-      while (
-        (index = raw.replace(ANSI, "").indexOf(step.value, cursor)) === -1 &&
-        Date.now() < deadline &&
-        exitCode === null
-      )
+      const find = () => raw.replace(ANSI, "").indexOf(step.value, cursor);
+      let index = find();
+      while (index === -1 && Date.now() < deadline && exitCode === null) {
         await sleep(25);
+        index = find();
+      }
       if (index === -1) {
         await settled();
         process.stdout.write(

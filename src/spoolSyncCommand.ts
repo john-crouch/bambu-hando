@@ -9,7 +9,11 @@ import { FilamentCatalog } from "./filamentCatalog.js";
 import { filamentName } from "./filamentCatalogSync.js";
 import { FilamentProfilesError, type TdfpSpool } from "./filamentProfiles.js";
 import { forgetSpools, mySpools } from "./filamentProfilesCache.js";
-import { connectFilamentProfiles, MissingKeyError } from "./filamentProfilesConnect.js";
+import {
+  connectFilamentProfiles,
+  type FilamentProfilesConnection,
+  MissingKeyError,
+} from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
 import { holdsSecret, KEY_ARGUMENT_ERROR } from "./secrets.js";
 import { SpoolEaseClient, type SpoolRecord } from "./spoolease.js";
@@ -263,7 +267,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
       `SpoolEase host and security key are required: ${SPOOLEASE_SETTINGS_HINT}`,
     );
 
-  let api;
+  let api: FilamentProfilesConnection;
   try {
     api = await connectFilamentProfiles();
   } catch (err) {

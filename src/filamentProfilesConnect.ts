@@ -4,7 +4,7 @@
 import { QuotaLedger, quotaPath } from "./apiQuota.js";
 import { FilamentProfilesClient } from "./filamentProfiles.js";
 import { accountId } from "./filamentProfilesCache.js";
-import { InvalidSecretError, loadSecret, SECRETS } from "./secrets.js";
+import { InvalidSecretError, type LoadedSecret, loadSecret, SECRETS } from "./secrets.js";
 
 export class MissingKeyError extends Error {}
 
@@ -17,7 +17,7 @@ export interface FilamentProfilesConnection {
 
 export async function connectFilamentProfiles(): Promise<FilamentProfilesConnection> {
   const spec = SECRETS["3dfp"];
-  let key;
+  let key: LoadedSecret | null;
   try {
     key = await loadSecret(spec);
   } catch (err) {

@@ -28,6 +28,7 @@ export interface PdfPage {
 }
 
 // WinAnsiEncoding bytes that differ from Latin-1, for the characters labels use.
+// biome-ignore lint/complexity/useSimpleNumberKeys: hex keys match the code page table they come from.
 const WIN_ANSI: Record<number, string> = { 0x85: "…", 0x96: "–", 0x99: "™" };
 
 function decodeHex(hex: string): string {

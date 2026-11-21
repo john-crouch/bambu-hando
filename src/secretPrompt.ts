@@ -12,6 +12,7 @@ const CTRL_D = "\u0004";
 const CTRL_U = "\u0015";
 const BACKSPACES = new Set(["\u007f", "\b"]);
 // CSI sequences (arrows, bracketed-paste markers) and SS3 ones (some terminals' arrows).
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC starts every sequence this strips.
 const ESCAPES = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001bO.|\u001b/g;
 
 /** The entry after a chunk of keystrokes; a paste arrives as one chunk. */

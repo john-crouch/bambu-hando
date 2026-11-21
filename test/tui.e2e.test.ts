@@ -37,6 +37,7 @@ const SHOW_CURSOR = "\u001B[?25h";
 const WAIT_MS = 8_000;
 
 // Strip CSI/OSC escape sequences so assertions see only the rendered text.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC and BEL delimit the escape sequences this strips.
 const ANSI = /\u001B\[[0-9;?]*[ -/]*[@-~]|\u001B\][^\u0007]*\u0007/g;
 
 // Ink draws its first frame before its input effect puts stdin in raw mode. A key sent in that

@@ -106,7 +106,9 @@ describe("bambu-hando 3dfp sync (binary)", () => {
     // node-pty's UnixTerminal has ptsName at runtime, but its typings leave it out.
     await until(() => rawModeOn((pty as unknown as { ptsName: string }).ptsName), "raw mode");
     return {
-      type: (text) => [...text].forEach((char) => pty.write(char)),
+      type: (text) => {
+        for (const char of text) pty.write(char);
+      },
       output: () => raw,
       exited,
     };

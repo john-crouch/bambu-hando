@@ -164,8 +164,7 @@ const freshlyComplete = (
   progress: { complete: boolean; updatedAt: Date } | null,
   now: Date,
 ): boolean =>
-  progress !== null &&
-  progress.complete &&
+  progress?.complete === true &&
   now.getTime() - progress.updatedAt.getTime() < STALE_AFTER_DAYS * DAY_MS;
 
 /** Pages through one search into the catalog; skipped when completed in the last 30 days, resumed when it stopped. */

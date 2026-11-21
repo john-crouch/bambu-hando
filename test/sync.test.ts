@@ -151,8 +151,7 @@ describe("runSync", () => {
       results.every(
         (r) =>
           r.spooleaseStatus === "failed" &&
-          r.detail ===
-            "registered " + r.filamentId + "; listing spools failed: HTTP 500: db locked",
+          r.detail === `registered ${r.filamentId}; listing spools failed: HTTP 500: db locked`,
       ),
     ).toBe(true);
     expect(server.spools).toEqual([]);

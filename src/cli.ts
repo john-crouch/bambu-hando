@@ -261,6 +261,15 @@ const processIo: Io = {
 
 class UsageError extends Error {}
 
+/** Runs an argument parser, reporting whatever it throws as a usage error. */
+function asUsage<T>(parse: () => T): T {
+  try {
+    return parse();
+  } catch (err) {
+    throw new UsageError(err instanceof Error ? err.message : String(err));
+  }
+}
+
 const LISTED_MATCHES = 10;
 
 function tooManyMatches(profiles: FilamentProfile[], maxFilaments: number): string {
@@ -339,13 +348,9 @@ export interface Settings {
 async function parseSettings(
   argv: string[],
 ): Promise<{ settings: Settings | null; help: boolean }> {
-  let parsed;
-  try {
-    parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
-  } catch (err) {
-    throw new UsageError(err instanceof Error ? err.message : String(err));
-  }
-  const { values, positionals } = parsed;
+  const { values, positionals } = asUsage(() =>
+    parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true }),
+  );
 
   if (values.help) return { settings: null, help: true };
   if (positionals.length > 0) throw new UsageError(`unknown command '${positionals[0]}'`);
@@ -388,12 +393,7 @@ async function parseSettings(
   const createSpools = !values["skip-spools"];
   const spoolWeights: Settings["spoolWeights"] = new Map();
   for (const arg of values["spool-weight"] ?? []) {
-    let parsed;
-    try {
-      parsed = parseSpoolWeightArg(arg);
-    } catch (err) {
-      throw new UsageError(err instanceof Error ? err.message : String(err));
-    }
+    const parsed = asUsage(() => parseSpoolWeightArg(arg));
     spoolWeights.set(parsed.key, { brand: parsed.brand, arg, choice: parsed.choice });
   }
   if (spoolWeights.size > 0 && (!spoolease || !createSpools)) {
@@ -517,13 +517,16 @@ async function chooseSpoolWeights(
       lines.push(
         `  ${group.brand} (${count} filament${count === 1 ? "" : "s"}; ${sourceName}: ${describeSourceWeights(profiles, group)})`,
       );
-      const flags = group.options.map((o) => `--spool-weight "${group.brand}=${o.grams}"`);
-      const width = Math.max(...flags.map((f) => f.length));
-      group.options.forEach((option, i) => {
+      const rows = group.options.map((option) => ({
+        option,
+        flag: `--spool-weight "${group.brand}=${option.grams}"`,
+      }));
+      const width = Math.max(...rows.map((r) => r.flag.length));
+      for (const { option, flag } of rows) {
         lines.push(
-          `    ${flags[i]!.padEnd(width)}  ${option.label}${option.mine ? " (My Spools List)" : ""}`,
+          `    ${flag.padEnd(width)}  ${option.label}${option.mine ? " (My Spools List)" : ""}`,
         );
-      });
+      }
     }
     io.stderr(`${lines.join("\n")}\n`);
     return null;
@@ -583,13 +586,7 @@ async function labelsAfterSync(
 async function parseTuiValues(
   argv: string[],
 ): Promise<{ values: FormValues | null; help: boolean }> {
-  let parsed;
-  try {
-    parsed = parseArgs({ args: argv, options: TUI_OPTIONS, strict: true });
-  } catch (err) {
-    throw new UsageError(err instanceof Error ? err.message : String(err));
-  }
-  const { values } = parsed;
+  const { values } = asUsage(() => parseArgs({ args: argv, options: TUI_OPTIONS, strict: true }));
   if (values.help) return { values: null, help: true };
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
   const [defaults, saved, remembered] = await Promise.all([
@@ -626,7 +623,7 @@ async function parseTuiValues(
 }
 
 async function tuiCommand(argv: string[], io: Io): Promise<number> {
-  let parsed;
+  let parsed: Awaited<ReturnType<typeof parseTuiValues>>;
   try {
     parsed = await parseTuiValues(argv);
   } catch (err) {
@@ -651,13 +648,7 @@ interface LabelsSettings {
 async function parseLabelsSettings(
   argv: string[],
 ): Promise<{ settings: LabelsSettings | null; help: boolean }> {
-  let parsed;
-  try {
-    parsed = parseArgs({ args: argv, options: LABEL_OPTIONS, strict: true });
-  } catch (err) {
-    throw new UsageError(err instanceof Error ? err.message : String(err));
-  }
-  const { values } = parsed;
+  const { values } = asUsage(() => parseArgs({ args: argv, options: LABEL_OPTIONS, strict: true }));
   if (values.help) return { settings: null, help: true };
 
   const filters = {
@@ -704,7 +695,7 @@ function plural(count: number, noun: string): string {
 }
 
 async function labelsCommand(argv: string[], io: Io): Promise<number> {
-  let parsed;
+  let parsed: Awaited<ReturnType<typeof parseLabelsSettings>>;
   try {
     parsed = await parseLabelsSettings(argv);
   } catch (err) {
@@ -746,11 +737,14 @@ async function labelsCommand(argv: string[], io: Io): Promise<number> {
 
 const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
+const parseCheckArgs = (argv: string[]) =>
+  parseArgs({ args: argv, options: CHECK_OPTIONS, strict: true });
+
 async function checkCommand(argv: string[], io: Io): Promise<number> {
-  let values;
+  let values: ReturnType<typeof parseCheckArgs>["values"];
   let spoolease: SpoolEaseConnection;
   try {
-    ({ values } = parseArgs({ args: argv, options: CHECK_OPTIONS, strict: true }));
+    ({ values } = parseCheckArgs(argv));
     if (values.help) {
       io.stdout(CHECK_USAGE);
       return 0;
@@ -815,7 +809,7 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
   if (argv[0] === "key")
     return keyCommand(argv.slice(1), { ...io, stdin: io.stdin ?? process.stdin });
 
-  let parsed;
+  let parsed: Awaited<ReturnType<typeof parseSettings>>;
   try {
     parsed = await parseSettings(argv);
   } catch (err) {

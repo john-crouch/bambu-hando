@@ -8,7 +8,7 @@ import { Box, type Key, Text } from "ink";
 
 import type { LabelTarget } from "../labelJob.js";
 import type { LabelSettings } from "../labelSettings.js";
-import { LABEL_FIELDS, type LabelField, parseLabelSize } from "../labels.js";
+import { LABEL_FIELDS, type LabelField, type LabelSize, parseLabelSize } from "../labels.js";
 import type { ChoiceItem } from "./ChoiceList.js";
 
 export const SIZE_ROW = LABEL_FIELDS.length;
@@ -113,7 +113,7 @@ export function labelFormTarget(
   home = homedir(),
 ): { target: LabelTarget } | { error: string } {
   if (state.fields.length === 0) return { error: "Pick at least one field" };
-  let size;
+  let size: LabelSize;
   try {
     size = parseLabelSize(state.size);
   } catch (err) {
