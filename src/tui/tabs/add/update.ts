@@ -294,6 +294,7 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
               printer: msg.printer,
               path: msg.path,
               original: msg.original,
+              nozzleType: msg.nozzleType,
               ...(model.planEdits.has(msg.filamentId)
                 ? { edits: model.planEdits.get(msg.filamentId) as Edits }
                 : {}),

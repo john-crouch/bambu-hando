@@ -3,7 +3,7 @@
 
 import { access } from "node:fs/promises";
 
-import { SystemProfiles } from "../../../bambuProfiles.js";
+import { nozzleTypeFor, readBambuStudioConf, SystemProfiles } from "../../../bambuProfiles.js";
 import { buildPreset, presetPath } from "../../../bambuStudio.js";
 import { errorMessage } from "../../../errors.js";
 import type { FilamentProfile, SyncResult } from "../../../models.js";
@@ -56,6 +56,8 @@ export type AddMsg =
       printer: string;
       path: string;
       original: Preset;
+      /** BambuStudio's nozzle type for the printer (BambuStudio.conf), so the editor opens on its variant. */
+      nozzleType: string;
     }
   | { type: "add/plannedPresetFailed"; seq: number; error: string }
   /** Edits made to a row's preset before the run writes it (from the preset editor). */
@@ -319,6 +321,7 @@ export function plannedPresetCmd(
         return;
       }
       const system = await SystemProfiles.load(bambuConfigDir());
+      const { nozzleTypes } = await readBambuStudioConf(bambuConfigDir());
       const template = system.template(profile.material, printer);
       if (!template) {
         fail(`BambuStudio has no Generic ${profile.material} preset for ${printer}`);
@@ -333,6 +336,7 @@ export function plannedPresetCmd(
           printer,
           path: presetPath(profile, folder, printer),
           original: buildPreset(profile, printer, template, system.version),
+          nozzleType: nozzleTypeFor(nozzleTypes, printer),
         }),
       );
     } catch (err) {

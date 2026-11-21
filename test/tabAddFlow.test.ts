@@ -429,6 +429,27 @@ describe("editing a preset before the run writes it", () => {
     expect(d.model.review.error).toMatch(/already there and the run keeps them/);
   });
 
+  it("opens the editor on the variant of the printer's nozzle type in BambuStudio.conf", async () => {
+    const config = join(home, ".config", "BambuStudio");
+    const common = join(config, "system", "BBL", "filament", "fdm_filament_common.json");
+    const preset = JSON.parse(await readFile(common, "utf-8"));
+    preset.filament_extruder_variant = ["Direct Drive Standard", "Direct Drive High Flow"];
+    await writeFile(common, JSON.stringify(preset), "utf-8");
+    const conf = join(config, "BambuStudio.conf");
+    const settings = JSON.parse(await readFile(conf, "utf-8"));
+    await writeFile(
+      conf,
+      JSON.stringify({ ...settings, nozzle_volume_types: { [X1C_04]: "High Flow" } }),
+      "utf-8",
+    );
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing?.editor.active).toBe(1);
+  });
+
   it("asks for a printer, not that the presets are there, when Settings has none", async () => {
     const d = tick(start({ skipSpoolease: true }), "punkfil");
     d.key(press("right"));
