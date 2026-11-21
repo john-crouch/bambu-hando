@@ -308,6 +308,7 @@ describe("the preset editor on Review", () => {
         name: "Acme PLA Black",
         printer: "Bambu Lab X1 Carbon 0.4 nozzle",
         path: "/tmp/x.json",
+        nozzleType: "Standard",
         original: {
           nozzle_temperature: ["210"],
           nozzle_temperature_range_low: ["200"],

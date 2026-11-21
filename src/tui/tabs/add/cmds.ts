@@ -3,7 +3,7 @@
 
 import { access } from "node:fs/promises";
 
-import { SystemProfiles } from "../../../bambuProfiles.js";
+import { nozzleTypeFor, readBambuStudioConf, SystemProfiles } from "../../../bambuProfiles.js";
 import { buildPreset, presetPath } from "../../../bambuStudio.js";
 import { errorMessage } from "../../../errors.js";
 import type { FilamentProfile, SyncResult } from "../../../models.js";
@@ -56,6 +56,8 @@ export type AddMsg =
       printer: string;
       path: string;
       original: Preset;
+      /** BambuStudio's nozzle type for the printer (BambuStudio.conf), so the editor opens on its variant. */
+      nozzleType: string;
     }
   | { type: "add/plannedPresetFailed"; seq: number; error: string }
   /** Edits made to a row's preset before the run writes it (from the preset editor). */
@@ -298,43 +300,47 @@ export function plannedPresetCmd(
       dispatch(addMsg({ type: "add/plannedPresetFailed", seq, error }));
     const folder = values.presetFolder.trim();
     const printers = printersOf(values);
-    const found = await Promise.all(
-      printers.map((printer) =>
-        access(presetPath(profile, folder, printer)).then(
-          () => true,
-          () => false,
-        ),
-      ),
-    );
-    const printer = printers.find((_, i) => values.overwritePresets || !found[i]);
-    if (printer === undefined) {
-      fail(
-        `${profile.name}'s presets are already there and the run keeps them: edit them in the Presets tab`,
-      );
+    if (printers.length === 0) {
+      fail("Choose at least one printer in Settings › BambuStudio");
       return;
     }
-    let system: SystemProfiles;
     try {
-      system = await SystemProfiles.load(bambuConfigDir());
+      const found = await Promise.all(
+        printers.map((printer) =>
+          access(presetPath(profile, folder, printer)).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      );
+      const printer = printers.find((_, i) => values.overwritePresets || !found[i]);
+      if (printer === undefined) {
+        fail(
+          `${profile.name}'s presets are already there and the run keeps them: edit them in the Presets tab`,
+        );
+        return;
+      }
+      const system = await SystemProfiles.load(bambuConfigDir());
+      const { nozzleTypes } = await readBambuStudioConf(bambuConfigDir());
+      const template = system.template(profile.material, printer);
+      if (!template) {
+        fail(`BambuStudio has no Generic ${profile.material} preset for ${printer}`);
+        return;
+      }
+      dispatch(
+        addMsg({
+          type: "add/plannedPreset",
+          seq,
+          filamentId: profile.filamentId,
+          name: profile.name,
+          printer,
+          path: presetPath(profile, folder, printer),
+          original: buildPreset(profile, printer, template, system.version),
+          nozzleType: nozzleTypeFor(nozzleTypes, printer),
+        }),
+      );
     } catch (err) {
       fail(errorMessage(err));
-      return;
     }
-    const template = system.template(profile.material, printer);
-    if (!template) {
-      fail(`BambuStudio has no Generic ${profile.material} preset for ${printer}`);
-      return;
-    }
-    dispatch(
-      addMsg({
-        type: "add/plannedPreset",
-        seq,
-        filamentId: profile.filamentId,
-        name: profile.name,
-        printer,
-        path: presetPath(profile, folder, printer),
-        original: buildPreset(profile, printer, template, system.version),
-      }),
-    );
   };
 }

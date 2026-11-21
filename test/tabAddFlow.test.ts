@@ -297,6 +297,19 @@ describe("run and done", () => {
     expect(d.model.run).toBeNull();
   });
 
+  it("drops replies to the finished run's review that arrive after it's done", async () => {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    const { seq } = d.model.review;
+    d.key(press("a"));
+    await d.settle();
+    expect(d.model.run?.state).toBe("done");
+    d.msg({ type: "add/planRead", seq, plans: [], warnings: ["late"] });
+    d.msg({ type: "add/plannedPresetFailed", seq, error: "late" });
+    expect(d.model.review).toMatchObject({ state: "idle", plans: null, warnings: [], error: "" });
+  });
+
   it("remembers the printers the run wrote for", async () => {
     const d = tick(start({ skipSpoolease: true }), "punkfil");
     d.key(press("right"));
@@ -414,6 +427,52 @@ describe("editing a preset before the run writes it", () => {
     await d.settle();
     expect(d.model.review.editing).toBeNull();
     expect(d.model.review.error).toMatch(/already there and the run keeps them/);
+  });
+
+  it("opens the editor on the variant of the printer's nozzle type in BambuStudio.conf", async () => {
+    const config = join(home, ".config", "BambuStudio");
+    const common = join(config, "system", "BBL", "filament", "fdm_filament_common.json");
+    const preset = JSON.parse(await readFile(common, "utf-8"));
+    preset.filament_extruder_variant = ["Direct Drive Standard", "Direct Drive High Flow"];
+    await writeFile(common, JSON.stringify(preset), "utf-8");
+    const conf = join(config, "BambuStudio.conf");
+    const settings = JSON.parse(await readFile(conf, "utf-8"));
+    await writeFile(
+      conf,
+      JSON.stringify({ ...settings, nozzle_volume_types: { [X1C_04]: "High Flow" } }),
+      "utf-8",
+    );
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing?.editor.active).toBe(1);
+  });
+
+  it("asks for a printer, not that the presets are there, when Settings has none", async () => {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.context = { ...d.context, values: { ...d.context.values, printerPreset: " " } };
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.review.error).toBe("Choose at least one printer in Settings › BambuStudio");
+  });
+
+  it("says why when BambuStudio's system presets can't build the preset", async () => {
+    const base = join(home, ".config", "BambuStudio", "system", "BBL", "filament");
+    const abs = join(base, "Generic ABS @base.json");
+    const preset = JSON.parse(await readFile(abs, "utf-8"));
+    await writeFile(abs, JSON.stringify({ ...preset, inherits: "No Such Parent" }), "utf-8");
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    expect(d.model.review.editing).toBeNull();
+    expect(d.model.review.error).toMatch(/unknown BambuStudio system preset No Such Parent/);
   });
 });
 

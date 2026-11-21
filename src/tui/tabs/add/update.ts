@@ -294,6 +294,7 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
               printer: msg.printer,
               path: msg.path,
               original: msg.original,
+              nozzleType: msg.nozzleType,
               ...(model.planEdits.has(msg.filamentId)
                 ? { edits: model.planEdits.get(msg.filamentId) as Edits }
                 : {}),
@@ -1022,7 +1023,8 @@ function runDone(model: AddModel, results: Parameters<typeof runOutcome>[0], ctx
       weightChoices: new Map(),
       planEdits: new Map(),
       planChanges: new Map(),
-      review: emptyReview(model.review.seq),
+      // A new seq, so a plan read or preset build still in flight doesn't land on the cleared review.
+      review: emptyReview(model.review.seq + 1),
       peek: emptyPeek(),
     },
     [
