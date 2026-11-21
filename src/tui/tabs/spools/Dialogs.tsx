@@ -22,7 +22,9 @@ import {
   type Segment,
   TextField,
   textWidth,
+  truncate,
 } from "../../ui/index.js";
+import { segmentsWidth } from "../../ui/text.js";
 import { swatchOf } from "./data.js";
 import { wrapText } from "./local.js";
 import {
@@ -68,15 +70,36 @@ function chip(colorCodes: string[]): Segment[] {
   return color ? [{ text: "  ", backgroundColor: color }, { text: " " }] : [];
 }
 
+/** A filament's chip and name, the name wrapped to two lines (under itself, past the chip) rather than cut. */
+function FilamentName({ filament, width }: { filament: CopyableFilament; width: number }) {
+  const swatch = chip(filament.spool.colorCodes);
+  const indent = segmentsWidth(swatch);
+  const lines = wrapText(filament.name, width - indent);
+  const name =
+    lines.length <= 2 ? lines : [lines[0] ?? "", truncate(`${lines[1] ?? ""}…`, width - indent)];
+  return (
+    <>
+      {name.map((line, index) => (
+        <Line
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one name.
+          key={index}
+          segments={[
+            ...(index === 0 ? swatch : [{ text: " ".repeat(indent) }]),
+            { text: line, bold: true },
+          ]}
+          width={width}
+        />
+      ))}
+    </>
+  );
+}
+
 /** The filament a dialog acts on: chip and name, then brand · material · weights · code. */
 function FilamentHead({ filament, width }: { filament: CopyableFilament; width: number }) {
   const { spool } = filament;
   return (
     <>
-      <Line
-        segments={[...chip(spool.colorCodes), { text: filament.name, bold: true }]}
-        width={width}
-      />
+      <FilamentName filament={filament} width={width} />
       <Prose
         text={[
           spool.brand,
@@ -264,13 +287,7 @@ function KnownBody({ dialog, width }: { dialog: KnownDialog; width: number }) {
   return (
     <>
       <Prose text="You told bambu-hando this barcode is" width={width} />
-      <Line
-        segments={[
-          ...chip(dialog.filament.spool.colorCodes),
-          { text: dialog.filament.name, bold: true },
-        ]}
-        width={width}
-      />
+      <FilamentName filament={dialog.filament} width={width} />
       {blank(width)}
       <List rows={rows} cursor={dialog.cursor} height={2} width={width} />
     </>

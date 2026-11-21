@@ -350,6 +350,20 @@ describe.each(SIZES)("the spool detail at %ix%i", (columns, rows) => {
     },
   });
 
+  it("names a long filament whole at the top of its count dialog", () => {
+    const coded = ctxAt(columns, rows, {
+      resources: {
+        console: consoleOf(
+          [spool({ id: "14", slicerFilament: "P4840583", colorName: "x" })],
+          new Map([["P4840583", { name: NAME, nozzleTempMin: 230, nozzleTempMax: 250 }]]),
+        ),
+      },
+    });
+    const lines = tab(keys(start(coded), coded, "+"), coded);
+    expectExact(lines, coded);
+    expect(flat(lines)).toContain(NAME);
+  });
+
   it("wraps a long note and name instead of cutting them", () => {
     const model = columns < 90 ? keys(start(ctx), ctx, "enter") : start(ctx);
     const lines = tab(model, ctx);
