@@ -374,11 +374,33 @@ describe("planLayout", () => {
     expect(planLayout(running, 60).widths.preset).toBe("✓ written".length);
   });
 
-  it("gives up brand and material columns on a narrow mixed table, names then whole", () => {
-    const layout = planLayout(mixed, 66);
-    expect(layout.widths.brand).toBe(0);
-    expect(layout.widths.material).toBe(0);
-    expect(layout.stripBrand || layout.stripMaterial).toBe(false);
+  it("at 60 columns joins SpoolEase's words (add+spool) when that keeps every name whole", () => {
+    const three = [
+      row({ name: "3DHoJor ABS+ Brown", brand: "3DHoJor", material: "ABS+" }),
+      row({ name: "3DHoJor PLA-CF Brown", brand: "3DHoJor", material: "PLA-CF" }),
+      row({ name: "3DHoJor PLA Crystal Rainbow Flame", brand: "3DHoJor", material: "PLA" }),
+    ];
+    // A 60-column terminal's panel is 58 wide inside.
+    const layout = planLayout(three, 58);
+    expect(layout.widths.name).toBeGreaterThanOrEqual("PLA Crystal Rainbow Flame".length);
+    expect(layout.joined).toBe(true);
+    expect(layout.widths.spool).toBe("SpoolEase".length);
+    expect(planLayout(three, 116).joined).toBe(false);
+  });
+
+  it("keeps names whole on a narrow mixed table, brand and material columns going only if they must", () => {
+    for (const width of [62, 66]) {
+      const layout = planLayout(mixed, width);
+      const names = mixed.map((r) =>
+        shortName(r.name, r.brand, r.material, layout.stripBrand, layout.stripMaterial),
+      );
+      expect(layout.widths.name, `${width}`).toBeGreaterThanOrEqual(
+        Math.max(...names.map((n) => n.length)),
+      );
+      // A column given up means its words are back in the names.
+      if (layout.widths.brand === 0) expect(layout.stripBrand).toBe(false);
+      if (layout.widths.material === 0) expect(layout.stripMaterial).toBe(false);
+    }
   });
 
   it("leaves out the SpoolEase column when no row has anything there (SpoolEase skipped)", () => {

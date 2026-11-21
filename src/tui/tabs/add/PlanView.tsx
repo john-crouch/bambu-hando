@@ -27,6 +27,7 @@ import type { AddModel } from "./model.js";
 import {
   COLUMN_TITLES,
   finishedProfiles,
+  joinWords,
   type Note,
   type PlanLayout,
   type PlanRow,
@@ -79,7 +80,8 @@ function statusText(cell: StatusCell): { text: string; color: string } {
 export function tableRow(row: PlanRow, index: number, layout: PlanLayout): ListRow {
   const { widths } = layout;
   const preset = statusText(row.preset);
-  const spool = statusText(row.spool);
+  const status = statusText(row.spool);
+  const spool = layout.joined ? { ...status, text: joinWords(status.text) } : status;
   const name = shortName(
     row.name,
     row.brand,

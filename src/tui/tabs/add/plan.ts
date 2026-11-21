@@ -360,6 +360,13 @@ export interface PlanLayout {
   /** Whether names leave out their brand and material, said elsewhere (a column or the title). */
   stripBrand: boolean;
   stripMaterial: boolean;
+  /** SpoolEase's plan words are drawn joined ("add+spool") to leave the names their room. */
+  joined: boolean;
+}
+
+/** A status's words without the spaces around "+", for a narrow table: "add+spool". */
+export function joinWords(text: string): string {
+  return text.replaceAll(" + ", "+");
 }
 
 /** Below this the name would be cut before anything else gave way. */
@@ -426,6 +433,7 @@ export function planLayout(rows: PlanRow[], width: number): PlanLayout {
   };
   let stripBrand = true;
   let stripMaterial = true;
+  let joined = false;
   const nameWant = () =>
     span(
       COLUMN_TITLES.name,
@@ -452,6 +460,14 @@ export function planLayout(rows: PlanRow[], width: number): PlanLayout {
         COLUMN_TITLES.spool,
         rows.map((r) => statusLabel(r.spool)),
       );
+    // Still short: SpoolEase's words join up ("add+spool"), a column or two for the names.
+    if (fixed() + nameWant() > room && shown.spool > 0) {
+      joined = true;
+      shown.spool = span(
+        COLUMN_TITLES.spool,
+        rows.map((r) => joinWords(statusLabel(r.spool))),
+      );
+    }
   }
   // Brand and material columns go too when that makes every name whole (the names then say them).
   if (fixed() + nameWant() > room && (shown.brand > 0 || shown.material > 0)) {
@@ -491,7 +507,7 @@ export function planLayout(rows: PlanRow[], width: number): PlanLayout {
   const widths = Object.fromEntries(
     TABLE_COLUMNS.map((key) => [key, shown[key] > 0 ? shown[key] - 1 : 0]),
   ) as Record<TableColumn, number>;
-  return { widths, brand, material, stripBrand, stripMaterial };
+  return { widths, brand, material, stripBrand, stripMaterial, joined };
 }
 
 /**
