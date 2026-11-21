@@ -219,18 +219,18 @@ describe("cli", () => {
   );
 
   it.skipIf(!privateKeyringSupported)(
-    "takes BambuStudio's console's key from the flag, then the environment, then BambuStudio, then the keyring",
+    "takes BambuStudio's console's key from the flag, then the environment, then the keyring, then BambuStudio",
     async () => {
       const port = ["--spoolease-port", String(server.port)];
       await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
-      await storeSecret(CONSOLE_KEY, "WRONG-TOO");
       expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
 
-      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "" });
+      // A key saved on purpose beats BambuStudio's possibly stale copy while tui.json names no other console.
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "WRONG" });
       await storeSecret(CONSOLE_KEY, TEST_SECURITY_KEY);
       expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
 
-      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "WRONG" });
+      await storeSecret(CONSOLE_KEY, "WRONG-TOO");
       vi.stubEnv("SPOOLEASE_SECURITY_KEY", TEST_SECURITY_KEY);
       expect((await run(["--source", SOURCE_FIXTURE, ...port])).code).toBe(0);
 
@@ -238,7 +238,7 @@ describe("cli", () => {
       const flag = ["--spoolease-security-key", TEST_SECURITY_KEY];
       expect((await run(["--source", SOURCE_FIXTURE, ...port, ...flag])).code).toBe(0);
 
-      // Neither: BambuStudio's wrong key is the one tried, and the console refuses it.
+      // Neither: the keyring's wrong key is the one tried, and the console refuses it.
       vi.stubEnv("SPOOLEASE_SECURITY_KEY", undefined);
       const refused = await run(["--source", SOURCE_FIXTURE, ...port]);
       expect(refused.code).toBe(2);
