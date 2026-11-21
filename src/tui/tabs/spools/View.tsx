@@ -21,6 +21,7 @@ import {
   Swatch,
   TextField,
   truncate,
+  wrapText,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
 import {
@@ -33,7 +34,6 @@ import {
   swatchOf,
   wrapNote,
 } from "./data.js";
-import { wrapText } from "./local.js";
 import {
   COMPACT_DETAIL,
   cursorIndex,

@@ -682,11 +682,13 @@ function onMsg(model: SpoolsModel, msg: SpoolsMsg, ctx: Ctx): Step<SpoolsModel> 
       return withDialog(model, { ...dialog, results: [...dialog.results, msg.result] });
     case "spools/copiesDone": {
       const { [msg.run]: info, ...runs } = model.runs;
-      const shown = dialog?.kind === "count" && dialog.run === msg.run;
+      const open = dialog?.kind === "count" && dialog.run === msg.run;
+      // The outcome is on screen only while this tab is too (tests may leave activeTab out).
+      const shown = open && (ctx.activeTab ?? "spools") === "spools";
       const next: SpoolsModel = {
         ...model,
         runs,
-        dialog: shown
+        dialog: open
           ? { ...dialog, phase: "done", results: msg.results, error: msg.error }
           : dialog,
       };

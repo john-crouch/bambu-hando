@@ -10,6 +10,7 @@ import {
   COLORS,
   Dialog,
   dialogInner,
+  dialogRows,
   dialogWidth,
   fitPath,
   Line,
@@ -45,8 +46,8 @@ const FIELD_CELL = 5 + LABEL_FIELD_NAME_MAX;
 const LABEL_COLUMN = 11;
 /** Lines inside the preview card: fixed, so ticking a field never makes the dialog jump. */
 const PREVIEW_LINES = FIELD_ROWS;
-/** Body rows the full form needs (the spool IDs line included) before it drops that line. */
-const FULL_FORM_ROWS = 20;
+/** Rows a dialog may take (dialogRows) for the full form, the spool IDs line included, before it drops that line. */
+const FULL_FORM_ROWS = 18;
 
 /** The focused row's look, one style for every row (as in lists): ▌ in the gutter and the selection bar. */
 const FOCUSED: Omit<Segment, "text"> = { backgroundColor: COLORS.selection };
@@ -204,9 +205,9 @@ export function makeSummary(
   return { ready: true, text: save(`Save ${count} to `) };
 }
 
-/** Rows the choices get: what's left of the body under the dialog's borders, padding and prose. */
+/** Rows the choices get: what's left of the rows a dialog may take, under its borders, padding and prose. */
 function pickerHeight(ctx: Ctx, count: number): number {
-  return Math.max(1, Math.min(count, ctx.bodyRows - 8));
+  return Math.max(1, Math.min(count, dialogRows(ctx.bodyRows) - 6));
 }
 
 /** The Printer or Save PDF choices, in place of the form while open. */
@@ -295,7 +296,7 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
   const previewWidth = inner - grid - previewGap;
   const showPreview = previewWidth >= 16;
   // One spool is named on its preview card already.
-  const showIds = count > 1 && ctx.bodyRows >= FULL_FORM_ROWS;
+  const showIds = count > 1 && dialogRows(ctx.bodyRows) >= FULL_FORM_ROWS;
   const focusedField = LABEL_FIELDS[model.focus];
   const size = COMMON_SIZES.find((s) => s.size === model.size);
   const valueWidth = inner - LABEL_COLUMN - 3;

@@ -12,6 +12,7 @@ import {
   DIALOG_WIDTH,
   Dialog,
   dialogInner,
+  dialogRows,
   dialogWidth,
   Line,
   LinkedText,
@@ -23,10 +24,10 @@ import {
   TextField,
   textWidth,
   truncate,
+  wrapText,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
 import { swatchOf } from "./data.js";
-import { wrapText } from "./local.js";
 import {
   type ChooseDialog,
   type CountDialog,
@@ -352,8 +353,8 @@ function title(dialog: SpoolsDialogState): string {
   }
 }
 
-/** Dialog rows other than the content: borders and padding, and the cleared row the shell keeps round it. */
-const DIALOG_CHROME = 4 + 2;
+/** Dialog rows other than the content: borders and padding. */
+const DIALOG_CHROME = 4;
 
 export function SpoolsDialog({
   dialog,
@@ -383,12 +384,13 @@ export function SpoolsDialog({
       // Above the list: the line of prose (two when wrapped) and a blank.
       const prose = 3;
       const rows = dialog.filaments.length + 1;
-      if (rows > ctx.bodyRows - DIALOG_CHROME - prose) note = listPosition(dialog.cursor, rows);
+      if (rows > dialogRows(ctx.bodyRows) - DIALOG_CHROME - prose)
+        note = listPosition(dialog.cursor, rows);
       body = (
         <ChooseBody
           dialog={dialog}
           width={inner}
-          listHeight={ctx.bodyRows - DIALOG_CHROME - prose}
+          listHeight={dialogRows(ctx.bodyRows) - DIALOG_CHROME - prose}
         />
       );
       break;
