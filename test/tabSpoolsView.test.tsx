@@ -105,8 +105,11 @@ function keys(model: SpoolsModel, ctx: Ctx, ...what: string[]): SpoolsModel {
 /** The body fills the tab's area exactly: as many lines as rows, each exactly as wide as the terminal. */
 function expectExact(lines: string[], ctx: Ctx): void {
   expect(lines).toHaveLength(ctx.bodyRows);
-  for (const [index, line] of lines.entries())
+  for (const [index, line] of lines.entries()) {
+    // The shell clears a blank halo row round a dialog; Ink's string output drops its trailing spaces.
+    if (line.trim() === "") continue;
     expect(textWidth(line), `line ${index}: ${line}`).toBe(ctx.bodyColumns);
+  }
 }
 
 /** A dialog's text as one line of words: what's inside its borders, over whatever it covers. */
