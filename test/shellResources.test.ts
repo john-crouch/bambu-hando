@@ -93,6 +93,10 @@ describe("headerStatus", () => {
       console: "skipped",
       consoleText: "SpoolEase not set up",
     });
+    expect(headerStatus(values({ port: "abc" }), { state: "idle" })).toMatchObject({
+      console: "failed",
+      consoleText: "SpoolEase port invalid",
+    });
     expect(JSON.stringify(headerStatus(v, { state: "ready", value: null, at: 1 }))).not.toContain(
       "SECRET",
     );
@@ -127,6 +131,14 @@ describe("default loaders", () => {
       securityKey: TEST_SECURITY_KEY,
       ...overrides,
     });
+
+  it("never reaches for a console whose port isn't a port number", () => {
+    for (const port of ["abc", "0", "70000", ""]) {
+      expect(DEFAULT_LOADERS.console(consoleValues({ port }))).toBeNull();
+      expect(DEFAULT_LOADERS.check(consoleValues({ port }))).toBeNull();
+    }
+    expect(server.requests).toEqual([]);
+  });
 
   it("reads the console's spools and custom filaments", async () => {
     server.customFilaments = "PABC1234,Polymaker PLA Red,190,230\r\n";

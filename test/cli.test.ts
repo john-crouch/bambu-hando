@@ -882,6 +882,14 @@ describe("cli", () => {
     }
   });
 
+  it("checks the TUI's --spoolease-port as the headless run does", async () => {
+    for (const port of ["abc", "0", "70000"]) {
+      const { code, stderr } = await run(["tui", "--spoolease-port", port]);
+      expect(code).toBe(2);
+      expect(stderr).toContain("--spoolease-port must be a port number");
+    }
+  });
+
   it("refuses to start the TUI without an interactive terminal", async () => {
     const { code, stderr } = await run(["tui"]);
 

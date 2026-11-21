@@ -654,6 +654,7 @@ async function parseTuiValues(
     parseArgs({ args: argv, options: TUI_OPTIONS, allowNegative: true, strict: true }),
   );
   if (values.help) return { values: null, help: true };
+  if (values["spoolease-port"] !== undefined) parsePort(values["spoolease-port"]);
   if (!process.stdin.isTTY) throw new UsageError("bambu-hando tui needs an interactive terminal");
   const [defaults, remembered, spoolease] = await Promise.all([
     bambuDefaults(),
