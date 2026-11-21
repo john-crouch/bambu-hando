@@ -222,9 +222,16 @@ describe("Other color…", () => {
     return d;
   }
 
+  it("preselects a ticked color of the list as the one it's like", () => {
+    const d = start();
+    d.key(press("enter"), press("down"), press("enter"), press("down"), press("space"));
+    d.key(press("end"), press("enter"));
+    expect(d.model.dialog?.bases[d.model.dialog.base ?? -1]?.colorName).toBe("Blue");
+  });
+
   it("opens a dialog with this brand and material's colors that takes every key", () => {
     const d = openDialog();
-    expect(d.model.dialog).toMatchObject({ brand: "Acme", material: "PLA", base: null });
+    expect(d.model.dialog).toMatchObject({ brand: "Acme", material: "PLA", base: 0 });
     expect(d.model.dialog?.bases.map((p) => p.colorName)).toEqual(["Black", "Blue", "Red"]);
     expect(capturesText(d.model)).toBe(true);
     d.key(press("esc"));
@@ -251,7 +258,7 @@ describe("Other color…", () => {
   it("shows the dialog's validation messages", () => {
     const d = openDialog();
     d.key(press("down"), press("down"), press("down"), press("enter"));
-    expect(d.model.dialog?.error).toBe("Choose the listed color it's like");
+    expect(d.model.dialog?.error).toBe("Type the color's name");
   });
 });
 

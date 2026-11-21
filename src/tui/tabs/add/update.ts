@@ -6,6 +6,7 @@ import { applyWeights, weightGroups } from "../../../spoolWeights.js";
 import { isCtrl, type KeyPress, letter, typed } from "../../core/keys.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Hint, PaletteCommand, Step, TabMsg } from "../../core/types.js";
+import { plural } from "../../ui/format.js";
 import { moveCursor, typeAhead } from "../../ui/list.js";
 import { editText } from "../../ui/textField.js";
 import {
@@ -17,6 +18,7 @@ import {
 } from "../presets/index.js";
 import {
   dbKey,
+  type Entry,
   type FindRow,
   importKey,
   importName,
@@ -51,8 +53,17 @@ import {
   sourcesOf,
   ticked,
 } from "./model.js";
-import { applyEvent, runOutcome } from "./plan.js";
-import { consoleOf, consoleUrl, createsSpools, runError } from "./targets.js";
+import { applyEvent, presetPlanText, runOutcome, spoolEasePlanText } from "./plan.js";
+import {
+  consoleOf,
+  consoleUrl,
+  createsSpools,
+  errorFocus,
+  planBasis,
+  runError,
+  runErrorFocus,
+  sameBasis,
+} from "./targets.js";
 import { itemIndex, weightItems, weightSourceName } from "./weights.js";
 
 type Result = Step<AddModel>;
@@ -80,8 +91,84 @@ export function update(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result 
   // The shell tells a tab each time it's shown: Add's first visit is when SpoolmanDB is needed.
   const used = msg.type === "app/switchTab" && (msg as { tab: unknown }).tab === "add";
   const [synced, syncCmds] = syncSources(model, ctx, used);
-  const [next, cmds] = route(synced, msg, ctx);
+  const [next, cmds] = used
+    ? shown(synced, (msg as { focus?: unknown }).focus, ctx)
+    : route(synced, msg, ctx);
   return [next, [...syncCmds, ...cmds]];
+}
+
+/** Add is shown again: a plan read with settings changed meanwhile is read again; a deep link opens its filament. */
+function shown(model: AddModel, focus: unknown, ctx: Ctx): Result {
+  const [fresh, cmds] = reviewStale(model, ctx) ? reread(model, ctx) : none(model);
+  if (typeof focus !== "string" || focus === "") return [fresh, cmds];
+  const [focused, more] = openFocus(fresh, focus, ctx);
+  return [focused, [...cmds, ...more]];
+}
+
+/**
+ * A deep link to a filament ID: Find drills to it with the cursor on it, ticked. While the catalog is
+ * still loading the ID waits in model.focus for it.
+ */
+function openFocus(model: AddModel, id: string, ctx: Ctx): Result {
+  if (model.run?.state === "running") return none({ ...model, focus: null });
+  const sources = sourcesOf(model, ctx);
+  const hasImport = model.imported.source !== null;
+  const found = sources.db.find((p) => p.filamentId === id);
+  const importAt = sources.imported.findIndex((p) => p.filamentId === id);
+  if (!found && importAt < 0) {
+    const waiting = ctx.resources.catalog.state !== "ready" || model.imported.state === "loading";
+    return none({
+      ...model,
+      focus: waiting ? id : null,
+      notice: waiting ? "" : `${id} isn't in SpoolmanDB${hasImport ? " or the import" : ""}`,
+    });
+  }
+  const key = found ? dbKey(found) : importKey(importAt);
+  const selected = new Set(model.selected).add(key);
+  const ticks = { ...model, selected, focus: null };
+  // The editor's edits are kept only when it's left, so an open editor stays: the filament is just ticked.
+  if (model.review.editing) return none(ticks);
+  let stack: FindFrame[];
+  if (found) {
+    const brands = levelRows({ kind: "brands" }, sources, selected);
+    const materials = materialsOf(sources, found.brand);
+    const colors = levelRows(
+      { kind: "colors", brand: found.brand, material: found.material },
+      sources,
+      selected,
+    );
+    stack = [
+      ...(hasImport ? [{ level: { kind: "root" as const }, cursor: 0 }] : []),
+      {
+        level: { kind: "brands" },
+        cursor: Math.max(
+          0,
+          brands.findIndex((r) => r.label === found.brand),
+        ),
+      },
+      ...(materials.length > 1
+        ? [
+            {
+              level: { kind: "materials" as const, brand: found.brand },
+              cursor: Math.max(0, materials.indexOf(found.material)),
+            },
+          ]
+        : []),
+      {
+        level: { kind: "colors", brand: found.brand, material: found.material },
+        cursor: Math.max(
+          0,
+          colors.findIndex((r) => r.kind === "color" && r.profile === found),
+        ),
+      },
+    ];
+  } else {
+    stack = [
+      { level: { kind: "root" }, cursor: 1 },
+      { level: { kind: "import" }, cursor: importAt },
+    ];
+  }
+  return none({ ...ticks, page: "find", run: null, search: null, dialog: null, stack });
 }
 
 /** Follows the settings' import source, and asks for the catalog once. */
@@ -110,6 +197,12 @@ function route(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result {
     return keyUpdate(model, { input: text, ctrl: false, shift: false, meta: false }, ctx);
   }
   if (isAddMsg(msg)) return ownUpdate(model, msg, ctx);
+  if (
+    msg.type === "app/loaded" &&
+    (msg as { resource: unknown }).resource === "catalog" &&
+    model.focus !== null
+  )
+    return openFocus(model, model.focus, ctx);
   return none(model);
 }
 
@@ -209,7 +302,13 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
 }
 
 function keyUpdate(model: AddModel, key: KeyPress, ctx: Ctx): Result {
-  const fresh = { ...model, notice: "", review: { ...model.review, error: "" } };
+  const fresh = {
+    ...model,
+    notice: "",
+    review: { ...model.review, error: "" },
+    // Type-ahead gathers letters typed in a row; any other key starts it over.
+    typed: letter(key) ? model.typed : null,
+  };
   switch (fresh.page) {
     case "find":
       return findKey(fresh, key, ctx);
@@ -307,10 +406,16 @@ function drillKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
         return continueFind(model, ctx, row.key);
       case "other": {
         if (frame.level.kind !== "colors") return none(model);
-        const bases = rows.flatMap((r) => (r.kind === "color" ? [r.profile] : []));
+        const colors = rows.flatMap((r) => (r.kind === "color" ? [r] : []));
+        const tickedOne = colors.find((r) => model.selected.has(r.key));
         return none({
           ...model,
-          dialog: openColorDialog(frame.level.brand, frame.level.material, bases),
+          dialog: openColorDialog(
+            frame.level.brand,
+            frame.level.material,
+            colors.map((r) => r.profile),
+            tickedOne?.profile,
+          ),
         });
       }
     }
@@ -336,17 +441,31 @@ function drillKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   const moved = moveCursor(cursor, key, rows.length, pageRows(ctx));
   if (moved !== null) return none(withTop(model, { cursor: moved }));
   const typedLetter = letter(key);
-  if (typedLetter)
+  if (typedLetter) {
+    const typed = typedText(model, typedLetter, ctx);
     return none(
-      withTop(model, {
-        cursor: typeAhead(
-          rows.map((r) => r.label),
-          cursor,
-          typedLetter,
-        ),
-      }),
+      withTop(
+        { ...model, typed },
+        {
+          cursor: typeAhead(
+            rows.map((r) => r.label),
+            cursor,
+            typed.text,
+          ),
+        },
+      ),
     );
+  }
   return none(model);
+}
+
+/** Letters typed within this long of each other jump together ("3dh" → 3DHoJor). */
+export const TYPE_AHEAD_MS = 800;
+
+function typedText(model: AddModel, typedLetter: string, ctx: Ctx): { text: string; at: number } {
+  const { typed } = model;
+  const text = typed && ctx.now - typed.at < TYPE_AHEAD_MS ? typed.text + typedLetter : typedLetter;
+  return { text, at: ctx.now };
 }
 
 function push(model: AddModel, level: FindFrame["level"]): Result {
@@ -371,9 +490,11 @@ function searchKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
       return none(rows.length > 0 ? withSearch({ focus: "list" }) : model);
     const edited = editText(search.text, key);
     if (edited) {
-      // A paste ending in enter searches and goes to the results, as typing then enter does.
+      // A paste ending in enter searches and goes to the results, as typing then enter does,
+      // when the edited query has any.
       const text = { value: edited.value, cursor: edited.cursor };
-      const focus = edited.submit && rows.length > 0 ? "list" : "query";
+      const found = edited.submit && searchRows(sourcesOf(model, ctx), text.value).length > 0;
+      const focus = found ? "list" : "query";
       return none(withSearch({ text, cursor: 0, focus }));
     }
     return none(model);
@@ -489,9 +610,19 @@ export function currentWeightItems(model: AddModel) {
   return itemsFor(model, model.weights.step);
 }
 
+/** The cursor on a brand's items: this run's choice, else the session's last one for the brand, else the source's. */
 function cursorFor(model: AddModel, step: number): number {
   const group = model.weights.prompts[step];
-  return itemIndex(itemsFor(model, step), group && model.weightChoices.get(group.key));
+  const choice = group && (model.weightChoices.get(group.key) ?? model.weightMemory.get(group.key));
+  return itemIndex(itemsFor(model, step), choice);
+}
+
+function toSettings(focus: string | null): ReturnType<typeof send<AppMsg>> {
+  return send<AppMsg>({
+    type: "app/switchTab",
+    tab: "settings",
+    ...(focus === null ? {} : { focus }),
+  });
 }
 
 function weightsRead(
@@ -501,7 +632,11 @@ function weightsRead(
 ): Result {
   if (msg.signature !== model.weights.signature) return none(model);
   const groups = weightGroups(model.weights.profiles, msg.entries);
-  const prompts = groups.filter((g) => g.options.length !== 1);
+  const spooled = new Set(msg.spooled);
+  // A brand whose filaments all have spools on the console gets no new spool, so no weight is asked.
+  const makesSpool = (g: (typeof groups)[number]) =>
+    g.profiles.some((i) => !spooled.has(model.weights.profiles[i]?.filamentId ?? ""));
+  const prompts = groups.filter((g) => g.options.length !== 1 && makesSpool(g));
   const read: AddModel = {
     ...model,
     weights: {
@@ -514,6 +649,7 @@ function weightsRead(
       cursor: 0,
       error: "",
       keyRejected: false,
+      spooled,
     },
   };
   const next = { ...read, weights: { ...read.weights, cursor: cursorFor(read, 0) } };
@@ -528,7 +664,7 @@ function weightsKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     if (weights.state === "failed" && letter(key) === "r")
       return enterWeights({ ...model, weights: emptyWeights() }, ctx);
     if (weights.state === "failed" && weights.keyRejected && letter(key) === "s")
-      return [model, [send<AppMsg>({ type: "app/switchTab", tab: "settings" })]];
+      return [model, [toSettings(errorFocus(weights.error))]];
     return none(model);
   }
   const items = itemsFor(model, weights.step);
@@ -544,9 +680,10 @@ function weightsKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     const item = items[weights.cursor];
     if (!group || !item) return none(model);
     const weightChoices = new Map(model.weightChoices).set(group.key, item.choice);
-    const next = { ...model, weightChoices };
+    const weightMemory = new Map(model.weightMemory).set(group.key, item.choice);
+    const next = { ...model, weightChoices, weightMemory };
     if (weights.step + 1 < weights.prompts.length)
-      return none(at(weights.step + 1, { weightChoices }));
+      return none(at(weights.step + 1, { weightChoices, weightMemory }));
     return enterReview(next, ctx);
   }
   if (key.name === "right") {
@@ -609,10 +746,48 @@ function enterReview(model: AddModel, ctx: Ctx): Result {
         state: "loading",
         profiles,
         cursor: clampIndex(model.review.cursor, profiles.length),
+        basis: planBasis(ctx.values),
       },
     },
     [planCmd(seq, profiles, ctx.values, model.planEdits)],
   ];
+}
+
+/** The review's plan was read with other settings than the session's now (changed in Settings meanwhile). */
+function reviewStale(model: AddModel, ctx: Ctx): boolean {
+  const { review } = model;
+  return (
+    model.page === "review" &&
+    review.editing === null &&
+    review.basis !== null &&
+    !sameBasis(review.basis, planBasis(ctx.values))
+  );
+}
+
+/** Reads the plan again for the session's settings, through Weights when those now need a choice. */
+function reread(model: AddModel, ctx: Ctx): Result {
+  const { weights } = model;
+  const weighed =
+    !createsSpools(ctx.values) ||
+    (weights.state === "ready" &&
+      weights.signature === weightsSignature(model, ctx) &&
+      weights.prompts.every((g) => model.weightChoices.has(g.key)));
+  return weighed ? enterReview(model, ctx) : enterWeights(model, ctx);
+}
+
+/**
+ * The plan would change nothing: every preset is kept and SpoolEase already has every row and spool
+ * (or is skipped). Unknown when SpoolEase couldn't be read, so a run is still offered then.
+ */
+export function nothingToApply(model: AddModel, ctx: Ctx): boolean {
+  const { review } = model;
+  if (review.state !== "ready" || !review.plans || review.plans.length === 0) return false;
+  const withConsole = consoleOf(ctx.values) !== null;
+  return review.plans.every((plan) => {
+    if (presetPlanText(plan, ctx.values.overwritePresets).tone !== "same") return false;
+    const spoolease = spoolEasePlanText(plan);
+    return spoolease ? spoolease.tone === "same" : !withConsole;
+  });
 }
 
 function sourceLabel(model: AddModel, ctx: Ctx): string {
@@ -638,6 +813,8 @@ function reviewKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   }
   const typedLetter = letter(key);
   if (typedLetter === "a") return apply(model, ctx);
+  if (typedLetter === "s" && runError(ctx.values))
+    return [model, [toSettings(runErrorFocus(ctx.values))]];
   if (typedLetter === "r") return enterReview(model, ctx);
   if (typedLetter === "e") return openPlanEdit(model, ctx);
   const moved = moveCursor(review.cursor, key, review.profiles.length, pageRows(ctx));
@@ -680,10 +857,19 @@ function editorKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
 
 function apply(model: AddModel, ctx: Ctx): Result {
   const { review } = model;
+  if (reviewStale(model, ctx)) {
+    const [next, cmds] = reread(model, ctx);
+    return [
+      { ...next, notice: "Settings changed since the plan was read: check it again, then a" },
+      cmds,
+    ];
+  }
   if (review.state !== "ready")
     return none({ ...model, notice: "Wait for the plan: it's still being read" });
   const error = runError(ctx.values);
   if (error) return none({ ...model, review: { ...review, error } });
+  if (nothingToApply(model, ctx))
+    return none({ ...model, notice: "Nothing to apply: everything is there already" });
   return [
     {
       ...model,
@@ -796,12 +982,16 @@ function runKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
           }),
         ],
       ];
+    if (typedLetter === "s" && run.spoolIds.length > 0)
+      return [
+        model,
+        [send<AppMsg>({ type: "app/switchTab", tab: "spools", focus: run.spoolIds[0] ?? "" })],
+      ];
     if (typedLetter === "n" || key.name === "enter" || key.name === "esc")
       return none(startOver(model));
     return none(model);
   }
-  if (typedLetter === "s")
-    return [model, [send<AppMsg>({ type: "app/switchTab", tab: "settings" })]];
+  if (typedLetter === "s") return [model, [toSettings(errorFocus(run.error))]];
   if (key.name === "enter" || key.name === "esc" || key.name === "left")
     return enterReview({ ...model, run: null }, ctx);
   return none(model);
@@ -818,10 +1008,16 @@ export interface PageTab {
   badge?: string;
 }
 
+const PAGE_TITLES: Record<PageId, string> = {
+  find: "Find",
+  weights: "Weights",
+  review: "Review",
+  run: "Done",
+};
+
 export function pageBar(model: AddModel, ctx: Ctx): PageTab[] {
   const current = PAGE_ORDER.indexOf(model.page);
   const count = ticked(model, ctx).length;
-  const finished = model.run?.state === "done";
   return PAGE_ORDER.map((id, index): PageTab => {
     const state: PageState =
       id === "weights" && weightsNeeded(model, ctx) === false
@@ -831,16 +1027,7 @@ export function pageBar(model: AddModel, ctx: Ctx): PageTab[] {
           : index === current
             ? "current"
             : "todo";
-    const title =
-      id === "find"
-        ? "Find"
-        : id === "weights"
-          ? "Weights"
-          : id === "review"
-            ? "Review"
-            : finished
-              ? "Done"
-              : "Run";
+    const title = PAGE_TITLES[id];
     return id === "find" && count > 0
       ? { id, title, state, badge: String(count) }
       : { id, title, state };
@@ -859,7 +1046,7 @@ export function hints(model: AddModel, ctx: Ctx): Hint[] {
       if (weights.state === "failed")
         return [
           h("r", "try again", true),
-          ...(weights.keyRejected ? [h("s", "settings", true)] : []),
+          ...(weights.keyRejected ? [h("s", "fix in Settings", true)] : []),
           h("esc", "back"),
         ];
       if (weights.state !== "ready") return [h("esc", "back")];
@@ -870,22 +1057,36 @@ export function hints(model: AddModel, ctx: Ctx): Hint[] {
         h("esc", "back", true),
       ];
     }
-    case "review":
-      if (model.review.editing) return editorHints(model.review.editing.editor);
+    case "review": {
+      if (model.review.editing)
+        // Leaving the embedded editor keeps its edits for the run: the footer says so, once.
+        return editorHints(model.review.editing.editor).map((hint) =>
+          hint.keys === "esc" && hint.label === "back"
+            ? { ...hint, label: "back (keeps edits)" }
+            : hint,
+        );
+      const fix = runError(ctx.values);
       return [
-        h("a", "apply", true),
         h("↑↓", "move"),
         h("e", "edit its preset", true),
+        ...(fix
+          ? [h("s", "fix in Settings", true)]
+          : nothingToApply(model, ctx)
+            ? []
+            : [h("a", "apply", true)]),
         h("r", "read again"),
         h("esc", "back", true),
       ];
+    }
     case "run": {
       const { run } = model;
       if (!run || run.state === "running") return [];
       if (run.state === "failed")
-        return [h("enter", "back to review", true), h("s", "settings", true)];
+        return [h("enter", "back to review", true), h("s", "fix in Settings", true)];
       return [
-        ...(run.spoolIds.length > 0 ? [h("l", "labels for the new spools", true)] : []),
+        ...(run.spoolIds.length > 0
+          ? [h("l", "labels", true), h("s", "see them in Spools", true)]
+          : []),
         h("n", "add more", true),
       ];
     }
@@ -946,6 +1147,25 @@ export function capturesText(model: AddModel): boolean {
   // A dialog takes every key while open, so q never quits from it.
   if (model.dialog) return true;
   return model.search?.focus === "query";
+}
+
+/** What a run is writing, while it runs: the shell won't quit on q meanwhile. */
+export function busy(model: AddModel): string | null {
+  const { run } = model;
+  return run?.state === "running" ? `Adding ${plural(run.profiles.length, "filament")}` : null;
+}
+
+/** The plan edits a quit would drop: those kept for the run, and those in the open editor. */
+export function unsaved(model: AddModel): number {
+  const { editing } = model.review;
+  let count = 0;
+  for (const [id, edits] of model.planEdits) if (id !== editing?.filamentId) count += edits.size;
+  return count + (editing ? editing.editor.edits.size : 0);
+}
+
+/** The Other color dialog is open: it takes q and tab too. */
+export function modal(model: AddModel): boolean {
+  return model.page === "find" && model.dialog !== null;
 }
 
 export function commands(model: AddModel, ctx: Ctx): PaletteCommand[] {
