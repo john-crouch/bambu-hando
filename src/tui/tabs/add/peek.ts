@@ -85,6 +85,11 @@ function presetLine(plan: ProfilePlan, printers: string[], overwrite: boolean): 
   };
 }
 
+/** The words over the lines: what adding does, or that everything is there already (every line =). */
+export function addsHeading(adds: AddLine[]): string {
+  return adds.length > 0 && adds.every((line) => line.mark === "=") ? "Already there" : "Adding it";
+}
+
 /** What adding the profile does with these settings, as Review will say it; null until it's known. */
 export function addLines(
   profile: FilamentProfile,

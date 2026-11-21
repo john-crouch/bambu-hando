@@ -30,6 +30,35 @@ function withoutGrams(label: string, grams: number): string {
 }
 
 /**
+ * The catalog's rows of one name together, lightest first, numbered apart ("Sunlu - Plastic, 1 of 3"):
+ * the catalog names them alike, and a list of identical names reads as the same row repeated.
+ */
+function apart(rows: WeightItem[]): WeightItem[] {
+  const alike = (row: WeightItem) =>
+    row.origin === "catalog" &&
+    rows.filter((r) => r.origin === "catalog" && r.label === row.label).length > 1;
+  const grams = (row: WeightItem) => (row.choice.kind === "grams" ? row.choice.grams : 0);
+  const out: WeightItem[] = [];
+  for (const row of rows) {
+    if (!alike(row)) {
+      out.push(row);
+      continue;
+    }
+    if (out.some((r) => r.origin === "catalog" && r.label.startsWith(`${row.label}, `))) continue;
+    const twins = rows
+      .filter((r) => r.origin === "catalog" && r.label === row.label)
+      .sort((a, b) => grams(a) - grams(b));
+    out.push(
+      ...twins.map((twin, index) => ({
+        ...twin,
+        label: `${twin.label}, ${index + 1} of ${twins.length}`,
+      })),
+    );
+  }
+  return out;
+}
+
+/**
  * The brand's rows, then the source's weight and unspecified, which are always offered: when the spool
  * in hand matches no row, SpoolEase can still work its weight out on the first full weigh.
  */
@@ -45,7 +74,11 @@ export function weightItems(
     const alike = group.options.filter((o, i) => !o.mine && labels[i] === label);
     const twins =
       !option.mine && alike.length > 1
-        ? ` It has more than one ${label} (${alike.map((o) => formatGrams(o.grams)).join(", ")}): weigh an empty spool to tell which is yours.`
+        ? ` It has more than one ${label} (${alike
+            .map((o) => o.grams)
+            .sort((a, b) => a - b)
+            .map(formatGrams)
+            .join(", ")}): weigh an empty spool to tell which is yours.`
         : "";
     return {
       label,
@@ -58,7 +91,7 @@ export function weightItems(
     };
   });
   return [
-    ...rows,
+    ...apart(rows),
     {
       label: `As listed in ${sourceName}`,
       weight: describeSourceWeights(profiles, group),

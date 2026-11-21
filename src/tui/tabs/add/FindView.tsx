@@ -4,6 +4,7 @@
 import { Box } from "ink";
 
 import type { Ctx } from "../../core/types.js";
+import { centered } from "../../ui/Empty.js";
 import { formatRange, plural } from "../../ui/format.js";
 import {
   Busy,
@@ -33,7 +34,7 @@ import {
 import type { Box as Area } from "./layout.js";
 import { pageArea, splitPage } from "./layout.js";
 import { type AddModel, sourcesOf } from "./model.js";
-import { detailTitle, findDetailOf } from "./peek.js";
+import { addsHeading, detailTitle, findDetailOf } from "./peek.js";
 import { findRows } from "./update.js";
 import { wrapText } from "./wrap.js";
 
@@ -121,21 +122,7 @@ function currentLevel(model: AddModel): Level {
 /** What fills the list panel when there are no rows: loading, failed, or nothing found. */
 function emptyState(model: AddModel, ctx: Ctx, inner: Area) {
   const level = currentLevel(model);
-  if (!model.search && level.kind === "missing")
-    return (
-      <Empty
-        title={`${level.name || level.id} isn't in SpoolmanDB`}
-        lines={[
-          level.name
-            ? `Nothing listed has its ID (${level.id}) or its name.`
-            : "Nothing listed has its ID.",
-          "Add it from a file or URL in Settings › Import, or search for a close one.",
-        ].flatMap((line) => wrapText(line, Math.max(1, inner.width - 4)))}
-        action={{ keys: "enter", label: "open Settings › Import" }}
-        width={inner.width}
-        height={inner.height}
-      />
-    );
+  if (!model.search && level.kind === "missing") return <MissingState level={level} box={inner} />;
   if (!model.search && level.kind === "import") {
     if (model.imported.state === "failed")
       return (
@@ -176,6 +163,46 @@ function emptyState(model: AddModel, ctx: Ctx, inner: Area) {
       width={inner.width}
       height={inner.height}
     />
+  );
+}
+
+/**
+ * A filament nothing lists, centered as Empty draws it but with its name wrapped whole: what's
+ * missing, why, and the key that opens Settings › Import.
+ */
+function MissingState({ level, box }: { level: Extract<Level, { kind: "missing" }>; box: Area }) {
+  // Two columns in from each border, as Empty's lines are.
+  const wrap = (text: string) => wrapText(text, Math.max(1, box.width - 4));
+  const lines: Segment[][] = [
+    ...wrap(`${level.name || level.id} isn't in SpoolmanDB`).map((text) => [{ text, bold: true }]),
+    [],
+    ...[
+      level.name
+        ? `Nothing listed has its ID (${level.id}) or its name.`
+        : "Nothing listed has its ID.",
+      "Add it from a file or URL in Settings › Import, or search for a close one.",
+    ]
+      .flatMap(wrap)
+      .map((text) => [muted(text)]),
+    [],
+    [{ text: "enter", color: COLORS.accent2, bold: true }, muted(" open Settings › Import")],
+  ].slice(0, Math.max(0, box.height));
+  const top = Math.max(0, Math.floor((box.height - lines.length) / 2));
+  return (
+    <Box flexDirection="column" flexShrink={0} width={box.width} height={box.height}>
+      {Array.from({ length: top }, (_, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: blank spacer lines.
+        <Line key={`top${index}`} width={box.width} segments={[]} />
+      ))}
+      {lines.map((segments, index) => (
+        <Line
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional lines.
+          key={index}
+          width={box.width}
+          segments={segments.length > 0 ? centered(segments, box.width) : []}
+        />
+      ))}
+    </Box>
   );
 }
 
@@ -246,7 +273,7 @@ const MARK_COLORS: Record<AddLine["mark"], string> = {
 function AddLines({ adds, width }: { adds: AddLine[]; width: number }) {
   return (
     <>
-      <Line width={width} segments={[muted(" Adding it")]} />
+      <Line width={width} segments={[muted(` ${addsHeading(adds)}`)]} />
       {adds.flatMap((line) =>
         wrapText(line.text, Math.max(1, width - 4)).map((text, index) => (
           <Line
@@ -312,7 +339,7 @@ function CompactColor({
         <Line
           width={width}
           segments={[
-            muted(" Adding it "),
+            muted(` ${addsHeading(adds)} `),
             ...adds.flatMap((line, index) => [
               ...(index > 0 ? [muted(" · ")] : []),
               { text: line.short, color: MARK_COLORS[line.mark] },
@@ -462,7 +489,11 @@ function DetailPanel({
 }
 
 export function FindView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
-  const split = splitPage(pageArea(ctx.bodyColumns, ctx.bodyRows));
+  const area = pageArea(ctx.bodyColumns, ctx.bodyRows);
+  // A filament nothing lists has no row to detail: its one panel takes the page.
+  if (!model.search && currentLevel(model).kind === "missing")
+    return <ListPanel model={model} ctx={ctx} box={area} />;
+  const split = splitPage(area);
   return (
     <Box flexDirection={split.side ? "row" : "column"} flexShrink={0}>
       <ListPanel model={model} ctx={ctx} box={split.list} />

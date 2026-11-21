@@ -12,7 +12,7 @@ import { press } from "../src/tui/core/keys.js";
 import type { Ctx } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
 import { type AddModel, init } from "../src/tui/tabs/add/model.js";
-import { findDetailOf } from "../src/tui/tabs/add/peek.js";
+import { addsHeading, findDetailOf } from "../src/tui/tabs/add/peek.js";
 import { update } from "../src/tui/tabs/add/update.js";
 import { baseFilamentDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 import {
@@ -111,6 +111,16 @@ describe("Find's color detail", () => {
       "= on SpoolEase's custom filaments already",
       "= a SpoolEase spool is there: no new one",
     ]);
+    const detail = findDetailOf(d.model, d.context);
+    expect(detail?.kind === "color" && addsHeading(detail.adds ?? [])).toBe("Already there");
+  });
+
+  it("heads what adding writes Adding it while anything is new or replaced", async () => {
+    await keepPolyLite();
+    const d = highlight(start(), "polylite");
+    await d.settle();
+    const detail = findDetailOf(d.model, d.context);
+    expect(detail?.kind === "color" && addsHeading(detail.adds ?? [])).toBe("Adding it");
   });
 
   it("says checking until it knows, instead of promising", () => {

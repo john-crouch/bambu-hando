@@ -1,7 +1,7 @@
 // ABOUTME: The Add tab's pure update: keys per page (Find, Weights, Review, Run/Done), its own messages, and the page bar.
 // ABOUTME: Also hints, capturesText and palette commands; every write goes through Review and ends in app/runFinished.
 
-import type { Edits } from "../../../presetEdit.js";
+import { type Edits, rangeError } from "../../../presetEdit.js";
 import { applyWeights, type WeightChoice, weightGroups } from "../../../spoolWeights.js";
 import { isCtrl, type KeyPress, letter, typed } from "../../core/keys.js";
 import { send } from "../../core/program.js";
@@ -10,6 +10,8 @@ import { plural } from "../../ui/format.js";
 import { moveCursor, typeAhead } from "../../ui/list.js";
 import { editText } from "../../ui/textField.js";
 import {
+  type EditorModel,
+  editedPreset,
   editorCapturesText,
   editorChanges,
   editorHints,
@@ -321,13 +323,20 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
     }
     case "add/openSearch": {
       if (model.run?.state === "running") return none(model);
-      const [opened] = openSearch({ ...model, page: "find", run: null }, "query");
-      return [opened, [send<AppMsg>({ type: "app/switchTab", tab: "add" })]];
+      // Review's editor closes as esc closes it, its edits kept for the run; edits it can't keep refuse.
+      const closed = closeEditor(model);
+      const show = send<AppMsg>({ type: "app/switchTab", tab: "add" });
+      if (typeof closed === "string") return [{ ...model, notice: closed }, [show]];
+      const [opened] = openSearch({ ...closed, page: "find", run: null }, "query");
+      return [opened, [show]];
     }
     case "add/review": {
       if (model.run?.state === "running") return none(model);
-      const [next, cmds] = continueFind({ ...model, page: "find", run: null }, ctx, undefined);
-      return [next, [send<AppMsg>({ type: "app/switchTab", tab: "add" }), ...cmds]];
+      const closed = closeEditor(model);
+      const show = send<AppMsg>({ type: "app/switchTab", tab: "add" });
+      if (typeof closed === "string") return [{ ...model, notice: closed }, [show]];
+      const [next, cmds] = continueFind({ ...closed, page: "find", run: null }, ctx, undefined);
+      return [next, [show, ...cmds]];
     }
     case "add/clear":
       return none({ ...model, selected: new Set() });
@@ -598,10 +607,18 @@ function continueFind(model: AddModel, ctx: Ctx, highlighted: string | undefined
 
 // ── Weights ─────────────────────────────────────────────────────────────────
 
+/**
+ * What the weights were read for: each ticked profile by identity (import keys are only positions, so
+ * another file, a reload or another diameter gives other profiles under the same keys) and the console.
+ */
 function weightsSignature(model: AddModel, ctx: Ctx): string {
   const connection = consoleOf(ctx.values);
-  const keys = ticked(model, ctx).map((e) => e.key);
-  return `${keys.join(",")}|${connection ? consoleUrl(connection) : ""}`;
+  const from = (origin: "db" | "import") =>
+    origin === "import" ? `import(${model.imported.source ?? ""})` : "db";
+  const profiles = ticked(model, ctx).map(
+    (e) => `${e.key}=${from(e.origin)}:${e.profile.filamentId}@${e.profile.diameter}`,
+  );
+  return JSON.stringify([profiles, connection ? consoleUrl(connection) : ""]);
 }
 
 function enterWeights(model: AddModel, ctx: Ctx): Result {
@@ -777,9 +794,9 @@ function enterReview(model: AddModel, ctx: Ctx): Result {
     createsSpools(ctx.values) &&
     weights.state === "ready" &&
     weights.signature === weightsSignature(model, ctx);
-  const profiles = weighted
-    ? applyWeights(weights.profiles, weights.groups, model.weightChoices)
-    : entries.map((e) => e.profile);
+  // The weights go onto the profiles ticked now: the same ones by identity, but read afresh.
+  const current = entries.map((e) => e.profile);
+  const profiles = weighted ? applyWeights(current, weights.groups, model.weightChoices) : current;
   const seq = model.review.seq + 1;
   return [
     {
@@ -884,31 +901,48 @@ function editorKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     key,
     editorListRows(pageArea(ctx.bodyColumns, ctx.bodyRows).height),
   );
-  if (step.outcome?.type === "leave") {
-    const edits = new Map(model.planEdits);
-    const changes = new Map(model.planChanges);
-    const made = editorChanges(step.model);
-    if (step.outcome.edits.size > 0) {
-      edits.set(editing.filamentId, step.outcome.edits);
-      changes.set(editing.filamentId, made);
-    } else {
-      edits.delete(editing.filamentId);
-      changes.delete(editing.filamentId);
-    }
-    return enterReview(
-      forgetPeeks({
-        ...model,
-        planEdits: edits,
-        planChanges: changes,
-        review: { ...model.review, editing: null },
-      }),
-      ctx,
-    );
-  }
+  if (step.outcome?.type === "leave")
+    return enterReview(keepEdits(model, editing.filamentId, step.model, step.outcome.edits), ctx);
   return none({
     ...model,
     review: { ...model.review, editing: { ...editing, editor: step.model } },
   });
+}
+
+/** The editor closed, its edits kept for the run (none: the filament's are dropped). */
+function keepEdits(
+  model: AddModel,
+  filamentId: string,
+  editor: EditorModel,
+  made: Edits,
+): AddModel {
+  const edits = new Map(model.planEdits);
+  const changes = new Map(model.planChanges);
+  if (made.size > 0) {
+    edits.set(filamentId, made);
+    changes.set(filamentId, editorChanges(editor));
+  } else {
+    edits.delete(filamentId);
+    changes.delete(filamentId);
+  }
+  return forgetPeeks({
+    ...model,
+    planEdits: edits,
+    planChanges: changes,
+    review: { ...model.review, editing: null },
+  });
+}
+
+/**
+ * Review's editor closed as leaving it does, for a palette command that takes Add elsewhere: its
+ * edits kept for the run. Why not, when they can't be kept (the nozzle range runs high to low).
+ */
+function closeEditor(model: AddModel): AddModel | string {
+  const { editing } = model.review;
+  if (!editing) return model;
+  const range = rangeError(editedPreset(editing.editor));
+  if (range) return `${range}: fix it in the editor first`;
+  return keepEdits(model, editing.filamentId, editing.editor, editing.editor.edits);
 }
 
 function apply(model: AddModel, ctx: Ctx): Result {
@@ -1116,7 +1150,7 @@ export function hints(model: AddModel, ctx: Ctx): Hint[] {
       return [
         h("↑↓", "move", true),
         h("enter", "choose", true),
-        h("→", "use ●"),
+        h("→", "continue"),
         h("esc", "back", true),
       ];
     }

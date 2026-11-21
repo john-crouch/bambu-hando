@@ -134,8 +134,9 @@ function editNote(
       text: `✎ ${profile.name}: the run keeps its presets, so ${named?.length ? changes : `its ${changes}`} ${goes} nowhere`,
       tone: "failed",
     };
+  const presets = written === 1 ? "preset" : plural(written, "preset");
   return {
-    text: `✎ ${profile.name}: ${changes} ${goes} into the ${plural(written, "preset")} the run writes`,
+    text: `✎ ${profile.name}: ${changes} ${goes} into the ${presets} the run writes`,
     tone: "warning",
   };
 }
@@ -242,15 +243,81 @@ export interface RunOutcome {
   spoolIds: string[];
 }
 
+export interface RunCounts {
+  /** Filaments the run wrote something for: a preset or SpoolEase. */
+  written: number;
+  /** Filaments it left as they were: every preset kept, SpoolEase skipped or there already. */
+  skipped: number;
+  failed: number;
+}
+
+export function runCounts(results: SyncResult[]): RunCounts {
+  const failed = results.filter(resultFailed).length;
+  const written = results.filter(
+    (r) => !resultFailed(r) && (r.bambuStatus === "written" || r.spooleaseStatus === "written"),
+  ).length;
+  return { written, skipped: results.length - failed - written, failed };
+}
+
+/** Whether the run wrote any BambuStudio preset: BambuStudio shows them only after a restart. */
+export function wrotePresets(results: SyncResult[]): boolean {
+  return results.some((r) => r.bambuStatus === "written");
+}
+
+/** SpoolEase's side of a failure as sync words it (sync.ts), in plain words; the reason in brackets. */
+const SPOOLEASE_FAILURES: [RegExp, string][] = [
+  [
+    /^custom filaments CSV: reading current list failed: (.*)$/s,
+    "SpoolEase's custom filament list couldn't be read, so nothing was sent",
+  ],
+  [/^custom filaments CSV: (.*)$/s, "SpoolEase refused the custom filament list"],
+  [
+    /^registered \S+; listing spools failed: (.*)$/s,
+    "SpoolEase listed it but its spools couldn't be read, so no spool was made",
+  ],
+  [/^registered \S+; spool rejected: (.*)$/s, "SpoolEase listed it but refused its spool"],
+  [
+    /^registered \S+; spool request error: (.*)$/s,
+    "SpoolEase listed it but its spool couldn't be sent",
+  ],
+];
+
+/** A failed filament by its name, what went wrong in plain words: no codes, the reason in brackets. */
+export function failureText(result: SyncResult): string {
+  let rest = result.detail;
+  const parts: string[] = [];
+  const preset = /^BambuStudio preset: (.*?)(?:; (.*))?$/s.exec(rest);
+  if (preset) {
+    if (result.bambuStatus === "failed")
+      parts.push(`BambuStudio's preset couldn't be written (${preset[1]})`);
+    rest = preset[2] ?? "";
+  } else if (rest.startsWith("BambuStudio preset exists")) rest = rest.replace(/^[^;]*;\s*/, "");
+  if (result.spooleaseStatus === "failed") {
+    const known = SPOOLEASE_FAILURES.map(([pattern, words]) => {
+      const match = pattern.exec(rest);
+      return match ? `${words} (${match[1]})` : null;
+    }).find(Boolean);
+    parts.push(known ?? rest);
+  }
+  return `${result.profileName}: ${parts.filter(Boolean).join("; ") || result.detail}`;
+}
+
 /** What a finished run tells the session (summary, exit code), the footer (toast) and the labels offer. */
 export function runOutcome(results: SyncResult[], sourceLabel: string): RunOutcome {
   const failed = results.filter(resultFailed);
+  const counts = runCounts(results);
   const spoolIds = results.map((r) => r.spoolId).filter((id): id is string => Boolean(id));
-  const spools = spoolIds.length > 0 ? `, ${plural(spoolIds.length, "new spool")}` : "";
-  const failures = failed.length > 0 ? `, ${failed.length} failed` : "";
+  const counted = [
+    ...(counts.written > 0 || results.length === counts.written
+      ? [`${counts.written} written`]
+      : []),
+    ...(counts.skipped > 0 ? [`${counts.skipped} skipped`] : []),
+    ...(counts.failed > 0 ? [`${counts.failed} failed`] : []),
+    ...(spoolIds.length > 0 ? [plural(spoolIds.length, "new spool")] : []),
+  ];
   const lines = [
-    `${plural(results.length, "filament")} from ${sourceLabel}: ${results.length - failed.length} written${failures}${spools}`,
-    ...failed.map((r) => `${r.profileName}: ${r.detail}`),
+    `${plural(results.length, "filament")} from ${sourceLabel}: ${counted.join(", ")}`,
+    ...failed.map(failureText),
   ];
   if (failed.length > 0)
     return {
@@ -262,11 +329,11 @@ export function runOutcome(results: SyncResult[], sourceLabel: string): RunOutco
       spoolIds,
     };
   const added = spoolIds.length > 0 ? ` · ${plural(spoolIds.length, "new spool")}` : "";
-  return {
-    summary: { ok: true, lines },
-    toast: { text: `${plural(results.length, "filament")} added${added}`, tone: "ok" },
-    spoolIds,
-  };
+  const text =
+    counts.written > 0 || results.length === 0
+      ? `${plural(counts.written, "filament")} added${added}`
+      : `${plural(counts.skipped, "filament")} there already`;
+  return { summary: { ok: true, lines }, toast: { text, tone: "ok" }, spoolIds };
 }
 
 export type TableColumn =

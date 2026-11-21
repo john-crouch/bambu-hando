@@ -74,6 +74,23 @@ describe("weightItems", () => {
       "From SpoolEase's spool catalog: Sunlu - Plastic - 117g. It has more than one Sunlu - Plastic (117 g, 150 g): weigh an empty spool to tell which is yours.",
     );
   });
+
+  it("groups the catalog's rows of one name by weight and numbers them apart", () => {
+    const profiles = [profile({ brand: "Sunlu", coreWeight: 189 })];
+    const same = parseSpoolWeightList(
+      "Sunlu - Plastic - 150g,150,Sunlu - V3 - 179g,179\r\nSunlu - Plastic - 117g,117\r\nSunlu - Plastic - 124g,124",
+    );
+    const items = weightItems(weightGroups(profiles, same)[0]!, profiles, "SpoolmanDB");
+    expect(items.map((i) => [i.label, i.weight])).toEqual([
+      ["Sunlu - Plastic, 1 of 3", "117 g"],
+      ["Sunlu - Plastic, 2 of 3", "124 g"],
+      ["Sunlu - Plastic, 3 of 3", "150 g"],
+      ["Sunlu - V3", "179 g"],
+      ["As listed in SpoolmanDB", "189 g"],
+      ["Unspecified", "–"],
+    ]);
+    expect(items[1]?.detail).toContain("more than one Sunlu - Plastic (117 g, 124 g, 150 g)");
+  });
 });
 
 describe("the Weights page's keys", () => {
@@ -102,6 +119,11 @@ describe("the Weights page's keys", () => {
     const [next] = addTab.update(model, { type: "key", key: press("right") }, c);
     expect(next.page).toBe("review");
     expect(next.weightChoices.get("acme")).toEqual({ kind: "source" });
+  });
+
+  it("names → for what it does, in words", () => {
+    const labels = addTab.hints(weightsPage(), c).map((h) => `${h.keys} ${h.label}`);
+    expect(labels).toEqual(["↑↓ move", "enter choose", "→ continue", "esc back"]);
   });
 
   it("→ after moving the cursor still takes the marked choice, not the highlighted one", () => {

@@ -3,7 +3,7 @@
 
 import { Box } from "ink";
 
-import type { Status } from "../../../models.js";
+import { resultFailed, type Status } from "../../../models.js";
 import type { Ctx } from "../../core/types.js";
 import { fitPath, plural, shortPrinter } from "../../ui/format.js";
 import {
@@ -20,12 +20,13 @@ import {
   panelInner,
   type Segment,
 } from "../../ui/index.js";
-import { fitText, textWidth } from "../../ui/text.js";
+import { fitText, textWidth, truncate } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import { pageArea } from "./layout.js";
-import type { AddModel } from "./model.js";
+import type { AddModel, RunModel } from "./model.js";
 import {
   COLUMN_TITLES,
+  failureText,
   finishedProfiles,
   joinWords,
   type Note,
@@ -34,7 +35,7 @@ import {
   planLayout,
   planNotes,
   planRows,
-  runOutcome,
+  runCounts,
   runPercent,
   STAGE_LABELS,
   type StatusCell,
@@ -42,6 +43,7 @@ import {
   statusLabel,
   TABLE_COLUMNS,
   type Tone,
+  wrotePresets,
 } from "./plan.js";
 import { runTargets } from "./targets.js";
 import { nothingToApply } from "./update.js";
@@ -158,6 +160,36 @@ function targetRows(ctx: Ctx, width: number): DetailRow[] {
   ];
 }
 
+/** The most lines Done gives its failures: the plan table under it says the rest per row. */
+const FAILURE_LINES = 4;
+
+/** Done's lines under the counts: what failed, by name and in plain words, then whether to restart BambuStudio. */
+function doneProse(run: RunModel, innerWidth: number): { text: string; color: string }[] {
+  const failures = run.results.filter(resultFailed).map(failureText);
+  // BambuStudio shows new presets only after a restart: said whenever the run wrote one.
+  const restart = wrotePresets(run.results)
+    ? ["Restart BambuStudio to see the new presets."]
+    : failures.length > 0
+      ? []
+      : ["BambuStudio had every preset already: nothing to restart."];
+  // A column off each border: " text " never touches the frame.
+  const room = Math.max(1, innerWidth - 2);
+  return [
+    ...wrapText(failures.join(" · "), room, FAILURE_LINES).map((text) => ({
+      text,
+      color: COLORS.failed,
+    })),
+    ...restart.map((text) => ({ text: truncate(text, room), color: COLORS.muted })),
+  ];
+}
+
+/** The card's height: five rows, more on Done when its failures need them. */
+function cardHeight(model: AddModel, width: number): number {
+  const { run } = model;
+  if (run?.state !== "done") return 5;
+  return Math.max(5, 3 + doneProse(run, panelInner(width, 5).width).length);
+}
+
 function Card({ model, ctx, width }: { model: AddModel; ctx: Ctx; width: number }) {
   const inner = panelInner(width, 5);
   const { run, review } = model;
@@ -220,22 +252,23 @@ function Card({ model, ctx, width }: { model: AddModel; ctx: Ctx; width: number 
       </Panel>
     );
   // The next keys are the footer's: the card says what happened, once.
-  const outcome = runOutcome(run.results, run.sourceLabel);
-  const failed = run.results.filter(
-    (r) => r.bambuStatus === "failed" || r.spooleaseStatus === "failed",
-  ).length;
-  const written = run.results.length - failed;
-  const prose = failed
-    ? outcome.summary.lines.slice(1).join(" · ")
-    : "Restart BambuStudio to see the new presets.";
+  const { written, skipped, failed } = runCounts(run.results);
+  const prose = doneProse(run, inner.width);
   return (
-    <Panel title="Done" subtitle={run.sourceLabel} focused width={width} height={5}>
+    <Panel
+      title="Done"
+      subtitle={run.sourceLabel}
+      focused
+      width={width}
+      height={cardHeight(model, width)}
+    >
       <Line
         width={inner.width}
         segments={[
-          ...(written > 0 || failed === 0
-            ? [{ text: ` ✓ ${written} written`, color: COLORS.ok, bold: true }]
+          ...(written > 0 || (failed === 0 && skipped === 0)
+            ? [{ text: ` ✓ ${plural(written, "filament")} written`, color: COLORS.ok, bold: true }]
             : []),
+          ...(skipped > 0 ? [{ text: ` - ${skipped} skipped`, color: COLORS.muted }] : []),
           ...(failed > 0
             ? [{ text: ` ✗ ${failed} failed`, color: COLORS.failed, bold: true }]
             : []),
@@ -244,11 +277,11 @@ function Card({ model, ctx, width }: { model: AddModel; ctx: Ctx; width: number 
             : []),
         ]}
       />
-      {wrapText(prose, Math.max(0, inner.width - 1), 2).map((line) => (
+      {prose.map((line) => (
         <Line
-          key={line}
+          key={line.text}
           width={inner.width}
-          segments={[{ text: ` ${line}`, color: failed ? COLORS.failed : COLORS.muted }]}
+          segments={[{ text: ` ${line.text}`, color: line.color }]}
         />
       ))}
     </Panel>
@@ -307,8 +340,12 @@ export function PlanView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
     run?.stage ?? null,
     ctx.values.overwritePresets,
   ).map((row) => (!run && model.planEdits.has(row.code) ? { ...row, edited: true } : row));
-  const footer = planFooterLines(model, ctx, area.width).slice(0, Math.max(0, area.height - 5 - 4));
-  const tableHeight = Math.max(4, area.height - 5 - footer.length);
+  const card = cardHeight(model, area.width);
+  const footer = planFooterLines(model, ctx, area.width).slice(
+    0,
+    Math.max(0, area.height - card - 4),
+  );
+  const tableHeight = Math.max(4, area.height - card - footer.length);
   const inner = panelInner(area.width, tableHeight);
   const layout = planLayout(rows, inner.width);
   const shared = [layout.brand, layout.material].filter(Boolean).join(" ");

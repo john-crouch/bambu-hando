@@ -238,10 +238,53 @@ describe("what the pages say", () => {
   it("shows progress while running and the outcome when done", () => {
     expect(running).toContain("Running");
     expect(running).toContain("Starting…");
-    expect(done).toContain("✓ 2 written · 2 new spools");
+    expect(done).toContain("✓ 2 filaments written · 2 new spools");
+    expect(done).toContain("Restart BambuStudio to see the new presets.");
     expect(done).not.toContain("failed");
     expect(done).toContain("▸ Done");
   });
+});
+
+describe("Done after a failure", () => {
+  it.each([
+    [60, 20],
+    [80, 24],
+    [120, 36],
+  ])(
+    "names the filament, says what failed plainly and whole, and to restart BambuStudio at %ix%i",
+    (columns, rows) => {
+      const context = sized(columns, rows, CONSOLE);
+      const running = pages(context).find(([name]) => name === "running")?.[1];
+      if (!running) throw new Error("expected the running page");
+      const failed: SyncResult = {
+        profileName: "Polymaker PolyLite PETG Galaxy Black",
+        filamentId: "Pe4f21b5",
+        bambuStatus: "written",
+        spooleaseStatus: "failed",
+        detail: "registered Pe4f21b5; spool rejected: HTTP 500: boom",
+        coreWeight: 200,
+        spoolId: null,
+      };
+      const done = addTab.update(running, { type: "add/runDone", results: [failed] }, context)[0];
+      const lines = screen(done, context);
+      expect(lines).toHaveLength(context.bodyRows);
+      const end = lines.findIndex((line, i) => i > 1 && line.startsWith("╰"));
+      const card = lines.slice(1, end + 1);
+      const words = card
+        .map((line) => line.replace(/[│╭╮╰╯─]/g, " "))
+        .join(" ")
+        .replace(/\s+/g, " ");
+      expect(words).toContain("✗ 1 failed");
+      expect(words).not.toContain("✓ 0");
+      expect(words).not.toContain("registered");
+      expect(words).toContain(
+        "Polymaker PolyLite PETG Galaxy Black: SpoolEase listed it but refused its spool (HTTP 500: boom)",
+      );
+      expect(words).toContain("Restart BambuStudio to see the new presets.");
+      // Text keeps a column off the border.
+      for (const line of card.filter((l) => l.startsWith("│"))) expect(line, line).toMatch(/ │$/);
+    },
+  );
 });
 
 describe("the preset editor on Review", () => {
@@ -296,7 +339,7 @@ describe("the preset editor on Review", () => {
     )[0];
     const plan80 = screen(back, context).join("\n");
     expect(plan80).toContain("✎ Black");
-    expect(plan80).toContain("✎ Acme PLA Black: 1 change goes into the 1 preset the run writes");
+    expect(plan80).toContain("✎ Acme PLA Black: 1 change goes into the preset the run writes");
   });
 });
 
