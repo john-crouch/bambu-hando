@@ -9,9 +9,9 @@ import { padSegments, type Segment } from "./text.js";
 export function Segments({ segments }: { segments: readonly Segment[] }) {
   return (
     <>
-      {segments.map(({ text, ...style }, index) => (
+      {segments.map(({ text, dim, ...style }, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: segments are a fixed sequence built per render; the position is their identity.
-        <Text key={index} {...style}>
+        <Text key={index} {...style} {...(dim ? { dimColor: true } : {})}>
           {text}
         </Text>
       ))}

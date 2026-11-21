@@ -52,12 +52,14 @@ export function Dialog({ title, width = DIALOG_WIDTH, hints, children }: DialogP
         <Box position="absolute" top={0} left={0} width={width - 2} flexDirection="column">
           <Text>{cover}</Text>
         </Box>
-        <Box flexDirection="column" paddingX={SIDE - 1} paddingTop={1} width={width - 2}>
+        <Box flexDirection="column" paddingX={SIDE - 1} paddingY={1} width={width - 2}>
           {children}
         </Box>
-        <Box paddingX={SIDE - 1} paddingY={1} width={width - 2}>
-          <Line segments={keys} width={inner} />
-        </Box>
+        {keys.length > 0 ? (
+          <Box paddingX={SIDE - 1} paddingBottom={1} width={width - 2}>
+            <Line segments={keys} width={inner} />
+          </Box>
+        ) : null}
       </Box>
       <Line segments={panelBottom(width, undefined, true)} width={width} />
     </Box>

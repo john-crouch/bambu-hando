@@ -25,7 +25,7 @@ export {
   typeAhead,
 } from "./list.js";
 export { type Page, PageBar } from "./PageBar.js";
-export { Panel, panelInner } from "./Panel.js";
+export { Panel, panelInner, splitWidths } from "./Panel.js";
 export { Swatch } from "./Swatch.js";
 export { TextField } from "./TextField.js";
 export { APP_NAME, TITLE, Title } from "./Title.js";

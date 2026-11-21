@@ -80,7 +80,7 @@ export function fitSegments(segments: readonly Segment[], width: number): Segmen
       used += w;
       continue;
     }
-    const cut = head(segment.text, width - 1 - used);
+    const cut = head(segment.text, width - 1 - used).trimEnd();
     out.push({ ...segment, text: `${cut}${ELLIPSIS}` });
     break;
   }

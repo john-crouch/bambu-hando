@@ -4,7 +4,7 @@
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 
-import { Line } from "./Line.js";
+import { Line, Segments } from "./Line.js";
 import { type Segment, textWidth, truncate } from "./text.js";
 import { COLORS } from "./theme.js";
 
@@ -74,7 +74,10 @@ export interface PanelProps {
   title: string;
   subtitle?: string;
   focused?: boolean;
-  /** Columns, borders included. Without it the panel grows to its share of the row and its title isn't cut. */
+  /**
+   * Columns, borders included. Without it the panel takes its share of the row (grow) and Ink draws the
+   * border; pass widths from splitWidths for exact side-by-side panels.
+   */
   width?: number;
   /** Rows, borders included. */
   height?: number;
@@ -84,91 +87,93 @@ export interface PanelProps {
   children?: ReactNode;
 }
 
-/** A top or bottom border without a known width: the dashes fill whatever the row gives the panel. */
-function FlexBorder({
-  left,
-  label,
-  right,
-  color,
-}: {
-  left: string;
-  label: Segment[];
-  right: string;
-  color: string;
-}) {
-  return (
-    <Box height={1} flexShrink={0}>
-      <Text color={color}>{left}</Text>
-      {label.map((segment, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: fixed sequence per render.
-        <Text key={index} {...segment} wrap="truncate-end">
-          {segment.text}
-        </Text>
-      ))}
-      <Box flexGrow={1} height={1} overflow="hidden">
-        <Text color={color}>{"─".repeat(1000)}</Text>
-      </Box>
-      <Text color={color}>{right}</Text>
-    </Box>
-  );
+/**
+ * Whole-column widths for panels side by side in `total` columns, in proportion to `weights`; the
+ * columns rounding leaves go to the first panels. Pass these as widths: a flex split of an odd width
+ * makes Yoga round a column off one border.
+ */
+export function splitWidths(total: number, weights: readonly number[]): number[] {
+  const sum = weights.reduce((a, b) => a + Math.max(0, b), 0);
+  if (total <= 0 || sum <= 0) return weights.map(() => 0);
+  const exact = weights.map((w) => (Math.max(0, w) / sum) * total);
+  const out = exact.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  for (let i = 0; left > 0; i = (i + 1) % out.length, left--) out[i] = (out[i] ?? 0) + 1;
+  return out;
 }
 
-export function Panel({
+/** The panel without a width: Ink draws the border, the title and note are set over it. */
+function FlexPanel({
   title,
   subtitle,
-  focused = false,
-  width,
+  focused,
   height,
   grow,
   footerRight,
   children,
-}: PanelProps) {
+}: Omit<PanelProps, "width">) {
   const border = focused ? COLORS.accent : COLORS.border;
-  const middle = height === undefined ? undefined : Math.max(0, height - 2);
-  const flex = grow ? { flexGrow: 1, flexBasis: 0 } : {};
-  if (width !== undefined && width < 2) return null;
-
-  const top =
-    width === undefined ? (
-      <FlexBorder
-        left="╭"
-        label={
-          title
-            ? [
+  return (
+    <Box
+      borderStyle="round"
+      borderColor={border}
+      flexDirection="column"
+      {...(height === undefined ? {} : { height })}
+      {...(grow ? { flexGrow: 1, flexBasis: 0 } : {})}
+    >
+      {title ? (
+        // left 0 and right 1: the label never covers the last ─ before ╮.
+        <Box position="absolute" top={-1} left={0} right={1} height={1} overflow="hidden">
+          <Text wrap="truncate-end">
+            <Segments
+              segments={[
                 { text: " " },
-                { text: title, color: focused ? COLORS.accent : COLORS.muted, bold: focused },
+                { text: title, color: focused ? COLORS.accent : COLORS.muted, bold: !!focused },
                 ...(subtitle ? [{ text: ` · ${subtitle}`, color: COLORS.muted }] : []),
                 { text: " " },
-              ]
-            : []
-        }
-        right="╮"
-        color={border}
-      />
-    ) : (
-      <Line segments={panelTop(width, title, subtitle, focused)} width={width} />
-    );
-  const bottom =
-    width === undefined ? (
-      <FlexBorder
-        left="╰"
-        label={[]}
-        right={footerRight ? ` ${footerRight} ─╯` : "╯"}
-        color={border}
-      />
-    ) : (
-      <Line segments={panelBottom(width, footerRight, focused)} width={width} />
-    );
+              ]}
+            />
+          </Text>
+        </Box>
+      ) : null}
+      {footerRight ? (
+        <Box
+          position="absolute"
+          bottom={-1}
+          left={0}
+          right={0}
+          height={1}
+          justifyContent="flex-end"
+        >
+          <Box marginRight={1} flexShrink={0}>
+            <Text color={COLORS.muted}> {footerRight} </Text>
+          </Box>
+        </Box>
+      ) : null}
+      {/* Clipped here, not on the bordered box, which would clip the title and note on its border. */}
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+        <Box flexDirection="column" flexShrink={0}>
+          {children}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
 
+export function Panel(props: PanelProps) {
+  const { title, subtitle, focused = false, width, height, footerRight, children } = props;
+  if (width === undefined) return <FlexPanel {...props} />;
+  if (width < 2) return null;
+  const border = focused ? COLORS.accent : COLORS.border;
+  const middle = height === undefined ? undefined : Math.max(0, height - 2);
   return (
     <Box
       flexDirection="column"
       flexShrink={0}
-      {...(width === undefined ? {} : { width })}
+      width={width}
       {...(height === undefined ? {} : { height })}
-      {...flex}
     >
-      {top}
+      <Line segments={panelTop(width, title, subtitle, focused)} width={width} />
       <Box
         borderStyle="round"
         borderTop={false}
@@ -179,9 +184,12 @@ export function Panel({
         flexShrink={0}
         {...(middle === undefined ? { flexGrow: 1 } : { height: middle })}
       >
-        {children}
+        {/* Children keep their own heights; the panel clips what doesn't fit instead of squashing it. */}
+        <Box flexDirection="column" flexShrink={0}>
+          {children}
+        </Box>
       </Box>
-      {bottom}
+      <Line segments={panelBottom(width, footerRight, focused)} width={width} />
     </Box>
   );
 }

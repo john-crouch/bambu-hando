@@ -8,17 +8,21 @@ import { type Segment, segmentsWidth, spaces, truncate } from "./text.js";
 import { COLORS, ICONS } from "./theme.js";
 
 export interface Toast {
+  /** The message alone; the footer adds ✓ ! ✗ from the tone. */
   text: string;
+  /** Default ok. */
   tone?: "ok" | "warning" | "failed";
 }
 
 const TOAST_ICONS = { ok: ICONS.ok, warning: ICONS.warning, failed: ICONS.failed } as const;
 
+/** The toast's icon comes from its tone (ok when none): toast text never carries one. */
 function toastSegments(toast: Toast | undefined, room: number): Segment[] {
   if (!toast || room < 3) return [];
-  const color = toast.tone ? COLORS[toast.tone] : COLORS.accent;
-  const icon = toast.tone ? `${TOAST_ICONS[toast.tone]} ` : "";
-  return [{ text: truncate(`${icon}${toast.text}`, room), color, bold: true }];
+  const tone = toast.tone ?? "ok";
+  return [
+    { text: truncate(`${TOAST_ICONS[tone]} ${toast.text}`, room), color: COLORS[tone], bold: true },
+  ];
 }
 
 export function footerSegments(hints: readonly Hint[], columns: number, toast?: Toast): Segment[] {
