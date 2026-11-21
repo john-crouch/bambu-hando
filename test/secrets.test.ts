@@ -2,7 +2,7 @@
 // ABOUTME: Runs against a private gnome-keyring on its own D-Bus session, never the login keyring; keyCommand.e2e covers an unreachable one.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { writesSettled } from "../src/pendingWrites.js";
 import {
   holdsSecret,
   InvalidSecretError,
@@ -172,6 +172,21 @@ describe.skipIf(!privateKeyringSupported)("secrets in the system keyring", () =>
     await storeSecret(TDFP, "3dfp_abc123");
     expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
     expect(await loadSecret(TDFP, {})).toEqual({ value: "3dfp_abc123", from: "keyring" });
+  });
+
+  it("tracks storing and removing as writes, so the binary lets them finish before it exits", async () => {
+    let stored = false;
+    void storeSecret(TDFP, "3dfp_unawaited").then(() => {
+      stored = true;
+    });
+    await writesSettled();
+    expect(stored).toBe(true);
+    let removed = false;
+    void removeSecret(TDFP).then(() => {
+      removed = true;
+    });
+    await writesSettled();
+    expect(removed).toBe(true);
   });
 
   it("replaces a stored key", async () => {

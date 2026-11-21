@@ -4,6 +4,7 @@
 import { AsyncEntry } from "@napi-rs/keyring";
 
 import { errorMessage } from "./errors.js";
+import { trackWrite } from "./pendingWrites.js";
 
 /** One API key bambu-hando can keep: its `key` command name, keyring account and overriding variable. */
 export interface SecretSpec {
@@ -95,8 +96,9 @@ async function inKeyring<T>(spec: SecretSpec, use: (entry: AsyncEntry) => Promis
   }
 }
 
-export async function storeSecret(spec: SecretSpec, value: string): Promise<void> {
-  await inKeyring(spec, (e) => e.setPassword(value));
+/** Stores the key; tracked (`pendingWrites.ts`), so quitting right after doesn't cut the keyring call short. */
+export function storeSecret(spec: SecretSpec, value: string): Promise<void> {
+  return trackWrite(inKeyring(spec, (e) => e.setPassword(value)));
 }
 
 /** The key in the keyring, ignoring the environment; null when none is stored. */
@@ -104,9 +106,9 @@ export async function storedSecret(spec: SecretSpec): Promise<string | null> {
   return inKeyring(spec, (e) => e.getPassword());
 }
 
-/** True when a key was stored and is now gone; false when there was none. */
-export async function removeSecret(spec: SecretSpec): Promise<boolean> {
-  return inKeyring(spec, (e) => e.deletePassword());
+/** True when a key was stored and is now gone; false when there was none. Tracked like `storeSecret`. */
+export function removeSecret(spec: SecretSpec): Promise<boolean> {
+  return trackWrite(inKeyring(spec, (e) => e.deletePassword()));
 }
 
 export interface LoadedSecret {
