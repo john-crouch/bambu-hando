@@ -424,9 +424,9 @@ describe("List", () => {
 
   it("cuts long names with … and drops trailing columns before the name when narrow", () => {
     const wide = plain(draw(<List rows={rows} cursor={0} height={4} width={60} />));
-    expect(wide[3]).toContain("Polymaker PolyLite™ PLA Galaxy Dark…   291 g");
+    expect(wide[3]).toContain("Polymaker PolyLite™ PLA Galaxy Dark…  291 g");
     const narrow = plain(draw(<List rows={rows} cursor={0} height={4} width={24} />));
-    expect(narrow[0]).toBe("▌   #30  Sunlu PETG 2.…┃");
+    expect(narrow[0]).toBe("▌   #30  Sunlu PETG 2… ┃");
     expect(narrow[0]).not.toContain("g");
   });
 
@@ -449,6 +449,12 @@ describe("List", () => {
       " ",
       " ",
     ]);
+  });
+
+  it("leaves a gap column before the scroll thumb, so no text touches it", () => {
+    const frame = draw(<List rows={rows} cursor={0} height={4} width={40} />);
+    // Ink trims trailing spaces: pad back to the width before reading the gap column.
+    for (const line of plain(frame)) expect(line.padEnd(40)[38]).toBe(" ");
   });
 
   it("draws nothing for no rows", () => {
@@ -528,9 +534,16 @@ describe("PageBar", () => {
     expect(row[badge]?.fg).toBe(COLORS.warning);
   });
 
-  it("drops the separators, then shows only the current page and where it is", () => {
-    expect(plain(draw(<PageBar pages={pages} width={35} />))[0]?.trimEnd()).toBe(
-      " ✓ Find  ▸ Weights 2  Review  Done",
+  it("keeps a column free before the border, else shows the pages around the current one, else only it", () => {
+    // The whole bar is 37 columns: 38 leaves one free at the right.
+    expect(plain(draw(<PageBar pages={pages} width={38} />))[0]?.trimEnd()).toBe(
+      " ✓ Find ─ ▸ Weights 2 ─ Review ─ Done",
+    );
+    expect(plain(draw(<PageBar pages={pages} width={37} />))[0]?.trimEnd()).toBe(
+      " … ─ ▸ Weights 2 ─ Review ─ …  2/4",
+    );
+    expect(plain(draw(<PageBar pages={pages} width={30} />))[0]?.trimEnd()).toBe(
+      " ▸ Weights 2  2/4",
     );
     expect(plain(draw(<PageBar pages={pages} width={20} />))[0]?.trimEnd()).toBe(
       " ▸ Weights 2  2/4",

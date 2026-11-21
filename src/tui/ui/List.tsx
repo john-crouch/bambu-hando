@@ -102,6 +102,8 @@ export function rowSegments(
     chip: boolean;
     highlight?: string;
     thumb: boolean;
+    /** The list scrolls: a gap column keeps the cells off the thumb's column. */
+    scrolls?: boolean;
   },
 ): Segment[] {
   const { selected, focused } = options;
@@ -130,7 +132,8 @@ export function rowSegments(
   }
 
   const used = out.reduce((sum, segment) => sum + textWidth(segment.text), 0);
-  const cellsWidth = Math.max(0, width - used - 1);
+  // The last column is the scroll thumb's; a scrolling list keeps one more free before it.
+  const cellsWidth = Math.max(0, width - used - (options.scrolls ? 2 : 1));
   const widths = cellWidths(row.cells, cellsWidth);
   let drawn = 0;
   row.cells.forEach((cell, index) => {
@@ -152,6 +155,7 @@ export function rowSegments(
   });
   const cellsUsed = out.reduce((sum, segment) => sum + textWidth(segment.text), 0) - used;
   if (cellsUsed < cellsWidth) out.push({ text: spaces(cellsWidth - cellsUsed), ...bg });
+  if (options.scrolls) out.push({ text: " ", ...bg });
   out.push(options.thumb ? { text: "┃", color: COLORS.muted, ...bg } : { text: " ", ...bg });
   // Every piece is already its exact width; this only guards the total.
   return padSegments(out, width, bg);
@@ -184,6 +188,7 @@ export function List({
               chip,
               ...(highlight ? { highlight } : {}),
               thumb: thumb !== null && offset >= thumb.from && offset < thumb.to,
+              scrolls: thumb !== null,
             })}
           />
         );
