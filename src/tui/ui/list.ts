@@ -150,33 +150,52 @@ export function filterRows(
 /** The gap between cells. */
 export const CELL_GAP = 1;
 
-/**
- * Each cell's width in a row of `width` columns, gaps of CELL_GAP between the cells shown: fixed cells
- * get their width, others their text's, the grow cell the rest. When that doesn't fit, the grow cell goes
- * first, then cells are cut from the right. Never adds up past the width.
- */
-export function cellWidths(cells: readonly Cell[], width: number): number[] {
-  const natural = cells.map((cell) => (cell.grow ? 0 : (cell.width ?? textWidth(cell.text))));
-  const growAt = cells.findIndex((cell) => cell.grow);
-  const gaps = Math.max(0, cells.length - 1) * CELL_GAP;
-  const fixed = natural.reduce((a, b) => a + b, 0);
-  if (fixed + gaps <= width) {
-    if (growAt >= 0) natural[growAt] = width - fixed - gaps;
-    return natural;
-  }
-  // Too narrow: the grow cell (and its gap) goes, the rest fill from the left.
+/** The grow cell keeps this many columns (or its whole text, when shorter) before it's cut. */
+export const GROW_MIN = 12;
+
+const gapsFor = (count: number): number => Math.max(0, count - 1) * CELL_GAP;
+
+/** Fills the cells from the left, each taking what it wants of what's left (the grow cell: all of it). */
+function fillFromLeft(wanted: readonly (number | "rest")[], width: number): number[] {
   let left = Math.max(0, width);
   let shown = 0;
-  return natural.map((wanted, index) => {
-    if (index === growAt || left <= 0) return 0;
+  return wanted.map((want) => {
     const gap = shown > 0 ? CELL_GAP : 0;
-    const take = Math.max(0, Math.min(wanted, left - gap));
+    const room = Math.max(0, left - gap);
+    const take = want === "rest" ? room : Math.min(want, room);
     if (take > 0) {
       left -= take + gap;
       shown++;
     }
     return take;
   });
+}
+
+/**
+ * Each cell's width in a row of `width` columns, gaps of CELL_GAP between the cells shown: fixed cells
+ * get their width, others their text's, the grow cell the rest. When that doesn't fit, the cells after
+ * the grow cell are dropped, rightmost first, while the grow cell would go below GROW_MIN; then the grow
+ * cell and the cells before it are cut from the right. Never adds up past the width.
+ */
+export function cellWidths(cells: readonly Cell[], width: number): number[] {
+  const natural = cells.map((cell) => (cell.grow ? 0 : (cell.width ?? textWidth(cell.text))));
+  const growAt = cells.findIndex((cell) => cell.grow);
+  if (growAt < 0) {
+    const total = natural.reduce((a, b) => a + b, 0) + gapsFor(cells.length);
+    return total <= width ? natural : fillFromLeft(natural, width);
+  }
+  const growMin = Math.min(GROW_MIN, textWidth(cells[growAt]?.text ?? ""));
+  for (let kept = cells.length; kept > growAt; kept--) {
+    const fixed = natural.slice(0, kept).reduce((a, b) => a + b, 0);
+    const rest = width - fixed - gapsFor(kept);
+    if (rest >= growMin) {
+      return natural.map((w, index) => (index === growAt ? rest : index < kept ? w : 0));
+    }
+  }
+  const wanted: (number | "rest")[] = natural.map((w, index) =>
+    index === growAt ? "rest" : index < growAt ? w : 0,
+  );
+  return fillFromLeft(wanted, width);
 }
 
 /** Rows of the window [from, to) the scroll thumb covers; null when every row is shown. */

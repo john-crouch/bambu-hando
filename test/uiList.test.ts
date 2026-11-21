@@ -176,14 +176,33 @@ describe("cellWidths", () => {
     expect(cellWidths(cells, 30)).toEqual([4, 19, 5]);
   });
 
-  it("shrinks the grow cell to nothing before cutting the cells after it", () => {
+  it("drops the cells after the grow cell, rightmost first, before the grow cell goes below its minimum", () => {
+    const cells = [
+      { text: "#14", width: 4 },
+      { text: "Sunlu PETG Vivid Yellow", grow: true },
+      { text: "564 g", width: 6 },
+      { text: "56%", width: 4 },
+    ];
+    // 4 + 1 + 12 + 1 + 6 + 1 + 4 = 29: everything at the grow cell's minimum.
+    expect(cellWidths(cells, 29)).toEqual([4, 12, 6, 4]);
+    expect(cellWidths(cells, 28)).toEqual([4, 16, 6, 0]);
+    expect(cellWidths(cells, 23)).toEqual([4, 18, 0, 0]);
+  });
+
+  it("keeps a short grow cell's whole text as its minimum", () => {
+    const cells = [{ text: "PLA", grow: true }, { text: "564 g" }];
+    expect(cellWidths(cells, 9)).toEqual([3, 5]);
+    expect(cellWidths(cells, 8)).toEqual([8, 0]);
+  });
+
+  it("cuts the grow cell, then the cells before it, when even those don't fit", () => {
     const cells = [
       { text: "#14", width: 4 },
       { text: "Sunlu PETG", grow: true },
       { text: "564 g" },
     ];
-    expect(cellWidths(cells, 11)).toEqual([4, 0, 5]);
-    expect(cellWidths(cells, 8)).toEqual([4, 0, 3]);
+    expect(cellWidths(cells, 11)).toEqual([4, 6, 0]);
+    expect(cellWidths(cells, 5)).toEqual([4, 0, 0]);
     expect(cellWidths(cells, 3)).toEqual([3, 0, 0]);
   });
 
