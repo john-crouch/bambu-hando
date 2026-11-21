@@ -24,9 +24,9 @@ export function dialogInner(width: number): number {
 
 /**
  * Below this many free columns, a dialog takes the whole width: thinner margins (less the halo Frame
- * clears round it) only show slivers of the body.
+ * clears round it) only show strips of cut words from the body.
  */
-const MIN_MARGINS = 16;
+const MIN_MARGINS = 24;
 
 /** Rows a dialog may take in a body of rows: all but the halo's row above and below it. */
 export function dialogRows(rows: number): number {
