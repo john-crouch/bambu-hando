@@ -114,11 +114,12 @@ export function paletteInput(model: PaletteModel, key: KeyPress, pageRows: numbe
 }
 
 /** Dialog width and list height from the terminal. */
-export function paletteSize(ctx: Ctx): { width: number; rows: number } {
+export function paletteSize(ctx: Ctx, items: number): { width: number; rows: number } {
   return {
     width: Math.max(30, Math.min(72, ctx.columns - 4)),
-    // Border, title, its gap, the query line and its gap, the hint line and its gap: 8.
-    rows: Math.max(3, Math.min(12, ctx.bodyRows - 8)),
+    // As tall as every command (so it doesn't jump while typing), within the body. Border, title, its
+    // gap, the query line and its gap, the hint line and its gap: 8.
+    rows: Math.max(3, Math.min(12, items, ctx.bodyRows - 8)),
   };
 }
 
@@ -162,7 +163,7 @@ const HINTS: Hint[] = [
 ];
 
 function PaletteView({ model, ctx }: { model: PaletteModel; ctx: Ctx }) {
-  const { width, rows: height } = paletteSize(ctx);
+  const { width, rows: height } = paletteSize(ctx, model.items.length);
   const inner = width - 4;
   const rows = paletteRows(model);
   const top = windowStart(model.cursor, rows.length, height);
@@ -231,7 +232,11 @@ export const PALETTE: ShellOverlay<PaletteModel, PaletteItem[]> = {
       return [{ ...model, query: model.query + text, cursor: 0 }, []];
     }
     if (msg.type !== "key") return [model, []];
-    const action = paletteInput(model, msg.key as KeyPress, paletteSize(ctx).rows);
+    const action = paletteInput(
+      model,
+      msg.key as KeyPress,
+      paletteSize(ctx, model.items.length).rows,
+    );
     if (action.type === "update") return [action.model, []];
     if (action.type === "close") return [model, [closeThen()]];
     if (action.type === "run") {

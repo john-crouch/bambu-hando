@@ -85,6 +85,11 @@ export function exitCode(summaries: RunSummary[]): number {
   return Math.max(0, ...summaries.map((s) => s.exitCode ?? (s.ok ? 0 : 1)));
 }
 
+/** What the session's runs said, for the normal screen once the alternate screen is gone; "" without runs. */
+export function summaryText(summaries: RunSummary[]): string {
+  return summaries.map((s) => `${s.lines.join("\n")}\n`).join("\n");
+}
+
 const GLOBAL_HINTS: Hint[] = [
   { keys: "tab", label: "next tab" },
   { keys: "ctrl+k", label: "commands" },
@@ -394,13 +399,10 @@ export function createShell(deps: ShellDeps) {
     }
   }
 
-  /** The footer's keys: the overlay's while one is open, else the tab's and the global ones. */
+  /** The footer's keys: none while an overlay is open (its dialog shows its own), else the tab's and the global ones. */
   function hints(model: ShellModel): Hint[] {
     const c = ctx(model);
-    if (model.overlay) {
-      const module = overlays[model.overlay.id];
-      return module.hints(model.overlay.model, c);
-    }
+    if (model.overlay) return [];
     const own = tab(model).hints(model.tabs[model.active], c);
     const global = capturing(model)
       ? GLOBAL_HINTS.filter((h) => h.keys !== "?" && h.keys !== "q")
@@ -420,7 +422,15 @@ export function createShell(deps: ShellDeps) {
     }));
   }
 
-  return { init, update, ctx, hints, headerTabs };
+  return {
+    init,
+    update,
+    ctx,
+    hints,
+    headerTabs,
+    tabModule: (id: TabId) => deps.tabs[id],
+    overlayModule: (id: OverlayId) => overlays[id],
+  };
 }
 
 export type Shell = ReturnType<typeof createShell>;
