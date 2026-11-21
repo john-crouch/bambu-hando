@@ -33,7 +33,8 @@ function presetJson(name: string, printer: string, id: string, colour = "#F1C400
     textured_plate_temp: ["70"],
     hot_plate_temp: ["70"],
     filament_flow_ratio: ["0.95"],
-    filament_max_volumetric_speed: ["12"],
+    filament_extruder_variant: ["Direct Drive Standard", "Direct Drive High Flow"],
+    filament_max_volumetric_speed: ["12", "16"],
     fan_min_speed: ["40"],
     fan_max_speed: ["90"],
     filament_density: ["1.22"],
@@ -248,6 +249,28 @@ describe.each([
     expect(screen.join("\n")).toMatch(/Nozzle +‹ 255°C ›/);
     const stepped = drive(open, ctx, "right");
     expect(lines(stepped, ctx).join("\n")).toMatch(/Nozzle +‹ 256°C ›/);
+  });
+
+  it("warns about an unusual temperature under the settings and in the review", () => {
+    const cold = drive(start(ctx), ctx, "s", "enter", "enter", "5", "enter");
+    const screen = lines(cold, ctx);
+    expectExact(screen, ctx);
+    const note = screen.at(-2) ?? "";
+    expect(note).toContain("! 5°C is unusually low for a nozzle (most take 150–350°C)");
+    const review = lines(drive(cold, ctx, "a"), ctx);
+    expectExact(review, ctx);
+    const change = review.findIndex((line) => /Nozzle +255°C → 5°C/.test(line));
+    expect(change).toBeGreaterThan(0);
+    expect(review[change + 1]).toContain("! 5°C is unusually low for a nozzle");
+  });
+
+  it("gives a value the width it needs, its nozzle types named", () => {
+    const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
+    const screen = lines(flow, ctx);
+    expectExact(screen, ctx);
+    expect(screen.join("\n")).toMatch(
+      /Max volumetric speed +standard 12 mm³\/s · high flow 16 mm³\/s/,
+    );
   });
 
   it("lists every key on All settings, filtered", () => {

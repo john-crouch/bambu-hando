@@ -18,6 +18,7 @@ import {
 import { spaces } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
 import { presetTitle, printerLabel } from "./detail.js";
+import { editWarning } from "./editor.js";
 import type { ReviewModel } from "./model.js";
 
 /** Words in lines of at most width columns: a note is never cut mid-sentence. */
@@ -60,6 +61,13 @@ function Note({
       ))}
     </>
   );
+}
+
+/** Why the edit of key looks wrong ("5°C is unusually low…"); "" when it looks fine. */
+function changeWarning(review: ReviewModel, key: string): string {
+  const edit = review.edits.get(key);
+  if (!edit) return "";
+  return editWarning(key, "every" in edit ? edit.every : (edit.each[0] ?? ""));
 }
 
 /** The targets list's widest before saving: a printer's note stays near its name on a wide terminal. */
@@ -142,8 +150,16 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
   // Headings, gaps, the targets, SpoolEase's line, the notes and the status line take what they need.
   const fixed =
     5 + review.targets.length + (spoolease.length || checking ? 2 : 0) + notes + (notes ? 1 : 0);
+  // A change takes a line, and one more for its warning.
+  const heights = review.changes.map((c) => (changeWarning(review, c.key) ? 2 : 1));
   const room = Math.max(1, inner.height - fixed);
-  const shown = review.changes.length > room ? room - 1 : review.changes.length;
+  const fits = (count: number, left: number) =>
+    heights.slice(0, count).reduce((sum, h) => sum + h, 0) <= left;
+  let shown = review.changes.length;
+  if (!fits(shown, room)) {
+    shown = 0;
+    while (shown < review.changes.length && fits(shown + 1, room - 1)) shown++;
+  }
   const status: Segment[] | null = review.error
     ? [{ text: ` ${ICONS.failed} ${review.error}`, color: COLORS.failed }]
     : review.phase === "done"
@@ -165,20 +181,33 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
       height={height}
     >
       <Heading text={plural(review.changes.length, "change")} width={w} />
-      {review.changes.slice(0, shown).map((change) => (
-        <Line
-          key={change.key}
-          width={w}
-          segments={[
-            { text: "   " },
-            { text: change.label.padEnd(labelWidth), color: COLORS.muted },
-            { text: "  " },
-            { text: change.from, dim: true },
-            { text: " → " },
-            { text: change.to, color: COLORS.accent, bold: true },
-          ]}
-        />
-      ))}
+      {review.changes.slice(0, shown).map((change) => {
+        const warning = changeWarning(review, change.key);
+        return (
+          <Box key={change.key} flexDirection="column">
+            <Line
+              width={w}
+              segments={[
+                { text: "   " },
+                { text: change.label.padEnd(labelWidth), color: COLORS.muted },
+                { text: "  " },
+                { text: change.from, dim: true },
+                { text: " → " },
+                { text: change.to, color: COLORS.accent, bold: true },
+              ]}
+            />
+            {warning ? (
+              <Line
+                width={w}
+                segments={[
+                  { text: `   ${spaces(labelWidth)}  ` },
+                  { text: `${ICONS.warning} ${warning}`, color: COLORS.warning },
+                ]}
+              />
+            ) : null}
+          </Box>
+        );
+      })}
       {shown < review.changes.length ? (
         <Line
           segments={[{ text: `   … ${review.changes.length - shown} more`, color: COLORS.muted }]}

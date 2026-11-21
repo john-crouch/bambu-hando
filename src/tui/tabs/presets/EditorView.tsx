@@ -36,6 +36,7 @@ import {
   editorRows,
   editorTakes,
   editorTypingHint,
+  editorWarning,
   tidyUnits,
 } from "./editor.js";
 
@@ -61,7 +62,10 @@ function columns(model: EditorModel, rows: readonly EditorRow[], width: number) 
     const key = Math.max(12, Math.min(widest, cells - 1 - keep));
     return { label: key, value: 0 };
   }
-  return { label: Math.min(widest, 28), value: 18 };
+  // A value gets the width it needs (named nozzle types run long); what it was takes the rest.
+  const label = Math.min(widest, 28);
+  const values = Math.max(1, ...rows.map((row) => textWidth(row.value)));
+  return { label, value: Math.max(1, Math.min(values, width - 2 - label - 2)) };
 }
 
 function cellsOf(row: EditorRow, all: boolean, widths: { label: number; value: number }) {
@@ -137,6 +141,8 @@ function typingSegments(
 function noteSegments(model: EditorModel, row: EditorRow | undefined, narrow: boolean): Segment[] {
   if (model.error)
     return [{ text: `${ICONS.failed} ${tidyUnits(model.error)}`, color: COLORS.failed }];
+  const warning = editorWarning(model);
+  if (warning) return [{ text: `${ICONS.warning} ${warning}`, color: COLORS.warning }];
   const typing = editorTypingHint(model);
   if (typing) return [{ text: typing, color: COLORS.muted }];
   if (row?.locked) return [{ text: `Locked: ${row.locked}`, color: COLORS.muted }];
