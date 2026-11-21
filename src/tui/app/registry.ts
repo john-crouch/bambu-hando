@@ -4,6 +4,7 @@
 import { createElement } from "react";
 
 import type { Ctx, LabelsRequest, OverlayModule, TabId, TabModule } from "../core/types.js";
+import { checkTab } from "../tabs/check/index.js";
 import { DIALOG_WIDTH, Dialog, dialogInner, Empty } from "../ui/index.js";
 
 /** Any tab module: the shell keeps each tab's model opaque. */
@@ -42,7 +43,7 @@ export const TABS: Record<TabId, AnyTab> = {
   spools: placeholder("spools", "Spools"),
   add: placeholder("add", "Add"),
   presets: placeholder("presets", "Presets"),
-  check: placeholder("check", "Check"),
+  check: checkTab,
   settings: placeholder("settings", "Settings"),
 };
 

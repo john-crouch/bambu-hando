@@ -165,7 +165,7 @@ export function idsLayout(ctx: Ctx): IdsLayout {
   const inner = panelInner(ctx.bodyColumns, height);
   const intro = wrapText(IDS_INTRO, inner.width - 2 * PAD);
   const note = wrapText(IDS_NOTE, inner.width - 2 * PAD);
-  // A gap after the intro, and before the status line, the status line, a gap and the note.
-  const rows = Math.max(1, inner.height - intro.length - 1 - 3 - note.length);
+  // A gap after the intro and the column header; a gap, the status line, a gap and the note below.
+  const rows = Math.max(1, inner.height - intro.length - 2 - 3 - note.length);
   return { height, intro, note, rows };
 }

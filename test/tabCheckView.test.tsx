@@ -168,6 +168,8 @@ describe.each([
     const text = lines.join("\n");
     expect(text).toContain("✓ Sync check ─ ▸ Filament IDs");
     expect(text).toContain("Give 1 preset a filament ID");
+    expect(text).toContain("BambuStudio default");
+    expect(text).toMatch(/Preset file +Filament ID/);
     expect(text).toContain(`Rock @X1C.json`);
     expect(text).toContain(fix.id);
     expect(text).toContain("Nothing is written until you press a");

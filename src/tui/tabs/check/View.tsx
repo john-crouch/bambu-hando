@@ -44,6 +44,11 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+/** An item as people read it: printers without the vendor, as everywhere else in the TUI. */
+function shownItem(item: string): string {
+  return item.replaceAll("Bambu Lab ", "");
+}
+
 const pad = (segments: Segment[]): Segment[] => [{ text: " ".repeat(PAD) }, ...segments];
 
 /** The lines a pane of this size shows in the middle: a busy or empty state. */
@@ -157,7 +162,7 @@ function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: Check
               <Line
                 segments={pad([
                   { text: `${ICONS.failed} `, color: COLORS.failed },
-                  { text: "breaks a spool's link to its preset", color: COLORS.muted },
+                  { text: "spools lose their preset", color: COLORS.muted },
                 ])}
                 width={leftInner.width}
               />
@@ -203,7 +208,7 @@ function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: Check
               <Line
                 // biome-ignore lint/suspicious/noArrayIndexKey: an item's position in the section is its identity; items can repeat text.
                 key={model.scroll + index}
-                segments={pad([{ text: item }])}
+                segments={pad([{ text: shownItem(item) }])}
                 width={rightInner.width}
               />
             ))
@@ -214,6 +219,21 @@ function Report({ model, ctx, data }: { model: CheckModel; ctx: Ctx; data: Check
   );
 }
 
+/** The review's columns: the file (the rest), its new ID, and the write's result. */
+function idColumns(width: number): { file: number; id: number; result: number } {
+  const id = 11;
+  const result = Math.min(36, Math.floor(width * 0.4));
+  return { file: Math.max(8, width - 2 * PAD - id - result - 2), id, result };
+}
+
+function headerSegments(width: number): Segment[] {
+  const columns = idColumns(width);
+  return pad([
+    { text: `${fitText("Preset file", columns.file)} `, color: COLORS.muted },
+    { text: `${fitText("Filament ID", columns.id)} `, color: COLORS.muted },
+  ]);
+}
+
 function resultSegments(
   fix: IdsPage["fixes"][number],
   index: number,
@@ -221,17 +241,18 @@ function resultSegments(
   width: number,
 ): Segment[] {
   const result = ids.results?.[index];
-  const idWidth = 9;
-  const resultWidth = Math.min(36, Math.floor(width * 0.4));
-  const fileWidth = Math.max(8, width - 2 * PAD - idWidth - resultWidth - 2);
+  const columns = idColumns(width);
   const status: Segment = !result
     ? { text: "" }
     : result.ok
       ? { text: `${ICONS.ok} written`, color: COLORS.ok }
-      : { text: truncate(`${ICONS.failed} ${result.detail}`, resultWidth), color: COLORS.failed };
+      : {
+          text: truncate(`${ICONS.failed} ${result.detail}`, columns.result),
+          color: COLORS.failed,
+        };
   return pad([
-    { text: `${fitText(basename(fix.path), fileWidth)} ` },
-    { text: `${fitText(fix.id, idWidth)} `, color: COLORS.accent2, bold: true },
+    { text: `${fitText(basename(fix.path), columns.file)} ` },
+    { text: `${fitText(fix.id, columns.id)} `, color: COLORS.accent2, bold: true },
     status,
   ]);
 }
@@ -255,7 +276,7 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
       <PageBar pages={pages} width={ctx.bodyColumns} />
       <Panel
         title={`Give ${plural(ids.fixes.length, "preset")} a filament ID`}
-        subtitle="BambuStudio"
+        subtitle={`BambuStudio ${ctx.values.presetFolder.trim()}`}
         focused
         width={ctx.bodyColumns}
         height={layout.height}
@@ -269,6 +290,7 @@ function IdsReview({ ids, ctx }: { ids: IdsPage; ctx: Ctx }) {
           />
         ))}
         <Line segments={[]} width={inner.width} />
+        <Line segments={headerSegments(inner.width)} width={inner.width} />
         {shown.map((fix, offset) => (
           <Line
             key={fix.path}
