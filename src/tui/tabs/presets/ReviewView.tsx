@@ -17,7 +17,7 @@ import {
 } from "../../ui/index.js";
 import { spaces, truncate } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
-import { presetTitle, printerLabel } from "./detail.js";
+import { CLOSE_BAMBUSTUDIO_FIRST, presetTitle, printerLabel } from "./detail.js";
 import { editWarning } from "./editor.js";
 import type { ReviewModel } from "./model.js";
 
@@ -79,7 +79,6 @@ function warningLines(warning: string, width: number, labelWidth: number): strin
 /** The targets list's widest before saving: a printer's note stays near its name on a wide terminal. */
 const TARGETS_MAX = 72;
 
-const CLOSE_FIRST = "Close BambuStudio first: it may save its own copy over these presets.";
 const UPLOADS = "Logged in to Bambu, BambuStudio uploads the change on its next sync.";
 
 function Heading({ text, width }: { text: string; width: number }) {
@@ -172,7 +171,8 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
   const checking = review.range.state === "checking" && review.phase === "review";
   const noteLines = (text: string, lead: number) =>
     wrapWords(text, Math.max(8, w - 2 - lead)).length;
-  const notes = review.phase === "review" ? noteLines(CLOSE_FIRST, 2) + noteLines(UPLOADS, 0) : 0;
+  const notes =
+    review.phase === "review" ? noteLines(CLOSE_BAMBUSTUDIO_FIRST, 2) + noteLines(UPLOADS, 0) : 0;
   // Headings, gaps, the targets, SpoolEase's line, the notes and the status line take what they need.
   const fixed =
     5 + review.targets.length + (spoolease.length || checking ? 2 : 0) + notes + (notes ? 1 : 0);
@@ -240,7 +240,12 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
       ) : null}
       <Blank width={w} />
       {notes ? (
-        <Note text={CLOSE_FIRST} icon={ICONS.warning} color={COLORS.warning} width={w} />
+        <Note
+          text={CLOSE_BAMBUSTUDIO_FIRST}
+          icon={ICONS.warning}
+          color={COLORS.warning}
+          width={w}
+        />
       ) : null}
       <Heading
         text={

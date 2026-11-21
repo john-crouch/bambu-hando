@@ -4,6 +4,7 @@
 import { type CheckSection, checkCounts, checkSync, type UserPreset } from "../../../syncCheck.js";
 import type { CheckData, Ctx } from "../../core/types.js";
 import { consoleUrl, panelInner, plural, textWidth } from "../../ui/index.js";
+import { CLOSE_BAMBUSTUDIO_FIRST } from "../presets/detail.js";
 import { connectionOf, consoleProblem, shortPrinters } from "../settings/connection.js";
 import { wrapText } from "../settings/wrap.js";
 
@@ -436,18 +437,31 @@ export interface IdsLayout {
   /** The review panel's height, borders included. */
   height: number;
   intro: string[];
+  /** Close BambuStudio first, before writing (its icon's room left at the start); empty once written. */
+  warning: string[];
   note: string[];
   /** Files shown at once. */
   rows: number;
 }
 
-/** The ID review: a panel (its title says where you are) with the intro, the files, the status line and the note. */
-export function idsLayout(ctx: Ctx): IdsLayout {
+/**
+ * The ID review: a panel (its title says where you are) with the intro, the warning while nothing is
+ * written yet (before tells), the files, the status line and the note.
+ */
+export function idsLayout(ctx: Ctx, before: boolean): IdsLayout {
   const height = Math.max(3, ctx.bodyRows);
   const inner = panelInner(ctx.bodyColumns, height);
   const intro = wrapText(IDS_INTRO, inner.width - 2 * PAD);
+  const warning = before ? wrapText(CLOSE_BAMBUSTUDIO_FIRST, inner.width - 2 * PAD - 2) : [];
   const note = wrapText(IDS_NOTE, inner.width - 2 * PAD);
-  // A gap after the intro and the column header; a gap, the status line, a gap and the note below.
-  const rows = Math.max(1, inner.height - intro.length - 2 - 3 - note.length);
-  return { height, intro, note, rows };
+  // A gap after the intro, the warning and its gap, and the column header; a gap, the status line,
+  // a gap and the note below.
+  const warned = warning.length ? warning.length + 1 : 0;
+  const rows = Math.max(1, inner.height - intro.length - 2 - warned - 3 - note.length);
+  return { height, intro, warning, note, rows };
+}
+
+/** Whether the ID review still says to close BambuStudio: nothing written or writing yet. */
+export function idsBefore(ids: { results: unknown[] | null; running: boolean }): boolean {
+  return ids.results === null && !ids.running;
 }

@@ -122,6 +122,10 @@ function rowEdges(scrolls: boolean): number {
   return scrolls ? 3 : 2;
 }
 
+/** Said before anything writes preset files: Presets' review and Check's filament IDs. */
+export const CLOSE_BAMBUSTUDIO_FIRST =
+  "Close BambuStudio first: it may save its own copy over these presets.";
+
 const NO_ID = "no ID";
 const EDITED = "edited";
 
