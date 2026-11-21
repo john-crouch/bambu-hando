@@ -89,6 +89,17 @@ class Terminal {
   }
 
   /** Wait until some line of the screen passes test. */
+  /**
+   * Waits until text is on the drawn screen. Prefer this to waitFor for text that replaces other text on
+   * the same line (one help title after another): Ink 8 rewrites only the changed part of a line.
+   */
+  async waitForOnScreen(text: string): Promise<string[]> {
+    return this.waitForScreen(
+      (lines) => lines.some((line) => line.includes(text)),
+      JSON.stringify(text),
+    );
+  }
+
   async waitForScreen(test: (lines: string[]) => boolean, what: string): Promise<string[]> {
     const deadline = Date.now() + WAIT_MS;
     while (Date.now() < deadline) {
@@ -196,7 +207,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     await t.waitFor("✓ SpoolEase 127.0.0.1");
     expect(t.raw).toContain(ENTER_ALT_SCREEN);
     await t.pressEach("?");
-    await t.waitFor("Help · Spools");
+    await t.waitForOnScreen("Help · Spools");
     await t.pressEach(ESC, "q");
 
     expect(await t.exited).toBe(0);
@@ -239,7 +250,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
 
     await t.waitFor("SpoolEase skipped");
     await t.pressEach("?");
-    await t.waitFor("Help · Add");
+    await t.waitForOnScreen("Help · Add");
   });
 
   it("shows a rejected key as an unreachable console", async () => {
@@ -252,13 +263,16 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     const t = start(consoleFlags());
     await t.waitFor("Spools");
 
+    // The drawn screen, not the output stream: going from "Help · Add" to "Help · Presets", Ink 8
+    // rewrites only the changed part of the line, so the whole title may never pass by in one piece.
+    const helpFor = (title: string) => t.waitForOnScreen(`Help · ${title}`);
     for (const title of ["Add", "Presets", "Check", "Settings", "Spools"]) {
       await t.pressEach(TAB, "?");
-      await t.waitFor(`Help · ${title}`);
+      await helpFor(title);
       await t.pressEach(ESC);
     }
     await t.pressEach(SHIFT_TAB, "?");
-    await t.waitFor("Help · Settings");
+    await helpFor("Settings");
   });
 
   it("keeps both keys when esc and the next key arrive in one read", async () => {
@@ -266,10 +280,10 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     await t.waitFor("Spools");
 
     await t.pressEach("?");
-    await t.waitFor("Help · Spools");
+    await t.waitForOnScreen("Help · Spools");
     // One write: Ink reads it as meta+tab. The shell splits it: esc closes help, tab goes to Add.
     await t.pressEach(ESC + TAB, "?");
-    await t.waitFor("Help · Add");
+    await t.waitForOnScreen("Help · Add");
   });
 
   it("opens help with ?, which lists the global keys, and closes on any key", async () => {
@@ -299,7 +313,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     await t.pressEach(..."go to check");
     await t.waitFor("› go to check");
     await t.pressEach(ENTER, "?");
-    await t.waitFor("Help · Check");
+    await t.waitForOnScreen("Help · Check");
     await t.pressEach(ESC, CTRL_K, ..."quit", ENTER);
 
     expect(await t.exited).toBe(0);
@@ -336,7 +350,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     expect(lines[0]).toContain("bambu-hando");
 
     await t.pressEach("?");
-    await t.waitFor("Help · Spools");
+    await t.waitForOnScreen("Help · Spools");
     lines = await t.waitForScreen(
       (screen) => screen.some((line) => line.includes("╭") && line.length <= 80),
       "help within 80 columns",
