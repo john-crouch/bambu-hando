@@ -29,6 +29,8 @@ export interface ConsoleData {
 export interface PresetsData {
   presets: UserPreset[];
   warnings: string[];
+  /** Presets left out because they inherit a system preset (BambuStudio's "save as" copies). */
+  inherited?: number;
 }
 
 export interface CheckData {
