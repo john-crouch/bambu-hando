@@ -288,6 +288,7 @@ export function planFooterLines(model: AddModel, ctx: Ctx, width: number): Segme
       review.plans,
       ctx.values.overwritePresets,
       model.planEdits,
+      model.planChanges,
     ))
       lines.push(...noteLines(note.text, NOTE_COLORS[note.tone], width));
   }

@@ -101,7 +101,7 @@ describe("the shell's contract", () => {
     d.msg({
       type: "add/planEdits",
       filamentId: PUNKFIL,
-      edits: new Map([["filament_flow_ratio", { every: "0.95" }]]),
+      edits: new Map([["filament_flow_ratio", { every: "0.9" }]]),
     });
     await d.settle();
     expect(addTab.unsaved?.(d.model)).toBe(1);
@@ -250,6 +250,39 @@ describe("weights", () => {
   });
 });
 
+describe("weights across sessions", () => {
+  it("preselects the weight chosen in an earlier session for the brand", async () => {
+    const first = tick(start(), "polylite");
+    first.key(press("right"));
+    await first.settle();
+    first.key(press("home"), press("enter"));
+    await first.settle();
+    const { loadTuiSettings } = await import("../src/tuiSettings.js");
+    expect((await loadTuiSettings()).weights).toEqual({
+      polymaker: { kind: "grams", grams: 137 },
+    });
+
+    const next = tick(start(), "polylite");
+    next.key(press("right"));
+    await next.settle();
+    expect(next.model.page).toBe("weights");
+    expect(next.model.weights.cursor).toBe(0);
+  });
+
+  it("says so when the choice can't be remembered, and goes on", async () => {
+    // bambu-hando's config folder is a file: nothing can be saved there.
+    await writeFile(join(home, ".config", "bambu-hando"), "not a folder");
+    const d = tick(start(), "polylite");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("enter"));
+    await d.settle();
+    expect(d.model.page).toBe("review");
+    expect(d.of("app/toast")[0]).toMatchObject({ tone: "warning" });
+    expect(d.of("app/toast")[0]?.text).toMatch(/^Couldn't remember the empty spool weight/);
+  });
+});
+
 describe("review", () => {
   async function kept(d: Driver<AddModel>): Promise<void> {
     const dir = baseFilamentDir(home);
@@ -259,6 +292,27 @@ describe("review", () => {
     d.key(press("right"));
     await d.settle();
   }
+
+  it("names the editor's changes in the plan's note", async () => {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    d.key(press("e"));
+    await d.settle();
+    d.key(press("enter"), press("u", { ctrl: true }), press("250"), press("enter"), press("esc"));
+    await d.settle();
+    const { planNotes } = await import("../src/tui/tabs/add/plan.js");
+    const notes = planNotes(
+      d.model.review.profiles,
+      d.model.review.plans ?? [],
+      false,
+      d.model.planEdits,
+      d.model.planChanges,
+    );
+    expect(notes[0]?.text).toBe(
+      `✎ ${PUNKFIL}: Nozzle 245°C → 250°C goes into the 1 preset the run writes`,
+    );
+  });
 
   it("says there's nothing to apply when the run would change nothing", async () => {
     const d = start({ skipSpoolease: true });
