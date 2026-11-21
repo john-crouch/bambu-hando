@@ -187,6 +187,18 @@ describe("consoleSettings", () => {
     });
   });
 
+  it("without the keyring, takes an unusable SPOOLEASE_SECURITY_KEY for no key instead of refusing it", async () => {
+    const settings = await consoleSettings(
+      { "spoolease-host": "h" },
+      { SPOOLEASE_SECURITY_KEY: "LEAK\nME" },
+      { keyring: false },
+    );
+    expect(settings).toEqual({ host: "h", port: "80", securityKey: "", https: false });
+    expect(
+      await consoleSettings({}, { SPOOLEASE_SECURITY_KEY: "env key" }, { keyring: false }),
+    ).toMatchObject({ securityKey: "env key" });
+  });
+
   describe.skipIf(!privateKeyringSupported)("with a key in the keyring", () => {
     beforeEach(async () => {
       for (const [name, value] of Object.entries(keyring?.env ?? {})) vi.stubEnv(name, value);
@@ -222,6 +234,19 @@ describe("consoleSettings", () => {
       expect(await consoleSettings({}, {})).toMatchObject({
         host: "10.0.0.9",
         securityKey: "FROM-KEYRING",
+      });
+    });
+
+    it("never reads it without the keyring, an unusable one included", async () => {
+      await rememberConsole({ host: "10.0.0.5" });
+      expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({ securityKey: "" });
+      await storeSecret(SECRETS.spoolease, "LEAK\tME");
+      expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({ securityKey: "" });
+      await installSpoolEaseConfig(home, { address: "10.0.0.9", security_key: "" });
+      await rememberConsole({ host: "" });
+      expect(await consoleSettings({}, {}, { keyring: false })).toMatchObject({
+        host: "10.0.0.9",
+        securityKey: "",
       });
     });
 

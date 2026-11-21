@@ -29,6 +29,7 @@ import { loadProfiles } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "./spoolease.js";
 import {
   type ConsoleSettings,
+  type ConsoleSettingsOptions,
   consoleSettings,
   SPOOLEASE_SETTINGS_HINT,
   type SpoolEaseFlags,
@@ -356,9 +357,12 @@ function parsePort(value: string): number {
 }
 
 /** consoleSettings, with an unusable saved key as a usage error (which never quotes it). */
-async function consoleOrUsage(flags: SpoolEaseFlags): Promise<ConsoleSettings> {
+async function consoleOrUsage(
+  flags: SpoolEaseFlags,
+  options: ConsoleSettingsOptions = {},
+): Promise<ConsoleSettings> {
   try {
-    return await consoleSettings(flags);
+    return await consoleSettings(flags, process.env, options);
   } catch (err) {
     throw err instanceof InvalidSecretError ? new UsageError(err.message) : err;
   }
@@ -659,7 +663,8 @@ async function parseTuiValues(
   const [defaults, remembered, spoolease] = await Promise.all([
     bambuDefaults(),
     loadTuiSettings(),
-    consoleOrUsage(values),
+    // Skipping SpoolEase never asks the keyring, and never refuses to start over a key it won't use.
+    consoleOrUsage(values, { keyring: !values["skip-spoolease"] }),
   ]);
   // --printer-preset, else the printers of the last TUI run, else the printer selected in BambuStudio.
   const printerList =

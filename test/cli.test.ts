@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { main } from "../src/cli.js";
 import { removeSecret, SECRETS, storeSecret } from "../src/secrets.js";
+import { runTui } from "../src/tui/run.js";
 import { rememberConsole } from "../src/tuiSettings.js";
 import {
   baseFilamentDir,
@@ -56,6 +57,9 @@ interface Captured {
   stdout: string;
   stderr: string;
 }
+
+// Stands in for the TUI itself, so `tui` runs here only resolve their settings.
+vi.mock("../src/tui/run.js", () => ({ runTui: vi.fn(async () => 0) }));
 
 async function run(argv: string[]): Promise<Captured> {
   let stdout = "";
@@ -888,6 +892,37 @@ describe("cli", () => {
       expect(code).toBe(2);
       expect(stderr).toContain("--spoolease-port must be a port number");
     }
+  });
+
+  describe("on an interactive terminal", () => {
+    beforeEach(() => {
+      vi.mocked(runTui).mockClear();
+      Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(process.stdin, "isTTY", { value: undefined, configurable: true });
+    });
+
+    it("refuses an unusable SPOOLEASE_SECURITY_KEY before opening the TUI", async () => {
+      vi.stubEnv("SPOOLEASE_SECURITY_KEY", "LEAK\nME");
+      const { code, stderr } = await run(["tui"]);
+      expect(code).toBe(2);
+      expect(stderr).toContain("SPOOLEASE_SECURITY_KEY");
+      expect(stderr).not.toContain("LEAK");
+      expect(runTui).not.toHaveBeenCalled();
+    });
+
+    it("opens the TUI with --skip-spoolease whatever the key, starting without one", async () => {
+      vi.stubEnv("SPOOLEASE_SECURITY_KEY", "LEAK\nME");
+      const { code, stderr } = await run(["tui", "--skip-spoolease", "--spoolease-host", "h"]);
+      expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+      expect(vi.mocked(runTui).mock.calls[0]?.[0]).toMatchObject({
+        host: "h",
+        securityKey: "",
+        skipSpoolease: true,
+      });
+    });
   });
 
   it("refuses to start the TUI without an interactive terminal", async () => {
