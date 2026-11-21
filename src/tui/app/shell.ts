@@ -21,8 +21,9 @@ import {
   type TabMsg,
 } from "../core/types.js";
 import type { FormValues } from "../core/values.js";
+import { plural } from "../ui/format.js";
 import { frameBody, type HeaderTab } from "../ui/index.js";
-import { CONFIRM } from "./confirm.js";
+import { CONFIRM, type ShellConfirmRequest } from "./confirm.js";
 import { HELP, type HelpRequest } from "./help.js";
 import type { PaletteItem, ShellMsg, ShellOverlay } from "./messages.js";
 import { PALETTE } from "./palette.js";
@@ -310,17 +311,48 @@ export function createShell(deps: ShellDeps) {
     return null;
   }
 
-  /** Quits with the session's exit code, unless a write is running: leaving would cut it short. */
-  function quit(model: ShellModel): Step {
+  /** Each tab with changes quitting would drop, and how many, in tab order. */
+  function unsavedWork(model: ShellModel): { title: string; count: number }[] {
+    return TAB_ORDER.map((id) => ({
+      title: deps.tabs[id].title,
+      count: deps.tabs[id].unsaved?.(model.tabs[id]) ?? 0,
+    })).filter((tab) => tab.count > 0);
+  }
+
+  /**
+   * Quits with the session's exit code, unless a write is running (leaving would cut it short); with
+   * unsaved changes anywhere, asks first. confirmed skips the asking.
+   */
+  function quit(model: ShellModel, confirmed = false): Step {
     const what = busyWith(model);
     if (what)
       return withToast(model, `${what}: wait for it to finish, or ctrl+c to stop now`, "warning");
+    const unsaved = confirmed ? [] : unsavedWork(model);
+    if (unsaved.length > 0) {
+      const total = unsaved.reduce((sum, tab) => sum + tab.count, 0);
+      const request: ShellConfirmRequest = {
+        title: `Quit and drop ${plural(total, "unsaved change")}?`,
+        lines: unsaved.map((tab) => `${tab.title}: ${plural(tab.count, "change")} not saved`),
+        onApply: { type: "shell/quitNow" },
+        applyKeys: ["q"],
+        applyLabel: "quit",
+        cancelLabel: "stay",
+      };
+      return open(model, "confirm", request);
+    }
     return [{ ...model, exit: exitCode(model.summaries) }, []];
+  }
+
+  /** True while the active tab shows a dialog of its own: keys the shell would take go to it. */
+  function modal(model: ShellModel): boolean {
+    return tab(model).modal?.(model.tabs[model.active]) ?? false;
   }
 
   function onKey(model: ShellModel, key: KeyPress): Step {
     const msg: AppMsg = { type: "key", key };
     if (model.overlay) return toOverlay(model, msg);
+    // A tab's own dialog takes every key, as an overlay does (ctrl+c never reaches here).
+    if (modal(model)) return toTab(model, model.active, msg);
     if (key.name === "tab" && !key.ctrl && !key.meta) {
       const at = TAB_ORDER.indexOf(model.active);
       const step = key.shift ? -1 : 1;
@@ -432,6 +464,8 @@ export function createShell(deps: ShellDeps) {
         return model.toast?.id === msg.id ? [{ ...model, toast: null }, []] : [model, []];
       case "shell/help":
         return open(model, "help", helpRequest(model));
+      case "shell/quitNow":
+        return quit(model, true);
     }
   }
 
@@ -440,6 +474,7 @@ export function createShell(deps: ShellDeps) {
     const c = ctx(model);
     if (model.overlay) return [];
     const own = tab(model).hints(model.tabs[model.active], c);
+    if (modal(model)) return own;
     const global = capturing(model)
       ? GLOBAL_HINTS.filter((h) => h.keys !== "?" && h.keys !== "q")
       : GLOBAL_HINTS;

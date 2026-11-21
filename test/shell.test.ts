@@ -33,6 +33,10 @@ interface FakeModel {
   seen: string[];
   typing: boolean;
   writing?: boolean;
+  /** A dialog of the tab's own is open ("m" opens it, esc closes it). */
+  dialog?: boolean;
+  /** Unsaved changes ("u" makes one more). */
+  edits?: number;
 }
 
 /** A tab that records every message it gets; "t" toggles a text field, "!" asks for a toast. */
@@ -54,7 +58,11 @@ function fakeTab(id: TabId): AnyTab {
       if (msg.type === "key" && (msg.key as KeyPress).input === "t" && !model.typing)
         return [{ ...next, typing: true }, []];
       if (msg.type === "key" && (msg.key as KeyPress).name === "esc")
-        return [{ ...next, typing: false }, []];
+        return [{ ...next, typing: false, dialog: false }, []];
+      if (msg.type === "key" && (msg.key as KeyPress).input === "m")
+        return [{ ...next, dialog: true }, []];
+      if (msg.type === "key" && (msg.key as KeyPress).input === "u")
+        return [{ ...next, edits: (model.edits ?? 0) + 1 }, []];
       if (msg.type === "write/start") return [{ ...next, writing: true }, []];
       if (msg.type === "write/done") return [{ ...next, writing: false }, []];
       if (msg.type === "key" && (msg.key as KeyPress).input === "!")
@@ -65,6 +73,8 @@ function fakeTab(id: TabId): AnyTab {
     hints: () => [{ keys: "x", label: `do ${id}`, primary: true }],
     capturesText: (model: FakeModel) => model.typing,
     busy: (model: FakeModel) => (model.writing ? `Writing ${id}` : null),
+    modal: (model: FakeModel) => model.dialog === true,
+    unsaved: (model: FakeModel) => model.edits ?? 0,
     commands: () => [
       { title: `${id} thing`, msg: { type: "tab", tab: id, msg: { type: "thing" } } },
     ],
@@ -240,6 +250,62 @@ describe("global keys", () => {
     model = await drive(shell, model, { type: "tab", tab: "add", msg: { type: "write/done" } });
     model = await drive(shell, model, key("q"));
     expect(model.exit).toBe(0);
+  });
+
+  it("gives q, tab, ? and ctrl+k to a tab whose own dialog is open, and the footer only its keys", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("m"));
+    expect(shell.hints(model).map((h) => h.keys)).toEqual(["x"]);
+    model = await drive(shell, model, key("q"), key("tab"), key("?"), key("k", { ctrl: true }));
+    expect(model.exit).toBeNull();
+    expect(model.active).toBe("spools");
+    expect(model.overlay).toBeNull();
+    expect(seen(model, "spools")).toEqual(["key:m", "key:q", "key:tab", "key:?", "key:k"]);
+    model = await drive(shell, model, key("esc"), key("q"));
+    expect(model.exit).toBe(0);
+  });
+
+  it("asks before q drops unsaved changes in any tab, and esc stays", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("tab"), key("u"), key("u"), key("tab"), key("u"));
+    model = await drive(shell, model, key("q"));
+    expect(model.exit).toBeNull();
+    expect(model.overlay?.id).toBe("confirm");
+    const request = (model.overlay?.model as { request: { title: string; lines: string[] } })
+      .request;
+    expect(request.title).toBe("Quit and drop 3 unsaved changes?");
+    expect(request.lines.join("\n")).toContain("Add");
+    expect(request.lines.join("\n")).toContain("Presets");
+    model = await drive(shell, model, key("esc"));
+    expect(model.overlay).toBeNull();
+    expect(model.exit).toBeNull();
+    model = await drive(shell, model, { type: "app/quit" });
+    expect(model.overlay?.id).toBe("confirm");
+    model = await drive(shell, model, key("q"));
+    expect(model.exit).toBe(0);
+  });
+
+  it("quits from the unsaved-changes question with a too, and says 1 change in the singular", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("u"), key("q"));
+    expect((model.overlay?.model as { request: { title: string } }).request.title).toBe(
+      "Quit and drop 1 unsaved change?",
+    );
+    model = await drive(shell, model, key("a"));
+    expect(model.exit).toBe(0);
+  });
+
+  it("still refuses to quit from the unsaved-changes question while a write runs", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("u"), key("q"));
+    model = await drive(shell, model, { type: "tab", tab: "add", msg: { type: "write/start" } });
+    // Messages applied without running their cmds: drive would also wait out the toast.
+    const [, cmds] = shell.update(model, key("q"));
+    const sent: ShellMsg[] = [];
+    for (const cmd of cmds) await (cmd as Cmd<ShellMsg>)((m) => sent.push(m));
+    for (const msg of sent) [model] = shell.update(model, msg);
+    expect(model.exit).toBeNull();
+    expect(model.toast?.text).toContain("Writing add");
   });
 
   it("quits with the code of the worst run", async () => {

@@ -13,7 +13,9 @@ export type ShellMsg =
   /** A load the shell started finished; gen drops results a newer load replaced. */
   | { type: "shell/loaded"; resource: ResourceId; gen: number; result: Resource<unknown> }
   | { type: "shell/toastExpired"; id: number }
-  | { type: "shell/help" };
+  | { type: "shell/help" }
+  /** Quit, the unsaved changes already confirmed dropped (a running write still stops it). */
+  | { type: "shell/quitNow" };
 
 /** An overlay the shell itself owns: like the contract's OverlayModule, but its commands may send shell messages. */
 export interface ShellOverlay<M, Req> {
