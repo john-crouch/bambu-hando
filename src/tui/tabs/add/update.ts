@@ -1022,7 +1022,8 @@ function runDone(model: AddModel, results: Parameters<typeof runOutcome>[0], ctx
       weightChoices: new Map(),
       planEdits: new Map(),
       planChanges: new Map(),
-      review: emptyReview(model.review.seq),
+      // A new seq, so a plan read or preset build still in flight doesn't land on the cleared review.
+      review: emptyReview(model.review.seq + 1),
       peek: emptyPeek(),
     },
     [

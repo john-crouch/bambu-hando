@@ -297,6 +297,19 @@ describe("run and done", () => {
     expect(d.model.run).toBeNull();
   });
 
+  it("drops replies to the finished run's review that arrive after it's done", async () => {
+    const d = tick(start({ skipSpoolease: true }), "punkfil");
+    d.key(press("right"));
+    await d.settle();
+    const { seq } = d.model.review;
+    d.key(press("a"));
+    await d.settle();
+    expect(d.model.run?.state).toBe("done");
+    d.msg({ type: "add/planRead", seq, plans: [], warnings: ["late"] });
+    d.msg({ type: "add/plannedPresetFailed", seq, error: "late" });
+    expect(d.model.review).toMatchObject({ state: "idle", plans: null, warnings: [], error: "" });
+  });
+
   it("remembers the printers the run wrote for", async () => {
     const d = tick(start({ skipSpoolease: true }), "punkfil");
     d.key(press("right"));
