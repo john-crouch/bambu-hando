@@ -302,7 +302,7 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       expect(text).toContain("Empty     236 g spool");
       expect(text).toContain("Location  AMS 1 · slot 2");
       expect(text).toContain("Nozzle    230–250°C");
-      expect(text).toContain("Added     2026-10-30");
+      expect(text).toContain("Added     Oct 30");
     },
   );
 });

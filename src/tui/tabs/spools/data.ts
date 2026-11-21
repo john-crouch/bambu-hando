@@ -53,10 +53,17 @@ export function nozzleRange(filament: CustomFilament | undefined): string {
   return formatRange(filament?.nozzleTempMin, filament?.nozzleTempMax);
 }
 
-/** A Unix-seconds time as the local date, 2026-10-30; "" when unset. */
-export function addedDate(seconds: number | null): string {
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * When a spool came, one format everywhere: "Oct 30" this year, "2025-11-10" before; "" when unset.
+ * Local time.
+ */
+export function addedText(seconds: number | null, now: number): string {
   if (!seconds) return "";
   const date = new Date(seconds * 1000);
+  if (date.getFullYear() === new Date(now).getFullYear())
+    return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -155,10 +162,11 @@ function leftRow(row: InventoryRow): DetailRow {
 export function spoolDetail(
   row: InventoryRow,
   filaments: ReadonlyMap<string, CustomFilament>,
+  now: number,
 ): SpoolDetail {
   const { spool } = row;
   const nozzle = nozzleRange(filaments.get(spool.slicerFilament));
-  const added = addedDate(spool.addedTime);
+  const added = addedText(spool.addedTime, now);
   const rows: DetailRow[] = [
     leftRow(row),
     spool.coreWeight
@@ -198,12 +206,13 @@ function filamentLine({ spool }: InventoryRow): string {
 export function compactDetail(
   row: InventoryRow,
   filaments: ReadonlyMap<string, CustomFilament>,
+  now: number,
 ): DetailRow[] {
   const { spool } = row;
   const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
   const core = spool.coreWeight ? `${spool.coreWeight} g spool` : "empty spool unknown";
   const left = leftRow(row);
-  const added = addedDate(spool.addedTime);
+  const added = addedText(spool.addedTime, now);
   const place: DetailRow = {
     label: "Place",
     value: join(

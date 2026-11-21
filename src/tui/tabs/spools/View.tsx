@@ -134,6 +134,7 @@ function ListPanel({
 function DetailPanel({
   row,
   data,
+  now,
   ticked,
   width,
   height,
@@ -141,6 +142,7 @@ function DetailPanel({
 }: {
   row: InventoryRow | undefined;
   data: ConsoleData;
+  now: number;
   ticked: number;
   width: number;
   height: number;
@@ -153,7 +155,7 @@ function DetailPanel({
         <Empty title="No spool highlighted" width={inner.width} height={inner.height} />
       </Panel>
     );
-  const detail = spoolDetail(row, data.filaments);
+  const detail = spoolDetail(row, data.filaments, now);
   const art = inner.width - 2;
   const swatchRows = inner.height >= 24 ? 3 : 2;
   return (
@@ -193,10 +195,12 @@ function DetailPanel({
 function CompactDetail({
   row,
   data,
+  now,
   width,
 }: {
   row: InventoryRow | undefined;
   data: ConsoleData;
+  now: number;
   width: number;
 }) {
   const inner = panelInner(width, COMPACT_DETAIL);
@@ -223,7 +227,7 @@ function CompactDetail({
           </Box>
         ) : null}
         <Detail
-          rows={compactDetail(row, data.filaments)}
+          rows={compactDetail(row, data.filaments, now)}
           width={inner.width - (swatch ? 4 : 0)}
           labelWidth={8}
         />
@@ -323,6 +327,7 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
       <DetailPanel
         row={row}
         data={screen.data}
+        now={ctx.now}
         ticked={model.ticked.length}
         width={panelWidth}
         height={height}
@@ -343,7 +348,7 @@ export function SpoolsView({ model, ctx }: { model: SpoolsModel; ctx: Ctx }) {
       body = (
         <Box flexDirection="column" width={width} height={height}>
           {list(width, height - COMPACT_DETAIL)}
-          <CompactDetail row={row} data={screen.data} width={width} />
+          <CompactDetail row={row} data={screen.data} now={ctx.now} width={width} />
         </Box>
       );
     } else {

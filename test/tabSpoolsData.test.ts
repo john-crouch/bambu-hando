@@ -19,6 +19,8 @@ import {
 import { FILAMENTS, spool, VALUES } from "./tabSpoolsFixtures.js";
 
 const filaments = FILAMENTS;
+/** 2026-11-21: dates this year read "Oct 30", earlier ones "2025-11-10". */
+const NOW = Date.UTC(2026, 10, 21, 12);
 
 describe("consoleConnection", () => {
   it("is the console from the settings, port as a number", () => {
@@ -128,7 +130,7 @@ describe("spoolDetail", () => {
       "newest",
     );
     if (!row) throw new Error("no row");
-    const detail = spoolDetail(row, filaments);
+    const detail = spoolDetail(row, filaments, NOW);
     expect(detail.title).toBe("Acme PETG Red");
     expect(detail.subtitle).toBe("Acme · PETG · P1111111");
     expect(detail.swatch).toBe("#BC2726");
@@ -138,7 +140,7 @@ describe("spoolDetail", () => {
       { label: "Location", value: "AMS 1 · slot 2" },
       { label: "Nozzle", value: "230–250°C" },
       { label: "Tag", value: "04AABB", dim: true },
-      { label: "Added", value: "2026-10-30" },
+      { label: "Added", value: "Oct 30" },
       { label: "Note", value: "dry first" },
     ]);
   });
@@ -151,7 +153,7 @@ describe("spoolDetail", () => {
       "newest",
     );
     if (!row) throw new Error("no row");
-    const detail = spoolDetail(row, filaments);
+    const detail = spoolDetail(row, filaments, NOW);
     expect(detail.subtitle).toBe("Acme · PETG HF · no filament code");
     expect(detail.rows).toEqual([
       { label: "Left", value: "not weighed yet", dim: true },
@@ -161,10 +163,20 @@ describe("spoolDetail", () => {
     ]);
   });
 
+  it("dates an earlier year's spool in full, as the list does", () => {
+    const addedTime = Date.UTC(2025, 10, 10, 12) / 1000;
+    const [row] = inventoryRows([spool({ addedTime })], filaments, "", "newest");
+    if (!row) throw new Error("no row");
+    expect(spoolDetail(row, filaments, NOW).rows).toContainEqual({
+      label: "Added",
+      value: "2025-11-10",
+    });
+  });
+
   it("says empty, in red, for a spool with nothing left", () => {
     const [row] = inventoryRows([spool({ currentWeight: 200 })], filaments, "", "newest");
     if (!row) throw new Error("no row");
-    expect(spoolDetail(row, filaments).rows[0]).toEqual({
+    expect(spoolDetail(row, filaments, NOW).rows[0]).toEqual({
       label: "Left",
       value: "empty (0 g of 1000 g)",
       tone: "failed",
@@ -189,9 +201,9 @@ describe("compactDetail", () => {
       "newest",
     );
     if (!row) throw new Error("no row");
-    expect(compactDetail(row, filaments)).toEqual([
+    expect(compactDetail(row, filaments, NOW)).toEqual([
       { label: "Left", value: "564 g of 1000 g · 56% · 200 g spool", tone: "ok" },
-      { label: "Place", value: "AMS 1 · tag 04AABB · added 2026-10-30" },
+      { label: "Place", value: "AMS 1 · tag 04AABB · added Oct 30" },
       { label: "Filament", value: "Acme · PETG · P1111111 · 230–250°C" },
     ]);
   });
@@ -204,7 +216,7 @@ describe("compactDetail", () => {
       "newest",
     );
     if (!row) throw new Error("no row");
-    expect(compactDetail(row, filaments)).toEqual([
+    expect(compactDetail(row, filaments, NOW)).toEqual([
       { label: "Left", value: "not weighed yet · empty spool unknown", dim: true },
       { label: "Place", value: "not placed · no tag", dim: true },
       { label: "Filament", value: "Acme · PETG · no filament code" },

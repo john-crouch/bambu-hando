@@ -12,7 +12,7 @@ import {
   toneColor,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
-import { barTone, type SpoolsSummary, swatchOf } from "./data.js";
+import { addedText, barTone, type SpoolsSummary, swatchOf } from "./data.js";
 
 /** Cells of the bar showing what's left; SHORT_BAR on a list too narrow to keep the name whole. */
 export const BAR_CELLS = 10;
@@ -41,16 +41,8 @@ export function barText(fraction: number | null, cells = BAR_CELLS): string {
   return "▰".repeat(full) + "▱".repeat(cells - full);
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** When a spool came, short: "Nov 16" this year, "2025-03" before; "" when unset. Local time. */
-export function addedText(seconds: number | null, now: number): string {
-  if (!seconds) return "";
-  const date = new Date(seconds * 1000);
-  if (date.getFullYear() === new Date(now).getFullYear())
-    return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
+/** The added date's one format, shared with the detail. */
+export { addedText } from "./data.js";
 
 function leftText(row: InventoryRow): string {
   if (row.left === null) return "–";

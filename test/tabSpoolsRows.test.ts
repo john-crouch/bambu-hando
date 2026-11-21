@@ -76,9 +76,9 @@ describe("spoolListRows", () => {
 });
 
 describe("addedText", () => {
-  it("is the month and day this year, else the year and month", () => {
+  it("is the month and day this year, else the whole date", () => {
     expect(addedText(day(2026, 11, 16), NOW)).toBe("Nov 16");
-    expect(addedText(day(2025, 3, 2), NOW)).toBe("2025-03");
+    expect(addedText(day(2025, 3, 2), NOW)).toBe("2025-03-02");
     expect(addedText(null, NOW)).toBe("");
   });
 });
