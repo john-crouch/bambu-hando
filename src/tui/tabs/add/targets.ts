@@ -5,6 +5,7 @@ import { bambuBaseFilamentDir, tildePath } from "../../../paths.js";
 import type { SpoolEaseConnection } from "../../../spoolease.js";
 import type { FormValues } from "../../core/values.js";
 import { consoleUrl } from "../../ui/ConsoleLink.js";
+import { connectionOf, validPort } from "../settings/connection.js";
 
 export { consoleUrl };
 
@@ -23,15 +24,9 @@ export function consoleSetup(values: FormValues): ConsoleSetup {
   return values.host.trim() && values.securityKey ? "ready" : "missing";
 }
 
-/** The console to talk to; null when SpoolEase is skipped or not set up. */
+/** The console to talk to; null when SpoolEase is skipped, not set up, or its port isn't valid. */
 export function consoleOf(values: FormValues): SpoolEaseConnection | null {
-  if (consoleSetup(values) !== "ready") return null;
-  return {
-    host: values.host.trim(),
-    port: Number(values.port),
-    securityKey: values.securityKey,
-    https: values.https,
-  };
+  return connectionOf(values);
 }
 
 /** Whether a run creates spools: only with a console to create them on. */
@@ -46,11 +41,8 @@ export function runError(values: FormValues): string {
   const setup = consoleSetup(values);
   if (setup === "missing")
     return "SpoolEase needs a host and security key in Settings, or turn Use SpoolEase off";
-  if (setup === "ready") {
-    const port = Number(values.port);
-    if (!Number.isInteger(port) || port < 1 || port > 65_535)
-      return "SpoolEase port must be a number between 1 and 65535 (Settings)";
-  }
+  if (setup === "ready" && validPort(values.port) === null)
+    return "SpoolEase port must be a number between 1 and 65535 (Settings)";
   return "";
 }
 

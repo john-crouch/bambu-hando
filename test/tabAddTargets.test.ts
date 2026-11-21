@@ -40,6 +40,12 @@ describe("console setup", () => {
     });
   });
 
+  it("has no connection while the port isn't a whole number from 1 to 65535", () => {
+    for (const port of ["", " ", "abc", "0", "80.5", "70000"])
+      expect(consoleOf({ ...ready, port })).toBeNull();
+    expect(consoleOf({ ...ready, port: " 8080 " })?.port).toBe(8080);
+  });
+
   it("creates spools only with a console", () => {
     expect(createsSpools(ready)).toBe(true);
     expect(createsSpools({ ...ready, createSpools: false })).toBe(false);
