@@ -87,7 +87,7 @@ describe("with hyperlink support", () => {
     const frame = lastFrame() ?? "";
     expect(frame).toContain(`${OPEN}http://host:8080`);
     expect(stripVTControlCharacters(frame)).toContain(
-      "SpoolEase: http://host:8080 · copies of spool #7",
+      "SpoolEase: http://host:8080 · copies of spool #7 (1 spool of it now)",
     );
   });
 });
