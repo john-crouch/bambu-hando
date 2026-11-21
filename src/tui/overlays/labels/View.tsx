@@ -10,6 +10,7 @@ import {
   COLORS,
   Dialog,
   dialogInner,
+  dialogWidth,
   Line,
   List,
   type ListRow,
@@ -236,14 +237,14 @@ function Picker({
 }
 
 export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
-  const width = Math.min(78, Math.max(30, ctx.bodyColumns - 2));
+  const width = dialogWidth(ctx.bodyColumns, 78);
   const inner = dialogInner(width);
   const count = model.request.spoolIds.length;
   const title = `Labels for ${plural(count, model.request.fresh ? "new spool" : "spool")}`;
-  // The overlay's keys are in the footer, so the dialog doesn't repeat them.
+  // The overlay's keys are in the footer (the shell puts its hints there), so the dialog doesn't repeat them.
   if (model.phase !== "ready")
     return (
-      <Dialog title={title} width={width} hints={[]}>
+      <Dialog title={title} width={width}>
         <Busy message={model.phase === "loading" ? "Looking for printers…" : "Making labels…"} />
       </Dialog>
     );
@@ -252,7 +253,6 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
       <Dialog
         title={`${title} · ${model.picker.row === PRINTER_ROW ? "Printer" : "Save PDF"}`}
         width={width}
-        hints={[]}
       >
         <Picker model={model} ctx={ctx} picker={model.picker} width={inner} />
       </Dialog>
@@ -269,7 +269,7 @@ export function LabelsView({ model, ctx }: { model: LabelsModel; ctx: Ctx }) {
   const muted = (text: string): Segment => ({ text, color: COLORS.muted });
 
   return (
-    <Dialog title={title} width={width} hints={[]}>
+    <Dialog title={title} width={width}>
       {showIds ? <Line segments={[muted(ids)]} width={inner} /> : null}
       <Box flexDirection="row">
         <Box flexDirection="column" width={grid} flexShrink={0}>

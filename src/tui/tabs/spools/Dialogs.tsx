@@ -12,10 +12,12 @@ import {
   DIALOG_WIDTH,
   Dialog,
   dialogInner,
+  dialogWidth,
   Line,
   LinkedText,
   List,
   type ListRow,
+  listPosition,
   plural,
   type Segment,
   TextField,
@@ -329,9 +331,11 @@ export function SpoolsDialog({
   model: SpoolsModel;
   ctx: Ctx;
 }) {
-  const width = Math.min(DIALOG_WIDTH + 8, Math.max(20, ctx.bodyColumns - 4));
+  const width = dialogWidth(ctx.bodyColumns, DIALOG_WIDTH + 8);
   const inner = dialogInner(width);
   let body: ReactNode;
+  // Where the cursor is, when the choices scroll.
+  let note = "";
   switch (dialog.kind) {
     case "count":
       body = <CountBody dialog={dialog} width={inner} />;
@@ -345,6 +349,8 @@ export function SpoolsDialog({
     case "choose": {
       // Above the list: the line of prose (two when wrapped) and a blank.
       const prose = 3;
+      const rows = dialog.filaments.length + 1;
+      if (rows > ctx.bodyRows - DIALOG_CHROME - prose) note = listPosition(dialog.cursor, rows);
       body = (
         <ChooseBody
           dialog={dialog}
@@ -357,7 +363,7 @@ export function SpoolsDialog({
   }
   // The footer shows the dialog's keys (the tab is modal), so the dialog doesn't repeat them.
   return (
-    <Dialog title={title(dialog)} width={width} hints={[]}>
+    <Dialog title={title(dialog)} width={width} {...(note ? { note } : {})}>
       {body}
     </Dialog>
   );

@@ -836,16 +836,17 @@ export function hints(model: SpoolsModel, ctx: Ctx): Hint[] {
 
 export function commands(model: SpoolsModel, ctx: Ctx): PaletteCommand[] {
   if (!consoleConnection(ctx.values)) return [];
-  const command = (title: string, action: SpoolsAction): PaletteCommand => ({
+  const command = (title: string, action: SpoolsAction, keys: string): PaletteCommand => ({
     title,
     detail: "Spools",
+    keys,
     msg: toTab("spools", { type: "spools/command", action }),
   });
   const row = highlightedRow(model, ctx);
   const ticked = model.ticked.length;
   const problems = syncProblems(ctx);
   return [
-    command("Scan a barcode", "scan"),
+    command("Scan a barcode", "scan", "b"),
     ...(row
       ? [
           command(
@@ -853,16 +854,18 @@ export function commands(model: SpoolsModel, ctx: Ctx): PaletteCommand[] {
               ? `Labels for ${plural(ticked, "ticked spool")}`
               : "Labels for the highlighted spool",
             "labels",
+            "l",
           ),
         ]
       : []),
-    ...(row?.spool.slicerFilament ? [command("More spools like this one", "more")] : []),
-    command("Sort spools", "sort"),
+    ...(row?.spool.slicerFilament ? [command("More spools like this one", "more", "+")] : []),
+    command("Sort spools", "sort", "s"),
     ...(problems > 0
       ? [
           {
             title: `Open Check: ${plural(problems, "sync problem")}`,
             detail: "Spools",
+            keys: "c",
             msg: { type: "app/switchTab", tab: "check" } as AppMsg,
           },
         ]

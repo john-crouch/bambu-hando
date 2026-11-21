@@ -4,10 +4,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { SpoolRecord } from "../src/spoolease.js";
+import type { CheckSection } from "../src/syncCheck.js";
 import { press } from "../src/tui/core/keys.js";
 import type { AppMsg, Ctx, Step, TabMsg } from "../src/tui/core/types.js";
 import type { FormValues } from "../src/tui/core/values.js";
-import type { CheckSection } from "../src/syncCheck.js";
 import {
   busy,
   capturesText,
@@ -610,7 +610,16 @@ describe("hints and commands", () => {
   it("lists the list's keys, labels counting the ticks", () => {
     expect(keysOf(keys(start(), ["down"]))).toEqual(["↑↓", "space", "/", "s", "l", "+", "b", "r"]);
     const narrow = { ...CTX, bodyColumns: 80 };
-    expect(keysOf(start(narrow), narrow)).toEqual(["↑↓", "enter", "space", "/", "s", "l", "b", "r"]);
+    expect(keysOf(start(narrow), narrow)).toEqual([
+      "↑↓",
+      "enter",
+      "space",
+      "/",
+      "s",
+      "l",
+      "b",
+      "r",
+    ]);
     expect(hints(start(narrow), narrow)[1]).toEqual({
       keys: "enter",
       label: "details",
@@ -652,6 +661,8 @@ describe("hints and commands", () => {
       "More spools like this one",
       "Sort spools",
     ]);
+    // Each names its shortcut, which the palette shows beside it.
+    expect(list.map((c) => c.keys)).toEqual(["b", "l", "+", "s"]);
     const scan = list.find((c) => c.title === "Scan a barcode");
     expect(scan?.msg).toEqual({
       type: "tab",
@@ -743,11 +754,13 @@ describe("the sync check", () => {
   });
 
   it("opens Check with c, offered in the hints and the palette while it has problems", async () => {
-    expect(await sent(key(start(ctx), "c", ctx))).toEqual([{ type: "app/switchTab", tab: "check" }]);
-    expect(hints(start(ctx), ctx).find((h) => h.keys === "c")?.label).toBe("see 2 problems");
-    expect(commands(start(ctx), ctx).find((c) => c.title === "Open Check: 2 sync problems")?.msg).toEqual(
+    expect(await sent(key(start(ctx), "c", ctx))).toEqual([
       { type: "app/switchTab", tab: "check" },
-    );
+    ]);
+    expect(hints(start(ctx), ctx).find((h) => h.keys === "c")?.label).toBe("see 2 problems");
+    expect(
+      commands(start(ctx), ctx).find((c) => c.title === "Open Check: 2 sync problems")?.msg,
+    ).toEqual({ type: "app/switchTab", tab: "check" });
     expect(hints(start(), CTX).find((h) => h.keys === "c")).toBeUndefined();
     expect(await sent(key(start(), "c"))).toEqual([]);
   });
