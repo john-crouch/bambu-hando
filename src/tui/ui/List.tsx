@@ -144,8 +144,8 @@ export function rowSegments(
       text: "",
       ...bg,
       ...(color ? { color } : {}),
-      ...(cell.dim || row.dim ? { dim: true } : {}),
-      ...(selected && focused ? { bold: true } : {}),
+      // Dim cells stay dim on the bar; bold would cancel it in most terminals.
+      ...(cell.dim || row.dim ? { dim: true } : selected && focused ? { bold: true } : {}),
     };
     out.push(...cellSegments(cell, w, base, options.highlight, style));
     drawn += w + (drawn > 0 ? 1 : 0);

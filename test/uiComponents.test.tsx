@@ -362,6 +362,14 @@ describe("List", () => {
     expect(name).toMatchObject({ fg: COLORS.selectionText, bold: true, bg: COLORS.selection });
   });
 
+  it("keeps dim cells dim on the bar, not bold", () => {
+    const bar = cells(
+      draw(<List rows={rows} cursor={0} height={1} width={60} />).split("\n")[0] ?? "",
+    );
+    const id = bar.find((c) => c.ch === "#");
+    expect(id).toMatchObject({ dim: true, bold: false, bg: COLORS.selection });
+  });
+
   it("keeps a quieter bar without the ▌ when the list isn't focused", () => {
     const bar = cells(
       draw(<List rows={rows} cursor={0} height={1} width={40} focused={false} />).split("\n")[0] ??
