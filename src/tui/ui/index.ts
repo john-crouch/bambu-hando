@@ -9,6 +9,7 @@ export { DIALOG_WIDTH, Dialog, dialogInner } from "./Dialog.js";
 export { Empty } from "./Empty.js";
 export { Footer, type Toast } from "./Footer.js";
 export { FRAME_CHROME, Frame, frameBody } from "./Frame.js";
+export * from "./format.js";
 export { type ConsoleState, Header, type HeaderStatus, type HeaderTab } from "./Header.js";
 export { fitHints, hintSegments } from "./hints.js";
 export { Line, Segments } from "./Line.js";

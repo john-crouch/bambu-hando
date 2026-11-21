@@ -125,7 +125,11 @@ export type AppMsg =
   | { type: "resize"; columns: number; rows: number }
   | { type: "tab"; tab: TabId; msg: TabMsg }
   | { type: "overlay"; msg: TabMsg }
-  | { type: "app/switchTab"; tab: TabId }
+  /**
+   * Shows a tab. focus, when set, names what the tab should open on, in the tab's own terms
+   * (Settings: "spoolease.host"; Presets: a preset path; Add: a filament ID): a deep link from another tab.
+   */
+  | { type: "app/switchTab"; tab: TabId; focus?: string }
   | { type: "app/load"; resource: ResourceId; force?: boolean }
   | { type: "app/loaded"; resource: ResourceId; result: Resource<unknown> }
   | { type: "app/values"; values: Partial<FormValues> }
@@ -171,6 +175,17 @@ export interface TabModule<M> {
    * left half done by accident.
    */
   busy?(model: M): string | null;
+  /**
+   * True while the tab shows a dialog of its own: the shell then passes q and tab to the tab too (the
+   * dialog decides: close, ignore) and the footer leaves out the global keys, since the dialog's keys
+   * are what work. ctrl+c stays global.
+   */
+  modal?(model: M): boolean;
+  /**
+   * How many changes would be lost by quitting (unsaved preset edits, plan edits): q then asks
+   * "Quit and drop N unsaved changes?" before it quits.
+   */
+  unsaved?(model: M): number;
   /** Entries for the command palette. */
   commands?(model: M, ctx: Ctx): PaletteCommand[];
 }
