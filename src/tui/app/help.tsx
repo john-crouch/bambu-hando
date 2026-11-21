@@ -9,6 +9,7 @@ import {
   COLORS,
   Dialog,
   dialogInner,
+  dialogRows,
   dialogWidth,
   fitText,
   Line,
@@ -103,10 +104,10 @@ export function helpLines(request: HelpRequest, width: number): HelpLine[] {
 
 /** Dialog width and the page's visible height. */
 export function helpSize(ctx: Ctx): { width: number; rows: number } {
-  // The dialog's borders and padding: 4 rows.
+  // The dialog's borders and padding take 4 rows, the halo round it 2.
   return {
     width: dialogWidth(ctx.bodyColumns, 76),
-    rows: Math.max(3, ctx.bodyRows - 4),
+    rows: Math.max(3, dialogRows(ctx.bodyRows) - 4),
   };
 }
 

@@ -10,6 +10,7 @@ import {
   COLORS,
   Dialog,
   dialogInner,
+  dialogRows,
   dialogWidth,
   fitText,
   Line,
@@ -197,8 +198,8 @@ export function paletteSize(ctx: Ctx, items: number): { width: number; rows: num
   return {
     width: dialogWidth(ctx.bodyColumns, 72),
     // As tall as every command (so it doesn't jump while typing), within the body. The dialog's
-    // borders and padding take 4, the query line and its gap 2.
-    rows: Math.max(3, Math.min(12, items, ctx.bodyRows - 6)),
+    // borders and padding take 4, the query line and its gap 2, the halo round it 2.
+    rows: Math.max(3, Math.min(12, items, dialogRows(ctx.bodyRows) - 6)),
   };
 }
 

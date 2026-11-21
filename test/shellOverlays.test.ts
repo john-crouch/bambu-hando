@@ -302,9 +302,9 @@ describe("help", () => {
     expect(helpNote(m, ctx(120, 60))).toBe("");
   });
 
-  it("takes the body's full width when narrow, and every row but its border and padding", () => {
-    expect(helpSize(ctx(80, 24))).toEqual({ width: 80, rows: 18 });
-    expect(helpSize(ctx(120, 36))).toEqual({ width: 76, rows: 30 });
+  it("takes the body's full width when narrow, and every row but its border, padding and halo", () => {
+    expect(helpSize(ctx(80, 24))).toEqual({ width: 80, rows: 16 });
+    expect(helpSize(ctx(120, 36))).toEqual({ width: 76, rows: 28 });
   });
 });
 

@@ -1,11 +1,12 @@
 // ABOUTME: The full-screen frame: header line, body, footer line, exactly the terminal's size; dialogs centered on the body.
 // ABOUTME: A tab's dialog and the shell's overlay draw over a dimmed body (the dialog dimmed too under an overlay); frameBody sizes the body.
 
-import { Box } from "ink";
+import { Box, Text } from "ink";
 import type { ReactNode } from "react";
 
 import { Backdrop } from "./backdrop.js";
 import { type Toast, ToastLine } from "./Toast.js";
+import { spaces } from "./text.js";
 
 /** Rows the header and footer take. */
 export const FRAME_CHROME = 2;
@@ -29,16 +30,33 @@ export interface FrameProps {
   children?: ReactNode;
 }
 
-/** A dialog centered over the body: the layer's own box, so the body's layout never moves for it. */
-function Centered({
-  columns,
-  rows,
-  children,
-}: {
+interface LayerProps {
   columns: number;
   rows: number;
   children: ReactNode;
-}) {
+}
+
+/**
+ * A blank cell's halo round a dialog: the body never touches its border, so what shows of the body
+ * beside it reads as behind it. The cover is wider and taller than any dialog (so Ink never wraps or
+ * cuts it) and clipped to the halo; beside a dialog as wide as the body, the halo falls off the edges.
+ */
+function Halo({ columns, rows, children }: LayerProps) {
+  const cover = Array.from({ length: rows + 2 }, () => spaces(columns + 2)).join("\n");
+  return (
+    <Box padding={1} flexShrink={0}>
+      <Box position="absolute" top={0} left={0} width="100%" height="100%" overflow="hidden">
+        <Box width={columns + 2} height={rows + 2} flexShrink={0}>
+          <Text>{cover}</Text>
+        </Box>
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
+/** A dialog centered over the body in its halo: the layer's own box, so the body's layout never moves for it. */
+function Centered({ columns, rows, children }: LayerProps) {
   return (
     <Box
       position="absolute"
@@ -50,7 +68,9 @@ function Centered({
       alignItems="center"
       overflow="hidden"
     >
-      {children}
+      <Halo columns={columns} rows={rows}>
+        {children}
+      </Halo>
     </Box>
   );
 }

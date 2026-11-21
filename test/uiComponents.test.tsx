@@ -862,7 +862,11 @@ describe("Dialog", () => {
 
   it("is as wide as it wants, or the whole width when that would leave slivers at the sides", () => {
     expect(dialogWidth(120, 76)).toBe(76);
+    expect(dialogWidth(100, 76)).toBe(76);
     expect(dialogWidth(80, 40)).toBe(40);
+    expect(dialogWidth(80, 64)).toBe(64);
+    // 7 columns a side would show only slivers of the body beside the halo.
+    expect(dialogWidth(80, 66)).toBe(80);
     expect(dialogWidth(80, 76)).toBe(80);
     expect(dialogWidth(60, 56)).toBe(60);
     expect(dialogWidth(30, 56)).toBe(30);
@@ -925,8 +929,9 @@ describe("Dialog", () => {
     );
     const top = lines.findIndex((line) => line.includes("╭ Hi"));
     expect(top).toBeGreaterThan(0);
-    expect(lines[top + 2]).toBe(`${"x".repeat(10)}│  ok              │${"x".repeat(10)}`);
-    expect(lines[top + 1]).toBe(`${"x".repeat(10)}│                  │${"x".repeat(10)}`);
+    // Inside the dialog only the dialog shows; beside it, a cell of halo, then the body.
+    expect(lines[top + 2]).toBe(`${"x".repeat(9)} │  ok              │ ${"x".repeat(9)}`);
+    expect(lines[top + 1]).toBe(`${"x".repeat(9)} │                  │ ${"x".repeat(9)}`);
   });
 });
 
@@ -1044,22 +1049,22 @@ describe("Frame", () => {
     const frame = (overlay: boolean) =>
       draw(
         <Frame
-          columns={40}
-          rows={14}
+          columns={60}
+          rows={16}
           header={<Text>head</Text>}
           footer={<Text>foot</Text>}
           dialog={
             <Dialog title="Scan" width={30}>
               <Line segments={[{ text: "Barcode", color: COLORS.ok }]} width={20} />
-              {/* Tall enough that the help below leaves the Barcode line in view. */}
-              <Text>{"\n\n\n\n"}</Text>
+              {/* Tall enough that the help over it leaves the Barcode line in view. */}
+              <Text>{"\n".repeat(8)}</Text>
             </Dialog>
           }
           overlay={overlay ? <Dialog title="Help" width={20} /> : null}
         >
-          <Line segments={[{ text: "green", color: COLORS.ok }]} width={40} />
+          <Line segments={[{ text: "green", color: COLORS.ok }]} width={60} />
         </Frame>,
-        40,
+        60,
       );
     const alone = frame(false);
     expect(at(alone, "green")).toMatchObject({ fg: GRAY, dim: true });
@@ -1079,6 +1084,45 @@ describe("Frame", () => {
       40,
     );
     expect(cells(frame.split("\n")[1] ?? "")[0]).toMatchObject({ fg: COLORS.ok, dim: false });
+  });
+
+  it("clears a one-cell halo round a dialog, so the dimmed body never touches its border", () => {
+    const filled = Array.from({ length: 10 }, () => "X".repeat(40)).join("\n");
+    const lines = (width: number) =>
+      plain(
+        draw(
+          <Frame
+            columns={40}
+            rows={12}
+            header={<Text>head</Text>}
+            footer={<Text>foot</Text>}
+            overlay={<Dialog title="Hi" width={width} />}
+          >
+            <Text>{filled}</Text>
+          </Frame>,
+          40,
+        ),
+      );
+    expect(lines(20).slice(1, 11)).toEqual([
+      "X".repeat(40),
+      "X".repeat(40),
+      `${"X".repeat(9)}${" ".repeat(22)}${"X".repeat(9)}`,
+      `${"X".repeat(9)} ╭ Hi ${"─".repeat(14)}╮ ${"X".repeat(9)}`,
+      `${"X".repeat(9)} │${" ".repeat(18)}│ ${"X".repeat(9)}`,
+      `${"X".repeat(9)} │${" ".repeat(18)}│ ${"X".repeat(9)}`,
+      `${"X".repeat(9)} ╰${"─".repeat(18)}╯ ${"X".repeat(9)}`,
+      `${"X".repeat(9)}${" ".repeat(22)}${"X".repeat(9)}`,
+      "X".repeat(40),
+      "X".repeat(40),
+    ]);
+    // A dialog as wide as the body: its borders on the body's edges, a blank row above and below.
+    const wide = lines(40);
+    const top = wide.findIndex((line) => line.startsWith("╭ Hi"));
+    // All blank: Ink leaves the row empty.
+    expect(wide[top - 1]?.trim()).toBe("");
+    expect(wide[top]).toMatch(/^╭ Hi ─+╮$/);
+    expect(wide[top + 4]?.trim()).toBe("");
+    expect(wide[top - 2]).toBe("X".repeat(40));
   });
 
   it("centers an overlay over the body", () => {
