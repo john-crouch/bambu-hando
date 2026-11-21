@@ -981,16 +981,18 @@ describe("saving", () => {
     expect(JSON.stringify(sent)).not.toContain("WRONG");
   });
 
-  it("leaves SpoolEase out when the console's port isn't a valid one (Settings says why)", async () => {
-    for (const port of ["80x", "0", "65536", ""]) {
+  it.each(["80x", "0", "65536", ""])(
+    "leaves SpoolEase out when the console's port isn't a valid one (%j; Settings says why)",
+    async (port) => {
       const ctx = ctxWith(presets, { ...consoleCtx.values, port });
       const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
       expect(reviewing.review?.range).toEqual({ state: "none" });
       const { model } = await drive(reviewing, ctx, "a");
+      expect(model.review?.results?.every((r) => r.ok)).toBe(true);
       expect(model.review?.spoolease).toBeNull();
-    }
-    expect(server.requests).toEqual([]);
-  });
+      expect(server.requests).toEqual([]);
+    },
+  );
 
   it("leaves SpoolEase's range alone when the edited preset's range isn't saved", async () => {
     const reviewing = (await drive((await editRange(consoleCtx)).model, consoleCtx, "a")).model;

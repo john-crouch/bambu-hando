@@ -17,7 +17,6 @@ import { SpoolEaseClient, type SpoolEaseConnection, withNozzleRange } from "../.
 import { checkKey, KeyCheckError } from "../../../sync.js";
 import type { Cmd } from "../../core/program.js";
 import { type AppMsg, type TabMsg, toTab } from "../../core/types.js";
-import type { FormValues } from "../../core/values.js";
 
 /** SpoolEase's custom filament whose nozzle range a save changes too. */
 export interface RangeChange {
@@ -62,17 +61,6 @@ export interface SavedMsg {
 
 function toPresets(msg: PresetFileMsg | RangeMsg | SavedMsg): AppMsg {
   return toTab("presets", msg as unknown as TabMsg);
-}
-
-/** The console the session talks to; null when SpoolEase is skipped or not set up. */
-export function spooleaseConnection(values: FormValues): SpoolEaseConnection | null {
-  if (values.skipSpoolease || !values.host.trim() || !values.securityKey) return null;
-  return {
-    host: values.host.trim(),
-    port: Number(values.port),
-    securityKey: values.securityKey,
-    https: values.https,
-  };
 }
 
 export function rangeText(low: number | null, high: number | null): string {

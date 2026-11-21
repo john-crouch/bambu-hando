@@ -28,6 +28,7 @@ import {
 } from "../../core/types.js";
 import { plural } from "../../ui/format.js";
 import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
+import { connectionOf } from "../settings/connection.js";
 import {
   type PresetFileMsg,
   type RangeMsg,
@@ -37,7 +38,6 @@ import {
   type SavedMsg,
   type SpoolEaseOutcome,
   saveCmd,
-  spooleaseConnection,
 } from "./cmds.js";
 import { type PresetGroup, presetGroups, presetRows, presetTitle } from "./detail.js";
 import {
@@ -286,7 +286,7 @@ function startReview(
   const changes = editorChanges(editor);
   const targets = presetFamily(presetsIn(ctx.resources.presets), preset);
   const range = nozzleRange(applyEdits(editor.original, edits).preset);
-  const connection = spooleaseConnection(ctx.values);
+  const connection = connectionOf(ctx.values);
   const checks =
     changes.some((c) => c.key.startsWith("nozzle_temperature_range_")) &&
     range !== null &&
@@ -395,7 +395,7 @@ function reviewKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsMo
     const change = review.range.state === "change" && ownRange ? review.range.change : null;
     return [
       { ...model, review: { ...review, phase: "saving", error: "" } },
-      [saveCmd(review.preset.path, writes, change, spooleaseConnection(ctx.values))],
+      [saveCmd(review.preset.path, writes, change, connectionOf(ctx.values))],
     ];
   }
   return [model, []];
