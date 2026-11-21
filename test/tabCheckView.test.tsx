@@ -295,6 +295,12 @@ describe.each([
     const after = screen({ ...MODEL, page: "ids", ids: failed }, ctx);
     fits(after, ctx);
     expect(after.join("\n")).toContain("✗ EACCES");
+    // The ID sits right after the widest file name, not across the screen from it.
+    const short = screen(
+      { ...MODEL, page: "ids", ids: { ...ids, fixes: [{ ...fix, path: "/p/Rock @X1C.json" }] } },
+      ctx,
+    );
+    expect(short.join("\n")).toMatch(/Rock @X1C\.json {2}P1234567/);
   });
 
   it("sends you to Settings without a console", () => {

@@ -309,7 +309,13 @@ function idColumns(width: number, ids: IdsPage): { file: number; id: number; res
     ),
   );
   const result = Math.min(widest, 36, Math.floor(width * 0.4));
-  return { file: Math.max(8, width - 2 * PAD - id - 1 - (result ? result + 1 : 0)), id, result };
+  const room = width - 2 * PAD - id - 1 - (result ? result + 1 : 0);
+  const names = Math.max(
+    textWidth("Preset file"),
+    ...ids.fixes.map((fix) => textWidth(basename(fix.path))),
+  );
+  // The ID right after the widest name, so each reads with its file.
+  return { file: Math.max(8, Math.min(names + 1, room)), id, result };
 }
 
 function headerSegments(width: number, ids: IdsPage): Segment[] {

@@ -257,6 +257,21 @@ describe.each([
     expect(text).toMatch(/…\/(\S+\/)*spool-labels-final\.pdf/);
   });
 
+  it("says the console answered its last read, before any test", () => {
+    const base = sized(columns, rows);
+    const read = {
+      ...base,
+      resources: {
+        ...base.resources,
+        console: { state: "ready" as const, value: { spools: [], filaments: new Map() }, at: 1 },
+      },
+    };
+    expect(side(screen(on("spoolease"), read), read)).toContain(
+      "✓ The console answered its last read",
+    );
+    expect(side(screen(on("spoolease"), base), base)).toContain("Not tested yet");
+  });
+
   it("says what the console's last read found, and what to check", () => {
     const failed = {
       ...sized(columns, rows),

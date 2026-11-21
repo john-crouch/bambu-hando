@@ -230,7 +230,9 @@ function connectionLines(model: SettingsModel, ctx: Ctx, width: number): Segment
             ...wrapped(`${ICONS.failed} ${error}`, width, { color: COLORS.failed }),
             ...wrapped(consoleProblem(error).advice, width, { color: COLORS.muted }),
           ]
-        : wrapped("Not tested yet.", width, { color: COLORS.muted })),
+        : ctx.resources.console.state === "ready" && !ctx.values.skipSpoolease
+          ? wrapped(`${ICONS.ok} The console answered its last read.`, width, { color: COLORS.ok })
+          : wrapped("Not tested yet.", width, { color: COLORS.muted })),
     );
   }
   return lines;
