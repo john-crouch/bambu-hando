@@ -506,9 +506,28 @@ describe("list", () => {
     expect((await drive(blue, ctx, "f")).sent).toEqual([
       { type: "app/switchTab", tab: "check", focus: "presetsNoId" },
     ]);
-    expect((await drive(started, ctx, "r")).sent).toEqual([
+    const empty = ctxWith([]);
+    expect((await drive((await start(empty)).model, empty, "r")).sent).toEqual([
       { type: "app/load", resource: "presets", force: true },
     ]);
+  });
+
+  it("jumps with f and r like any letter while they have nothing else to do", async () => {
+    const named = (name: string, id: string): UserPreset => ({
+      name,
+      printer: X1C_04,
+      filamentId: id,
+      path: join(dir, `${name}.json`),
+    });
+    const list = [...presets, named("Fiber PLA", "P3333333"), named("Rock PLA", "P4444444")];
+    const ctx = ctxWith(list);
+    const started = (await start(ctx)).model;
+    const fiber = await drive(started, ctx, "f");
+    expect(fiber.model.path).toBe(list[4]?.path);
+    expect(fiber.sent).toEqual([]);
+    const rock = await drive(started, ctx, "r");
+    expect(rock.model.path).toBe(list[5]?.path);
+    expect(rock.sent).toEqual([]);
   });
 
   it("goes to Add with enter when there are no presets yet", async () => {
@@ -889,7 +908,6 @@ describe("hints and modes", () => {
       "enter edit",
       "/ filter",
       "a-z jump",
-      "r reload",
     ]);
     const red = (await drive(model, ctx, "down")).model;
     expect(hints(red, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("←→ printer");
@@ -897,10 +915,12 @@ describe("hints and modes", () => {
     expect(hints(blue, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("f fix in Check");
     const filtering = (await drive(model, ctx, "/", "x")).model;
     expect(hints(filtering, ctx).map((h) => `${h.keys} ${h.label}`)).toEqual([
+      "type filter",
       "↑↓ move",
       "enter done",
       "esc clear",
     ]);
+    expect(hints(filtering, ctx).every((h) => h.primary)).toBe(true);
     const kept = (await drive(model, ctx, "/", "acme", "enter")).model;
     expect(hints(kept, ctx).map((h) => `${h.keys} ${h.label}`)).toContain("esc clear filter");
   });

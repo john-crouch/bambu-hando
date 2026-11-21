@@ -224,7 +224,6 @@ function PresetList({
             height={listHeight}
             width={inner.width}
             highlight={model.filter.text.value}
-            focused={!model.filter.focused}
           />
         </Box>
       )}

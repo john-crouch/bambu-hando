@@ -258,6 +258,8 @@ describe.each([
     expectExact(screen, ctx);
     expect(screen[0]).toMatch(/^╭ Presets · 1 of 4 ─/);
     expect(screen[1]).toMatch(/^│ \/ rock/);
+    // The cursor's bar stays while typing, as on Spools.
+    expect(screen[3]).toMatch(/^│▌OVERTURE ROCK PLA/);
     const drafted = drive(start(ctx), ctx, "enter", "enter", "backspace", "0", "enter", "esc");
     const text = lines(drafted, ctx).join("\n");
     expect(text).toContain("edited");

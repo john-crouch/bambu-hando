@@ -215,11 +215,10 @@ function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsMode
   if (to !== null) return moveTo(to);
   const text = typed(key);
   if (text === "/") return [{ ...model, filter: { ...model.filter, focused: true } }, []];
-  if (text === "f")
-    return highlighted && !highlighted.filamentId
-      ? [model, [send<AppMsg>({ type: "app/switchTab", tab: "check", focus: "presetsNoId" })]]
-      : [model, []];
-  if (text === "r")
+  if (text === "f" && highlighted && !highlighted.filamentId)
+    return [model, [send<AppMsg>({ type: "app/switchTab", tab: "check", focus: "presetsNoId" })]];
+  // With rows listed r is a letter like the others (the palette reloads); without, it reloads.
+  if (text === "r" && groups.length === 0)
     return [model, [send<AppMsg>({ type: "app/load", resource: "presets", force: true })]];
   const jump = letter(key);
   if (jump)
@@ -544,7 +543,8 @@ export function hints(model: PresetsModel, ctx: Ctx): Hint[] {
   }
   if (model.filter.focused)
     return [
-      { keys: "↑↓", label: "move" },
+      { keys: "type", label: "filter", primary: true },
+      { keys: "↑↓", label: "move", primary: true },
       { keys: "enter", label: "done", primary: true },
       { keys: "esc", label: "clear", primary: true },
     ];
@@ -567,7 +567,6 @@ export function hints(model: PresetsModel, ctx: Ctx): Hint[] {
     ...(highlighted.filamentId ? [] : [{ keys: "f", label: "fix in Check", primary: true }]),
     ...(model.filter.text.value ? [{ keys: "esc", label: "clear filter", primary: true }] : []),
     { keys: "a-z", label: "jump" },
-    { keys: "r", label: "reload" },
   ];
 }
 
