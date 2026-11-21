@@ -390,12 +390,6 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   ];
   const ok = failed === 0 && msg.spoolease?.ok !== false;
   const exitCode: 1 | 2 | undefined = ok ? undefined : msg.setupError ? 2 : 1;
-  const toast = [
-    // The footer puts the tone's icon in front.
-    `Saved ${plural(saved, "preset")} of ${name}`,
-    failed ? `, ${failed} failed` : "",
-    msg.spoolease?.ok === false ? "; SpoolEase's range unchanged" : "",
-  ].join("");
   const files = new Map(model.files);
   for (const result of msg.results) files.delete(result.path);
   const drafts = new Map(model.drafts);
@@ -409,7 +403,7 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
           { type: "app/load", resource: "check", force: true },
         ] as AppMsg[])
       : []),
-    { type: "app/toast", text: toast, tone: ok ? "ok" : "failed" },
+    // No toast: the review's own page shows how it went until esc.
   ];
   return [
     {

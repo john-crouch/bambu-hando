@@ -15,9 +15,10 @@ import {
   type Segment,
   textWidth,
 } from "../../ui/index.js";
-import { spaces } from "../../ui/text.js";
+import { spaces, truncate } from "../../ui/text.js";
 import { COLORS, ICONS } from "../../ui/theme.js";
 import { presetTitle, printerLabel } from "./detail.js";
+import { editWarning } from "./editor.js";
 import type { ReviewModel } from "./model.js";
 
 /** Words in lines of at most width columns: a note is never cut mid-sentence. */
@@ -62,6 +63,19 @@ function Note({
   );
 }
 
+/** Why the edit of key looks wrong ("5°C is unusually low…"); "" when it looks fine. */
+function changeWarning(review: ReviewModel, key: string): string {
+  const edit = review.edits.get(key);
+  if (!edit) return "";
+  return editWarning(key, "every" in edit ? edit.every : (edit.each[0] ?? ""));
+}
+
+/** A change's warning in lines that fit under its value (indent, label, gap, icon); none without one. */
+function warningLines(warning: string, width: number, labelWidth: number): string[] {
+  if (!warning) return [];
+  return wrapWords(warning, Math.max(8, width - 3 - labelWidth - 2 - 2 - 1));
+}
+
 /** The targets list's widest before saving: a printer's note stays near its name on a wide terminal. */
 const TARGETS_MAX = 72;
 
@@ -76,31 +90,53 @@ function Blank({ width }: { width: number }) {
   return <Line segments={[]} width={width} />;
 }
 
+/** A target's result once saved: next to its name. */
+function resultCell(review: ReviewModel, path: string, width: number): ListRow["cells"][number] {
+  const result = review.results?.find((r) => r.path === path);
+  if (!result) return { text: "- not saved", width, dim: true };
+  return {
+    text: truncate(`${result.ok ? ICONS.ok : ICONS.failed} ${result.detail || "saved"}`, width),
+    width,
+    color: result.ok ? (result.detail ? COLORS.warning : COLORS.ok) : COLORS.failed,
+  };
+}
+
+/** Each target: its printer, its result once saved, and what it is to the edit, in that order. */
 function targetRows(review: ReviewModel): ListRow[] {
-  const resultWidth = Math.max(
-    0,
-    ...(review.results ?? []).map((r) => Math.min(48, textWidth(r.detail || "saved") + 2)),
-  );
+  const names = review.targets.map((t) => printerLabel(t.printer) || presetTitle(t));
+  const nameWidth = Math.max(0, ...names.map(textWidth));
+  // As wide as the widest result shown.
+  const resultWidth = review.results
+    ? Math.max(...review.targets.map((t) => textWidth(resultCell(review, t.path, 48).text)))
+    : 0;
   return review.targets.map((target, index) => {
-    const result = review.results?.find((r) => r.path === target.path);
     const note = index === 0 ? "the one you edited" : "same filament ID";
-    const name = printerLabel(target.printer) || presetTitle(target);
     const cells: ListRow["cells"] = [
-      { text: name, grow: true },
-      { text: note, width: 18, dim: true },
+      { text: names[index] as string, width: nameWidth },
+      ...(review.results ? [resultCell(review, target.path, resultWidth)] : []),
+      { text: note, grow: true, dim: true },
     ];
-    if (review.results)
-      cells.push(
-        result
-          ? {
-              text: `${result.ok ? ICONS.ok : ICONS.failed} ${result.detail || "saved"}`,
-              width: resultWidth,
-              color: result.ok ? (result.detail ? COLORS.warning : COLORS.ok) : COLORS.failed,
-            }
-          : { text: "- not saved", width: resultWidth, dim: true },
-      );
     return { key: target.path, cells, ticked: review.ticked.has(target.path) };
   });
+}
+
+/** The line under the results: what's next once saved, and how many failed. */
+function outcome(review: ReviewModel): Segment[] {
+  const total = review.results?.length ?? 0;
+  const saved = review.results?.filter((r) => r.ok).length ?? 0;
+  const failed = total - saved;
+  const next =
+    saved === 0
+      ? ""
+      : failed
+        ? `restart BambuStudio to load the saved ${saved === 1 ? "one" : "ones"}`
+        : "Restart BambuStudio to load the change";
+  if (failed === 0 && review.spoolease?.ok !== false)
+    return [{ text: ` ${ICONS.ok} ${next}`, color: COLORS.ok, bold: true }];
+  const failedText = failed
+    ? `${failed} of ${plural(total, "preset")} failed${next ? `: ${next}` : ""}`
+    : `${next}; SpoolEase's range is unchanged`;
+  return [{ text: ` ${ICONS.failed} ${failedText}`, color: COLORS.failed, bold: true }];
 }
 
 /** What happens to SpoolEase's custom filament, before and after saving. */
@@ -132,8 +168,6 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
   const inner = panelInner(width, height);
   const w = inner.width;
   const labelWidth = Math.min(30, Math.max(0, ...review.changes.map((c) => textWidth(c.label))));
-  const saved = review.results?.filter((r) => r.ok).length ?? 0;
-  const failed = (review.results?.length ?? 0) - saved;
   const spoolease = spooleaseLine(review);
   const checking = review.range.state === "checking" && review.phase === "review";
   const noteLines = (text: string, lead: number) =>
@@ -142,43 +176,62 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
   // Headings, gaps, the targets, SpoolEase's line, the notes and the status line take what they need.
   const fixed =
     5 + review.targets.length + (spoolease.length || checking ? 2 : 0) + notes + (notes ? 1 : 0);
+  // A change takes a line, and one more for its warning.
+  const heights = review.changes.map(
+    (c) => 1 + warningLines(changeWarning(review, c.key), w, labelWidth).length,
+  );
   const room = Math.max(1, inner.height - fixed);
-  const shown = review.changes.length > room ? room - 1 : review.changes.length;
+  const fits = (count: number, left: number) =>
+    heights.slice(0, count).reduce((sum, h) => sum + h, 0) <= left;
+  let shown = review.changes.length;
+  if (!fits(shown, room)) {
+    shown = 0;
+    while (shown < review.changes.length && fits(shown + 1, room - 1)) shown++;
+  }
   const status: Segment[] | null = review.error
     ? [{ text: ` ${ICONS.failed} ${review.error}`, color: COLORS.failed }]
     : review.phase === "done"
-      ? [
-          {
-            text: ` ${failed || review.spoolease?.ok === false ? ICONS.failed : ICONS.ok} ${plural(saved, "preset")} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load ${saved === 1 ? "it" : "them"}`,
-            color: failed || review.spoolease?.ok === false ? COLORS.failed : COLORS.ok,
-            bold: true,
-          },
-        ]
+      ? outcome(review)
       : null;
   const ticked = review.ticked.size;
   return (
     <Panel
-      title={review.phase === "done" ? "Saved" : "Save changes"}
+      title="Save changes"
       subtitle={presetTitle(review.preset)}
       focused
       width={width}
       height={height}
     >
       <Heading text={plural(review.changes.length, "change")} width={w} />
-      {review.changes.slice(0, shown).map((change) => (
-        <Line
-          key={change.key}
-          width={w}
-          segments={[
-            { text: "   " },
-            { text: change.label.padEnd(labelWidth), color: COLORS.muted },
-            { text: "  " },
-            { text: change.from, dim: true },
-            { text: " → " },
-            { text: change.to, color: COLORS.accent, bold: true },
-          ]}
-        />
-      ))}
+      {review.changes.slice(0, shown).map((change) => {
+        const warning = changeWarning(review, change.key);
+        return (
+          <Box key={change.key} flexDirection="column">
+            <Line
+              width={w}
+              segments={[
+                { text: "   " },
+                { text: change.label.padEnd(labelWidth), color: COLORS.muted },
+                { text: "  " },
+                { text: change.from, dim: true },
+                { text: " → " },
+                { text: change.to, color: COLORS.accent, bold: true },
+              ]}
+            />
+            {warningLines(warning, w, labelWidth).map((line, index) => (
+              <Line
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one warning.
+                key={index}
+                width={w}
+                segments={[
+                  { text: `   ${spaces(labelWidth)}  ${index === 0 ? `${ICONS.warning} ` : "  "}` },
+                  { text: line, color: COLORS.warning },
+                ]}
+              />
+            ))}
+          </Box>
+        );
+      })}
       {shown < review.changes.length ? (
         <Line
           segments={[{ text: `   … ${review.changes.length - shown} more`, color: COLORS.muted }]}
@@ -202,8 +255,8 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
           rows={targetRows(review)}
           cursor={review.cursor}
           height={review.targets.length}
-          width={review.results ? w - 2 : Math.min(w - 2, TARGETS_MAX)}
-          marker="check"
+          width={Math.min(w - 2, TARGETS_MAX)}
+          marker={review.results ? "none" : "check"}
           focused={review.phase === "review"}
         />
       </Box>

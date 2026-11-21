@@ -48,8 +48,14 @@ const LIST_FOOT = 2;
 /** Lines above an open list: its filter, while there is one. */
 export const LIST_HEAD = 1;
 
+/** Side by side, panels start with a line of air, so a list's first item sits on the first row's line. */
+export function airLines(layout: SettingsLayout): number {
+  return layout.stacked ? 0 : 1;
+}
+
 /** Items an open list shows at once. */
 export function listRows(ctx: Ctx, page: PageId, filtered = false): number {
-  const { right, sideHeight } = settingsLayout(ctx, page);
-  return Math.max(1, panelInner(right, sideHeight).height - LIST_FOOT - (filtered ? LIST_HEAD : 0));
+  const layout = settingsLayout(ctx, page);
+  const inner = panelInner(layout.right, layout.sideHeight).height;
+  return Math.max(1, inner - airLines(layout) - LIST_FOOT - (filtered ? LIST_HEAD : 0));
 }

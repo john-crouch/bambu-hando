@@ -40,8 +40,8 @@ export interface ListProps {
   /** Rows to show; the list scrolls inside them. */
   height: number;
   width: number;
-  /** "check" draws [✓]/[ ] before every row. */
-  marker?: "check" | "none";
+  /** "check" draws [✓]/[ ] before every row; "radio" ● on the chosen (ticked) row and ○ on the rest, for one-of choices. */
+  marker?: "check" | "radio" | "none";
   /** Filter text: its words are highlighted wherever they appear in a cell. */
   highlight?: string;
   /** False when another panel has focus: the bar stays, quieter, so you still see where you were. */
@@ -99,6 +99,8 @@ export function rowSegments(
     selected: boolean;
     focused: boolean;
     marker: boolean;
+    /** One-of choices: ● on the ticked row, ○ on the rest. */
+    radio?: boolean;
     chip: boolean;
     highlight?: string;
     thumb: boolean;
@@ -125,6 +127,13 @@ export function rowSegments(
         : { text: " ", ...bg },
     );
     out.push({ text: "] ", color: COLORS.muted, ...bg });
+  } else if (options.radio) {
+    out.push(
+      row.ticked
+        ? { text: "●", color: COLORS.accent, bold: true, ...bg }
+        : { text: "○", color: COLORS.muted, ...bg },
+    );
+    out.push({ text: " ", ...bg });
   }
   if (options.chip) {
     out.push(...(row.swatch ? swatchSegments(row.swatch, CHIP) : [{ text: spaces(CHIP), ...bg }]));
@@ -185,6 +194,7 @@ export function List({
               selected: index === cursor,
               focused,
               marker: marker === "check",
+              radio: marker === "radio",
               chip,
               ...(highlight ? { highlight } : {}),
               thumb: thumb !== null && offset >= thumb.from && offset < thumb.to,

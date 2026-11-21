@@ -113,7 +113,7 @@ describe("the report", () => {
     expect(checkHeadline(data().sections, ctx)).toEqual({
       text: "2 problems · 2 notes",
       tone: "problem",
-      compared: "BambuStudio default · http://10.0.0.5",
+      compared: "BambuStudio default with http://10.0.0.5",
     });
     const clean = checkSync({ presets: [], csv: "", spools: [] });
     expect(checkHeadline(clean, ctx)).toMatchObject({ text: "Everything lines up", tone: "ok" });
@@ -210,7 +210,7 @@ describe("the report", () => {
     await h.press("enter");
     expect(keys()).toEqual([
       "↑↓ move",
-      "enter sync it in Add",
+      "enter find it in Add",
       "esc sections",
       "f give 1 preset an ID",
       "r check again",

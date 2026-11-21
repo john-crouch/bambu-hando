@@ -20,6 +20,7 @@ import {
   presetRows,
   printersText,
   statusCells,
+  wrapDetailRows,
 } from "../src/tui/tabs/presets/detail.js";
 import { ALL_SETTINGS } from "../src/tui/tabs/presets/editor.js";
 import { presetsTab } from "../src/tui/tabs/presets/index.js";
@@ -259,31 +260,48 @@ describe("printersText", () => {
 describe("listColumns", () => {
   const row = (name: string, id = "P1234567", edited = false) => ({
     name,
-    printers: "X1C 0.4, 0.6",
+    printers: [X1C_04, X1C_06],
     edited,
     id,
   });
 
   it("shows every column when the names fit, saying no ID in the ID column", () => {
     const widths = listColumns(80, [row("Acme PLA Red"), row("Bolt PETG", "")]);
-    expect(widths).toEqual({ printers: 12, status: 0, id: 8 });
+    expect(widths).toEqual({ name: 12, printers: 12, status: 0, id: 8 });
     expect(statusCells(row("Bolt PETG", ""), widths)).toEqual({ status: "", id: "no ID" });
     const edited = listColumns(80, [row("Acme PLA Red", "P1234567", true)]);
-    expect(edited).toEqual({ printers: 12, status: 6, id: 8 });
+    expect(edited).toEqual({ name: 12, printers: 12, status: 6, id: 8 });
     expect(statusCells(row("Acme", "P1", true), edited)).toEqual({ status: "edited", id: "P1" });
   });
 
-  it("drops the ID, then shrinks the printers, before a name is cut; no ID moves to status", () => {
+  it("drops the ID, then shortens the printers, before a name is cut; no ID moves to status", () => {
     const long = "Polymaker PolyLite PETG Galaxy Dark Blue"; // 40 columns
     expect(listColumns(64, [row(long, "P1234567", true)])).toEqual({
+      name: 40,
       printers: 12,
       status: 6,
       id: 0,
     });
-    expect(listColumns(58, [row(long, "")])).toEqual({ printers: 8, status: 6, id: 0 });
+    expect(listColumns(58, [row(long, "")])).toEqual({ name: 40, printers: 6, status: 5, id: 0 });
     expect(statusCells(row(long, ""), { id: 0 })).toEqual({ status: "no ID", id: "" });
-    expect(listColumns(56, [row(long)])).toEqual({ printers: 12, status: 0, id: 0 });
-    expect(listColumns(40, [row(long, "", true)])).toEqual({ printers: 7, status: 6, id: 0 });
+    expect(listColumns(56, [row(long)])).toEqual({ name: 40, printers: 12, status: 0, id: 0 });
+    expect(listColumns(40, [row(long, "", true)])).toEqual({
+      name: 24,
+      printers: 6,
+      status: 6,
+      id: 0,
+    });
+  });
+
+  it("leaves the scroll thumb its gap column", () => {
+    const long = "Polymaker PolyLite PETG Galaxy Dark Blue";
+    expect(listColumns(55, [row(long)])).toMatchObject({ name: 40, printers: 12 });
+    expect(listColumns(55, [row(long)], true)).toMatchObject({ name: 40, printers: 11 });
+  });
+
+  it("sizes the printers column from the form its rows are shown in", () => {
+    const one = { name: "Acme PLA Red", printers: [X1C_04], edited: false, id: "P1" };
+    expect(listColumns(80, [one])).toMatchObject({ printers: 7 });
   });
 });
 
@@ -300,7 +318,7 @@ describe("presetDetail", () => {
       { label: "Max flow", value: "21 mm³/s" },
       { label: "Fan", value: "30–80%" },
       { label: "Density", value: "1.24 g/cm³" },
-      { label: "Price", value: "25 money/kg" },
+      { label: "Cost", value: "25 per kg" },
     ]);
   });
 
@@ -318,6 +336,50 @@ describe("presetDetail", () => {
       presetDetail({ fan_min_speed: ["100"], fan_max_speed: ["100"], filament_cost: ["0"] }),
     ).toEqual({ rows: [{ label: "Fan", value: "100%" }] });
   });
+
+  it("names the nozzle types of variants that differ, as BambuStudio lists them", () => {
+    const variants = {
+      filament_extruder_variant: ["Direct Drive Standard", "Direct Drive High Flow"],
+      nozzle_temperature: ["220", "220"],
+      filament_max_volumetric_speed: ["22", "29"],
+    };
+    expect(presetDetail(variants).rows).toEqual([
+      { label: "Nozzle", value: "220°C" },
+      { label: "Max flow", value: "standard 22 · high flow 29 mm³/s" },
+    ]);
+    expect(compactDetail(variants)).toEqual([
+      { label: "Nozzle", value: "220°C" },
+      { label: "Flow", value: "max standard 22 · high flow 29 mm³/s" },
+    ]);
+    const flow = { ...variants, filament_flow_ratio: ["0.98"], fan_max_speed: ["100"] };
+    expect(compactDetail(flow, 40)).toEqual([
+      { label: "Nozzle", value: "220°C" },
+      { label: "Flow", value: "ratio 0.98 · fan 100%" },
+      { label: "Max flow", value: "standard 22 · high flow 29 mm³/s" },
+    ]);
+  });
+});
+
+describe("wrapDetailRows", () => {
+  it("continues a value too long for its column on rows of its own, at · first, then at spaces", () => {
+    expect(
+      wrapDetailRows(
+        [
+          { label: "Max flow", value: "standard 22 · high flow 29 mm³/s", dim: true },
+          { label: "File", value: "eSUN PLA Matte @Bambu Lab X1 Carbon 0.6 nozzle.json" },
+          { label: "Fan", value: "100%" },
+        ],
+        24,
+      ),
+    ).toEqual([
+      { label: "Max flow", value: "standard 22 ·", dim: true },
+      { label: "", value: "high flow 29 mm³/s", dim: true },
+      { label: "File", value: "eSUN PLA Matte @Bambu" },
+      { label: "", value: "Lab X1 Carbon 0.6" },
+      { label: "", value: "nozzle.json" },
+      { label: "Fan", value: "100%" },
+    ]);
+  });
 });
 
 describe("compactDetail", () => {
@@ -326,7 +388,7 @@ describe("compactDetail", () => {
       { label: "Nozzle", value: "220°C · first 225°C · range 190–240°C" },
       { label: "Bed", value: "Textured 55°C · Smooth 60°C" },
       { label: "Flow", value: "ratio 0.98 · max 21 mm³/s · fan 30–80%" },
-      { label: "Filament", value: "1.24 g/cm³ · price 25 money/kg" },
+      { label: "Filament", value: "1.24 g/cm³ · cost 25 per kg" },
     ]);
     expect(compactDetail({ nozzle_temperature: ["220"] })).toEqual([
       { label: "Nozzle", value: "220°C" },
@@ -673,7 +735,6 @@ describe("saving", () => {
         },
       },
       { type: "app/load", resource: "presets", force: true },
-      { type: "app/toast", text: "Saved 1 preset of Acme PLA Red", tone: "ok" },
     ]);
     const back = (await drive(model, ctx, "esc")).model;
     expect(back.view).toBe("list");
@@ -719,7 +780,6 @@ describe("saving", () => {
       { type: "app/load", resource: "presets", force: true },
       { type: "app/load", resource: "console", force: true },
       { type: "app/load", resource: "check", force: true },
-      { type: "app/toast", text: "Saved 2 presets of Acme PLA Red", tone: "ok" },
     ]);
     expect(JSON.stringify(sent)).not.toContain(TEST_SECURITY_KEY);
   });
@@ -777,11 +837,8 @@ describe("saving", () => {
         ],
       },
     });
-    expect(sent.at(-1)).toEqual({
-      type: "app/toast",
-      text: "Saved 1 preset of Acme PLA Red, 1 failed",
-      tone: "failed",
-    });
+    // The review's own page says how it went: no toast on top of it.
+    expect(sent.some((msg) => msg.type === "app/toast")).toBe(false);
   });
 
   it("counts a key SpoolEase rejects while saving its range as a setup error, exit code 2", async () => {

@@ -4,7 +4,7 @@
 import type { Key } from "ink";
 import { describe, expect, it, vi } from "vitest";
 
-import { keyPress, letter, press, typed } from "../src/tui/core/keys.js";
+import { keyPress, keyPresses, letter, press, typed } from "../src/tui/core/keys.js";
 import { type Cmd, Program, send } from "../src/tui/core/program.js";
 
 type Msg = { type: "add"; n: number } | { type: "later" } | { type: "boom" } | { type: "error" };
@@ -131,5 +131,43 @@ describe("key helpers", () => {
     expect(letter(press("P"))).toBe("p");
     expect(letter(press("space"))).toBe("");
     expect(letter(press("ab"))).toBe("");
+  });
+});
+
+describe("keyPresses", () => {
+  const plain = (input: string) => ({ input, ctrl: false, shift: false, meta: false });
+
+  it("passes a single key through as one", () => {
+    expect(keyPresses("\t", { ...KEY, tab: true })).toEqual([
+      keyPress("\t", { ...KEY, tab: true }),
+    ]);
+    expect(keyPresses("q", KEY)).toEqual([plain("q")]);
+  });
+
+  it("splits keys a busy machine delivered in one read: tab then ?, ? then tab", () => {
+    expect(keyPresses("\t?", KEY)).toEqual([press("tab"), plain("?")]);
+    expect(keyPresses("?\t", KEY)).toEqual([plain("?"), press("tab")]);
+  });
+
+  it("splits ctrl+letter from the text after it", () => {
+    expect(keyPresses("\u000Bcatalog", KEY)).toEqual([
+      press("k", { ctrl: true }),
+      plain("catalog"),
+    ]);
+  });
+
+  it("keeps a scanner's burst ending in enter whole, and splits what follows it", () => {
+    expect(keyPresses("00150603Z\r", { ...KEY, return: true })).toEqual([plain("00150603Z\r")]);
+    expect(keyPresses("ab\rcd\t", KEY)).toEqual([plain("ab\r"), plain("cd"), press("tab")]);
+  });
+
+  it("keeps typed words as text, even ones that spell a key's name, and a lone space as space", () => {
+    expect(keyPresses("end\t", KEY)).toEqual([plain("end"), press("tab")]);
+    expect(keyPresses("\t \t", KEY)).toEqual([press("tab"), press("space"), press("tab")]);
+  });
+
+  it("reads a lone enter and backspace inside a burst as those keys", () => {
+    expect(keyPresses("\t\r", KEY)).toEqual([press("tab"), press("enter")]);
+    expect(keyPresses("\tx\u007F", KEY)).toEqual([press("tab"), plain("x"), press("backspace")]);
   });
 });

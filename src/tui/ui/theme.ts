@@ -18,6 +18,8 @@ export const COLORS = {
   selectionText: "#FFFFFF",
   /** Unfocused panel borders. */
   border: "gray",
+  /** The toast's row: a quiet bar, so the toast reads as one line of its own over whatever is under it. */
+  toast: "#2A2633",
 } as const;
 
 export type Tone = "ok" | "warning" | "failed" | "muted" | "accent";

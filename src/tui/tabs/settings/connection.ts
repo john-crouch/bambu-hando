@@ -37,7 +37,8 @@ export function printerLabel(printer: string): string {
 
 /** A printer's model and nozzle: "X1C 0.4" → ["X1C", 0.4]; no nozzle → NaN. */
 function modelAndNozzle(printer: string): [string, number] {
-  const short = shortPrinter(printer);
+  // "BBL X1C" is how BambuStudio names a printer in its own preset files.
+  const short = shortPrinter(printer).replace(/^BBL /, "");
   const match = /^(.*) (\d+(?:\.\d+)?)$/.exec(short);
   return match ? [match[1] ?? short, Number(match[2])] : [short, Number.NaN];
 }
@@ -62,4 +63,29 @@ export function shortPrinters(printers: readonly string[]): string {
   return [...models]
     .map(([model, nozzles]) => [model, nozzles.map(String).join(", ")].filter(Boolean).join(" "))
     .join(", ");
+}
+
+/** What a failed read of the console points at: the Settings row to look at, and what to check there. */
+export interface ConsoleProblem {
+  focus: "spoolease.host" | "spoolease.port" | "spoolease.key";
+  advice: string;
+}
+
+/** The likely cause of a console read's error (sync.ts checkKey's messages, fetch's causes). */
+export function consoleProblem(error: string): ConsoleProblem {
+  if (/key validation failed/i.test(error))
+    return {
+      focus: "spoolease.key",
+      advice:
+        "The console answered but refused the key: check the security key, or the port if something else answers there.",
+    };
+  if (/ECONNREFUSED/.test(error))
+    return {
+      focus: "spoolease.port",
+      advice: "Nothing answers on that port: check the port, 80 unless you changed it.",
+    };
+  return {
+    focus: "spoolease.host",
+    advice: "The console can't be reached: check the host, and that the console is on.",
+  };
 }
