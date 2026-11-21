@@ -21,6 +21,7 @@ import {
   plural,
   type Segment,
   TextField,
+  textWidth,
 } from "../../ui/index.js";
 import { swatchOf } from "./data.js";
 import { wrapText } from "./local.js";
@@ -100,75 +101,93 @@ function Stepper({ count }: { count: number }): Segment[] {
   ];
 }
 
+/** Prose wrapped to the dialog with a link at its end: on the last line when it fits there, else on its own. */
+function ProseLink({ text, url, width }: { text: string; url: string; width: number }) {
+  const lines = wrapText(text, width);
+  const last = lines.pop() ?? "";
+  const together = textWidth(`${last} ${url}`) <= width;
+  return (
+    <>
+      {lines.map((line, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one paragraph.
+        <Line key={index} segments={[{ text: line, color: COLORS.muted }]} width={width} />
+      ))}
+      {together ? null : <Line segments={[{ text: last, color: COLORS.muted }]} width={width} />}
+      <Text wrap="truncate-end">
+        {together ? <Text color={COLORS.muted}>{last} </Text> : null}
+        <LinkedText parts={[{ text: url, url }]} />
+      </Text>
+    </>
+  );
+}
+
+/** What a finished run did, in one line: every spool added, some, or none and why. */
+export function copyOutcome(dialog: CountDialog): {
+  text: string;
+  tone: "ok" | "warning" | "failed";
+} {
+  if (dialog.error) return { text: `✗ Nothing added: ${dialog.error}`, tone: "failed" };
+  const ids = dialog.results.flatMap((r) => (r.ok && r.id ? [`#${r.id}`] : []));
+  const created = dialog.results.filter((r) => r.ok).length;
+  const list = ids.length > 0 ? `: ${ids.join(", ")}` : "";
+  if (created === dialog.results.length)
+    return { text: `✓ ${plural(created, "spool")} added${list}`, tone: "ok" };
+  if (created === 0) return { text: "✗ No spools added", tone: "failed" };
+  return {
+    text: `! ${created} of ${plural(dialog.results.length, "spool")} added${list}`,
+    tone: "warning",
+  };
+}
+
+const TONE_COLOR = { ok: COLORS.ok, warning: COLORS.warning, failed: COLORS.failed } as const;
+
 function CountBody({ dialog, width }: { dialog: CountDialog; width: number }) {
   const { filament } = dialog;
-  const created = dialog.results.filter((r) => r.ok).length;
-  const failed = dialog.results.length - created;
+  const outcome = dialog.phase === "done" ? copyOutcome(dialog) : null;
   return (
     <>
       <FilamentHead filament={filament} width={width} />
       {blank(width)}
-      <Text wrap="truncate-end">
-        <Text color={COLORS.muted}>Copies of spool #{filament.spool.id} go to </Text>
-        <LinkedText parts={[{ text: dialog.url, url: dialog.url }]} />
-      </Text>
-      <Prose
-        text={`The console has ${plural(filament.count, "spool")} of this filament. Only spool records are added.`}
-        width={width}
-      />
-      {blank(width)}
       {dialog.phase === "choose" ? (
-        <Line
-          segments={[
-            { text: "How many  " },
-            ...Stepper({ count: dialog.count }),
-            { text: `  new ${dialog.count === 1 ? "spool" : "spools"}` },
-          ]}
-          width={width}
-        />
-      ) : (
         <>
-          {dialog.results.map((result, index) => (
-            <Line
-              // biome-ignore lint/suspicious/noArrayIndexKey: a failed copy has no ID; its number is its identity, and results only grow, in order.
-              key={index}
-              segments={
-                result.ok
-                  ? [{ text: `✓ spool #${result.id} added`, color: COLORS.ok }]
-                  : [
-                      {
-                        text: `✗ spool ${index + 1} of ${dialog.count}: ${result.error}`,
-                        color: COLORS.failed,
-                      },
-                    ]
-              }
-              width={width}
-            />
-          ))}
-          {dialog.phase === "running" ? (
-            <Busy
-              message={`Adding spool ${Math.min(dialog.results.length + 1, dialog.count)} of ${dialog.count}…`}
-            />
-          ) : dialog.error ? (
-            <Prose text={`✗ Nothing added: ${dialog.error}`} width={width} color={COLORS.failed} />
-          ) : (
-            <>
-              {blank(width)}
-              <Line
-                segments={[
-                  { text: `${created} added`, color: COLORS.ok, bold: true },
-                  ...(failed
-                    ? [
-                        { text: " · ", color: COLORS.muted },
-                        { text: `${failed} failed`, color: COLORS.failed, bold: true },
-                      ]
-                    : []),
-                ]}
+          <ProseLink
+            text={`Copies of spool #${filament.spool.id} (the newest spool of this filament) go to`}
+            url={dialog.url}
+            width={width}
+          />
+          <Prose
+            text={`The console has ${plural(filament.count, "spool")} of this filament. Only spool records are added.`}
+            width={width}
+          />
+          {blank(width)}
+          <Line
+            segments={[
+              { text: "How many  " },
+              ...Stepper({ count: dialog.count }),
+              { text: `  new ${dialog.count === 1 ? "spool" : "spools"}` },
+            ]}
+            width={width}
+          />
+        </>
+      ) : outcome ? (
+        <>
+          <Prose text={outcome.text} width={width} color={TONE_COLOR[outcome.tone]} />
+          {dialog.results.map((result, index) =>
+            result.ok ? null : (
+              <Prose
+                // biome-ignore lint/suspicious/noArrayIndexKey: a failed copy has no ID; its number is its identity.
+                key={index}
+                text={`✗ spool ${index + 1}: ${result.error}`}
                 width={width}
+                color={COLORS.failed}
               />
-            </>
+            ),
           )}
         </>
+      ) : (
+        <Busy
+          message={`Adding spool ${Math.min(dialog.results.length + 1, dialog.count)} of ${dialog.count}…`}
+        />
       )}
     </>
   );
@@ -209,7 +228,7 @@ function ScanBody({
             model.barcodes === null
               ? "Reading the barcodes bambu-hando knows…"
               : known > 0
-                ? `${known} known so far; a new one asks which filament it is, once.`
+                ? `${plural(known, "barcode")} known; a new one asks which filament it is, once.`
                 : "A new barcode asks which filament it is, once."
           }
           width={width}
@@ -305,11 +324,8 @@ function ChooseBody({
 function title(dialog: SpoolsDialogState): string {
   switch (dialog.kind) {
     case "count":
-      return dialog.phase === "choose"
-        ? "More spools like this one"
-        : dialog.phase === "running"
-          ? `Adding ${plural(dialog.count, "spool")}`
-          : `Added ${plural(dialog.count, "spool")}`;
+      // The body says what's happening and what happened; the title stays what the dialog is.
+      return "More spools like this one";
     case "scan":
       return "Scan a barcode";
     case "known":

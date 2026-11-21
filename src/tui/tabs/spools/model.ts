@@ -613,12 +613,16 @@ function onKey(model: SpoolsModel, key: KeyPress, ctx: Ctx): Step<SpoolsModel> {
   return model.filtering ? filterKey(model, key, ctx) : listKey(model, key, ctx);
 }
 
-/** What a finished copy run tells the session: summary lines, a toast, and the console to reload. */
+/**
+ * What a finished copy run tells the session: summary lines, the console to reload, and a toast when
+ * its dialog was closed (an open one shows the outcome itself).
+ */
 function copiesFinished(
   info: RunInfo,
   results: SpoolEaseWrite[],
   error: string,
   exitCode: 1 | 2 | undefined,
+  shown: boolean,
 ): Cmd<AppMsg> {
   const created = results.flatMap((r) => (r.ok ? [r.id] : []));
   const failed = results.length - created.length;
@@ -642,7 +646,11 @@ function copiesFinished(
     : failed > 0
       ? toast(`${failed} of ${plural(results.length, "spool")} of ${info.name} failed`, "failed")
       : toast(`${plural(created.length, "spool")} of ${info.name} added`, "ok");
-  return send<AppMsg>({ type: "app/runFinished", summary }, note, ...reloadMsgs);
+  return send<AppMsg>(
+    { type: "app/runFinished", summary },
+    ...(shown ? [] : [note]),
+    ...reloadMsgs,
+  );
 }
 
 function onMsg(model: SpoolsModel, msg: SpoolsMsg, ctx: Ctx): Step<SpoolsModel> {
@@ -672,16 +680,16 @@ function onMsg(model: SpoolsModel, msg: SpoolsMsg, ctx: Ctx): Step<SpoolsModel> 
       return withDialog(model, { ...dialog, results: [...dialog.results, msg.result] });
     case "spools/copiesDone": {
       const { [msg.run]: info, ...runs } = model.runs;
+      const shown = dialog?.kind === "count" && dialog.run === msg.run;
       const next: SpoolsModel = {
         ...model,
         runs,
-        dialog:
-          dialog?.kind === "count" && dialog.run === msg.run
-            ? { ...dialog, phase: "done", results: msg.results, error: msg.error }
-            : dialog,
+        dialog: shown
+          ? { ...dialog, phase: "done", results: msg.results, error: msg.error }
+          : dialog,
       };
       const known = info ?? { name: "the filament", count: msg.results.length, url: "" };
-      return [next, [copiesFinished(known, msg.results, msg.error, msg.exitCode)]];
+      return [next, [copiesFinished(known, msg.results, msg.error, msg.exitCode, shown)]];
     }
     case "spools/command":
       return act(model, msg.action, ctx);
@@ -764,12 +772,12 @@ export function dialogHints(dialog: Dialog): Hint[] {
       if (dialog.phase === "running") return [{ keys: "esc", label: "hide", primary: true }];
       if (dialog.phase === "done") {
         const created = dialog.results.filter((r) => r.ok).length;
+        // esc does what enter does here, so only enter is named.
         return [
           ...(created > 0
             ? [{ keys: "l", label: `labels for ${plural(created, "new spool")}`, primary: true }]
             : []),
-          { keys: "enter", label: "done", primary: true },
-          { keys: "esc", label: back },
+          { keys: "enter", label: dialog.back ? "scan another" : "done", primary: true },
         ];
       }
       return [

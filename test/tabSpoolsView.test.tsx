@@ -96,6 +96,19 @@ function expectExact(lines: string[], ctx: Ctx): void {
     expect(textWidth(line), `line ${index}: ${line}`).toBe(ctx.bodyColumns);
 }
 
+/** A dialog's text as one line of words: what's inside its borders, over whatever it covers. */
+function flat(lines: string[]): string {
+  return lines
+    .map((line) => {
+      const inside = line.slice(1, -1);
+      const first = inside.indexOf("│");
+      const last = inside.lastIndexOf("│");
+      return first >= 0 && last > first ? inside.slice(first + 1, last) : inside;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ");
+}
+
 const SIZES: [number, number][] = [
   [60, 20],
   [80, 24],
@@ -165,9 +178,13 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
     expectExact(lines, ctx);
     const text = lines.join("\n");
     expect(text).toContain("More spools like this one");
-    expect(text).toContain("Copies of spool #14 go to http://127.0.0.1");
+    // The spool copied is the filament's newest; prose wraps, so check it without the line breaks.
+    const prose = flat(lines);
+    expect(prose).toContain(
+      "Copies of spool #14 (the newest spool of this filament) go to http://127.0.0.1",
+    );
     expect(text).toContain("‹ 2 ›  new spools");
-    expect(text).toContain("The console has 1 spool of this filament.");
+    expect(prose).toContain("The console has 1 spool of this filament.");
     // Its keys are in the footer, not repeated in the dialog.
     expect(text).not.toContain("add 2 spools");
     expect(text).not.toContain("SECRETKEY");
@@ -181,7 +198,7 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       { type: "spools/copy", run, result: { ok: true, id: "15" } },
       ctx,
     )[0];
-    expect(tab(model, ctx).join("\n")).toContain("✓ spool #15 added");
+    expect(tab(model, ctx).join("\n")).toContain("Adding spool 2 of 2…");
     model = spoolsTab.update(
       model,
       {
@@ -195,10 +212,30 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       },
       ctx,
     )[0];
-    const text = tab(model, ctx).join("\n");
-    expect(text).toContain("✗ spool 2 of 2: storage full");
-    expect(text).toContain("1 added · 1 failed");
+    const lines = tab(model, ctx);
+    expectExact(lines, ctx);
+    const text = lines.join("\n");
+    // One outcome line, then why the failed one failed; the pre-write prose and count are gone.
+    expect(text).toContain("! 1 of 2 spools added: #15");
+    expect(text).toContain("✗ spool 2: storage full");
+    expect(text).toContain("More spools like this one");
+    expect(text).not.toContain("Added ");
+    expect(text).not.toContain("The console has");
     expect(text).not.toContain("labels for 1 new spool");
+  });
+
+  it("says a clean run in one line", () => {
+    let model = keys(start(ctx), ctx, "+", "up", "a");
+    const run = model.dialog?.kind === "count" ? model.dialog.run : 0;
+    const results = [
+      { ok: true, id: "15" },
+      { ok: true, id: "16" },
+    ];
+    model = spoolsTab.update(model, { type: "spools/copiesDone", run, results, error: "" }, ctx)[0];
+    const text = tab(model, ctx).join("\n");
+    expect(text).toContain("✓ 2 spools added: #15, #16");
+    expect(text).not.toContain("✓ spool #15");
+    expect(text).not.toContain("2 added");
   });
 
   it("draws the scan, known-barcode and choose dialogs", () => {
@@ -208,11 +245,14 @@ describe.each(SIZES)("the Spools tab at %ix%i", (columns, rows) => {
       { type: "spools/barcodes", barcodes },
       ctx,
     )[0];
-    let text = tab(keys(scan, ctx, "00"), ctx).join("\n");
+    const scanLines = tab(keys(scan, ctx, "00"), ctx);
+    let text = scanLines.join("\n");
     expect(text).toContain("Scan a barcode");
     expect(text).not.toContain("Scan the spool's barcode");
     expect(text).toContain("Barcode  00");
-    expect(text).toContain("1 known so far");
+    expect(flat(scanLines)).toContain(
+      "1 barcode known; a new one asks which filament it is, once.",
+    );
     text = tab(keys(scan, ctx, "0015\r"), ctx).join("\n");
     expect(text).toContain("Barcode 0015");
     expect(text).toContain("this barcode is");
