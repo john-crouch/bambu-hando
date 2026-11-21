@@ -127,8 +127,13 @@ export async function consoleSettings(
   const useKeyring = options.keyring ?? true;
   const [bambu, remembered] = await Promise.all([readSpoolEaseConfig(), loadTuiSettings()]);
   const saved = remembered.console ?? {};
-  const host = (flags["spoolease-host"] || env.SPOOLEASE_HOST || saved.host || bambu.host || "")
-    .trim();
+  const host = (
+    flags["spoolease-host"] ||
+    env.SPOOLEASE_HOST ||
+    saved.host ||
+    bambu.host ||
+    ""
+  ).trim();
   // tui.json's port, HTTPS and keyring key belong to its host; saved without one, to whichever console is used.
   const savedFits = !saved.host || sameHost(saved.host, host);
   let stored: Promise<string | null> | undefined;

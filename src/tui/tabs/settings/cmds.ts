@@ -9,7 +9,7 @@ import { listPrinters } from "../../../labelPdf.js";
 import {
   type LabelSettings,
   loadLabelSettings,
-  saveLabelSettings,
+  updateLabelSettings,
 } from "../../../labelSettings.js";
 import { bambuConfigDir, bambuUserRoot } from "../../../paths.js";
 import { keyringName, removeSecret, SECRETS, storeSecret } from "../../../secrets.js";
@@ -128,23 +128,20 @@ export function forgetKey(): Cmd<AppMsg> {
   };
 }
 
-/** Label saves, one after another, so each reads what the one before it wrote. */
-let labelSaves: Promise<unknown> = Promise.resolve();
-
 /**
  * Saves a change to the label settings, merged into labels.json as it is now (the labels overlay saves
  * there too), then reports what was saved, so the tab shows the file's settings, not a stale copy.
  */
 export function saveLabels(change: Partial<LabelSettings>): Cmd<AppMsg> {
   return async (dispatch) => {
-    const save = labelSaves.then(async () => {
-      const next = { ...(await loadLabelSettings()), ...change };
-      await saveLabelSettings(next);
-      return next;
-    });
-    labelSaves = save.catch(() => undefined);
     try {
-      dispatch(reply({ type: "settings/loaded", what: "labels", value: await save }));
+      dispatch(
+        reply({
+          type: "settings/loaded",
+          what: "labels",
+          value: await updateLabelSettings(change),
+        }),
+      );
     } catch (err) {
       dispatch({
         type: "app/toast",

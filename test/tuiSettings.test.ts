@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { writesSettled } from "../src/pendingWrites.js";
 import {
   loadTuiSettings,
   rememberConsole,
@@ -49,6 +50,36 @@ describe("TUI settings", () => {
 
     const saved = JSON.parse(await readFile(tuiSettingsPath(), "utf-8"));
     expect(lists).toContainEqual(saved.printers);
+  });
+
+  it.each([
+    ["saveTuiSettings", () => saveTuiSettings({ printers: ["A"] }), { printers: ["A"] }],
+    [
+      "rememberWeight",
+      () => rememberWeight("acme", { kind: "unspecified" }),
+      { weights: { acme: { kind: "unspecified" } } },
+    ],
+    ["rememberConsole", () => rememberConsole({ host: "h" }), { console: { host: "h" } }],
+  ])(
+    "lets %s finish before the exit, the read of tui.json before its write included",
+    async (_name, save, saved) => {
+      const saving = save();
+      // bin.ts waits on writesSettled before it exits: it must not come back while the save is still reading.
+      expect(await writesSettled()).toBe(true);
+      expect(JSON.parse(await readFile(tuiSettingsPath(), "utf-8"))).toMatchObject(saved);
+      await saving;
+    },
+  );
+
+  it("lets a save queued behind another finish before the exit", async () => {
+    const first = saveTuiSettings({ printers: ["A"] });
+    const second = rememberConsole({ host: "h" });
+    expect(await writesSettled()).toBe(true);
+    expect(JSON.parse(await readFile(tuiSettingsPath(), "utf-8"))).toEqual({
+      printers: ["A"],
+      console: { host: "h" },
+    });
+    await Promise.all([first, second]);
   });
 
   it("falls back to no printers for damaged files and values it doesn't know", async () => {

@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { writeAtomic } from "./atomicWrite.js";
 import { configDir } from "./paths.js";
+import { trackWrite } from "./pendingWrites.js";
 import type { WeightChoice } from "./spoolWeights.js";
 
 export interface TuiSettings {
@@ -83,8 +84,12 @@ export async function loadTuiSettings(path = tuiSettingsPath()): Promise<TuiSett
 /** Saves run one after another, each reading what the last one wrote, so none drops another's change. */
 let saving: Promise<unknown> = Promise.resolve();
 
+/**
+ * Runs a save after the ones before it. The whole save is tracked (`pendingWrites.ts`), its wait and its read of
+ * tui.json included, so a quit before its write starts still lets it finish.
+ */
 function serially<T>(work: () => Promise<T>): Promise<T> {
-  const run = saving.then(work, work);
+  const run = trackWrite(saving.then(work, work));
   saving = run.catch(() => undefined);
   return run;
 }
