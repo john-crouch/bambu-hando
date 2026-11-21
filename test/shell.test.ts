@@ -166,9 +166,13 @@ describe("tabs", () => {
     expect(model.active).toBe("presets");
     model = await drive(shell, model, key("tab", { shift: true }), key("tab", { shift: true }));
     expect(model.active).toBe("spools");
-    expect(seen(model, "spools")).toEqual(["key:down"]);
+    // Each tab hears it was shown, so it can load what it needs on its first visit.
+    expect(seen(model, "spools")).toEqual(["key:down", "app/switchTab"]);
+    expect(seen(model, "presets")).toEqual(["app/switchTab"]);
+    expect(seen(model, "add")).toEqual(["app/switchTab", "app/switchTab"]);
     model = await drive(shell, model, key("tab", { shift: true }));
     expect(model.active).toBe("settings");
+    expect(seen(model, "settings")).toEqual(["app/switchTab"]);
   });
 
   it("switches on app/switchTab and routes tab messages even to hidden tabs", async () => {
@@ -181,7 +185,7 @@ describe("tabs", () => {
     );
     expect(model.active).toBe("check");
     expect(seen(model, "presets")).toEqual(["presets/done"]);
-    expect(seen(model, "check")).toEqual([]);
+    expect(seen(model, "check")).toEqual(["app/switchTab"]);
   });
 
   it("sends resize to every tab and keeps the size", async () => {
@@ -325,7 +329,7 @@ describe("overlays", () => {
     model = await drive(shell, model, key("enter"));
     expect(model.overlay).toBeNull();
     expect(model.active).toBe("presets");
-    expect(seen(model, "presets")).toEqual(["thing"]);
+    expect(seen(model, "presets")).toEqual(["app/switchTab", "thing"]);
   });
 
   it("confirm applies with a and cancels with esc", async () => {

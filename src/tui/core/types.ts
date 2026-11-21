@@ -152,8 +152,9 @@ export interface TabModule<M> {
   title: string;
   init(ctx: Ctx, start: StartOptions): Step<M>;
   /**
-   * Keys (only those the shell doesn't take: see capturesText), the tab's own messages, resize, and
-   * app/loaded for any resource (so a tab can react when data arrives).
+   * Keys (only those the shell doesn't take: see capturesText), the tab's own messages, resize,
+   * app/loaded for any resource (so a tab can react when data arrives), and app/switchTab each time
+   * the tab is shown (so it can load what it needs on its first visit).
    */
   update(model: M, msg: AppMsg | TabMsg, ctx: Ctx): Step<M>;
   View(props: { model: M; ctx: Ctx }): ReactElement;

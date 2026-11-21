@@ -3,6 +3,8 @@
 
 import { execFile } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -197,6 +199,41 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
     expect(t.raw).toContain(SHOW_CURSOR);
     // The key never reaches the screen.
     expect(t.text).not.toContain(TEST_SECURITY_KEY);
+  });
+
+  it("quits on q right away, even while a SpoolmanDB download is still waiting for an answer", async () => {
+    let asked = 0;
+    // A catalog server that takes the request and never answers it.
+    const hanging: Server = createServer(() => {
+      asked += 1;
+    });
+    await new Promise<void>((resolve) => hanging.listen(0, "127.0.0.1", resolve));
+    const { port } = hanging.address() as AddressInfo;
+    try {
+      terminal = new Terminal(["--source", "spoolmandb", "--skip-spoolease"], {
+        HOME: home,
+        SPOOLMANDB_URL: `http://127.0.0.1:${port}`,
+      });
+      await terminal.waitFor("SpoolEase skipped");
+      // The palette's reload asks for the catalog whatever the Add tab does on its own.
+      await terminal.pressEach("\u000B", ..."catalog");
+      // The drawn screen, not the output stream: Ink redraws only the changed part of a line.
+      await terminal.waitForScreen(
+        (lines) => lines.some((line) => line.includes("Reload the SpoolmanDB catalog")),
+        "the palette's catalog reload",
+      );
+      await terminal.pressEach("\r");
+      await terminal.waitForScreen(() => asked > 0, "the catalog request");
+      await terminal.pressEach("q");
+      const quit = await Promise.race([
+        terminal.exited,
+        new Promise<string>((resolve) => setTimeout(() => resolve("still running"), 3_000)),
+      ]);
+      expect(quit).toBe(0);
+    } finally {
+      hanging.closeAllConnections();
+      await new Promise((resolve) => hanging.close(resolve));
+    }
   });
 
   it("lands on Add without a console, and says the console is skipped", async () => {

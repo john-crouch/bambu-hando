@@ -271,6 +271,11 @@ export function createShell(deps: ShellDeps) {
     return toAll(setResource(model, id, kept), { type: "app/loaded", resource: id, result: kept });
   }
 
+  /** Makes a tab the active one and tells it, so it can load what it needs on its first visit. */
+  function show(model: ShellModel, tab: TabId): Step {
+    return toTab({ ...model, active: tab }, tab, { type: "app/switchTab", tab });
+  }
+
   function onKey(model: ShellModel, key: KeyPress): Step {
     const msg: AppMsg = { type: "key", key };
     if (model.overlay) return toOverlay(model, msg);
@@ -278,7 +283,7 @@ export function createShell(deps: ShellDeps) {
       const at = TAB_ORDER.indexOf(model.active);
       const step = key.shift ? -1 : 1;
       const next = TAB_ORDER[(at + step + TAB_ORDER.length) % TAB_ORDER.length] as TabId;
-      return [{ ...model, active: next }, []];
+      return show(model, next);
     }
     if (isCtrl(key, "k")) return open(model, "palette", paletteItems(model));
     if (!capturing(model) && !key.name && !key.ctrl && !key.meta) {
@@ -343,7 +348,7 @@ export function createShell(deps: ShellDeps) {
       case "overlay":
         return toOverlay(model, msg.msg);
       case "app/switchTab":
-        return [{ ...model, active: msg.tab }, []];
+        return show(model, msg.tab);
       case "app/load":
         if (!msg.force && model.requested.includes(msg.resource)) return [model, []];
         return load(model, msg.resource);
