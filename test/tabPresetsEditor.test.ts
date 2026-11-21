@@ -318,6 +318,39 @@ describe("variants", () => {
     expect(editorTakes(flow())).toBe("a number, 0.1–200; one value for every nozzle type");
     expect(editorTakes(keys(flow(), "up").model)).toBe("a number, 0.01–2");
   });
+
+  it("records no edit for a field confirmed as it was: its variants stay apart", () => {
+    expect(keys(flow(), "enter", "enter").model.edits.size).toBe(0);
+    // Stepped there and back, or against its bound, is no change either.
+    expect(keys(flow(), "enter", "right", "left", "enter").model.edits.size).toBe(0);
+    const top = { ...VARIANTS, filament_max_volumetric_speed: ["200", "29"] };
+    const atTop = keys(
+      initEditor({ name: "Acme", printer: "", original: top, mode: "preset" }),
+      "right",
+      "right",
+      "down",
+      "enter",
+      "right",
+      "enter",
+    ).model;
+    expect(atTop.edits.size).toBe(0);
+    // A value that really changes still goes into every variant.
+    const set = keys(flow(), "enter", "right", "enter").model;
+    expect(set.edits.get("filament_max_volumetric_speed")).toEqual({ every: "22.5" });
+  });
+
+  it("records no edit for a printer's-value field confirmed empty", () => {
+    const nil: Preset = { ...VARIANTS, filament_retraction_length: ["nil", "0.4"] };
+    const model = initEditor({ name: "Acme", printer: "", original: nil, mode: "preset" });
+    const page = EDITOR_GROUPS.indexOf("Retraction");
+    const on = keys(model, ...Array(page).fill("right")).model;
+    const row = editorRows(on).findIndex((r) => r.key === "filament_retraction_length");
+    const at = keys(on, ...Array(row).fill("down")).model;
+    expect(editorCurrentRow(at)?.key).toBe("filament_retraction_length");
+    expect(keys(at, "enter", "enter").model.edits.size).toBe(0);
+    const typed = keys(at, "enter", "1", "enter").model;
+    expect(typed.edits.get("filament_retraction_length")).toEqual({ every: "1" });
+  });
 });
 
 describe("editorWarning", () => {

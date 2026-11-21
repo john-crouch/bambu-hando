@@ -409,6 +409,9 @@ function refuse(model: EditorModel, message: string): EditorStep {
 function commit(model: EditorModel, text: TextState): EditorStep {
   const row = currentRow(model);
   if (!row) return { model: { ...model, text: null } };
+  // Confirmed as it started (enter, or stepped back): no edit, so variants that differ stay apart.
+  if (row.field && text.value === fieldText(row.field, editedPreset(model)[row.key]))
+    return { model: { ...model, text: null, selected: false, error: "" } };
   const parsed = row.field
     ? (() => {
         const result = parseField(row.field, text.value);
