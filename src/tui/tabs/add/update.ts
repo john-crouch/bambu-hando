@@ -67,14 +67,20 @@ export function update(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result 
     const wrapped = msg as Extract<AppMsg, { type: "tab" }>;
     return wrapped.tab === "add" ? update(model, wrapped.msg, ctx) : none(model);
   }
-  const [synced, syncCmds] = syncSources(model, ctx);
+  // Keys and palette commands mean Add is in use: the moment to load SpoolmanDB if nobody has.
+  const used =
+    msg.type === "key" ||
+    msg.type === "paste" ||
+    msg.type === "add/openSearch" ||
+    msg.type === "add/review";
+  const [synced, syncCmds] = syncSources(model, ctx, used);
   const [next, cmds] = route(synced, msg, ctx);
   return [next, [...syncCmds, ...cmds]];
 }
 
 /** Follows the settings' import source, and asks for the catalog once. */
-function syncSources(model: AddModel, ctx: Ctx): Result {
-  const [requested, cmds] = requestCatalog(model, ctx);
+function syncSources(model: AddModel, ctx: Ctx, used: boolean): Result {
+  const [requested, cmds] = used ? requestCatalog(model, ctx) : none(model);
   const wanted = importSourceOf(ctx.values);
   if (wanted === requested.imported.source) return [requested, cmds];
   const selected = new Set([...requested.selected].filter((key) => !key.startsWith("import:")));

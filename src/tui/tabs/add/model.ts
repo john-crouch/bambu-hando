@@ -9,6 +9,7 @@ import type { WeightChoice, WeightGroup } from "../../../spoolWeights.js";
 import type { SyncStage } from "../../../sync.js";
 import { send } from "../../core/program.js";
 import type { AppMsg, Ctx, Resource, StartOptions, Step } from "../../core/types.js";
+import type { FormValues } from "../../core/values.js";
 import type { TextState } from "../../ui/textField.js";
 import {
   type Entry,
@@ -21,6 +22,7 @@ import {
 import { importCmd } from "./cmds.js";
 import type { ColorDialog } from "./color.js";
 import type { RowProgress } from "./plan.js";
+import { consoleSetup } from "./targets.js";
 
 export type PageId = "find" | "weights" | "review" | "run";
 
@@ -151,11 +153,26 @@ function catalogOf(resource: Resource<Catalog>): Catalog | null {
   return null;
 }
 
-/** The catalog's profiles plus the session's own colors (unless the catalog has them by now). */
+const NO_PROFILES: FilamentProfile[] = [];
+
+let lastDb: {
+  listed: FilamentProfile[];
+  extra: FilamentProfile[];
+  profiles: FilamentProfile[];
+} | null = null;
+
+/**
+ * The catalog's profiles plus the session's own colors (unless the catalog has them by now). The same
+ * catalog and colors give the same array, which catalog.ts indexes once.
+ */
 export function dbProfiles(model: AddModel, ctx: Ctx): FilamentProfile[] {
-  const listed = catalogOf(ctx.resources.catalog)?.profiles ?? [];
+  const listed = catalogOf(ctx.resources.catalog)?.profiles ?? NO_PROFILES;
+  if (model.extra.length === 0) return listed;
+  if (lastDb && lastDb.listed === listed && lastDb.extra === model.extra) return lastDb.profiles;
   const ids = new Set(listed.map((p) => p.filamentId));
-  return [...listed, ...model.extra.filter((p) => !ids.has(p.filamentId))];
+  const profiles = [...listed, ...model.extra.filter((p) => !ids.has(p.filamentId))];
+  lastDb = { listed, extra: model.extra, profiles };
+  return profiles;
 }
 
 export function catalogWarnings(ctx: Ctx): string[] {
@@ -187,6 +204,16 @@ export function importModel(source: string | null): ImportModel {
   return { source, state: source === null ? "none" : "loading", profiles: [], error: "" };
 }
 
+/**
+ * Whether the app opens on Add: something to add was given, or there's no console to show (the shell's
+ * landing rule). Only then is SpoolmanDB loaded right away; elsewhere, on Add's first key.
+ */
+export function landsOnAdd(values: FormValues, start: StartOptions): boolean {
+  return (
+    start.query.trim() !== "" || values.source.trim() !== "" || consoleSetup(values) !== "ready"
+  );
+}
+
 export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
   const source = importSourceOf(ctx.values);
   const query = start.query.trim();
@@ -208,6 +235,9 @@ export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
     notice: "",
     catalogRequested: false,
   };
-  const [requested, cmds] = requestCatalog(model, ctx);
+  // SpoolmanDB is a download: fetched now only when the app opens on Add, else on Add's first key.
+  const [requested, cmds] = landsOnAdd(ctx.values, start)
+    ? requestCatalog(model, ctx)
+    : [model, []];
   return [requested, [...cmds, ...(source === null ? [] : [importCmd(source)])]];
 }

@@ -70,8 +70,39 @@ export interface Entry {
 const byName = (a: string, b: string): number =>
   a.localeCompare(b, undefined, { sensitivity: "base" });
 
+/**
+ * The catalog indexed once per profiles array (the shell's catalog plus the session's colors), so
+ * lists, counts and the selection never walk thousands of profiles on every key and frame.
+ */
+interface CatalogIndex {
+  entries: Entry[];
+  /** Selection key → the entry and its position in the catalog. */
+  byKey: Map<string, { entry: Entry; position: number }>;
+  /** Brand → its entries, brands sorted by name. */
+  byBrand: Map<string, Entry[]>;
+}
+
+const indexes = new WeakMap<readonly FilamentProfile[], CatalogIndex>();
+
+function catalogIndex(db: readonly FilamentProfile[]): CatalogIndex {
+  const cached = indexes.get(db);
+  if (cached) return cached;
+  const entries = db.map((profile) => ({ key: dbKey(profile), profile, origin: "db" as const }));
+  const byKey = new Map(entries.map((entry, position) => [entry.key, { entry, position }]));
+  const brands = new Map<string, Entry[]>();
+  for (const entry of entries) {
+    const list = brands.get(entry.profile.brand) ?? [];
+    list.push(entry);
+    brands.set(entry.profile.brand, list);
+  }
+  const byBrand = new Map([...brands].sort(([a], [b]) => byName(a, b)));
+  const index = { entries, byKey, byBrand };
+  indexes.set(db, index);
+  return index;
+}
+
 function dbEntries(sources: Sources): Entry[] {
-  return sources.db.map((profile) => ({ key: dbKey(profile), profile, origin: "db" as const }));
+  return catalogIndex(sources.db).entries;
 }
 
 function importEntries(sources: Sources): Entry[] {
@@ -80,6 +111,17 @@ function importEntries(sources: Sources): Entry[] {
     profile,
     origin: "import" as const,
   }));
+}
+
+/** The ticked catalog entries, found by key: as many lookups as ticks, not a walk over the catalog. */
+function tickedDb(sources: Sources, selected: ReadonlySet<string>) {
+  const { byKey } = catalogIndex(sources.db);
+  const found: { entry: Entry; position: number }[] = [];
+  for (const key of selected) {
+    const hit = byKey.get(key);
+    if (hit) found.push(hit);
+  }
+  return found.sort((a, b) => a.position - b.position).map((hit) => hit.entry);
 }
 
 /** Distinct values of pick, sorted, with how many entries and ticked entries have each. */
@@ -107,19 +149,22 @@ function colorLabel(profile: FilamentProfile): string {
   return profile.colorName || profile.name;
 }
 
+function ofBrand(sources: Sources, brand: string): Entry[] {
+  return catalogIndex(sources.db).byBrand.get(brand) ?? [];
+}
+
 function ofMaterial(sources: Sources, brand: string, material: string): Entry[] {
-  return dbEntries(sources).filter(
-    (e) => e.profile.brand === brand && e.profile.material === material,
-  );
+  return ofBrand(sources, brand).filter((e) => e.profile.material === material);
 }
 
 /** The materials a brand has, sorted. */
 export function materialsOf(sources: Sources, brand: string): string[] {
-  return groups(
-    dbEntries(sources).filter((e) => e.profile.brand === brand),
-    (p) => p.material,
-    new Set(),
-  ).map((g) => g.label);
+  return groups(ofBrand(sources, brand), (p) => p.material, new Set()).map((g) => g.label);
+}
+
+/** How many brands the catalog has. */
+export function brandCount(sources: Sources): number {
+  return catalogIndex(sources.db).byBrand.size;
 }
 
 export function levelRows(
@@ -127,18 +172,16 @@ export function levelRows(
   sources: Sources,
   selected: ReadonlySet<string>,
 ): FindRow[] {
-  const ticked = (entries: Entry[]) => entries.filter((e) => selected.has(e.key)).length;
   switch (level.kind) {
     case "root": {
-      const db = dbEntries(sources);
       const imported = importEntries(sources);
       return [
         {
           kind: "source",
           source: "db",
           label: SPOOLMANDB_LABEL,
-          count: db.length,
-          ticked: ticked(db),
+          count: sources.db.length,
+          ticked: tickedDb(sources, selected).length,
         },
         ...(sources.importName === null
           ? []
@@ -148,22 +191,27 @@ export function levelRows(
                 source: "import" as const,
                 label: sources.importName,
                 count: imported.length,
-                ticked: ticked(imported),
+                ticked: imported.filter((e) => selected.has(e.key)).length,
               },
             ]),
       ];
     }
-    case "brands":
-      return groups(dbEntries(sources), (p) => p.brand, selected).map((g) => ({
+    case "brands": {
+      const ticked = new Map<string, number>();
+      for (const entry of tickedDb(sources, selected))
+        ticked.set(entry.profile.brand, (ticked.get(entry.profile.brand) ?? 0) + 1);
+      return [...catalogIndex(sources.db).byBrand].map(([label, entries]) => ({
         kind: "brand" as const,
+        label,
+        count: entries.length,
+        ticked: ticked.get(label) ?? 0,
+      }));
+    }
+    case "materials":
+      return groups(ofBrand(sources, level.brand), (p) => p.material, selected).map((g) => ({
+        kind: "material" as const,
         ...g,
       }));
-    case "materials":
-      return groups(
-        dbEntries(sources).filter((e) => e.profile.brand === level.brand),
-        (p) => p.material,
-        selected,
-      ).map((g) => ({ kind: "material" as const, ...g }));
     case "colors":
       return [
         ...ofMaterial(sources, level.brand, level.material)
@@ -176,17 +224,27 @@ export function levelRows(
   }
 }
 
+let lastSearch: { db: readonly FilamentProfile[]; query: string; rows: FindRow[] } | null = null;
+
 /** Catalog profiles whose names have every word of the query, in catalog order. */
 export function searchRows(sources: Sources, query: string): FindRow[] {
+  // Asked several times per key and frame with the same catalog and query: keep the last answer.
+  if (lastSearch && lastSearch.db === sources.db && lastSearch.query === query)
+    return lastSearch.rows;
   const matches = new Set(filterProfiles(sources.db, { brand: "", material: "", match: query }));
-  return dbEntries(sources)
+  const rows = dbEntries(sources)
     .filter((e) => matches.has(e.profile))
     .map((e) => colorRow(e, e.profile.name));
+  lastSearch = { db: sources.db, query, rows };
+  return rows;
 }
 
 /** The ticked profiles a run gets: imported ones in file order, then the catalog's in its order. */
 export function selectedEntries(sources: Sources, selected: ReadonlySet<string>): Entry[] {
-  return [...importEntries(sources), ...dbEntries(sources)].filter((e) => selected.has(e.key));
+  return [
+    ...importEntries(sources).filter((e) => selected.has(e.key)),
+    ...tickedDb(sources, selected),
+  ];
 }
 
 /** "3 ticked: Acme PLA ×2 · Sunlu PLA", or "" when nothing is. */
@@ -278,7 +336,7 @@ export function findDetail(
           title: row.label,
           lines: [`${plural(row.count, "filament")} to import`],
         };
-      const brands = new Set(sources.db.map((p) => p.brand)).size;
+      const brands = brandCount(sources);
       return {
         kind: "source",
         title: row.label,
