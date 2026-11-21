@@ -54,11 +54,15 @@ export function SpoolCopies({ filament, count, target, results, running, outcome
       </Box>
       {(results ?? []).map((result, index) =>
         result.ok ? (
-          <Text key={index} color="green">
+          <Text key={`added-${result.id}`} color="green">
             ✓ spool #{result.id} added
           </Text>
         ) : (
-          <Text key={index} color="red">
+          <Text
+            // biome-ignore lint/suspicious/noArrayIndexKey: a failed copy has no spool ID; its copy number (index + 1, shown in the row) is its identity, and results only grow, in order.
+            key={`failed-${index}`}
+            color="red"
+          >
             ✗ spool {index + 1} of {count}: {result.error}
           </Text>
         ),

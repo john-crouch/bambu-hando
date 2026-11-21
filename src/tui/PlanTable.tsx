@@ -153,7 +153,10 @@ export function PlanTable({
           high: profile.nozzleTempMax,
         };
         return (
-          <Box key={`${index}-${profile.name}`}>
+          <Box
+            // biome-ignore lint/suspicious/noArrayIndexKey: profiles aren't deduplicated (a JSON source can repeat a name or filament ID), so the row's position is part of its identity; the list never reorders while shown.
+            key={`${index}-${profile.name}`}
+          >
             <Box width={COLUMNS.swatch}>
               <Text backgroundColor={`#${profile.colorRgba.slice(0, 6)}`}>{"  "}</Text>
             </Box>

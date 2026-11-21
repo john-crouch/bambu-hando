@@ -70,7 +70,9 @@ export function spoolListInput(
       : { type: "none" };
   if (key.tab)
     return next({
-      sort: INVENTORY_SORTS[(INVENTORY_SORTS.indexOf(state.sort) + 1) % INVENTORY_SORTS.length]!,
+      sort:
+        INVENTORY_SORTS[(INVENTORY_SORTS.indexOf(state.sort) + 1) % INVENTORY_SORTS.length] ??
+        state.sort,
       cursor: 0,
     });
   const moved = listMove(state.cursor, key, count, rows);

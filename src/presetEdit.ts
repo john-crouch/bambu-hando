@@ -221,13 +221,17 @@ export function parseField(field: EditField, text: string): { value: string } | 
   switch (field.kind) {
     case "int": {
       const n = Number(typed);
-      if (!/^-?\d+$/.test(typed) || n < field.min! || n > field.max!)
+      if (!/^-?\d+$/.test(typed) || n < (field.min ?? -Infinity) || n > (field.max ?? Infinity))
         return { error: `${field.label}: type a whole number ${rangeText(field)}` };
       return { value: String(n) };
     }
     case "decimal": {
       const n = Number(typed);
-      if (!/^-?(\d+\.?\d*|\.\d+)$/.test(typed) || n < field.min! || n > field.max!)
+      if (
+        !/^-?(\d+\.?\d*|\.\d+)$/.test(typed) ||
+        n < (field.min ?? -Infinity) ||
+        n > (field.max ?? Infinity)
+      )
         return { error: `${field.label}: type a number ${rangeText(field)}` };
       return { value: String(n) };
     }
@@ -237,9 +241,9 @@ export function parseField(field: EditField, text: string): { value: string } | 
       return { error: `${field.label}: on or off` };
     case "color": {
       if (!typed) return { value: "" };
-      const match = /^#?([0-9a-f]{6})$/i.exec(typed);
-      return match
-        ? { value: `#${match[1]!.toUpperCase()}` }
+      const hex = /^#?([0-9a-f]{6})$/i.exec(typed)?.[1];
+      return hex
+        ? { value: `#${hex.toUpperCase()}` }
         : { error: `${field.label}: type 6 hex digits, such as AD0000, or nothing for none` };
     }
     case "text":
@@ -258,8 +262,9 @@ function differs(list: string[]): boolean {
 export function rawText(value: unknown): string | null {
   if (typeof value === "string") return escapeText(value);
   if (!Array.isArray(value) || !value.every((v) => typeof v === "string")) return null;
-  if (value.length === 0) return "";
-  return differs(value) ? JSON.stringify(value) : escapeText(value[0]!);
+  const [first] = value;
+  if (first === undefined) return "";
+  return differs(value) ? JSON.stringify(value) : escapeText(first);
 }
 
 /** Reads raw text back the way rawText showed the current value. */
@@ -415,9 +420,9 @@ export interface EditResult {
 
 /** Which of the edits didn't fit the preset (applyEdits' skipped), and why. */
 export function skippedDetail(preset: Preset, edits: Edits, skipped: string[]): string {
-  return skipped
-    .map((key) => {
-      const edit = edits.get(key)!;
+  return [...edits]
+    .filter(([key]) => skipped.includes(key))
+    .map(([key, edit]) => {
       const current = preset[key];
       const wanted = "each" in edit ? edit.each.length : 1;
       const why =

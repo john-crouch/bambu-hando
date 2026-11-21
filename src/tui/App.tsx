@@ -453,7 +453,10 @@ export function App({ initial, onExit }: Props) {
       items,
       multi: false,
       state: initialChoiceState(items, []),
-      onDone: ([id]) => void openPlanned(plan, plan.profiles.find((p) => p.filamentId === id)!),
+      onDone: ([id]) => {
+        const profile = plan.profiles.find((p) => p.filamentId === id);
+        if (profile) void openPlanned(plan, profile);
+      },
       onCancel: () => setScreen(plan),
     });
   }
@@ -528,11 +531,11 @@ export function App({ initial, onExit }: Props) {
       setWeightWarnings(warnings);
       const groups = weightGroups(profiles, entries);
       const prompts = groups.filter((g) => g.options.length !== 1);
-      if (prompts.length === 0) {
+      const [first] = prompts;
+      if (!first) {
         await showPlan(applyWeights(profiles, groups, weightChoices));
         return;
       }
-      const first = prompts[0]!;
       const cursor = itemIndex(
         weightItems(first, profiles, sourceName),
         weightChoices.get(first.key),
@@ -761,7 +764,10 @@ export function App({ initial, onExit }: Props) {
       items,
       multi: false,
       state: initialChoiceState(items, current ? [current] : []),
-      onDone: ([code]) => chooseCopyCount(filaments, filaments.find((f) => f.code === code)!, 1),
+      onDone: ([code]) => {
+        const filament = filaments.find((f) => f.code === code);
+        if (filament) chooseCopyCount(filaments, filament, 1);
+      },
       onCancel: home,
     });
   }
@@ -904,7 +910,8 @@ export function App({ initial, onExit }: Props) {
       multi: false,
       state: initialChoiceState(items, []),
       onDone: ([code]) => {
-        const filament = filaments.find((f) => f.code === code)!;
+        const filament = filaments.find((f) => f.code === code);
+        if (!filament) return;
         rememberBarcode(barcode, { code: filament.code, name: filament.name }).then(
           () => chooseCopyCount(filaments, filament, 1, back),
           (err: unknown) =>
@@ -1433,26 +1440,26 @@ export function App({ initial, onExit }: Props) {
       }
     } else if (screen.name === "weights") {
       const { profiles, groups, prompts, step } = screen;
-      const items = weightItems(prompts[step]!, profiles, sourceName);
+      const prompt = prompts[step];
+      if (!prompt) return;
+      const items = weightItems(prompt, profiles, sourceName);
       const action = weightInput(screen.cursor, key, items.length);
-      const cursorFor = (index: number, choices: ReadonlyMap<string, WeightChoice>): number =>
-        itemIndex(
-          weightItems(prompts[index]!, profiles, sourceName),
-          choices.get(prompts[index]!.key),
-        );
+      const cursorFor = (group: WeightGroup, choices: ReadonlyMap<string, WeightChoice>): number =>
+        itemIndex(weightItems(group, profiles, sourceName), choices.get(group.key));
       if (action.type === "move") {
         setScreen({ ...screen, cursor: action.cursor });
       } else if (action.type === "back") {
-        if (step === 0) back();
-        else setScreen({ ...screen, step: step - 1, cursor: cursorFor(step - 1, weightChoices) });
+        const previous = prompts[step - 1];
+        if (!previous) back();
+        else setScreen({ ...screen, step: step - 1, cursor: cursorFor(previous, weightChoices) });
       } else if (action.type === "choose") {
-        const choices = new Map(weightChoices).set(
-          prompts[step]!.key,
-          items[screen.cursor]!.choice,
-        );
+        const item = items[screen.cursor];
+        if (!item) return;
+        const choices = new Map(weightChoices).set(prompt.key, item.choice);
         setWeightChoices(choices);
-        if (step + 1 < prompts.length)
-          setScreen({ ...screen, step: step + 1, cursor: cursorFor(step + 1, choices) });
+        const following = prompts[step + 1];
+        if (following)
+          setScreen({ ...screen, step: step + 1, cursor: cursorFor(following, choices) });
         else void showPlan(applyWeights(profiles, groups, choices));
       }
     } else if (screen.name === "plan") {
@@ -1540,8 +1547,8 @@ export function App({ initial, onExit }: Props) {
       if (action.type === "update") setScreen({ ...screen, state: action.state });
       else if (action.type === "back") home();
       else if (action.type === "choose") {
-        const row = rows[action.index]!;
-        chooseSpoolAction(screen, row.spool, row.name);
+        const row = rows[action.index];
+        if (row) chooseSpoolAction(screen, row.spool, row.name);
       }
     } else if (screen.name === "ids") {
       if (screen.running) return;
@@ -1570,7 +1577,10 @@ export function App({ initial, onExit }: Props) {
       );
       if (action.type === "update") setScreen({ ...screen, state: action.state });
       else if (action.type === "back") home();
-      else if (action.type === "choose") void openPreset(screen, matches[action.index]!);
+      else if (action.type === "choose") {
+        const match = matches[action.index];
+        if (match) void openPreset(screen, match);
+      }
     } else if (screen.name === "edit") {
       const action = presetFormInput(
         screen.form,
@@ -1679,6 +1689,7 @@ export function App({ initial, onExit }: Props) {
   }
 
   if (screen.name === "weights") {
+    // biome-ignore lint/style/noNonNullAssertion: step is always an index into prompts: the screen opens at 0 only when prompts has a first group, and the input handler moves it only onto a group that exists.
     const group = screen.prompts[screen.step]!;
     return (
       <WeightMenu

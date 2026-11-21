@@ -75,16 +75,16 @@ function drawLabel(doc: PDFKit.PDFDocument, label: LabelContent, size: LabelSize
 
   // Scale every line together so the block fits the label's height, then fit each line's width.
   const scale = height / REFERENCE_HEIGHT;
-  const wanted = label.lines.map((line) => SIZES[line.style] * scale);
-  const total = wanted.reduce((sum, s) => sum + s * LINE_HEIGHT, 0);
+  const wanted = label.lines.map((line) => ({ line, size: SIZES[line.style] * scale }));
+  const total = wanted.reduce((sum, w) => sum + w.size * LINE_HEIGHT, 0);
   const shrink = Math.min(1, boxHeight / total);
-  const lines = label.lines.map((line, i) => ({
+  const lines = wanted.map(({ line, size }) => ({
     font: FONTS[line.style],
     ...fitLine(
       doc,
       line.text,
       FONTS[line.style],
-      Math.max(MIN_FONT_SIZE, wanted[i]! * shrink),
+      Math.max(MIN_FONT_SIZE, size * shrink),
       textWidth,
     ),
   }));

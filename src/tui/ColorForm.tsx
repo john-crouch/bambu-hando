@@ -60,8 +60,8 @@ export function colorVariant(
 
 /** The "#RRGGBB" typed so far, when it is one; for the live swatch. */
 export function typedColor(hex: string): string | null {
-  const match = HEX.exec(hex.trim());
-  return match ? `#${match[1]!.toUpperCase()}` : null;
+  const digits = HEX.exec(hex.trim())?.[1];
+  return digits ? `#${digits.toUpperCase()}` : null;
 }
 
 /** Whether keys go into free text, where ? is typed rather than opening help: the name (a hex color never has one). */

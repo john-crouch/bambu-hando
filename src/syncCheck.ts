@@ -105,8 +105,8 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
   });
 
   const presetIds = new Set(presets.map((p) => p.filamentId));
-  const presetsOnly = new Map<string, UserPreset[]>();
-  const presetsNoId = new Map<string, UserPreset[]>();
+  const presetsOnly = new Map<string, [UserPreset, ...UserPreset[]]>();
+  const presetsNoId = new Map<string, [UserPreset, ...UserPreset[]]>();
   for (const preset of presets) {
     if (names.has(preset.filamentId)) continue;
     const [groups, key] = preset.filamentId
@@ -153,7 +153,7 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
       why: "Fine for filaments you only use in BambuStudio; sync one to give its spools a preset in the AMS.",
       problem: false,
       items: [...presetsOnly.values()]
-        .map((group) => `${group[0]!.name} (${group[0]!.filamentId}) · ${printersOf(group)}`)
+        .map((group) => `${group[0].name} (${group[0].filamentId}) · ${printersOf(group)}`)
         .sort(byName),
     },
     {
@@ -162,7 +162,7 @@ export function checkSync({ presets, csv, spools }: CheckInput): CheckSection[] 
       why: 'Their filament_id is missing or "null", so no spool can ever be matched to them.',
       problem: false,
       items: [...presetsNoId.values()]
-        .map((group) => `${group[0]!.name} · ${printersOf(group)}`)
+        .map((group) => `${group[0].name} · ${printersOf(group)}`)
         .sort(byName),
     },
     {

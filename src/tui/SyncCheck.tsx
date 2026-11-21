@@ -90,6 +90,7 @@ export function SyncCheck({ sections, top, compared, warnings, fixable = 0, heig
         {top > 0 ? <Text dimColor>… {top} above</Text> : null}
         {shown.map((line, index) => (
           <Text
+            // biome-ignore lint/suspicious/noArrayIndexKey: the key is the line's position in the whole list (top + index), which stays with the line while scrolling; lines can repeat text.
             key={top + index}
             wrap="truncate-end"
             color={TONES[line.tone].color}

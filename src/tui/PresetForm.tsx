@@ -204,7 +204,8 @@ export function PresetForm({
     const index = start + offset;
     const active = index === state.cursor;
     const marker = <Cell width={COLUMNS.cursor}>{active ? "›" : ""}</Cell>;
-    if (index >= ALL_ROW) {
+    const field = EDIT_FIELDS[index];
+    if (index >= ALL_ROW || !field) {
       const label =
         index === ALL_ROW ? "All settings…" : planned ? "Back to the plan" : "Review and save";
       const detail =
@@ -226,8 +227,7 @@ export function PresetForm({
         </Box>
       );
     }
-    const field = EDIT_FIELDS[index]!;
-    const firstOfGroup = index === start || EDIT_FIELDS[index - 1]!.group !== field.group;
+    const firstOfGroup = index === start || EDIT_FIELDS[index - 1]?.group !== field.group;
     const changed = edits.has(field.key);
     const editing = active && state.editing !== null;
     return (

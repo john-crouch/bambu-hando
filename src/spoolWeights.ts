@@ -95,8 +95,9 @@ export function weightGroups(
 
 /** A single row is taken as is and no row keeps the source's weight; several rows need a choice (null). */
 export function defaultChoice(group: WeightGroup): WeightChoice | null {
-  if (group.options.length === 0) return { kind: "source" };
-  if (group.options.length === 1) return { kind: "grams", grams: group.options[0]!.grams };
+  const [first, second] = group.options;
+  if (!first) return { kind: "source" };
+  if (!second) return { kind: "grams", grams: first.grams };
   return null;
 }
 

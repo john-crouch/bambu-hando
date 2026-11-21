@@ -197,9 +197,15 @@ export function filterSpools(
 ): SpoolRecord[] {
   let chosen = spools;
   if (filters.ids.length > 0) {
-    const missing = filters.ids.filter((id) => !spools.some((s) => s.id === id));
+    const found: SpoolRecord[] = [];
+    const missing: string[] = [];
+    for (const id of filters.ids) {
+      const spool = spools.find((s) => s.id === id);
+      if (spool) found.push(spool);
+      else missing.push(id);
+    }
     if (missing.length > 0) throw new Error(`SpoolEase has no spool with ID ${missing.join(", ")}`);
-    chosen = filters.ids.map((id) => spools.find((s) => s.id === id)!);
+    chosen = found;
   }
   const brand = filters.brand.toLowerCase();
   const material = filters.material.toLowerCase();

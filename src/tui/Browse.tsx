@@ -151,7 +151,7 @@ export function browseInput(
       const materials = materialsOf(profiles, row.label);
       return next({
         brand: row.label,
-        material: materials.length === 1 ? materials[0]! : null,
+        material: materials.length === 1 ? (materials[0] ?? null) : null,
         cursor: 0,
         brandCursor: state.cursor,
         typed: undefined,
