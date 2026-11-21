@@ -72,6 +72,29 @@ describe("tui-snap", () => {
     expect(stdout).toContain("exit: 130");
   });
 
+  it("presses the shell's global keys: ctrl+k opens the palette, shift+tab goes back a tab", async () => {
+    const { code, stdout } = await snap(
+      [
+        "wait=SpoolEase skipped",
+        "key=ctrl+k",
+        "wait=Type to find a command",
+        "snap=palette",
+        "key=esc",
+        "key=shift+tab",
+        "type=?",
+        "wait=Help · Spools",
+        "--",
+        "--source",
+        SOURCE_FIXTURE,
+        "--skip-spoolease",
+      ],
+      home,
+    );
+
+    expect(code).toBe(0);
+    expect(stdout).toContain("--- palette ---");
+  });
+
   it("shows the screen and exits 1 when the awaited text never appears", async () => {
     const { code, stdout } = await snap(
       [

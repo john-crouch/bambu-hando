@@ -27,6 +27,18 @@ the checklist for changing it.
   (with `exitCode` for failures), `app/load {force}` of what changed, and a toast (tone only; the footer draws the
   icon).
 - **Never lose work.** A tab's model survives switching tabs; selections, drafts and form values survive esc.
+- **Dialogs belong to the shell's layer.** A tab's own dialog is drawn by `dialog(model, ctx)`, never inside its
+  View: the shell puts it over the dimmed body with a clear halo. Size it with `dialogWidth` / `dialogRows`, give it
+  no key line (the footer shows the tab's `hints()` while `modal()` is true, and q/tab go to the tab then).
+- **Never lose work or cut a write short.** `busy(model)` names a running write (q is refused meanwhile);
+  `unsaved(model)` counts edits q would drop (q asks first). Say each outcome once: no toast when the result is on
+  screen.
+- **Every problem has a key that fixes it**: deep-link with `app/switchTab { tab, focus }` using the focus strings in
+  each tab's `index.ts` (settings rows like `spoolease.host`, a check section key, a preset path, a spool id, a
+  filament ID or `id:<id>|name:<name>` for Add).
+- **One spelling**: values through `ui/format.ts` (`formatTemp` `220°C`, `formatRange` `190–230°C`, `formatGrams`,
+  `shortPrinter` `X1C 0.4`, `plural`, `fitPath` for paths, which keeps the file name); one-of choices with the
+  List `radio` marker (`●`/`○`); sentence case; hints ordered move → act → navigate → global, `?` always kept.
 - **Every list has a state for loading, failed (with `r`), and empty** (what to do, and where: `Empty` with an
   action), never a blank panel.
 - **Preselect what the user picked last**, remembered in `configDir()` JSON (`tuiSettings.ts`, `labelSettings.ts`,
@@ -48,9 +60,10 @@ the checklist for changing it.
 - **Draw with `src/tui/ui/`.** Every line is built to an exact width (`Line`, `Segments`, `fitText`, `truncate`);
   side-by-side panels get exact widths from `splitWidths`, inner sizes from `panelInner` / `dialogInner` /
   `frameBody`. Nothing may be wider than the terminal: a wrapped row throws off Ink's redraws.
-- **Keys that arrive together reach the app as one input** (`"s\r"`, a scanner's `"00150603Z\r"`):
-  `editText` types a burst and reports `submit` when it holds enter; tests send one key per write unless testing a
-  burst.
+- **Keys that arrive together reach Ink as one input**: the shell splits a burst at its control characters
+  (`keyPresses`: `"\t?"` is tab then ?) and a meta key into esc + key, so tabs see one key per message; a run of
+  text ending in enter stays whole (a scanner's `"00150603Z\r"`), and `editText` types it and reports `submit`.
+  Tests send one key per write unless testing a burst.
 - **Heavy work stays off the keystroke path.** The SpoolmanDB catalog has ~6k profiles: index it once per loaded
   array (memoize), never walk it per frame; a blocked event loop makes Ink merge keys (esc+tab arrive as one).
 
