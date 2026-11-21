@@ -8,7 +8,7 @@ import {
   type SyncResult,
 } from "../../../models.js";
 import type { ProfilePlan } from "../../../planPreview.js";
-import type { Edits } from "../../../presetEdit.js";
+import type { EditChange, Edits } from "../../../presetEdit.js";
 import type { SyncEvent, SyncStage } from "../../../sync.js";
 import type { RunSummary } from "../../core/types.js";
 import { formatGrams, formatRange, plural } from "../../ui/format.js";
@@ -120,13 +120,18 @@ function editNote(
   plan: ProfilePlan,
   overwrite: boolean,
   count: number,
+  named: EditChange[] | undefined,
 ): Note {
   const written = overwrite ? plan.presets : plan.presets - plan.existingPresets;
-  const changes = plural(count, "change");
-  const goes = count === 1 ? "goes" : "go";
+  // The editor's own words for each change when it made them ("Nozzle 245°C → 250°C"), else a count.
+  const changes =
+    named && named.length > 0
+      ? named.map((c) => `${c.label} ${c.from} → ${c.to}`).join(", ")
+      : plural(count, "change");
+  const goes = (named && named.length > 0 ? named.length : count) === 1 ? "goes" : "go";
   if (written === 0)
     return {
-      text: `✎ ${profile.filamentId}: the run keeps its presets, so its ${changes} ${goes} nowhere`,
+      text: `✎ ${profile.filamentId}: the run keeps its presets, so ${named?.length ? changes : `its ${changes}`} ${goes} nowhere`,
       tone: "failed",
     };
   return {
@@ -141,12 +146,14 @@ export function planNotes(
   plans: ProfilePlan[],
   overwrite: boolean,
   edits: ReadonlyMap<string, Edits>,
+  changes: ReadonlyMap<string, EditChange[]> = new Map(),
 ): Note[] {
   const notes: Note[] = [];
   plans.forEach((plan, index) => {
     const profile = profiles[index];
     const count = profile ? (edits.get(profile.filamentId)?.size ?? 0) : 0;
-    if (profile && count > 0) notes.push(editNote(profile, plan, overwrite, count));
+    if (profile && count > 0)
+      notes.push(editNote(profile, plan, overwrite, count, changes.get(profile.filamentId)));
   });
   plans.forEach((plan, index) => {
     const profile = profiles[index];

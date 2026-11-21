@@ -12,9 +12,13 @@ import { type ConsoleState, type ProfilePlan, previewPlan } from "../../../planP
 import type { Edits, Preset } from "../../../presetEdit.js";
 import { loadProfiles } from "../../../sources.js";
 import { SpoolEaseClient } from "../../../spoolease.js";
-import { readSpoolWeights, type SpoolWeightEntry } from "../../../spoolWeights.js";
+import {
+  readSpoolWeights,
+  type SpoolWeightEntry,
+  type WeightChoice,
+} from "../../../spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent } from "../../../sync.js";
-import { saveTuiSettings } from "../../../tuiSettings.js";
+import { loadTuiSettings, rememberWeight, saveTuiSettings } from "../../../tuiSettings.js";
 import type { Cmd } from "../../core/program.js";
 import { type AppMsg, toTab } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
@@ -31,6 +35,8 @@ export type AddMsg =
       warnings: string[];
       /** Filament IDs the console has spools of: the run makes none for them. */
       spooled: string[];
+      /** The weights chosen in earlier sessions, by brand key (tui.json). */
+      remembered: Record<string, WeightChoice>;
     }
   | { type: "add/weightsFailed"; signature: string; error: string; keyRejected: boolean }
   | { type: "add/planRead"; seq: number; plans: ProfilePlan[] | null; warnings: string[] }
@@ -109,12 +115,20 @@ export function weightsCmd(signature: string, values: FormValues): Cmd<AppMsg> {
     try {
       const client = new SpoolEaseClient(connection);
       await checkKey(client);
-      const [{ entries, warnings }, spooled] = await Promise.all([
+      const [{ entries, warnings }, spooled, remembered] = await Promise.all([
         readSpoolWeights(client),
         client.listSpoolFilamentIds().catch(() => new Set<string>()),
+        loadTuiSettings().then((settings) => settings.weights ?? {}),
       ]);
       dispatch(
-        addMsg({ type: "add/weightsRead", signature, entries, warnings, spooled: [...spooled] }),
+        addMsg({
+          type: "add/weightsRead",
+          signature,
+          entries,
+          warnings,
+          spooled: [...spooled],
+          remembered,
+        }),
       );
     } catch (err) {
       dispatch(
@@ -125,6 +139,21 @@ export function weightsCmd(signature: string, values: FormValues): Cmd<AppMsg> {
           keyRejected: err instanceof KeyCheckError,
         }),
       );
+    }
+  };
+}
+
+/** Remembers a brand's empty spool weight for later sessions; a failed save only warns. */
+export function rememberWeightCmd(key: string, brand: string, choice: WeightChoice): Cmd<AppMsg> {
+  return async (dispatch) => {
+    try {
+      await rememberWeight(key, choice);
+    } catch (err) {
+      dispatch({
+        type: "app/toast",
+        text: `Couldn't remember the empty spool weight for ${brand || "this brand"}: ${errorMessage(err)}`,
+        tone: "warning",
+      });
     }
   };
 }

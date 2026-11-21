@@ -123,6 +123,7 @@ describe.each([
         entries: parseSpoolWeightList("Acme - Plastic - 180g,180,Acme - Cardboard - 140g,140"),
         warnings: [],
         spooled: [],
+        remembered: {},
       },
       c,
     )[0];

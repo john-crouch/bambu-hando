@@ -11,6 +11,7 @@ import { moveCursor, typeAhead } from "../../ui/list.js";
 import { editText } from "../../ui/textField.js";
 import {
   editorCapturesText,
+  editorChanges,
   editorHints,
   editorListRows,
   initEditor,
@@ -33,6 +34,7 @@ import {
   importCmd,
   planCmd,
   plannedPresetCmd,
+  rememberWeightCmd,
   runCmd,
   weightsCmd,
 } from "./cmds.js";
@@ -282,7 +284,10 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
       const edits = new Map(model.planEdits);
       if (msg.edits.size > 0) edits.set(msg.filamentId, msg.edits);
       else edits.delete(msg.filamentId);
-      const next = { ...model, planEdits: edits };
+      // Edits from elsewhere come without their before and after: the note counts them instead.
+      const changes = new Map(model.planChanges);
+      changes.delete(msg.filamentId);
+      const next = { ...model, planEdits: edits, planChanges: changes };
       return next.page === "review" ? enterReview(next, ctx) : none(next);
     }
     case "add/openSearch": {
@@ -632,12 +637,15 @@ function weightsRead(
   if (msg.signature !== model.weights.signature) return none(model);
   const groups = weightGroups(model.weights.profiles, msg.entries);
   const spooled = new Set(msg.spooled);
+  // This session's choices win over those remembered from earlier ones.
+  const weightMemory = new Map([...Object.entries(msg.remembered), ...model.weightMemory]);
   // A brand whose filaments all have spools on the console gets no new spool, so no weight is asked.
   const makesSpool = (g: (typeof groups)[number]) =>
     g.profiles.some((i) => !spooled.has(model.weights.profiles[i]?.filamentId ?? ""));
   const prompts = groups.filter((g) => g.options.length !== 1 && makesSpool(g));
   const read: AddModel = {
     ...model,
+    weightMemory,
     weights: {
       ...model.weights,
       state: "ready",
@@ -681,9 +689,11 @@ function weightsKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     const weightChoices = new Map(model.weightChoices).set(group.key, item.choice);
     const weightMemory = new Map(model.weightMemory).set(group.key, item.choice);
     const next = { ...model, weightChoices, weightMemory };
+    const remember = rememberWeightCmd(group.key, group.brand, item.choice);
     if (weights.step + 1 < weights.prompts.length)
-      return none(at(weights.step + 1, { weightChoices, weightMemory }));
-    return enterReview(next, ctx);
+      return [at(weights.step + 1, { weightChoices, weightMemory }), [remember]];
+    const [reviewed, cmds] = enterReview(next, ctx);
+    return [reviewed, [remember, ...cmds]];
   }
   if (key.name === "right") {
     const group = weights.prompts[weights.step];
@@ -841,10 +851,22 @@ function editorKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
   );
   if (step.outcome?.type === "leave") {
     const edits = new Map(model.planEdits);
-    if (step.outcome.edits.size > 0) edits.set(editing.filamentId, step.outcome.edits);
-    else edits.delete(editing.filamentId);
+    const changes = new Map(model.planChanges);
+    const made = editorChanges(step.model);
+    if (step.outcome.edits.size > 0) {
+      edits.set(editing.filamentId, step.outcome.edits);
+      changes.set(editing.filamentId, made);
+    } else {
+      edits.delete(editing.filamentId);
+      changes.delete(editing.filamentId);
+    }
     return enterReview(
-      { ...model, planEdits: edits, review: { ...model.review, editing: null } },
+      {
+        ...model,
+        planEdits: edits,
+        planChanges: changes,
+        review: { ...model.review, editing: null },
+      },
       ctx,
     );
   }
@@ -925,6 +947,7 @@ function runDone(model: AddModel, results: Parameters<typeof runOutcome>[0], ctx
       weights: emptyWeights(),
       weightChoices: new Map(),
       planEdits: new Map(),
+      planChanges: new Map(),
       review: emptyReview(model.review.seq),
     },
     [
@@ -1160,7 +1183,7 @@ export function unsaved(model: AddModel): number {
   const { editing } = model.review;
   let count = 0;
   for (const [id, edits] of model.planEdits) if (id !== editing?.filamentId) count += edits.size;
-  return count + (editing ? editing.editor.edits.size : 0);
+  return count + (editing ? editorChanges(editing.editor).length : 0);
 }
 
 /** The Other color dialog is open: it takes q and tab too. */

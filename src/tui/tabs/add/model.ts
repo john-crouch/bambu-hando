@@ -3,7 +3,7 @@
 
 import type { FilamentProfile, SyncResult } from "../../../models.js";
 import type { ProfilePlan } from "../../../planPreview.js";
-import type { Edits } from "../../../presetEdit.js";
+import type { EditChange, Edits } from "../../../presetEdit.js";
 import type { Catalog } from "../../../spoolmanDb.js";
 import type { WeightChoice, WeightGroup } from "../../../spoolWeights.js";
 import type { SyncStage } from "../../../sync.js";
@@ -119,6 +119,8 @@ export interface AddModel {
   weightChoices: ReadonlyMap<string, WeightChoice>;
   /** Edits to the presets a run writes, by filament ID; kept until a run finishes. */
   planEdits: ReadonlyMap<string, Edits>;
+  /** The same edits as people read them ("Nozzle 245°C → 250°C"), when the editor made them. */
+  planChanges: ReadonlyMap<string, EditChange[]>;
   review: ReviewModel;
   run: RunModel | null;
   /** A one-line message for the last key (what it needs first), cleared by the next. */
@@ -127,7 +129,7 @@ export interface AddModel {
   catalogRequested: boolean;
   /** Letters typed in a row for type-ahead ("3dh"), and when the last one came (ctx.now). */
   typed: { text: string; at: number } | null;
-  /** Empty spool weights chosen this session, by brand key: preselected next time, even after a run. */
+  /** Empty spool weights chosen, by brand key (earlier sessions' from tui.json): preselected next time. */
   weightMemory: ReadonlyMap<string, WeightChoice>;
   /** A filament ID a deep link asked for before the catalog had loaded: opened once it has. */
   focus: string | null;
@@ -255,6 +257,7 @@ export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
     weights: emptyWeights(),
     weightChoices: new Map(),
     planEdits: new Map(),
+    planChanges: new Map(),
     review: emptyReview(),
     run: null,
     notice: "",
