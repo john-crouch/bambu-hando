@@ -21,6 +21,8 @@ export interface ShellOverlay<M, Req> {
   update(model: M, msg: AppMsg | TabMsg, ctx: Ctx): [M, Cmd<ShellMsg>[]];
   View(props: { model: M; ctx: Ctx }): ReactElement;
   hints(model: M, ctx: Ctx): Hint[];
+  /** What the overlay is writing right now, else null: the shell won't quit meanwhile. */
+  busy?(model: M): string | null;
 }
 
 /** A command palette entry; tab, when set, is shown first, so a tab's command runs where its result shows. */

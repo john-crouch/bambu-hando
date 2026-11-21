@@ -1,9 +1,10 @@
 // ABOUTME: Remembers which filament a spool's barcode (UPC, EAN, a maker's SKU) is, once you've said so.
 // ABOUTME: Stored as JSON in bambu-hando's config directory; damaged entries are ignored.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
+import { writeAtomic } from "./atomicWrite.js";
 import { configDir } from "./paths.js";
 
 export interface BarcodeFilament {
@@ -47,11 +48,5 @@ export async function rememberBarcode(
 ): Promise<void> {
   const barcodes = await loadBarcodes(path);
   barcodes.set(normalizeBarcode(barcode), filament);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(
-    `${path}.tmp`,
-    `${JSON.stringify(Object.fromEntries(barcodes), null, 2)}\n`,
-    "utf-8",
-  );
-  await rename(`${path}.tmp`, path);
+  await writeAtomic(path, `${JSON.stringify(Object.fromEntries(barcodes), null, 2)}\n`);
 }

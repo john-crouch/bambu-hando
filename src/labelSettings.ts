@@ -1,9 +1,9 @@
 // ABOUTME: Remembers the last label choices (fields, size, printer, PDF path) so the TUI offers them again.
 // ABOUTME: Stored as JSON in bambu-hando's config directory; damaged or unknown values fall back to defaults.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { writeAtomic } from "./atomicWrite.js";
 import {
   DEFAULT_LABEL_FIELDS,
   DEFAULT_LABEL_SIZE,
@@ -63,12 +63,10 @@ export async function loadLabelSettings(path = labelSettingsPath()): Promise<Lab
   };
 }
 
-/** Written atomically, so an interrupted save never leaves a half-written file. */
+/** Written atomically (a temp file of its own per save), so overlapping or interrupted saves never leave a broken file. */
 export async function saveLabelSettings(
   settings: LabelSettings,
   path = labelSettingsPath(),
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(`${path}.tmp`, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
-  await rename(`${path}.tmp`, path);
+  await writeAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
 }

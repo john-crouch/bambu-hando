@@ -37,6 +37,14 @@ describe("TUI settings", () => {
     });
   });
 
+  it("survives saves that overlap, as quick ticks in Settings make them, ending with one whole file", async () => {
+    const lists = [["A"], ["A", "B"], ["A", "B", "C"], ["B"], ["C"]];
+    await Promise.all(lists.map((printers) => saveTuiSettings({ printers })));
+
+    const saved = JSON.parse(await readFile(tuiSettingsPath(), "utf-8"));
+    expect(lists).toContainEqual(saved.printers);
+  });
+
   it("falls back to no printers for damaged files and values it doesn't know", async () => {
     await mkdir(join(home, ".config", "bambu-hando"), { recursive: true });
     await writeFile(tuiSettingsPath(), "{ not json", "utf-8");

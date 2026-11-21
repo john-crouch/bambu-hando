@@ -32,6 +32,7 @@ function NoView(): never {
 interface FakeModel {
   seen: string[];
   typing: boolean;
+  writing?: boolean;
 }
 
 /** A tab that records every message it gets; "t" toggles a text field, "!" asks for a toast. */
@@ -52,6 +53,8 @@ function fakeTab(id: TabId): AnyTab {
         return [{ ...next, typing: true }, []];
       if (msg.type === "key" && (msg.key as KeyPress).name === "esc")
         return [{ ...next, typing: false }, []];
+      if (msg.type === "write/start") return [{ ...next, writing: true }, []];
+      if (msg.type === "write/done") return [{ ...next, writing: false }, []];
       if (msg.type === "key" && (msg.key as KeyPress).input === "!")
         return [next, [(d) => d({ type: "app/toast", text: "hi", tone: "ok" })]];
       return [next, []];
@@ -59,6 +62,7 @@ function fakeTab(id: TabId): AnyTab {
     View: NoView,
     hints: () => [{ keys: "x", label: `do ${id}`, primary: true }],
     capturesText: (model: FakeModel) => model.typing,
+    busy: (model: FakeModel) => (model.writing ? `Writing ${id}` : null),
     commands: () => [
       { title: `${id} thing`, msg: { type: "tab", tab: id, msg: { type: "thing" } } },
     ],
@@ -204,6 +208,21 @@ describe("global keys", () => {
       type: "app/runFinished",
       summary: { ok: true, lines: [] },
     });
+    model = await drive(shell, model, key("q"));
+    expect(model.exit).toBe(0);
+  });
+
+  it("won't quit while a tab is writing, even a tab that isn't shown, and says what's running", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, { type: "tab", tab: "add", msg: { type: "write/start" } });
+    // Straight from update: drive would also run the toast's expiry.
+    const [refused] = shell.update(model, key("q"));
+    expect(refused.exit).toBeNull();
+    expect(refused.toast?.text).toContain("Writing add");
+    expect(refused.toast?.tone).toBe("warning");
+    const [alsoRefused] = shell.update(model, { type: "app/quit" });
+    expect(alsoRefused.exit).toBeNull();
+    model = await drive(shell, model, { type: "tab", tab: "add", msg: { type: "write/done" } });
     model = await drive(shell, model, key("q"));
     expect(model.exit).toBe(0);
   });

@@ -1,9 +1,10 @@
 // ABOUTME: Remembers the TUI's last choices (the printers presets are written for) so the form starts from them.
 // ABOUTME: Stored as JSON in bambu-hando's config directory; damaged or unknown values are ignored.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
+import { writeAtomic } from "./atomicWrite.js";
 import { configDir } from "./paths.js";
 
 export interface TuiSettings {
@@ -28,12 +29,10 @@ export async function loadTuiSettings(path = tuiSettingsPath()): Promise<TuiSett
   return { printers };
 }
 
-/** Written atomically, so an interrupted save never leaves a half-written file. */
+/** Written atomically (a temp file of its own per save), so overlapping or interrupted saves never leave a broken file. */
 export async function saveTuiSettings(
   settings: TuiSettings,
   path = tuiSettingsPath(),
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(`${path}.tmp`, `${JSON.stringify(settings, null, 2)}\n`, "utf-8");
-  await rename(`${path}.tmp`, path);
+  await writeAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
 }

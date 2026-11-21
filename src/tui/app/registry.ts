@@ -1,5 +1,5 @@
 // ABOUTME: The shell's tab modules and the labels overlay, in TAB_ORDER: what the shell routes messages to.
-// ABOUTME: Holds placeholder modules (each shows its title in an empty state) until the real tabs are swapped in.
+// ABOUTME: placeholder() makes a title-only tab, which the shell's own tests use to test the shell alone.
 
 import { createElement } from "react";
 

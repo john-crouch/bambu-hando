@@ -1,5 +1,5 @@
 // ABOUTME: The TUI's contract: app messages, shared resources, the context every tab sees, and the tab/overlay modules.
-// ABOUTME: Tabs and overlays are model/update/view modules the shell (App.tsx) routes messages to; none reads input itself.
+// ABOUTME: Tabs and overlays are model/update/view modules the shell (app/shell.ts) routes messages to; none reads input itself.
 
 import type { ReactElement } from "react";
 import type { CustomFilament, SpoolRecord } from "../../spoolease.js";
@@ -165,6 +165,12 @@ export interface TabModule<M> {
    * instead of acting on them (tab, ctrl+k and ctrl+c stay global).
    */
   capturesText(model: M): boolean;
+  /**
+   * What the tab is writing right now ("Writing BambuStudio presets"), else null. While any tab or the
+   * overlay is busy, the shell won't quit on q (ctrl+c still stops everything), so a write is never
+   * left half done by accident.
+   */
+  busy?(model: M): string | null;
   /** Entries for the command palette. */
   commands?(model: M, ctx: Ctx): PaletteCommand[];
 }
@@ -176,6 +182,8 @@ export interface OverlayModule<M, Req> {
   update(model: M, msg: AppMsg | TabMsg, ctx: Ctx): Step<M>;
   View(props: { model: M; ctx: Ctx }): ReactElement;
   hints(model: M, ctx: Ctx): Hint[];
+  /** What the overlay is writing right now, else null: see TabModule.busy. */
+  busy?(model: M): string | null;
 }
 
 /** Wraps a tab's own message so the shell routes it to that tab. */

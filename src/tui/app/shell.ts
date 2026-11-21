@@ -276,6 +276,41 @@ export function createShell(deps: ShellDeps) {
     return toTab({ ...model, active: tab }, tab, { type: "app/switchTab", tab });
   }
 
+  /** A toast that clears itself after toastMs. */
+  function withToast(model: ShellModel, text: string, tone?: Toast["tone"]): Step {
+    const id = model.toastSeq + 1;
+    const expire: Cmd<ShellMsg> = (dispatch) =>
+      new Promise<void>((resolve) => {
+        // unref: a toast never keeps the process alive after the app exits.
+        setTimeout(() => {
+          dispatch({ type: "shell/toastExpired", id });
+          resolve();
+        }, deps.toastMs).unref?.();
+      });
+    return [{ ...model, toastSeq: id, toast: { id, text, ...(tone ? { tone } : {}) } }, [expire]];
+  }
+
+  /** What the overlay or any tab, shown or not, is writing right now, else null. */
+  function busyWith(model: ShellModel): string | null {
+    if (model.overlay) {
+      const what = overlays[model.overlay.id].busy?.(model.overlay.model);
+      if (what) return what;
+    }
+    for (const id of TAB_ORDER) {
+      const what = deps.tabs[id].busy?.(model.tabs[id]);
+      if (what) return what;
+    }
+    return null;
+  }
+
+  /** Quits with the session's exit code, unless a write is running: leaving would cut it short. */
+  function quit(model: ShellModel): Step {
+    const what = busyWith(model);
+    if (what)
+      return withToast(model, `${what}: wait for it to finish, or ctrl+c to stop now`, "warning");
+    return [{ ...model, exit: exitCode(model.summaries) }, []];
+  }
+
   function onKey(model: ShellModel, key: KeyPress): Step {
     const msg: AppMsg = { type: "key", key };
     if (model.overlay) return toOverlay(model, msg);
@@ -287,7 +322,7 @@ export function createShell(deps: ShellDeps) {
     }
     if (isCtrl(key, "k")) return open(model, "palette", paletteItems(model));
     if (!capturing(model) && !key.name && !key.ctrl && !key.meta) {
-      if (key.input === "q") return [{ ...model, exit: exitCode(model.summaries) }, []];
+      if (key.input === "q") return quit(model);
       if (key.input === "?") return open(model, "help", helpRequest(model));
     }
     return toTab(model, model.active, msg);
@@ -363,25 +398,8 @@ export function createShell(deps: ShellDeps) {
         );
         return loadAll({ ...model, values }, stale);
       }
-      case "app/toast": {
-        const id = model.toastSeq + 1;
-        const expire: Cmd<ShellMsg> = (dispatch) =>
-          new Promise<void>((resolve) => {
-            // unref: a toast never keeps the process alive after the app exits.
-            setTimeout(() => {
-              dispatch({ type: "shell/toastExpired", id });
-              resolve();
-            }, deps.toastMs).unref?.();
-          });
-        return [
-          {
-            ...model,
-            toastSeq: id,
-            toast: { id, text: msg.text, ...(msg.tone ? { tone: msg.tone } : {}) },
-          },
-          [expire],
-        ];
-      }
+      case "app/toast":
+        return withToast(model, msg.text, msg.tone);
       case "app/openLabels":
         return open(model, "labels", msg.request);
       case "app/confirm":
@@ -393,9 +411,13 @@ export function createShell(deps: ShellDeps) {
       case "app/error":
         return [{ ...model, error: msg.error }, []];
       case "app/quit":
-        return [{ ...model, exit: exitCode(model.summaries) }, []];
+        return quit(model);
       case "shell/mounted":
-        return loadAll(model, ["console", "presets"]);
+        // A tab's init may have asked already: loading again would read the console twice.
+        return loadAll(
+          model,
+          (["console", "presets"] as const).filter((id) => !model.requested.includes(id)),
+        );
       case "shell/loaded":
         if (msg.gen !== model.gens[msg.resource]) return [model, []];
         return loaded(model, msg.resource, msg.result);
