@@ -90,6 +90,11 @@ export interface Ctx {
 export interface RunSummary {
   ok: boolean;
   lines: string[];
+  /**
+   * The exit code this outcome asks for: 2 for a setup error (rejected key, missing system profiles),
+   * else 1 when ok is false. The session exits with the highest one, so a failure is never forgotten.
+   */
+  exitCode?: 1 | 2;
 }
 
 export type OverlayId = "help" | "palette" | "labels" | "confirm";
