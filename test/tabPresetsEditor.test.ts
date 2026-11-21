@@ -226,7 +226,7 @@ describe("editing a field", () => {
 
   it("says what a field takes while typing it", () => {
     const typing = keys(open(), "enter").model;
-    expect(editorTypingHint(typing)).toBe("whole number, 0–500");
+    expect(editorTypingHint(typing)).toBe("a whole number, 0–500");
     const notes = keys(open(), ...Array(5).fill("right"), "end", "enter").model;
     expect(editorTypingHint(notes)).toBe("text; \\n starts a new line");
     expect(editorTypingHint(open())).toBe("");
@@ -273,12 +273,12 @@ describe("page keys", () => {
 
 describe("editorTakes", () => {
   it("says what the highlighted setting takes, typing or not", () => {
-    expect(editorTakes(open())).toBe("whole number, 0–500");
+    expect(editorTakes(open())).toBe("a whole number, 0–500");
     expect(editorCurrentRow(open())?.key).toBe("nozzle_temperature");
     const flow = keys(open(), "right", "right", "down", "down").model;
     expect(editorTakes(flow)).toBe("on or off");
     const retraction = keys(open(), "right", "right", "right").model;
-    expect(editorTakes(retraction)).toBe("number, 0–20, or nothing for the printer's");
+    expect(editorTakes(retraction)).toBe("a number, 0–20, or nothing for the printer's");
     const color = keys(open(), ...Array(ALL_SETTINGS - 1).fill("right")).model;
     expect(editorCurrentRow(color)?.key).toBe("default_filament_colour");
     expect(editorTakes(color)).toBe("6 hex digits, or nothing for none");
@@ -315,8 +315,8 @@ describe("variants", () => {
   });
 
   it("says that one value goes to every nozzle type", () => {
-    expect(editorTakes(flow())).toBe("number, 0.1–200; one value for every nozzle type");
-    expect(editorTakes(keys(flow(), "up").model)).toBe("number, 0.01–2");
+    expect(editorTakes(flow())).toBe("a number, 0.1–200; one value for every nozzle type");
+    expect(editorTakes(keys(flow(), "up").model)).toBe("a number, 0.01–2");
   });
 });
 

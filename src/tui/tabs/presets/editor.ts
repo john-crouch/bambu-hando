@@ -290,7 +290,7 @@ function differingVariants(value: unknown): number {
     : 0;
 }
 
-/** What the highlighted setting takes ("whole number, 0–500"); "" when it can't be changed here. */
+/** What the highlighted setting takes ("a whole number, 0–500"); "" when it can't be changed here. */
 export function editorTakes(model: EditorModel): string {
   const row = currentRow(model);
   if (!row) return "";
@@ -311,9 +311,9 @@ export function editorTakes(model: EditorModel): string {
     : "";
   switch (field.kind) {
     case "int":
-      return `whole number, ${field.min}–${field.max}${nil}${one}`;
+      return `a whole number, ${field.min}–${field.max}${nil}${one}`;
     case "decimal":
-      return `number, ${field.min}–${field.max}${nil}${one}`;
+      return `a number, ${field.min}–${field.max}${nil}${one}`;
     case "color":
       return "6 hex digits, or nothing for none";
     case "text":

@@ -349,7 +349,7 @@ describe("presetDetail", () => {
     ]);
     expect(compactDetail(variants)).toEqual([
       { label: "Nozzle", value: "220°C" },
-      { label: "Flow", value: "max standard 22 · high flow 29 mm³/s" },
+      { label: "Flow", value: "max flow standard 22 · high flow 29 mm³/s" },
     ]);
     const flow = { ...variants, filament_flow_ratio: ["0.98"], fan_max_speed: ["100"] };
     expect(compactDetail(flow, 40)).toEqual([
@@ -387,7 +387,7 @@ describe("compactDetail", () => {
     expect(compactDetail(presetJson("Acme PLA Red", X1C_04, "P1111111"))).toEqual([
       { label: "Nozzle", value: "220°C · first 225°C · range 190–240°C" },
       { label: "Bed", value: "Textured 55°C · Smooth 60°C" },
-      { label: "Flow", value: "ratio 0.98 · max 21 mm³/s · fan 30–80%" },
+      { label: "Flow", value: "ratio 0.98 · max flow 21 mm³/s · fan 30–80%" },
       { label: "Filament", value: "1.24 g/cm³ · cost 25 per kg" },
     ]);
     expect(compactDetail({ nozzle_temperature: ["220"] })).toEqual([

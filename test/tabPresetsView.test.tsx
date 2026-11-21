@@ -229,7 +229,7 @@ describe.each([
     const note = screen.at(-2) ?? "";
     // Without the side panel, the line says what the setting takes instead.
     if (columns < 100) {
-      expect(note).toContain("Takes whole number, 0–500");
+      expect(note).toContain("Takes a whole number, 0–500");
       return;
     }
     expect(note).toMatch(
@@ -289,7 +289,7 @@ describe.each([
     expect(screen[1]).toMatch(/─ All +│/);
     expect(text).toMatch(/Nozzle range, high +255°C +was 270°C/);
     expect(text).toContain("Takes");
-    expect(text).toContain("whole number, 0–500");
+    expect(text).toContain("a whole number, 0–500");
     expect(text).toMatch(/1 change · 4\/4 ─╯/);
   });
 
