@@ -829,7 +829,7 @@ describe("cli labels", () => {
       "Sunlu",
       "PETG",
       "2.0 Vivid Yellow",
-      "230–250 °C",
+      "230–250°C",
       "1000 g",
       "Spool #1",
     ]);

@@ -16,12 +16,13 @@ import type { Hint } from "../src/tui/core/types.js";
 import { Bar, barCells } from "../src/tui/ui/Bar.js";
 import { Busy } from "../src/tui/ui/Busy.js";
 import { Detail } from "../src/tui/ui/Detail.js";
-import { Dialog, dialogInner } from "../src/tui/ui/Dialog.js";
+import { Dialog, dialogInner, dialogWidth } from "../src/tui/ui/Dialog.js";
 import { Empty } from "../src/tui/ui/Empty.js";
 import { Footer, footerSegments } from "../src/tui/ui/Footer.js";
 import { Frame, frameBody } from "../src/tui/ui/Frame.js";
 import { Header, type HeaderStatus, headerLayout } from "../src/tui/ui/Header.js";
 import { fitHints } from "../src/tui/ui/hints.js";
+import { Line } from "../src/tui/ui/Line.js";
 import { List } from "../src/tui/ui/List.js";
 import type { ListRow } from "../src/tui/ui/list.js";
 import { type Page, PageBar } from "../src/tui/ui/PageBar.js";
@@ -29,6 +30,7 @@ import { Panel, panelInner, splitWidths } from "../src/tui/ui/Panel.js";
 import { luminance, Swatch } from "../src/tui/ui/Swatch.js";
 import { TextField } from "../src/tui/ui/TextField.js";
 import { TITLE, Title } from "../src/tui/ui/Title.js";
+import { toastSegments } from "../src/tui/ui/Toast.js";
 import { textWidth } from "../src/tui/ui/text.js";
 import { COLORS, GRADIENT, theme } from "../src/tui/ui/theme.js";
 
@@ -114,6 +116,12 @@ const HINTS: Hint[] = [
   { keys: "s", label: "sort" },
   { keys: "l", label: "label", primary: true },
   { keys: "?", label: "help", primary: true },
+];
+
+const GLOBAL: Hint[] = [
+  { keys: "tab", label: "next tab" },
+  { keys: "?", label: "help", primary: true },
+  { keys: "q", label: "quit" },
 ];
 
 const TABS = [
@@ -416,9 +424,9 @@ describe("List", () => {
 
   it("cuts long names with … and drops trailing columns before the name when narrow", () => {
     const wide = plain(draw(<List rows={rows} cursor={0} height={4} width={60} />));
-    expect(wide[3]).toContain("Polymaker PolyLite™ PLA Galaxy Dark…   291 g");
+    expect(wide[3]).toContain("Polymaker PolyLite™ PLA Galaxy Dark…  291 g");
     const narrow = plain(draw(<List rows={rows} cursor={0} height={4} width={24} />));
-    expect(narrow[0]).toBe("▌   #30  Sunlu PETG 2.…┃");
+    expect(narrow[0]).toBe("▌   #30  Sunlu PETG 2… ┃");
     expect(narrow[0]).not.toContain("g");
   });
 
@@ -441,6 +449,12 @@ describe("List", () => {
       " ",
       " ",
     ]);
+  });
+
+  it("leaves a gap column before the scroll thumb, so no text touches it", () => {
+    const frame = draw(<List rows={rows} cursor={0} height={4} width={40} />);
+    // Ink trims trailing spaces: pad back to the width before reading the gap column.
+    for (const line of plain(frame)) expect(line.padEnd(40)[38]).toBe(" ");
   });
 
   it("draws nothing for no rows", () => {
@@ -520,9 +534,16 @@ describe("PageBar", () => {
     expect(row[badge]?.fg).toBe(COLORS.warning);
   });
 
-  it("drops the separators, then shows only the current page and where it is", () => {
-    expect(plain(draw(<PageBar pages={pages} width={35} />))[0]?.trimEnd()).toBe(
-      " ✓ Find  ▸ Weights 2  Review  Done",
+  it("keeps a column free before the border, else shows the pages around the current one, else only it", () => {
+    // The whole bar is 37 columns: 38 leaves one free at the right.
+    expect(plain(draw(<PageBar pages={pages} width={38} />))[0]?.trimEnd()).toBe(
+      " ✓ Find ─ ▸ Weights 2 ─ Review ─ Done",
+    );
+    expect(plain(draw(<PageBar pages={pages} width={37} />))[0]?.trimEnd()).toBe(
+      " … ─ ▸ Weights 2 ─ Review ─ …  2/4",
+    );
+    expect(plain(draw(<PageBar pages={pages} width={30} />))[0]?.trimEnd()).toBe(
+      " ▸ Weights 2  2/4",
     );
     expect(plain(draw(<PageBar pages={pages} width={20} />))[0]?.trimEnd()).toBe(
       " ▸ Weights 2  2/4",
@@ -553,22 +574,38 @@ describe("Footer", () => {
     expect(fitHints(HINTS, 12).map((hint) => hint.keys)).toEqual(["↑↓"]);
   });
 
-  it("puts a toast at the right end in its tone, the hints making room", () => {
-    const frame = draw(
-      <Footer hints={HINTS} columns={80} toast={{ text: "3 labels sent to DYMO", tone: "ok" }} />,
-      80,
+  it("puts the global keys at the right end, always keeping the primary ones", () => {
+    const own = HINTS.filter((hint) => hint.keys !== "?");
+    const line = (width: number) =>
+      footerSegments(own, width, GLOBAL)
+        .map((s) => s.text)
+        .join("");
+    expect(line(100)).toBe(
+      ` ↑↓ move  space tick  / filter  s sort  l label${" ".repeat(24)}tab next tab  ? help  q quit `,
     );
-    const line = plain(frame)[0] ?? "";
-    expect(line.trimEnd().endsWith("✓ 3 labels sent to DYMO")).toBe(true);
-    expect(textWidth(line.trimEnd())).toBe(79);
-    const row = cells(frame);
-    expect(row[79 - 23]).toMatchObject({ ch: "✓", fg: COLORS.ok, bold: true });
+    // Narrow: the tab's own keys give way first, the pinned ? help stays at the right end.
+    expect(line(50)).toBe(" ↑↓ move  space tick  / filter  l label    ? help ");
+    expect(line(24)).toBe(" ↑↓ move         ? help ");
   });
 
-  it("draws the toast's icon from its tone, ok by default", () => {
-    const icon = (toast: Parameters<typeof footerSegments>[2]) => {
-      const right = footerSegments([], 40, toast).filter((segment) => segment.bold);
-      return [right[0]?.text, right[0]?.color];
+  it("puts a toast nowhere: the frame draws it", () => {
+    expect(footerSegments(HINTS, 80).some((s) => s.bold && s.text.startsWith("✓"))).toBe(false);
+  });
+
+  it.each(WIDTHS)("is exactly %i columns", (width) => {
+    for (const global of [[], GLOBAL]) {
+      const segments = footerSegments(HINTS, width, global);
+      expect(textWidth(segments.map((s) => s.text).join(""))).toBe(width);
+      expectWithin(draw(<Footer hints={HINTS} global={global} columns={width} />, width), width);
+    }
+  });
+});
+
+describe("Toast", () => {
+  it("draws its icon from its tone, ok by default, with a space each side", () => {
+    const icon = (toast: Parameters<typeof toastSegments>[0]) => {
+      const text = toastSegments(toast, 40).find((segment) => segment.bold);
+      return [text?.text, text?.color];
     };
     expect(icon({ text: "Saved" })).toEqual(["✓ Saved", COLORS.ok]);
     expect(icon({ text: "Saved", tone: "ok" })).toEqual(["✓ Saved", COLORS.ok]);
@@ -580,25 +617,19 @@ describe("Footer", () => {
       "✗ Print failed",
       COLORS.failed,
     ]);
+    expect(
+      toastSegments({ text: "Saved" }, 40)
+        .map((s) => s.text)
+        .join(""),
+    ).toBe(" ✓ Saved ");
   });
 
-  it("cuts a toast longer than the line", () => {
-    const segments = footerSegments(HINTS, 20, {
-      text: "a very long message that cannot fit",
-      tone: "failed",
-    });
-    expect(segments.map((s) => s.text).join("")).toBe(" ✗ a very long mes… ");
-  });
-
-  it.each(WIDTHS)("is exactly %i columns", (width) => {
-    for (const toast of [undefined, { text: "Saved", tone: "ok" as const }]) {
-      const segments = footerSegments(HINTS, width, toast);
-      expect(textWidth(segments.map((s) => s.text).join(""))).toBe(width);
-      expectWithin(
-        draw(<Footer hints={HINTS} columns={width} {...(toast ? { toast } : {})} />, width),
-        width,
-      );
-    }
+  it("cuts a toast longer than its room", () => {
+    const text = toastSegments({ text: "a very long message that cannot fit", tone: "failed" }, 20)
+      .map((s) => s.text)
+      .join("");
+    expect(text).toBe(" ✗ a very long mes… ");
+    expect(textWidth(text)).toBe(20);
   });
 });
 
@@ -774,7 +805,40 @@ describe("Empty", () => {
 });
 
 describe("Dialog", () => {
-  it("draws an accent box with the title in its border, content, and its own key line", () => {
+  it("draws an accent box with the title in its border and its content; its keys go in the footer", () => {
+    const frame = draw(
+      <Dialog title="More spools like #14" width={36}>
+        <Text>How many?</Text>
+      </Dialog>,
+    );
+    expect(plain(frame)).toEqual([
+      "╭ More spools like #14 ────────────╮",
+      "│                                  │",
+      "│  How many?                       │",
+      "│                                  │",
+      "╰──────────────────────────────────╯",
+    ]);
+    expect(cells(frame.split("\n")[0] ?? "")[0]?.fg).toBe(COLORS.accent);
+  });
+
+  it("is as wide as it wants, or the whole width when that would leave slivers at the sides", () => {
+    expect(dialogWidth(120, 76)).toBe(76);
+    expect(dialogWidth(80, 40)).toBe(40);
+    expect(dialogWidth(80, 76)).toBe(80);
+    expect(dialogWidth(60, 56)).toBe(60);
+    expect(dialogWidth(30, 56)).toBe(30);
+  });
+
+  it("sets a note into its bottom border", () => {
+    const frame = draw(
+      <Dialog title="Help" width={24} note="↓ more">
+        <Text>Keys</Text>
+      </Dialog>,
+    );
+    expect(plain(frame).at(-1)).toBe(`╰${"─".repeat(13)} ↓ more ─╯`);
+  });
+
+  it("still draws a key line when it's given hints", () => {
     const frame = draw(
       <Dialog
         title="More spools like #14"
@@ -852,6 +916,68 @@ describe("Frame", () => {
       ),
     );
     expect(lines).toEqual(["head", "line 0", "line 1", "line 2", "foot"]);
+  });
+
+  it("draws a toast over the body's last line, two columns in, above the footer", () => {
+    const lines = plain(
+      draw(
+        <Frame
+          columns={40}
+          rows={6}
+          header={<Text>head</Text>}
+          footer={<Text>foot</Text>}
+          toast={{ text: "Saved", tone: "ok" }}
+        >
+          <Text>{["a", "b", "c", "╰".padEnd(39, "─")].join("\n")}</Text>
+        </Frame>,
+        40,
+      ),
+    );
+    expect(lines[4]).toBe(`╰─ ✓ Saved ${"─".repeat(28)}`);
+    expect(lines[5]).toBe("foot");
+  });
+
+  it("dims the body behind an overlay: gray, no colors or backgrounds, the dialog untouched", () => {
+    const frame = draw(
+      <Frame
+        columns={40}
+        rows={12}
+        header={<Text>head</Text>}
+        footer={<Text>foot</Text>}
+        overlay={<Dialog title="Hi" width={20} />}
+      >
+        <Box flexDirection="column">
+          <Line
+            segments={[{ text: "green on purple", color: COLORS.ok, backgroundColor: "#3B2F5C" }]}
+            width={40}
+          />
+          <Panel title="Box" focused width={40} height={3} />
+        </Box>
+      </Frame>,
+      40,
+    );
+    const lines = frame.split("\n");
+    const body = cells(lines[1] ?? "").slice(0, 15);
+    expect(body.map((c) => c.ch).join("")).toBe("green on purple");
+    expect(body.every((c) => c.fg === GRAY && c.dim && c.bg === undefined)).toBe(true);
+    const border = cells(lines[2] ?? "");
+    expect(border[0]).toMatchObject({ ch: "╭", fg: GRAY, dim: true });
+    expect(border.slice(2, 5).every((c) => c.fg === GRAY && !c.bold)).toBe(true);
+    const dialogTop = lines.findIndex((line) => stripVTControlCharacters(line).includes("╭ Hi"));
+    const corner = cells(lines[dialogTop] ?? "").find(
+      (c) => c.ch === "╭" && c.fg === COLORS.accent,
+    );
+    expect(corner).toBeDefined();
+  });
+
+  it("doesn't dim the body without an overlay", () => {
+    const frame = draw(
+      <Frame columns={40} rows={4} header={<Text>head</Text>} footer={<Text>foot</Text>}>
+        <Line segments={[{ text: "green", color: COLORS.ok }]} width={40} />
+      </Frame>,
+      40,
+    );
+    expect(cells(frame.split("\n")[1] ?? "")[0]).toMatchObject({ fg: COLORS.ok, dim: false });
   });
 
   it("centers an overlay over the body", () => {

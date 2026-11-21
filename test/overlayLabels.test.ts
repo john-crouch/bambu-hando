@@ -271,7 +271,7 @@ describe("labelPreview", () => {
         { field: "brand", text: "Acme", style: "title" },
         { field: "material", text: "PETG", style: "strong" },
         { field: "color", text: "Red", style: "normal" },
-        { field: "temps", text: "230–250 °C", style: "normal" },
+        { field: "temps", text: "230–250°C", style: "normal" },
         { field: "weight", text: "1000 g", style: "normal" },
         { field: "id", text: "Spool #7", style: "small" },
       ],

@@ -7,12 +7,24 @@ import {
   type WeightChoice,
   type WeightGroup,
 } from "../../../spoolWeights.js";
+import { formatGrams } from "../../ui/format.js";
 import { SPOOLMANDB_LABEL } from "./catalog.js";
 
 export interface WeightItem {
   label: string;
+  /** The weight it gives, for people: "137 g", "140–250 g", "unknown", "–" (none). */
+  weight: string;
+  /** Where the weight comes from, a sentence for the detail panel. */
   detail: string;
   choice: WeightChoice;
+}
+
+/** A row's name without the grams at its end ("PolyMaker - Cardboard - 137g"), since the weight has its own column. */
+function withoutGrams(label: string, grams: number): string {
+  const match = /\s*[-–·,]?\s*(\d+)\s*g$/i.exec(label);
+  if (!match || Number(match[1]) !== grams) return label;
+  const rest = label.slice(0, match.index).trim();
+  return rest || label;
 }
 
 /**
@@ -25,30 +37,39 @@ export function weightItems(
   sourceName: string,
 ): WeightItem[] {
   const rows: WeightItem[] = group.options.map((option) => ({
-    label: option.label,
-    detail: `${option.grams} g${option.mine ? " · My Spools List" : ""}`,
+    label: withoutGrams(option.label, option.grams),
+    weight: formatGrams(option.grams),
+    detail: option.mine
+      ? "From your My Spools List on SpoolEase."
+      : `From SpoolEase's spool catalog: ${option.label}.`,
     choice: { kind: "grams", grams: option.grams },
   }));
   return [
     ...rows,
     {
       label: `As listed in ${sourceName}`,
-      detail: describeSourceWeights(profiles, group),
+      weight: describeSourceWeights(profiles, group),
+      detail: `The empty spool weight ${sourceName} gives for these filaments.`,
       choice: { kind: "source" },
     },
     {
       label: "Unspecified",
-      detail: "SpoolEase works it out on the first full weigh",
+      weight: "–",
+      detail: "SpoolEase works it out on the first full weigh.",
       choice: { kind: "unspecified" },
     },
   ];
 }
 
-/** The item matching an earlier choice, so coming back shows what was picked; else the first. */
+/** The item matching an earlier choice, so coming back shows what was picked; else the source's weight. */
 export function itemIndex(items: WeightItem[], choice: WeightChoice | undefined): number {
-  if (!choice) return 0;
+  const source = Math.max(
+    0,
+    items.findIndex((item) => item.choice.kind === "source"),
+  );
+  if (!choice) return source;
   const index = items.findIndex((item) => JSON.stringify(item.choice) === JSON.stringify(choice));
-  return Math.max(0, index);
+  return index < 0 ? source : index;
 }
 
 /** Where a brand's filaments come from, as the label of the "source's weight" item. */

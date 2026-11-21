@@ -2,14 +2,18 @@
 // ABOUTME: Ink never has to wrap or shrink it, so layouts stay whole-column exact.
 
 import { Text } from "ink";
+import { useContext } from "react";
 
+import { Backdrop, backdropSegment } from "./backdrop.js";
 import { padSegments, type Segment } from "./text.js";
 
-/** Segments as nested <Text>s inside the enclosing <Text>. */
+/** Segments as nested <Text>s inside the enclosing <Text>; gray and dim on an overlay's backdrop. */
 export function Segments({ segments }: { segments: readonly Segment[] }) {
+  const backdrop = useContext(Backdrop);
+  const shown = backdrop ? segments.map(backdropSegment) : segments;
   return (
     <>
-      {segments.map(({ text, dim, ...style }, index) => (
+      {shown.map(({ text, dim, ...style }, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: segments are a fixed sequence built per render; the position is their identity.
         <Text key={index} {...style} {...(dim ? { dimColor: true } : {})}>
           {text}

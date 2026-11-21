@@ -45,13 +45,54 @@ export function runError(values: FormValues): string {
   if (printersOf(values).length === 0) return "Choose at least one printer in Settings";
   const setup = consoleSetup(values);
   if (setup === "missing")
-    return "SpoolEase needs a host and security key in Settings, or Skip SpoolEase on";
+    return "SpoolEase needs a host and security key in Settings, or turn Use SpoolEase off";
   if (setup === "ready") {
     const port = Number(values.port);
     if (!Number.isInteger(port) || port < 1 || port > 65_535)
       return "SpoolEase port must be a number between 1 and 65535 (Settings)";
   }
   return "";
+}
+
+/** The Settings row that fixes runError's problem (a deep link for app/switchTab), or null when there's none. */
+export function runErrorFocus(values: FormValues): string | null {
+  if (!values.presetFolder.trim()) return "bambu.folder";
+  if (printersOf(values).length === 0) return "bambu.printers";
+  const setup = consoleSetup(values);
+  if (setup === "missing") return values.host.trim() ? "spoolease.key" : "spoolease.host";
+  if (setup === "ready" && runError(values)) return "spoolease.port";
+  return null;
+}
+
+/** The Settings row for a SpoolEase or BambuStudio error a check or run reported. */
+export function errorFocus(error: string): string {
+  if (/SpoolEase unreachable/i.test(error)) return "spoolease.host";
+  if (/SpoolEase key/i.test(error)) return "spoolease.key";
+  if (/printer/i.test(error)) return "bambu.printers";
+  return /SpoolEase/i.test(error) ? "spoolease" : "bambu";
+}
+
+/** The settings a plan is read with: when any of them changes, the plan no longer says what a run does. */
+const BASIS_KEYS = [
+  "presetFolder",
+  "printerPreset",
+  "overwritePresets",
+  "createSpools",
+  "skipSpoolease",
+  "host",
+  "port",
+  "https",
+  "securityKey",
+] as const satisfies readonly (keyof FormValues)[];
+
+export type PlanBasis = Pick<FormValues, (typeof BASIS_KEYS)[number]>;
+
+export function planBasis(values: FormValues): PlanBasis {
+  return Object.fromEntries(BASIS_KEYS.map((key) => [key, values[key]])) as PlanBasis;
+}
+
+export function sameBasis(a: PlanBasis, b: PlanBasis): boolean {
+  return BASIS_KEYS.every((key) => a[key] === b[key]);
 }
 
 export interface RunTargets {

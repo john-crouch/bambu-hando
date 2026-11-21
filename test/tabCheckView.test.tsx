@@ -68,7 +68,7 @@ const MODEL: CheckModel = {
   page: "report",
   section: 0,
   focus: "sections",
-  scroll: 0,
+  item: 0,
   placed: true,
   ids: null,
 };
@@ -93,6 +93,7 @@ function fits(lines: string[], ctx: Ctx): void {
 const ready = (value: CheckData): Resource<CheckData> => ({ state: "ready", value, at: 1 });
 
 describe.each([
+  [60, 20],
   [80, 24],
   [120, 36],
 ])("the Check tab at %ix%i", (columns, rows) => {
@@ -102,22 +103,65 @@ describe.each([
     fits(lines, ctx);
     expect(lines).toHaveLength(ctx.bodyRows);
     const text = lines.join("\n");
-    expect(lines[0]).toContain("✗ 3 problems, 32 notes");
-    expect(lines[0]).toContain("BambuStudio default · http://10.0.24.111");
-    expect(text).toContain("Filaments without a preset");
-    expect(text).toContain("Acme PLA Blue (PA000002)");
+    expect(lines[0]).toContain("✗ 3 problems · 32 notes");
+    if (columns >= 80) expect(lines[0]).toContain("BambuStudio default · http://10.0.24.111");
+    expect(text).toContain(columns >= 100 ? "Filaments without a preset" : "No preset");
+    expect(text).toContain("Acme PLA Blue");
+    expect(text).not.toMatch(/Filament…|Spools o…|Presets…/);
     expect(text).toContain("Spools of these find no preset");
     expect(text).not.toContain("SECRETKEY");
   });
 
-  it("scrolls a long section with its position in the border", () => {
+  it("highlights the item the cursor is on, keeps it in view, and says where it is", () => {
     const ctx = sized(columns, rows, ready(data()));
-    const lines = screen({ ...MODEL, section: 3, focus: "items", scroll: 5 }, ctx);
+    const lines = screen({ ...MODEL, section: 3, focus: "items", item: 20 }, ctx);
     fits(lines, ctx);
     const text = lines.join("\n");
-    expect(text).toContain("Polymaker PolyLite PLA Color 05");
-    expect(text).not.toContain("Color 04 ");
-    expect(text).toMatch(/6–\d+ of 30/);
+    const cursorLine = lines.find((line) => line.includes("Color 20"));
+    expect(cursorLine).toMatch(/│▌Polymaker PolyLite PLA Color 20/);
+    expect(text).toContain("21/30");
+    // The name is the part that differs: it's never cut while a printer or code column is shown.
+    for (const line of lines.filter((l) => l.includes("Polymaker")))
+      expect(line).toMatch(/Color \d\d/);
+  });
+
+  it("shows presets with short printers, never the vendor", () => {
+    const ctx = sized(columns, rows, ready(data()));
+    const text = screen({ ...MODEL, section: 3, focus: "items" }, ctx).join("\n");
+    expect(text).not.toContain("Bambu Lab");
+    if (columns >= 80) expect(text).toContain("X1C 0.4");
+  });
+
+  it("gives the items the whole width below 70 columns while they have focus", () => {
+    const ctx = sized(columns, rows, ready(data()));
+    const lines = screen({ ...MODEL, section: 3, focus: "items" }, ctx);
+    fits(lines, ctx);
+    expect(lines.some((line) => line.includes("Sections"))).toBe(columns >= 70);
+  });
+
+  it("marks the console's sections not checked when it can't be reached, and still checks presets", () => {
+    const ctx = {
+      ...sized(columns, rows, {
+        state: "failed",
+        error: "SpoolEase unreachable at http://10.0.24.111: fetch failed",
+      }),
+    };
+    const offline = {
+      ...ctx,
+      resources: {
+        ...ctx.resources,
+        presets: { state: "ready" as const, value: { presets: PRESETS, warnings: [] }, at: 1 },
+      },
+    };
+    const lines = screen(MODEL, offline);
+    fits(lines, offline);
+    const text = lines.join("\n");
+    expect(lines[0]).toContain("✗ Couldn't check the console");
+    expect(text).toContain("Not checked: SpoolEase");
+    expect(text).toContain("unreachable");
+    expect(text).toContain("enter open Settings");
+    const presets = screen({ ...MODEL, section: 4 }, offline).join("\n");
+    expect(presets).toContain("Rock");
   });
 
   it("says an empty section has nothing in it", () => {
@@ -172,7 +216,8 @@ describe.each([
     expect(text).toMatch(/Preset file +Filament ID/);
     expect(text).toContain(`Rock @X1C.json`);
     expect(text).toContain(fix.id);
-    expect(text).toContain("Nothing is written until you press a");
+    expect(text).not.toContain("until you press a");
+    expect(text).toContain("1 file to write");
     const done = screen(
       { ...MODEL, page: "ids", ids: { ...ids, results: [{ ...fix, ok: true, detail: "" }] } },
       ctx,

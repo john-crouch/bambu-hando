@@ -1,5 +1,5 @@
-// ABOUTME: A dialog: an accent-bordered box with its title in the top border and its own key line, painted opaque.
-// ABOUTME: Frame centers it over the body; dialogInner says how wide its content may be.
+// ABOUTME: A dialog: an accent-bordered box with its title in the top border and a note in the bottom one, painted opaque.
+// ABOUTME: Its keys go in the footer (one place for keys); Frame centers it over the body; dialogInner gives its content width.
 
 import { Box, Text } from "ink";
 import type { ReactNode } from "react";
@@ -21,17 +21,31 @@ export function dialogInner(width: number): number {
   return Math.max(0, width - 2 * SIDE);
 }
 
+/** Below this many free columns, a dialog takes the whole width: thinner margins only show slivers of the body. */
+const MIN_MARGINS = 12;
+
+/** A dialog's width in a body of columns: the width it wants, or all of it when the margins would be slivers. */
+export function dialogWidth(columns: number, wanted: number): number {
+  return columns - wanted < MIN_MARGINS ? Math.max(0, columns) : wanted;
+}
+
 export interface DialogProps {
   title: string;
   width?: number;
-  hints: readonly Hint[];
+  /**
+   * A key line inside the dialog. Leave it out: the footer shows the dialog's keys (the shell puts an
+   * overlay's hints there, and a tab's own while its modal is true).
+   */
+  hints?: readonly Hint[];
+  /** Set into the bottom border's right end, e.g. "↓ more". */
+  note?: string;
   children?: ReactNode;
 }
 
 /** Lines of cover: more than any terminal has rows; clipped to the dialog's own height. */
 const COVER_ROWS = 200;
 
-export function Dialog({ title, width = DIALOG_WIDTH, hints, children }: DialogProps) {
+export function Dialog({ title, width = DIALOG_WIDTH, hints = [], note, children }: DialogProps) {
   const inner = dialogInner(width);
   const keys = hintSegments(fitHints(hints, inner));
   const cover = Array.from({ length: COVER_ROWS }, () => spaces(width - 2)).join("\n");
@@ -61,7 +75,7 @@ export function Dialog({ title, width = DIALOG_WIDTH, hints, children }: DialogP
           </Box>
         ) : null}
       </Box>
-      <Line segments={panelBottom(width, undefined, true)} width={width} />
+      <Line segments={panelBottom(width, note, true)} width={width} />
     </Box>
   );
 }

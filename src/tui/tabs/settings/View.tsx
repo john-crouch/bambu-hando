@@ -13,6 +13,7 @@ import {
   Line,
   List,
   type ListRow,
+  listPosition,
   type Page,
   PageBar,
   Panel,
@@ -32,6 +33,7 @@ import {
   PLACEHOLDERS,
   pageRows,
   type SettingRow,
+  shownItems,
 } from "./fields.js";
 import { listRows, settingsLayout } from "./layout.js";
 import type { SettingsModel } from "./model.js";
@@ -112,8 +114,8 @@ function rowSegments(
 }
 
 function RowsPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
-  const layout = settingsLayout(ctx);
-  const inner = panelInner(layout.left, layout.height);
+  const layout = settingsLayout(ctx, model.page);
+  const inner = panelInner(layout.left, layout.rowsHeight);
   const rows = pageRows(model.page, ctx, model);
   const labelWidth = Math.max(...PAGE_FIELDS[model.page].map((f) => textWidth(f.label)));
   const cursor = model.cursors[model.page];
@@ -125,10 +127,11 @@ function RowsPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
       title={title}
       focused={focused}
       width={layout.left}
-      height={layout.height}
+      height={layout.rowsHeight}
       footerRight={PAGE_NOTES[model.page]}
     >
-      <Line segments={[]} width={inner.width} />
+      {/* Side by side there's room for air above the rows; stacked, the detail needs the line. */}
+      {layout.stacked ? null : <Line segments={[]} width={inner.width} />}
       {rows.map((row, index) => {
         if (open?.kind === "text" && index === cursor) {
           const prefix = 1 + labelWidth + GAP;
@@ -235,11 +238,12 @@ function errorLines(error: string, width: number): Segment[][] {
 function ListPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
   const open = model.open;
   if (open?.kind !== "list") return null;
-  const layout = settingsLayout(ctx);
-  const inner = panelInner(layout.right, layout.height);
+  const layout = settingsLayout(ctx, model.page);
+  const inner = panelInner(layout.right, layout.sideHeight);
   const list = listFor(open.field, ctx, model);
+  const items = shownItems(list, open);
   const row = pageRows(model.page, ctx, model).find((r) => r.field === open.field);
-  const rows: ListRow[] = list.items.map((item) => ({
+  const rows: ListRow[] = items.map((item) => ({
     key: item.value,
     ticked: list.ticked.includes(item.value),
     cells: [
@@ -247,7 +251,8 @@ function ListPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
       ...(item.detail ? [{ text: item.detail, dim: true }] : []),
     ],
   }));
-  const height = listRows(ctx);
+  const filtered = open.filter !== undefined;
+  const height = listRows(ctx, model.page, filtered);
   const foot: Segment[][] = model.error
     ? errorLines(model.error, inner.width)
     : list.note
@@ -259,15 +264,33 @@ function ListPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
       subtitle={list.multi ? `${list.ticked.length} ticked` : "choose one"}
       focused
       width={layout.right}
-      height={layout.height}
-      {...(list.items.length > height
-        ? { footerRight: `${open.cursor + 1}/${list.items.length}` }
-        : {})}
+      height={layout.sideHeight}
+      {...(items.length > height ? { footerRight: listPosition(open.cursor, items.length) } : {})}
     >
+      {filtered ? (
+        <Box flexDirection="row" flexShrink={0}>
+          <Line
+            segments={[{ text: " / ", color: open.filtering ? COLORS.accent : COLORS.muted }]}
+            width={3}
+          />
+          <TextField
+            value={open.filter?.value ?? ""}
+            cursor={open.filter?.cursor ?? 0}
+            focused={Boolean(open.filtering)}
+            width={Math.max(1, inner.width - 3 - PAD)}
+            placeholder="type to filter"
+          />
+        </Box>
+      ) : null}
       {list.loading && list.items.length === 0 ? (
         <Box paddingLeft={PAD} height={1}>
           <Busy message="Reading…" />
         </Box>
+      ) : items.length === 0 ? (
+        <Line
+          segments={pad([{ text: "Nothing matches the filter", color: COLORS.muted }])}
+          width={inner.width}
+        />
       ) : (
         <List
           rows={rows}
@@ -275,6 +298,7 @@ function ListPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
           height={Math.min(height, rows.length)}
           width={inner.width}
           marker="check"
+          {...(open.filter?.value ? { highlight: open.filter.value } : {})}
         />
       )}
       {list.loading && list.items.length > 0 ? (
@@ -288,15 +312,15 @@ function ListPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
 }
 
 function DetailPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
-  const layout = settingsLayout(ctx);
-  const inner = panelInner(layout.right, layout.height);
+  const layout = settingsLayout(ctx, model.page);
+  const inner = panelInner(layout.right, layout.sideHeight);
   const rows = pageRows(model.page, ctx, model);
   const row = rows[model.cursors[model.page]];
   if (!row) return null;
   const editing = model.open?.kind === "text";
   const values = editing ? [] : valueLines(model, ctx, row, inner.width);
   const lines: Segment[][] = [
-    [],
+    ...(layout.stacked ? [] : [[]]),
     ...wrapped(row.detail, inner.width, { color: COLORS.muted }),
     ...(values.length ? [[], ...values] : []),
     ...(editing && fieldKind(row.field) === "secret"
@@ -310,7 +334,7 @@ function DetailPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
   ];
   const testing = model.page === "spoolease" && model.test.state === "testing";
   return (
-    <Panel title={row.label} focused={false} width={layout.right} height={layout.height}>
+    <Panel title={row.label} focused={false} width={layout.right} height={layout.sideHeight}>
       <SideLines lines={lines} width={inner.width} />
       {testing ? (
         <Box paddingLeft={PAD} height={1}>
@@ -322,10 +346,11 @@ function DetailPanel({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
 }
 
 export function SettingsView({ model, ctx }: { model: SettingsModel; ctx: Ctx }) {
+  const { stacked } = settingsLayout(ctx, model.page);
   return (
     <Box flexDirection="column" flexShrink={0}>
       <PageBar pages={pages(model, ctx)} width={ctx.bodyColumns} />
-      <Box flexDirection="row" flexShrink={0}>
+      <Box flexDirection={stacked ? "column" : "row"} flexShrink={0}>
         <RowsPanel model={model} ctx={ctx} />
         {model.open?.kind === "list" ? (
           <ListPanel model={model} ctx={ctx} />

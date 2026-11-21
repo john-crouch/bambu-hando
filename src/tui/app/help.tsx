@@ -1,5 +1,5 @@
 // ABOUTME: The help overlay (?): what the active tab is for, its keys, and the keys that work everywhere.
-// ABOUTME: helpLines lays the page out for a width (pure); ↑↓ pgup pgdn home end scroll it and any other key closes it.
+// ABOUTME: helpLines lays the page out for a width (pure); ↑↓ pgup pgdn home end scroll it, any other key closes it.
 
 import { Box } from "ink";
 
@@ -9,6 +9,7 @@ import {
   COLORS,
   Dialog,
   dialogInner,
+  dialogWidth,
   fitText,
   Line,
   type Segment,
@@ -36,7 +37,7 @@ export const GLOBAL_HELP: Hint[] = [
   { keys: "ctrl+k", label: "find a command by name" },
   { keys: "?", label: "this help" },
   { keys: "esc", label: "back: close, clear a filter, up a level" },
-  { keys: "q", label: "quit (exits 1 if a run failed)" },
+  { keys: "q", label: "quit (asks first with unsaved changes; exits 1 if a run failed)" },
   { keys: "ctrl+c", label: "quit right away, from anywhere" },
 ];
 
@@ -104,16 +105,25 @@ export function helpLines(request: HelpRequest, width: number): HelpLine[] {
 
 /** Dialog width and the page's visible height. */
 export function helpSize(ctx: Ctx): { width: number; rows: number } {
-  // The dialog's borders, padding and key line: 6.
+  // The dialog's borders and padding: 4 rows.
   return {
-    width: Math.max(30, Math.min(76, ctx.columns - 4)),
-    rows: Math.max(3, ctx.bodyRows - 6),
+    width: dialogWidth(ctx.bodyColumns, 76),
+    rows: Math.max(3, ctx.bodyRows - 4),
   };
 }
 
 function maxScroll(model: HelpModel, ctx: Ctx): number {
   const { width, rows } = helpSize(ctx);
   return Math.max(0, helpLines(model.request, dialogInner(width)).length - rows);
+}
+
+/** Which way the page goes on, for the bottom border: "↓ more", "↑↓ more", "↑ more", or "" when it all shows. */
+export function helpNote(model: HelpModel, ctx: Ctx): string {
+  const max = maxScroll(model, ctx);
+  if (max === 0) return "";
+  const scroll = Math.min(model.scroll, max);
+  if (scroll === 0) return "↓ more";
+  return scroll >= max ? "↑ more" : "↑↓ more";
 }
 
 function helpHints(model: HelpModel, ctx: Ctx): Hint[] {
@@ -141,13 +151,9 @@ function HelpView({ model, ctx }: { model: HelpModel; ctx: Ctx }) {
   const lines = helpLines(model.request, inner);
   const scroll = Math.min(model.scroll, maxScroll(model, ctx));
   const shown = lines.slice(scroll, scroll + rows);
-  const more = lines.length > rows ? ` · ${scroll + shown.length}/${lines.length}` : "";
+  const note = helpNote(model, ctx);
   return (
-    <Dialog
-      title={`Help · ${model.request.title}${more}`}
-      width={width}
-      hints={helpHints(model, ctx)}
-    >
+    <Dialog title={`Help · ${model.request.title}`} width={width} {...(note ? { note } : {})}>
       <Box flexDirection="column">
         {shown.map((line, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: a window over fixed lines.

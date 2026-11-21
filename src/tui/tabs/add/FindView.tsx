@@ -4,6 +4,7 @@
 import { Box } from "ink";
 
 import type { Ctx } from "../../core/types.js";
+import { formatRange, plural } from "../../ui/format.js";
 import {
   Busy,
   Detail,
@@ -19,6 +20,7 @@ import {
   TextField,
 } from "../../ui/index.js";
 import { swatchSegments } from "../../ui/Swatch.js";
+import { fitText, textWidth } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import {
   type FindDetail,
@@ -28,16 +30,12 @@ import {
   materialsOf,
   SPOOLMANDB_LABEL,
   swatchOf,
-  tempsText,
 } from "./catalog.js";
 import type { Box as Area } from "./layout.js";
 import { pageArea, splitPage } from "./layout.js";
 import { type AddModel, sourcesOf } from "./model.js";
 import { findRows } from "./update.js";
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : /(ch|sh|s|x)$/.test(noun) ? "es" : "s"}`;
-}
+import { wrapText } from "./wrap.js";
 
 const tickCell = (ticked: boolean) =>
   ticked
@@ -72,8 +70,8 @@ export function listRow(row: FindRow, selected: ReadonlySet<string>): ListRow {
         cells: [
           tickCell(selected.has(row.key)),
           { text: row.label, grow: true },
-          { text: tempsText(profile.nozzleTempMin, profile.nozzleTempMax), width: 9 },
-          { text: profile.filamentId, width: 8, dim: true },
+          // The code is for the detail panel: the list keeps its width for the name.
+          { text: formatRange(profile.nozzleTempMin, profile.nozzleTempMax), width: 9 },
         ],
       };
     }
@@ -91,7 +89,8 @@ export function listRow(row: FindRow, selected: ReadonlySet<string>): ListRow {
 /** The list panel's title and subtitle for where Find is. */
 export function findTitle(model: AddModel, ctx: Ctx): { title: string; subtitle: string } {
   const rows = findRows(model, ctx);
-  if (model.search) return { title: "Search SpoolmanDB", subtitle: plural(rows.length, "match") };
+  if (model.search)
+    return { title: "Search SpoolmanDB", subtitle: plural(rows.length, "match", "matches") };
   const level = model.stack.at(-1)?.level ?? { kind: "brands" };
   switch (level.kind) {
     case "root":
@@ -217,25 +216,22 @@ function ListPanel({ model, ctx, box }: { model: AddModel; ctx: Ctx; box: Area }
 
 const muted = (text: string): Segment => ({ text, color: COLORS.muted });
 
-function chipLine(color: string, text: string, detail: string, width: number) {
-  return (
-    <Line
-      width={width}
-      segments={[{ text: " " }, ...swatchSegments(color, 2), { text: ` ${text}  ` }, muted(detail)]}
-    />
-  );
-}
-
-/** The detail panel's lines for the highlighted row. */
-/** A color's detail in the few lines a stacked panel has: one line of facts, one of what adding writes. */
+/**
+ * A color's detail in the few lines a stacked panel has: swatch and code, the facts on one line, then
+ * what adding writes: a line per target when they fit, else all of them on one line.
+ */
 function CompactColor({
   detail,
   width,
+  height,
 }: {
   detail: Extract<FindDetail, { kind: "color" }>;
   width: number;
+  height: number;
 }) {
   const fact = (label: string) => detail.facts.find((f) => f.label === label)?.value ?? "";
+  const room = height - 2;
+  const perLine = room >= detail.adds.length + 1;
   return (
     <>
       <Line
@@ -243,26 +239,75 @@ function CompactColor({
         segments={[
           { text: " " },
           ...swatchSegments(detail.swatch, 4),
-          detail.ticked
-            ? { text: " ✓ ticked", color: COLORS.ok, bold: true }
-            : muted(" space ticks it"),
+          ...(detail.ticked ? [{ text: " ✓ ticked", color: COLORS.ok, bold: true }] : []),
+          muted(`  ${fact("Code")}`),
         ]}
       />
       <Line
         width={width}
         segments={[
           {
-            text: ` ${fact("Nozzle")} · ${fact("Filament")} · empty ${fact("Empty spool")} · ${fact("Density")}  `,
+            text: ` ${fact("Nozzle")} · ${fact("Filament")} · empty ${fact("Empty spool")} · ${fact("Density")}`,
           },
-          muted(fact("Code")),
         ]}
       />
-      <Line width={width} segments={[]} />
-      <Line width={width} segments={[muted(" Adding it writes")]} />
-      <Line
-        width={width}
-        segments={[{ text: " + ", color: COLORS.ok }, { text: detail.adds.join(" · ") }]}
-      />
+      {perLine ? (
+        <>
+          {room >= detail.adds.length + 2 ? <Line width={width} segments={[]} /> : null}
+          <Line width={width} segments={[muted(" Adding it writes")]} />
+          {detail.adds.map((line) => (
+            <Line
+              key={line}
+              width={width}
+              segments={[{ text: " + ", color: COLORS.ok }, { text: line }]}
+            />
+          ))}
+        </>
+      ) : room > 0 ? (
+        <Line
+          width={width}
+          segments={[
+            muted(" Writes "),
+            { text: "+ ", color: COLORS.ok },
+            { text: detail.addsShort },
+          ]}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** A material's colors with their nozzle ranges in one aligned column. */
+function MaterialColors({
+  colors,
+  width,
+}: {
+  colors: Extract<FindDetail, { kind: "material" }>["colors"];
+  width: number;
+}) {
+  const temps = colors.map((p) => formatRange(p.nozzleTempMin, p.nozzleTempMax));
+  const tempWidth = Math.max(0, ...temps.map(textWidth));
+  const nameWidth = Math.max(
+    4,
+    Math.min(
+      Math.max(0, ...colors.map((p) => textWidth(p.colorName || p.name))),
+      width - tempWidth - 7,
+    ),
+  );
+  return (
+    <>
+      {colors.map((p, index) => (
+        <Line
+          key={p.filamentId}
+          width={width}
+          segments={[
+            { text: " " },
+            ...swatchSegments(swatchOf(p), 2),
+            { text: ` ${fitText(p.colorName || p.name, nameWidth)}  ` },
+            muted(temps[index] ?? ""),
+          ]}
+        />
+      ))}
     </>
   );
 }
@@ -270,10 +315,12 @@ function CompactColor({
 function DetailBody({
   detail,
   width,
+  height,
   compact,
 }: {
   detail: FindDetail;
   width: number;
+  height: number;
   compact: boolean;
 }) {
   switch (detail.kind) {
@@ -281,9 +328,11 @@ function DetailBody({
     case "other":
       return (
         <>
-          {detail.lines.map((line) => (
-            <Line key={line} width={width} segments={[{ text: " " }, muted(line)]} />
-          ))}
+          {detail.lines
+            .flatMap((line) => wrapText(line, Math.max(1, width - 1)))
+            .map((line) => (
+              <Line key={line} width={width} segments={[{ text: " " }, muted(line)]} />
+            ))}
         </>
       );
     case "brand":
@@ -298,35 +347,17 @@ function DetailBody({
         />
       );
     case "material":
-      return (
-        <>
-          {detail.colors.map((p) => (
-            <Box key={p.filamentId}>
-              {chipLine(
-                swatchOf(p),
-                p.colorName || p.name,
-                tempsText(p.nozzleTempMin, p.nozzleTempMax),
-                width,
-              )}
-            </Box>
-          ))}
-        </>
-      );
+      return <MaterialColors colors={detail.colors} width={width} />;
     case "color":
-      if (compact) return <CompactColor detail={detail} width={width} />;
+      if (compact) return <CompactColor detail={detail} width={width} height={height} />;
       return (
         <>
           <Box paddingLeft={1}>
             <Swatch color={detail.swatch} width={Math.max(0, width - 2)} height={2} />
           </Box>
-          <Line
-            width={width}
-            segments={
-              detail.ticked
-                ? [{ text: " ✓ ticked", color: COLORS.ok, bold: true }]
-                : [muted(" space ticks it")]
-            }
-          />
+          {detail.ticked ? (
+            <Line width={width} segments={[{ text: " ✓ ticked", color: COLORS.ok, bold: true }]} />
+          ) : null}
           <Line width={width} segments={[]} />
           <Detail width={width} rows={detail.facts} />
           <Line width={width} segments={[]} />
@@ -366,7 +397,9 @@ function DetailPanel({
     (level?.kind === "materials" ? `${materialsOf(sources, level.brand).length} materials` : "");
   return (
     <Panel title={title} width={box.width} height={box.height}>
-      {detail ? <DetailBody detail={detail} width={inner.width} compact={compact} /> : null}
+      {detail ? (
+        <DetailBody detail={detail} width={inner.width} height={inner.height} compact={compact} />
+      ) : null}
     </Panel>
   );
 }

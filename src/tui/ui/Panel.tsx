@@ -2,8 +2,9 @@
 // ABOUTME: Dim when it isn't focused, accent when it is; children get the inside, panelInner says how big that is.
 
 import { Box, Text } from "ink";
-import type { ReactNode } from "react";
+import { type ReactNode, useContext } from "react";
 
+import { Backdrop } from "./backdrop.js";
 import { Line, Segments } from "./Line.js";
 import { type Segment, textWidth, truncate } from "./text.js";
 import { COLORS } from "./theme.js";
@@ -112,11 +113,13 @@ function FlexPanel({
   footerRight,
   children,
 }: Omit<PanelProps, "width">) {
-  const border = focused ? COLORS.accent : COLORS.border;
+  const backdrop = useContext(Backdrop);
+  const border = focused && !backdrop ? COLORS.accent : COLORS.border;
   return (
     <Box
       borderStyle="round"
       borderColor={border}
+      borderDimColor={backdrop}
       flexDirection="column"
       {...(height === undefined ? {} : { height })}
       {...(grow ? { flexGrow: 1, flexBasis: 0 } : {})}
@@ -146,7 +149,10 @@ function FlexPanel({
           justifyContent="flex-end"
         >
           <Box marginRight={1} flexShrink={0}>
-            <Text color={COLORS.muted}> {footerRight} </Text>
+            <Text color={COLORS.muted} dimColor={backdrop}>
+              {" "}
+              {footerRight}{" "}
+            </Text>
           </Box>
         </Box>
       ) : null}
@@ -161,10 +167,23 @@ function FlexPanel({
 }
 
 export function Panel(props: PanelProps) {
-  const { title, subtitle, focused = false, width, height, footerRight, children } = props;
+  const { focused = false, width } = props;
   if (width === undefined) return <FlexPanel {...props} />;
   if (width < 2) return null;
-  const border = focused ? COLORS.accent : COLORS.border;
+  return <FixedPanel {...props} width={width} focused={focused} />;
+}
+
+function FixedPanel({
+  title,
+  subtitle,
+  focused,
+  width,
+  height,
+  footerRight,
+  children,
+}: PanelProps & { width: number; focused: boolean }) {
+  const backdrop = useContext(Backdrop);
+  const border = focused && !backdrop ? COLORS.accent : COLORS.border;
   const middle = height === undefined ? undefined : Math.max(0, height - 2);
   return (
     <Box
@@ -179,6 +198,7 @@ export function Panel(props: PanelProps) {
         borderTop={false}
         borderBottom={false}
         borderColor={border}
+        borderDimColor={backdrop}
         flexDirection="column"
         overflow="hidden"
         flexShrink={0}

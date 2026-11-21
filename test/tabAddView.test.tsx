@@ -122,6 +122,7 @@ describe.each([
         signature: loading.weights.signature,
         entries: parseSpoolWeightList("Acme - Plastic - 180g,180,Acme - Cardboard - 140g,140"),
         warnings: [],
+        spooled: [],
       },
       c,
     )[0];
@@ -130,7 +131,7 @@ describe.each([
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
     const text = lines.join("\n");
     expect(text).toContain("Empty spool weight · Acme");
-    expect(text).toContain("Acme - Plastic - 180g");
+    expect(text).toMatch(/Acme - Plastic\s+180 g/);
     expect(text).toContain("As listed in SpoolmanDB");
     expect(text).toContain("brand 1 of 1");
   });
@@ -150,8 +151,10 @@ describe("what the pages say", () => {
     expect(brands).toContain("Nothing ticked yet");
   });
 
-  it("shows colors with ticks, temperatures, codes, Other color…, and what adding writes", () => {
-    expect(colors).toMatch(/\[✓\] Black\s+200–220°C\s+PACMBLK0/);
+  it("shows colors with ticks and temperatures, codes in the detail, Other color…, and what adding writes", () => {
+    expect(colors).toMatch(/\[✓\] Black\s+200–220°C /);
+    expect(colors).toMatch(/Code\s+PACMBLU0/);
+    expect(colors).not.toContain("space ticks it");
     expect(colors).toContain("+  Other color…");
     expect(colors).toContain("Adding it writes");
     expect(colors).toContain("+ SpoolEase custom filament");
@@ -175,14 +178,15 @@ describe("what the pages say", () => {
     expect(review).toMatch(/\+ new\s+add \+ spool/);
     expect(review).toMatch(/= kept\s+add \+ spool/);
     expect(review).toContain("= kept: 1 preset is there already");
+    expect(review).toContain("Plan · Acme PLA · what applying does");
     expect(review).toContain("! SpoolEase was slow");
   });
 
   it("shows progress while running and the outcome when done", () => {
     expect(running).toContain("Running");
     expect(running).toContain("Starting…");
-    expect(done).toContain("✓ 2 written, 0 failed · 2 new spools");
-    expect(done).toContain("l labels for the new spools");
+    expect(done).toContain("✓ 2 written · 2 new spools");
+    expect(done).not.toContain("failed");
     expect(done).toContain("▸ Done");
   });
 });
@@ -221,7 +225,7 @@ describe("the preset editor on Review", () => {
     for (const line of lines) expect(textWidth(line)).toBeLessThanOrEqual(columns);
     const text = lines.join("\n");
     expect(text).toContain("Edit Acme PLA Black");
-    expect(text).toContain("esc keeps the changes for the run");
+    expect(text).toContain("The run writes this preset for X1C 0.4 with these changes");
 
     const edited = addTab.update(
       ready,
@@ -238,7 +242,7 @@ describe("the preset editor on Review", () => {
       context,
     )[0];
     const plan80 = screen(back, context).join("\n");
-    expect(plan80).toContain("✎ Acme PLA Black");
+    expect(plan80).toContain("✎ Black");
     expect(plan80).toContain("✎ PACMBLK0: 1 change goes into the 1 preset the run writes");
   });
 });

@@ -2,7 +2,7 @@
 // ABOUTME: Drives createShell with recording fake tabs and injected loaders, so no terminal or network is involved.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-
+import type { PaletteItem } from "../src/tui/app/messages.js";
 import type { AnyLabels, AnyTab } from "../src/tui/app/registry.js";
 import type { Loaders } from "../src/tui/app/resources.js";
 import {
@@ -33,6 +33,10 @@ interface FakeModel {
   seen: string[];
   typing: boolean;
   writing?: boolean;
+  /** A dialog of the tab's own is open ("m" opens it, esc closes it). */
+  dialog?: boolean;
+  /** Unsaved changes ("u" makes one more). */
+  edits?: number;
 }
 
 /** A tab that records every message it gets; "t" toggles a text field, "!" asks for a toast. */
@@ -47,12 +51,18 @@ function fakeTab(id: TabId): AnyTab {
           ? `key:${(msg.key as KeyPress).name ?? (msg.key as KeyPress).input}`
           : msg.type === "app/loaded"
             ? `loaded:${String(msg.resource)}:${(msg.result as { state: string }).state}`
-            : msg.type;
+            : msg.type === "app/switchTab" && msg.focus !== undefined
+              ? `app/switchTab:${String(msg.focus)}`
+              : msg.type;
       const next = { ...model, seen: [...model.seen, label] };
       if (msg.type === "key" && (msg.key as KeyPress).input === "t" && !model.typing)
         return [{ ...next, typing: true }, []];
       if (msg.type === "key" && (msg.key as KeyPress).name === "esc")
-        return [{ ...next, typing: false }, []];
+        return [{ ...next, typing: false, dialog: false }, []];
+      if (msg.type === "key" && (msg.key as KeyPress).input === "m")
+        return [{ ...next, dialog: true }, []];
+      if (msg.type === "key" && (msg.key as KeyPress).input === "u")
+        return [{ ...next, edits: (model.edits ?? 0) + 1 }, []];
       if (msg.type === "write/start") return [{ ...next, writing: true }, []];
       if (msg.type === "write/done") return [{ ...next, writing: false }, []];
       if (msg.type === "key" && (msg.key as KeyPress).input === "!")
@@ -63,8 +73,10 @@ function fakeTab(id: TabId): AnyTab {
     hints: () => [{ keys: "x", label: `do ${id}`, primary: true }],
     capturesText: (model: FakeModel) => model.typing,
     busy: (model: FakeModel) => (model.writing ? `Writing ${id}` : null),
+    modal: (model: FakeModel) => model.dialog === true,
+    unsaved: (model: FakeModel) => model.edits ?? 0,
     commands: () => [
-      { title: `${id} thing`, msg: { type: "tab", tab: id, msg: { type: "thing" } } },
+      { title: `${id} thing`, keys: "z", msg: { type: "tab", tab: id, msg: { type: "thing" } } },
     ],
   };
 }
@@ -110,6 +122,12 @@ async function drive(
 
 const key = (what: string, mods = {}): ShellMsg => ({ type: "key", key: press(what, mods) });
 const seen = (model: ShellModel, tab: TabId): string[] => (model.tabs[tab] as FakeModel).seen;
+
+/** The open confirm dialog's request. */
+function confirmRequest(model: ShellModel): { title: string; lines: string[] } {
+  if (model.overlay?.id !== "confirm") throw new Error("no confirm dialog open");
+  return (model.overlay.model as { request: { title: string; lines: string[] } }).request;
+}
 
 function start(overrides = {}, d = deps()) {
   const shell = createShell(d);
@@ -192,6 +210,19 @@ describe("tabs", () => {
     expect(seen(model, "check")).toEqual(["app/switchTab"]);
   });
 
+  it("passes a deep link's focus to the tab it shows; keyboard switches send none", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, {
+      type: "app/switchTab",
+      tab: "settings",
+      focus: "spoolease.host",
+    });
+    expect(model.active).toBe("settings");
+    expect(seen(model, "settings")).toEqual(["app/switchTab:spoolease.host"]);
+    model = await drive(shell, model, key("tab"));
+    expect(seen(model, "spools")).toEqual(["app/switchTab"]);
+  });
+
   it("sends resize to every tab and keeps the size", async () => {
     let { shell, model } = start();
     model = await drive(shell, model, { type: "resize", columns: 120, rows: 36 });
@@ -225,6 +256,59 @@ describe("global keys", () => {
     model = await drive(shell, model, { type: "tab", tab: "add", msg: { type: "write/done" } });
     model = await drive(shell, model, key("q"));
     expect(model.exit).toBe(0);
+  });
+
+  it("gives q, tab, ? and ctrl+k to a tab whose own dialog is open, and the footer only its keys", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("m"));
+    expect(shell.hints(model).map((h) => h.keys)).toEqual(["x"]);
+    model = await drive(shell, model, key("q"), key("tab"), key("?"), key("k", { ctrl: true }));
+    expect(model.exit).toBeNull();
+    expect(model.active).toBe("spools");
+    expect(model.overlay).toBeNull();
+    expect(seen(model, "spools")).toEqual(["key:m", "key:q", "key:tab", "key:?", "key:k"]);
+    model = await drive(shell, model, key("esc"), key("q"));
+    expect(model.exit).toBe(0);
+  });
+
+  it("asks before q drops unsaved changes in any tab, and esc stays", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("tab"), key("u"), key("u"), key("tab"), key("u"));
+    model = await drive(shell, model, key("q"));
+    expect(model.exit).toBeNull();
+    expect(model.overlay?.id).toBe("confirm");
+    const request = confirmRequest(model);
+    expect(request.title).toBe("Quit and drop 3 unsaved changes?");
+    expect(request.lines.join("\n")).toContain("Add");
+    expect(request.lines.join("\n")).toContain("Presets");
+    model = await drive(shell, model, key("esc"));
+    expect(model.overlay).toBeNull();
+    expect(model.exit).toBeNull();
+    model = await drive(shell, model, { type: "app/quit" });
+    expect(model.overlay?.id).toBe("confirm");
+    model = await drive(shell, model, key("q"));
+    expect(model.exit).toBe(0);
+  });
+
+  it("quits from the unsaved-changes question with a too, and says 1 change in the singular", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("u"), key("q"));
+    expect(confirmRequest(model).title).toBe("Quit and drop 1 unsaved change?");
+    model = await drive(shell, model, key("a"));
+    expect(model.exit).toBe(0);
+  });
+
+  it("still refuses to quit from the unsaved-changes question while a write runs", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("u"), key("q"));
+    model = await drive(shell, model, { type: "tab", tab: "add", msg: { type: "write/start" } });
+    // Messages applied without running their cmds: drive would also wait out the toast.
+    const [, cmds] = shell.update(model, key("q"));
+    const sent: ShellMsg[] = [];
+    for (const cmd of cmds) await (cmd as Cmd<ShellMsg>)((m) => sent.push(m));
+    for (const msg of sent) [model] = shell.update(model, msg);
+    expect(model.exit).toBeNull();
+    expect(model.toast?.text).toContain("Writing add");
   });
 
   it("quits with the code of the worst run", async () => {
@@ -291,14 +375,62 @@ describe("global keys", () => {
   it("shows the footer hints of the tab plus the global keys", () => {
     const { shell, model } = start();
     expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "tab", "ctrl+k", "?", "q"]);
+    const footer = shell.footer(model);
+    expect(footer.hints.map((h) => h.keys)).toEqual(["x"]);
+    expect(footer.global.map((h) => h.keys)).toEqual(["tab", "ctrl+k", "?", "q"]);
   });
 
-  it("drops q and ? from the footer while the tab takes text, and leaves it to an open overlay", async () => {
+  it("drops q and ? from the footer while the tab takes text, and shows only an open overlay's keys", async () => {
     let { shell, model } = start();
     model = await drive(shell, model, key("t"));
     expect(shell.hints(model).map((h) => h.keys)).toEqual(["x", "tab", "ctrl+k"]);
     model = await drive(shell, model, key("k", { ctrl: true }));
-    expect(shell.hints(model)).toEqual([]);
+    expect(shell.footer(model)).toEqual({
+      hints: [
+        { keys: "↑↓", label: "move", primary: true },
+        { keys: "enter", label: "run", primary: true },
+        { keys: "esc", label: "close", primary: true },
+      ],
+      global: [],
+    });
+  });
+});
+
+describe("escape merged with the next key", () => {
+  // Ink holds a lone ESC 20 ms; when the next key's bytes are read with it, it reports one meta key.
+  it("splits a meta key back into esc and the key, so neither is lost", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("m"), key("q", { meta: true }));
+    expect(seen(model, "spools")).toEqual(["key:m", "key:esc"]);
+    expect(model.exit).toBe(0);
+  });
+
+  it("lets esc close an overlay before the key that came with it lands", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("k", { ctrl: true }), key("down", { meta: true }));
+    expect(model.overlay).toBeNull();
+    expect(seen(model, "spools")).toEqual(["key:down"]);
+  });
+
+  it("splits meta arrows, tab and enter too", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("down", { meta: true }));
+    model = await drive(shell, model, key("enter", { meta: true }));
+    expect(seen(model, "spools")).toEqual(["key:esc", "key:down", "key:esc", "key:enter"]);
+    model = await drive(shell, model, key("tab", { meta: true }));
+    expect(model.active).toBe("add");
+  });
+
+  it("keeps word moves (meta ←→ backspace) whole while the tab takes text", async () => {
+    let { shell, model } = start();
+    model = await drive(
+      shell,
+      model,
+      key("t"),
+      key("left", { meta: true }),
+      key("backspace", { meta: true }),
+    );
+    expect(seen(model, "spools")).toEqual(["key:t", "key:left", "key:backspace"]);
   });
 });
 
@@ -338,6 +470,19 @@ describe("overlays", () => {
     model = await drive(shell, model, key("esc"));
     expect(model.overlay).toBeNull();
     expect(seen(model, "spools")).toEqual([]);
+  });
+
+  it("palette lists commands under title-case groups with their shortcuts", async () => {
+    let { shell, model } = start();
+    model = await drive(shell, model, key("k", { ctrl: true }));
+    if (model.overlay?.id !== "palette") throw new Error("no palette open");
+    const items = (model.overlay.model as { items: PaletteItem[] }).items;
+    const find = (title: string) => items.find((i) => i.title === title);
+    expect(find("spools thing")).toMatchObject({ detail: "Spools", keys: "z" });
+    expect(find("Go to Add")).toMatchObject({ detail: "Tab" });
+    expect(find("Reload BambuStudio presets")).toMatchObject({ detail: "Data" });
+    expect(find("Help")).toMatchObject({ detail: "App", keys: "?" });
+    expect(find("Quit")).toMatchObject({ detail: "App", keys: "q" });
   });
 
   it("palette runs a tab's command on that tab, switching to it", async () => {

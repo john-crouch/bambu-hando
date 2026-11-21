@@ -11,7 +11,9 @@ import type { ProfilePlan } from "../../../planPreview.js";
 import type { Edits } from "../../../presetEdit.js";
 import type { SyncEvent, SyncStage } from "../../../sync.js";
 import type { RunSummary } from "../../core/types.js";
-import { swatchOf, tempsText } from "./catalog.js";
+import { formatGrams, formatRange, plural } from "../../ui/format.js";
+import { textWidth } from "../../ui/text.js";
+import { swatchOf } from "./catalog.js";
 
 export type Tone = "new" | "same" | "change";
 
@@ -62,6 +64,8 @@ export interface PlanRow {
   empty: string;
   preset: StatusCell;
   spool: StatusCell;
+  /** The row's preset has edits for the run (✎ before the name). */
+  edited?: boolean;
 }
 
 function statusCell(status: Status | undefined, active: boolean): StatusCell {
@@ -92,9 +96,9 @@ export function planRows(
       name: profile.name,
       brand: profile.brand,
       material: profile.material,
-      temps: tempsText(range.low, range.high),
+      temps: formatRange(range.low, range.high),
       code: profile.filamentId,
-      empty: profile.coreWeight ? `${profile.coreWeight} g` : "–",
+      empty: profile.coreWeight ? formatGrams(profile.coreWeight) : "–",
       preset: started
         ? statusCell(row.preset, stage === "presets")
         : planned(plan && presetPlanText(plan, overwrite)),
@@ -108,10 +112,6 @@ export function planRows(
 export interface Note {
   text: string;
   tone: "warning" | "failed" | "muted";
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 /** Where a filament's plan edits go: the presets the run writes for it, or nowhere when it keeps them all. */
@@ -159,13 +159,16 @@ export function planNotes(
   const kept = overwrite ? 0 : plans.reduce((sum, plan) => sum + plan.existingPresets, 0);
   if (kept > 0)
     notes.push({
-      text: `= kept: ${plural(kept, "preset")} ${kept === 1 ? "is" : "are"} there already and ${kept === 1 ? "stays as it is" : "stay as they are"} (Overwrite presets in Settings replaces ${kept === 1 ? "it" : "them"})`,
+      text: `= kept: ${plural(kept, "preset")} ${kept === 1 ? "is" : "are"} there already and ${kept === 1 ? "stays as it is" : "stay as they are"}; Overwrite presets in Settings replaces ${kept === 1 ? "it" : "them"}`,
       tone: "muted",
     });
   const spooled = plans.filter((plan) => plan.spool === "exists").length;
   if (spooled > 0)
     notes.push({
-      text: `has spool: the console has a spool of ${plural(spooled, "filament")} already, so ${spooled === 1 ? "it gets" : "they get"} no new one`,
+      text:
+        spooled === 1
+          ? "has spool: the console has a spool of it already, so it gets no new one"
+          : `has spool: the console has spools of ${spooled} of them already, so they get no new one`,
       tone: "muted",
     });
   return notes;
@@ -216,8 +219,9 @@ export function runOutcome(results: SyncResult[], sourceLabel: string): RunOutco
   const failed = results.filter(resultFailed);
   const spoolIds = results.map((r) => r.spoolId).filter((id): id is string => Boolean(id));
   const spools = spoolIds.length > 0 ? `, ${plural(spoolIds.length, "new spool")}` : "";
+  const failures = failed.length > 0 ? `, ${failed.length} failed` : "";
   const lines = [
-    `${plural(results.length, "filament")} from ${sourceLabel}: ${results.length - failed.length} written, ${failed.length} failed${spools}`,
+    `${plural(results.length, "filament")} from ${sourceLabel}: ${results.length - failed.length} written${failures}${spools}`,
     ...failed.map((r) => `${r.profileName}: ${r.detail}`),
   ];
   if (failed.length > 0)
@@ -237,35 +241,204 @@ export function runOutcome(results: SyncResult[], sourceLabel: string): RunOutco
   };
 }
 
-// The swatch shows the color, so the table leaves its RGBA out and keeps the width for what the run does.
-export const PLAN_COLUMNS = {
-  swatch: 3,
-  name: 22,
-  brand: 12,
-  material: 10,
-  temps: 10,
-  code: 9,
-  empty: 7,
-  preset: 12,
-  spool: 14,
-} as const;
+export type TableColumn =
+  | "name"
+  | "brand"
+  | "material"
+  | "temps"
+  | "code"
+  | "empty"
+  | "preset"
+  | "spool";
 
-export type PlanColumn = keyof typeof PLAN_COLUMNS;
-
-// On a narrow panel the name gives up columns first, down to this, then the brand. Below that the
-// status columns give way down to a whole badge (" SKIPPED " plus a gap, so the header fits too), then
-// material and temperatures, then name and brand again. Code and empty weight never shrink: the code
-// is the ID that links preset, CSV and spool. Past every minimum the rows are clipped.
-export const PLAN_SHRINK: readonly (readonly [PlanColumn, number])[] = [
-  ["name", 10],
-  ["brand", 5],
-  ["spool", 10],
-  ["preset", 10],
-  ["material", 6],
-  ["temps", 8],
-  ["name", 6],
-  ["brand", 4],
+export const TABLE_COLUMNS: readonly TableColumn[] = [
+  "name",
+  "brand",
+  "material",
+  "temps",
+  "code",
+  "empty",
+  "preset",
+  "spool",
 ];
+
+export const COLUMN_TITLES: Record<TableColumn, string> = {
+  name: "Name",
+  brand: "Brand",
+  material: "Material",
+  temps: "Nozzle",
+  code: "Code",
+  empty: "Empty",
+  preset: "Preset",
+  spool: "SpoolEase",
+};
+
+/** The list's own columns before and after the cells: gutter, chip and its gap, scroll thumb. */
+export const LIST_EDGES = 5;
+
+const STATUS_LABELS: Record<Status, string> = {
+  written: "✓ written",
+  failed: "✗ failed",
+  skipped: "- skipped",
+  planned: "! planned",
+};
+
+/** A status cell's words: the plan before the run, then its status. */
+export function statusLabel(cell: StatusCell): string {
+  switch (cell.kind) {
+    case "plan":
+      return cell.text;
+    case "status":
+      return STATUS_LABELS[cell.status];
+    case "working":
+      return "… working";
+    case "none":
+      return "·";
+  }
+}
+
+/** The words a status column can show during a run, so it doesn't change width when the run starts. */
+const RUN_LABELS = ["✓ written", "✗ failed", "- skipped", "… working"];
+
+/**
+ * The name without what other places already say: the brand in front (SpoolmanDB names start with it)
+ * and the material's word. Kept whole when nothing would be left.
+ */
+export function shortName(
+  name: string,
+  brand: string,
+  material: string,
+  stripBrand: boolean,
+  stripMaterial: boolean,
+): string {
+  let rest = name;
+  if (stripBrand && brand && rest.toLowerCase().startsWith(`${brand.toLowerCase()} `))
+    rest = rest.slice(brand.length + 1);
+  if (stripMaterial && material) {
+    const words = rest.split(" ");
+    const at = words.findIndex((w) => w.toLowerCase() === material.toLowerCase());
+    if (at >= 0) words.splice(at, 1);
+    rest = words.join(" ");
+  }
+  return rest.trim() || name;
+}
+
+export interface PlanLayout {
+  /** Each column's cell width; 0 leaves the column out. */
+  widths: Record<TableColumn, number>;
+  /** The brand and material every row shares (shown in the title instead of a column), else null. */
+  brand: string | null;
+  material: string | null;
+  /** Whether names leave out their brand and material, said elsewhere (a column or the title). */
+  stripBrand: boolean;
+  stripMaterial: boolean;
+}
+
+/** Below this the name would be cut before anything else gave way. */
+const NAME_MIN = 14;
+/** At most this wide, so a long brand or material doesn't take the name's room. */
+const BRAND_MAX = 14;
+const MATERIAL_MAX = 10;
+
+/**
+ * The plan table's columns fitted to `width` (the list's width), sized from the rows' own values.
+ * A brand or material all rows share moves to the title; names leave out what a column or the title
+ * says. When the name would be cut, the code goes first, then the empty weight, then the brand and
+ * material columns (the names then say them); past that the status columns and temperatures shrink.
+ */
+export function planLayout(rows: PlanRow[], width: number): PlanLayout {
+  // A column's span is its cell plus the gap after it; the last cell's gap is the one LIST_EDGES leaves.
+  const room = Math.max(0, width - LIST_EDGES + 1);
+  const span = (title: string, texts: string[], max = Number.POSITIVE_INFINITY) =>
+    Math.min(max, Math.max(textWidth(title), ...texts.map(textWidth))) + 1;
+  const shared = (pick: (row: PlanRow) => string): string | null => {
+    const [first] = rows;
+    return first && rows.every((row) => pick(row) === pick(first)) ? pick(first) : null;
+  };
+  const brand = shared((r) => r.brand);
+  const material = shared((r) => r.material);
+  const shown: Record<TableColumn, number> = {
+    name: 0,
+    brand:
+      brand === null
+        ? span(
+            COLUMN_TITLES.brand,
+            rows.map((r) => r.brand),
+            BRAND_MAX,
+          )
+        : 0,
+    material:
+      material === null
+        ? span(
+            COLUMN_TITLES.material,
+            rows.map((r) => r.material),
+            MATERIAL_MAX,
+          )
+        : 0,
+    temps: span(
+      COLUMN_TITLES.temps,
+      rows.map((r) => r.temps),
+    ),
+    code: span(
+      COLUMN_TITLES.code,
+      rows.map((r) => r.code),
+    ),
+    empty: span(
+      COLUMN_TITLES.empty,
+      rows.map((r) => r.empty),
+    ),
+    preset: span(COLUMN_TITLES.preset, [...rows.map((r) => statusLabel(r.preset)), ...RUN_LABELS]),
+    // A column no row has anything in (SpoolEase skipped) says nothing: it's left out.
+    spool: rows.every(
+      (r) => r.spool.kind === "none" || (r.spool.kind === "status" && r.spool.status === "skipped"),
+    )
+      ? 0
+      : span(COLUMN_TITLES.spool, [...rows.map((r) => statusLabel(r.spool)), ...RUN_LABELS]),
+  };
+  let stripBrand = true;
+  let stripMaterial = true;
+  const nameWant = () =>
+    span(
+      COLUMN_TITLES.name,
+      rows.map(
+        (r) =>
+          `${r.edited ? "✎ " : ""}${shortName(r.name, r.brand, r.material, stripBrand, stripMaterial)}`,
+      ),
+    );
+  const fixed = () =>
+    TABLE_COLUMNS.reduce((sum, key) => sum + (key === "name" ? 0 : shown[key]), 0);
+  const fits = () => fixed() + Math.min(nameWant(), NAME_MIN + 1) <= room;
+  for (const drop of ["code", "empty", "columns"] as const) {
+    if (fits()) break;
+    if (drop !== "columns") {
+      shown[drop] = 0;
+      continue;
+    }
+    if (shown.brand > 0) {
+      shown.brand = 0;
+      stripBrand = false;
+    }
+    if (shown.material > 0) {
+      shown.material = 0;
+      stripMaterial = false;
+    }
+  }
+  shown.name = Math.max(0, room - fixed());
+  if (shown.name < Math.min(nameWant(), NAME_MIN + 1)) {
+    const fitted = fitColumns({ ...shown, name: Math.min(nameWant(), NAME_MIN + 1) }, room, [
+      ["spool", 9],
+      ["preset", 7],
+      ["temps", 8],
+      ["name", 7],
+    ]);
+    Object.assign(shown, fitted);
+    shown.name = Math.max(shown.name, room - fixed());
+  }
+  const widths = Object.fromEntries(
+    TABLE_COLUMNS.map((key) => [key, shown[key] > 0 ? shown[key] - 1 : 0]),
+  ) as Record<TableColumn, number>;
+  return { widths, brand, material, stripBrand, stripMaterial };
+}
 
 /**
  * Column widths fitted to `available` columns: the columns over it come off the `shrink` columns in

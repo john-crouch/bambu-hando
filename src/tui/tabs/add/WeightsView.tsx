@@ -5,6 +5,7 @@ import { Box } from "ink";
 
 import type { WeightChoice } from "../../../spoolWeights.js";
 import type { Ctx } from "../../core/types.js";
+import { formatGrams } from "../../ui/format.js";
 import {
   Busy,
   Empty,
@@ -15,18 +16,21 @@ import {
   panelInner,
   type Segment,
 } from "../../ui/index.js";
+import { textWidth } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import { pageArea, splitPage } from "./layout.js";
 import type { AddModel } from "./model.js";
 import { currentWeightItems } from "./update.js";
+import { wrapText } from "./wrap.js";
 
 function choiceText(choice: WeightChoice | undefined, sourceName: string): string {
   if (!choice) return "";
-  if (choice.kind === "grams") return `${choice.grams} g`;
+  if (choice.kind === "grams") return formatGrams(choice.grams);
   return choice.kind === "source" ? sourceName : "unspecified";
 }
 
 const muted = (text: string): Segment => ({ text, color: COLORS.muted });
+const plain = (text: string): Segment => ({ text });
 
 export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
   const area = pageArea(ctx.bodyColumns, ctx.bodyRows);
@@ -61,16 +65,23 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
   const items = currentWeightItems(model);
   const chosen = group ? model.weightChoices.get(group.key) : undefined;
   const list = panelInner(split.list.width, split.list.height);
+  const detail = panelInner(split.detail.width, split.detail.height);
   const names = (group?.profiles ?? []).map((i) => weights.profiles[i]?.name ?? "");
   const why =
     group && group.options.length > 0
       ? "SpoolEase lists several spools for this brand: which is yours?"
       : "SpoolEase's spool lists don't have this brand.";
-  const detail = panelInner(split.detail.width, split.detail.height);
-  const labelWidth = Math.min(
-    Math.max(...items.map((i) => i.label.length), 8),
-    Math.max(8, Math.floor(list.width * 0.6)),
-  );
+  const prose = (text: string, lines = Number.POSITIVE_INFINITY) =>
+    wrapText(text, Math.max(1, list.width - 1), lines);
+  // A short panel keeps its rows for the choices: one line each for the names and the question.
+  const introLines = list.height >= 14 ? 2 : 1;
+  const intro = [
+    ...prose(names.join(", "), introLines).map(muted),
+    ...prose(why, introLines).map(plain),
+  ];
+  const weightWidth = Math.max(5, ...items.map((i) => textWidth(i.weight)));
+  const item = items[weights.cursor];
+  const side = (text: string) => wrapText(text, Math.max(1, detail.width - 1));
 
   return (
     <Box flexDirection={split.side ? "row" : "column"} flexShrink={0}>
@@ -82,36 +93,52 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
         height={split.list.height}
         footerRight={listPosition(weights.cursor, items.length)}
       >
-        <Line width={list.width} segments={[{ text: " " }, muted(names.join(", "))]} />
-        <Line width={list.width} segments={[{ text: " " }, muted(why)]} />
+        {intro.map((segment, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional prose lines.
+          <Line key={index} width={list.width} segments={[{ text: " " }, segment]} />
+        ))}
         <Line width={list.width} segments={[]} />
         <List
-          rows={items.map((item) => {
-            const picked = JSON.stringify(item.choice) === JSON.stringify(chosen);
+          rows={items.map((it) => {
+            const picked = JSON.stringify(it.choice) === JSON.stringify(chosen);
             return {
-              key: item.label,
+              key: it.label,
               cells: [
                 picked
                   ? { text: "●", width: 1, color: COLORS.ok }
                   : { text: "○", width: 1, color: COLORS.muted },
-                { text: item.label, width: labelWidth },
-                { text: item.detail, grow: true, dim: true },
+                { text: it.label, grow: true },
+                { text: it.weight, width: weightWidth, align: "right" as const, dim: true },
               ],
             };
           })}
           cursor={weights.cursor}
-          height={Math.max(0, list.height - 3)}
+          height={Math.max(0, list.height - intro.length - 1)}
           width={list.width}
         />
       </Panel>
       {split.detail.height >= 3 ? (
-        <Panel title="Brands" width={split.detail.width} height={split.detail.height}>
+        <Panel
+          title={item?.label ?? "Brands"}
+          width={split.detail.width}
+          height={split.detail.height}
+        >
+          {item ? (
+            <>
+              {side(`${item.weight === "–" ? "" : `${item.weight}. `}${item.detail}`).map(
+                (line) => (
+                  <Line key={line} width={detail.width} segments={[{ text: " " }, plain(line)]} />
+                ),
+              )}
+              <Line width={detail.width} segments={[]} />
+            </>
+          ) : null}
           {weights.groups.map((g) => {
             const asked = weights.prompts.indexOf(g);
             const choice = model.weightChoices.get(g.key);
             const status: Segment[] =
               asked < 0
-                ? [muted(`${g.options[0]?.grams ?? 0} g · SpoolEase's only row`)]
+                ? [muted(`${formatGrams(g.options[0]?.grams ?? 0)} · SpoolEase's only row`)]
                 : choice
                   ? [{ text: choiceText(choice, "as listed"), color: COLORS.ok }]
                   : [muted(asked === weights.step ? "choosing…" : "to choose")];
@@ -130,19 +157,16 @@ export function WeightsView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
             );
           })}
           <Line width={detail.width} segments={[]} />
-          <Line
-            width={detail.width}
-            segments={[muted(" A new spool starts with its empty spool's weight:")]}
-          />
-          <Line
-            width={detail.width}
-            segments={[muted(" SpoolEase subtracts it from what the scale reads.")]}
-          />
-          {weights.warnings.map((w) => (
+          {side(
+            "A new spool starts with its empty spool's weight: SpoolEase subtracts it from what the scale reads.",
+          ).map((line) => (
+            <Line key={line} width={detail.width} segments={[{ text: " " }, muted(line)]} />
+          ))}
+          {weights.warnings.flatMap(side).map((line) => (
             <Line
-              key={w}
+              key={line}
               width={detail.width}
-              segments={[{ text: ` ! ${w}`, color: COLORS.warning }]}
+              segments={[{ text: ` ! ${line}`, color: COLORS.warning }]}
             />
           ))}
         </Panel>

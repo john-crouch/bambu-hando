@@ -5,6 +5,7 @@ import { Box } from "ink";
 
 import type { Status } from "../../../models.js";
 import type { Ctx } from "../../core/types.js";
+import { plural, shortPrinter } from "../../ui/format.js";
 import {
   Bar,
   Busy,
@@ -19,68 +20,31 @@ import {
   panelInner,
   type Segment,
 } from "../../ui/index.js";
-import { fitText } from "../../ui/text.js";
+import { fitText, textWidth, truncate } from "../../ui/text.js";
 import { COLORS } from "../../ui/theme.js";
 import { pageArea } from "./layout.js";
 import type { AddModel } from "./model.js";
 import {
+  COLUMN_TITLES,
   finishedProfiles,
-  fitColumns,
   type Note,
-  PLAN_COLUMNS,
-  PLAN_SHRINK,
-  type PlanColumn,
+  type PlanLayout,
   type PlanRow,
+  planLayout,
   planNotes,
   planRows,
   runOutcome,
   runPercent,
   STAGE_LABELS,
   type StatusCell,
+  shortName,
+  statusLabel,
+  TABLE_COLUMNS,
   type Tone,
 } from "./plan.js";
 import { runTargets } from "./targets.js";
-
-type TableColumn = Exclude<PlanColumn, "swatch">;
-
-const COLUMN_TITLES: Record<TableColumn, string> = {
-  name: "Name",
-  brand: "Brand",
-  material: "Material",
-  temps: "Nozzle",
-  code: "Code",
-  empty: "Empty",
-  preset: "Preset",
-  spool: "SpoolEase",
-};
-
-const TABLE_COLUMNS = Object.keys(COLUMN_TITLES) as TableColumn[];
-
-/** The list's own columns before and after the cells: gutter, chip and its gap, scroll thumb. */
-const LIST_EDGES = 5;
-
-/**
- * Each column's cell width in a table `width` columns wide (a column's width counts its gap): fitted
- * down on a narrow table, and the name takes whatever a wide one has to spare.
- */
-export function tableWidths(width: number): Record<TableColumn, number> {
-  const { swatch: _swatch, ...columns } = PLAN_COLUMNS;
-  const shrink = PLAN_SHRINK.filter(([key]) => key !== "swatch") as [TableColumn, number][];
-  const room = Math.max(0, width - LIST_EDGES + 1);
-  // SpoolmanDB names start with brand and material, so a narrow table drops those columns first.
-  const narrow = room < TABLE_COLUMNS.reduce((sum, key) => sum + columns[key], 0);
-  const shown = narrow ? { ...columns, brand: 0, material: 0, preset: 10 } : columns;
-  const fitted = fitColumns(
-    shown,
-    room,
-    shrink.filter(([key]) => shown[key] > 0),
-  );
-  const used = TABLE_COLUMNS.reduce((sum, key) => sum + fitted[key], 0);
-  fitted.name += Math.max(0, room - used);
-  return Object.fromEntries(
-    TABLE_COLUMNS.map((key) => [key, fitted[key] > 0 ? fitted[key] - 1 : 0]),
-  ) as Record<TableColumn, number>;
-}
+import { nothingToApply } from "./update.js";
+import { wrapText } from "./wrap.js";
 
 const TONE_COLORS: Record<Tone, { color: string; dim?: boolean }> = {
   new: { color: COLORS.ok },
@@ -88,40 +52,48 @@ const TONE_COLORS: Record<Tone, { color: string; dim?: boolean }> = {
   change: { color: COLORS.warning },
 };
 
-const STATUS: Record<Status, { text: string; color: string }> = {
-  written: { text: "✓ written", color: COLORS.ok },
-  failed: { text: "✗ failed", color: COLORS.failed },
-  skipped: { text: "- skipped", color: COLORS.muted },
-  planned: { text: "! planned", color: COLORS.warning },
+const STATUS_COLORS: Record<Status, string> = {
+  written: COLORS.ok,
+  failed: COLORS.failed,
+  skipped: COLORS.muted,
+  planned: COLORS.warning,
 };
 
-function statusText(cell: StatusCell): { text: string; color: string } {
+function statusColor(cell: StatusCell): string {
   switch (cell.kind) {
     case "plan":
-      return { text: cell.text, color: TONE_COLORS[cell.tone].color };
+      return TONE_COLORS[cell.tone].color;
     case "status":
-      return STATUS[cell.status];
+      return STATUS_COLORS[cell.status];
     case "working":
-      return { text: "… working", color: COLORS.accent };
+      return COLORS.accent;
     case "none":
-      return { text: "·", color: COLORS.muted };
+      return COLORS.muted;
   }
 }
 
-export function tableRow(
-  row: PlanRow,
-  index: number,
-  widths: Record<TableColumn, number>,
-): ListRow {
+function statusText(cell: StatusCell): { text: string; color: string } {
+  return { text: statusLabel(cell), color: statusColor(cell) };
+}
+
+export function tableRow(row: PlanRow, index: number, layout: PlanLayout): ListRow {
+  const { widths } = layout;
   const preset = statusText(row.preset);
   const spool = statusText(row.spool);
+  const name = shortName(
+    row.name,
+    row.brand,
+    row.material,
+    layout.stripBrand,
+    layout.stripMaterial,
+  );
   return {
     key: `${index}:${row.code}`,
     swatch: row.swatch,
     // Columns a narrow table drops have no width: leave their cells out, gaps and all.
     cells: (
       [
-        { text: row.name, width: widths.name },
+        { text: `${row.edited ? "✎ " : ""}${name}`, width: widths.name },
         { text: row.brand, width: widths.brand },
         { text: row.material, width: widths.material },
         { text: row.temps, width: widths.temps },
@@ -134,7 +106,7 @@ export function tableRow(
   };
 }
 
-function headerSegments(widths: Record<TableColumn, number>): Segment[] {
+function headerSegments(widths: PlanLayout["widths"]): Segment[] {
   const out: Segment[] = [{ text: "    " }];
   for (const key of TABLE_COLUMNS) {
     if (widths[key] <= 0) continue;
@@ -152,12 +124,23 @@ const NOTE_COLORS: Record<Note["tone"], string> = {
   muted: COLORS.muted,
 };
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+/** A path cut from the middle so its end (the folder it is) stays: "~/.config/…/filament/base". */
+export function fitPath(path: string, width: number): string {
+  if (textWidth(path) <= width) return path;
+  const parts = path.split("/");
+  for (let keep = parts.length - 1; keep > 0; keep--) {
+    const tail = parts.slice(parts.length - keep).join("/");
+    const cut = `${parts[0]}/…/${tail}`;
+    if (textWidth(cut) <= width) return cut;
+  }
+  return truncate(path, width);
 }
 
+/** The targets card's label column and its gap, as Detail draws it. */
+const TARGET_LABEL = 11;
+
 /** The targets card: every place the run writes to. */
-function targetRows(ctx: Ctx): DetailRow[] {
+function targetRows(ctx: Ctx, width: number): DetailRow[] {
   const t = runTargets(ctx.values);
   const spoolease =
     t.console === "ready"
@@ -166,14 +149,15 @@ function targetRows(ctx: Ctx): DetailRow[] {
         }
       : t.console === "skipped"
         ? { value: "skipped", dim: true }
-        : { value: "not set up: add the host and key in Settings", tone: "failed" as const };
+        : { value: "not set up: add the host and key in Settings (s)", tone: "failed" as const };
   return [
-    { label: "Presets", value: `${t.presetDir} · existing ${t.overwrite ? "replaced" : "kept"}` },
+    {
+      label: "Presets",
+      value: `${fitPath(t.presetDir, Math.max(8, width - TARGET_LABEL - 18))} · existing ${t.overwrite ? "replaced" : "kept"}`,
+    },
     {
       label: "Printers",
-      value:
-        t.printers.map((p) => p.replace(/^Bambu Lab /, "")).join(", ") ||
-        "none: choose in Settings",
+      value: t.printers.map(shortPrinter).join(", ") || "none: choose in Settings (s)",
       ...(t.printers.length === 0 ? { tone: "failed" as const } : {}),
     },
     { label: "SpoolEase", ...spoolease },
@@ -192,7 +176,7 @@ function Card({ model, ctx, width }: { model: AddModel; ctx: Ctx; width: number 
         width={width}
         height={5}
       >
-        <Detail rows={targetRows(ctx)} width={inner.width} />
+        <Detail rows={targetRows(ctx, inner.width)} width={inner.width} />
       </Panel>
     );
   if (run.state === "running") {
@@ -241,72 +225,78 @@ function Card({ model, ctx, width }: { model: AddModel; ctx: Ctx; width: number 
         />
       </Panel>
     );
+  // The next keys are the footer's: the card says what happened, once.
   const outcome = runOutcome(run.results, run.sourceLabel);
   const failed = run.results.filter(
     (r) => r.bambuStatus === "failed" || r.spooleaseStatus === "failed",
   ).length;
+  const written = run.results.length - failed;
+  const prose = failed
+    ? outcome.summary.lines.slice(1).join(" · ")
+    : "Restart BambuStudio to see the new presets.";
   return (
     <Panel title="Done" subtitle={run.sourceLabel} focused width={width} height={5}>
       <Line
         width={inner.width}
         segments={[
-          {
-            text: ` ${failed ? "✗" : "✓"} ${run.results.length - failed} written, ${failed} failed`,
-            color: failed ? COLORS.failed : COLORS.ok,
-            bold: true,
-          },
+          ...(written > 0 || failed === 0
+            ? [{ text: ` ✓ ${written} written`, color: COLORS.ok, bold: true }]
+            : []),
+          ...(failed > 0
+            ? [{ text: ` ✗ ${failed} failed`, color: COLORS.failed, bold: true }]
+            : []),
           ...(run.spoolIds.length > 0
             ? [{ text: ` · ${plural(run.spoolIds.length, "new spool")}`, color: COLORS.ok }]
             : []),
         ]}
       />
-      <Line
-        width={inner.width}
-        segments={[
-          {
-            text: failed
-              ? ` ${outcome.summary.lines.slice(1).join(" · ")}`
-              : " Restart BambuStudio to see the new presets.",
-            color: failed ? COLORS.failed : COLORS.muted,
-          },
-        ]}
-      />
-      <Line
-        width={inner.width}
-        segments={
-          run.spoolIds.length > 0
-            ? [
-                { text: " l", color: COLORS.accent2, bold: true },
-                { text: " labels for the new spools  ", color: COLORS.muted },
-                { text: "n", color: COLORS.accent2, bold: true },
-                { text: " add more", color: COLORS.muted },
-              ]
-            : [
-                { text: " n", color: COLORS.accent2, bold: true },
-                { text: " add more", color: COLORS.muted },
-              ]
-        }
-      />
+      {wrapText(prose, Math.max(0, inner.width - 1), 2).map((line) => (
+        <Line
+          key={line}
+          width={inner.width}
+          segments={[{ text: ` ${line}`, color: failed ? COLORS.failed : COLORS.muted }]}
+        />
+      ))}
     </Panel>
   );
 }
 
-/** The lines under the table: what the plan's words mean, warnings, and why apply refused. */
-export function planFooterLines(model: AddModel, ctx: Ctx): Segment[][] {
+/** A note wrapped to the width, its lines after the first indented under its text. */
+function noteLines(text: string, color: string, width: number, mark = ""): Segment[][] {
+  const lead = mark ? `${mark} ` : "";
+  return wrapText(text, Math.max(1, width - 1 - textWidth(lead))).map((line, index) => [
+    { text: ` ${index === 0 ? lead : " ".repeat(textWidth(lead))}${line}`, color },
+  ]);
+}
+
+/** The lines under the table, wrapped: what the plan's words mean, warnings, and why apply refused. */
+export function planFooterLines(model: AddModel, ctx: Ctx, width: number): Segment[][] {
   const { run, review } = model;
   const lines: Segment[][] = [];
   if (!run && review.state === "ready" && review.plans) {
+    if (nothingToApply(model, ctx))
+      lines.push(
+        ...noteLines(
+          "Nothing to apply: every preset, custom filament and spool is there already.",
+          COLORS.ok,
+          width,
+          "✓",
+        ),
+      );
     for (const note of planNotes(
       review.profiles,
       review.plans,
       ctx.values.overwritePresets,
       model.planEdits,
     ))
-      lines.push([{ text: ` ${note.text}`, color: NOTE_COLORS[note.tone] }]);
+      lines.push(...noteLines(note.text, NOTE_COLORS[note.tone], width));
   }
   for (const warning of run ? run.warnings : review.warnings)
-    lines.push([{ text: ` ! ${warning}`, color: COLORS.warning }]);
-  if (!run && review.error) lines.push([{ text: ` ✗ ${review.error}`, color: COLORS.failed }]);
+    lines.push(...noteLines(warning, COLORS.warning, width, "!"));
+  if (!run && review.error) {
+    const fix = /Settings/.test(review.error) ? "" : " (s fixes it in Settings)";
+    lines.push(...noteLines(`${review.error}${fix}`, COLORS.failed, width, "✗"));
+  }
   return lines;
 }
 
@@ -321,37 +311,33 @@ export function PlanView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
     run?.progress ?? [],
     run?.stage ?? null,
     ctx.values.overwritePresets,
-  );
-  const footer = planFooterLines(model, ctx).slice(0, Math.max(0, area.height - 5 - 4));
+  ).map((row) => (!run && model.planEdits.has(row.code) ? { ...row, edited: true } : row));
+  const footer = planFooterLines(model, ctx, area.width).slice(0, Math.max(0, area.height - 5 - 4));
   const tableHeight = Math.max(4, area.height - 5 - footer.length);
   const inner = panelInner(area.width, tableHeight);
-  const widths = tableWidths(inner.width);
+  const layout = planLayout(rows, inner.width);
+  const shared = [layout.brand, layout.material].filter(Boolean).join(" ");
+  const what = run ? "what the run did" : "what applying does";
   const loading = !run && review.state !== "ready";
   return (
     <Box flexDirection="column" flexShrink={0}>
       <Card model={model} ctx={ctx} width={area.width} />
       <Panel
         title="Plan"
-        subtitle={run ? "what the run did" : "what applying does"}
+        subtitle={shared ? `${shared} · ${what}` : what}
         focused={!run}
         width={area.width}
         height={tableHeight}
         footerRight={listPosition(review.cursor, rows.length)}
       >
-        <Line width={inner.width} segments={headerSegments(widths)} />
+        <Line width={inner.width} segments={headerSegments(layout.widths)} />
         {loading ? (
           <Box paddingLeft={1}>
             <Busy message="Comparing with what BambuStudio and SpoolEase have…" />
           </Box>
         ) : (
           <List
-            rows={rows.map((row, index) =>
-              tableRow(
-                model.planEdits.has(row.code) ? { ...row, name: `✎ ${row.name}` } : row,
-                index,
-                widths,
-              ),
-            )}
+            rows={rows.map((row, index) => tableRow(row, index, layout))}
             cursor={Math.min(review.cursor, Math.max(0, rows.length - 1))}
             height={Math.max(0, inner.height - 1)}
             width={inner.width}
