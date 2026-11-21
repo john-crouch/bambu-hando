@@ -467,7 +467,7 @@ describe("what the SpoolEase page keeps for next time", () => {
     expect(await loadTuiSettings()).not.toHaveProperty("console.securityKey");
   });
 
-  it("takes a key with spaces inside, trimming only its ends", async () => {
+  it("takes a key as typed, spaces included, dropping only a trailing line break", async () => {
     const h = await start({ securityKey: "OLDKEY" });
     await onPage(h, "SpoolEase");
     await retype(h, "Security key", " TWO WORDS ");

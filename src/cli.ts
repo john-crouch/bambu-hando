@@ -94,7 +94,7 @@ Options:
                                   to the SpoolEase settings saved in BambuStudio
   --spoolease-port <port>         SpoolEase port (default: as saved in Settings with its
                                   host, else 80)
-  --spoolease-https               Use HTTPS for SpoolEase (default: as saved in Settings;
+  --spoolease-https               Use HTTPS for SpoolEase (default: as saved in Settings with its host;
                                   --no-spoolease-https turns a saved one off)
   --skip-spoolease                Skip SpoolEase API updates
   --skip-spools                   Register filaments in SpoolEase without creating spools

@@ -11,7 +11,23 @@ export function trackWrite<T>(write: Promise<T>): Promise<T> {
   return write;
 }
 
-/** Resolves once every registered write has settled, those started meanwhile included; never rejects. */
-export async function writesSettled(): Promise<void> {
-  while (pending.size > 0) await Promise.allSettled([...pending]);
+/**
+ * Resolves true once every registered write has settled, those started meanwhile included, or false when
+ * limitMs passes first (a keyring call stuck on an unlock prompt must not hold the exit forever); never rejects.
+ */
+export async function writesSettled(limitMs = Number.POSITIVE_INFINITY): Promise<boolean> {
+  const all = (async () => {
+    while (pending.size > 0) await Promise.allSettled([...pending]);
+    return true;
+  })();
+  if (!Number.isFinite(limitMs)) return all;
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), limitMs);
+  });
+  try {
+    return await Promise.race([all, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

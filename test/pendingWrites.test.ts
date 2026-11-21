@@ -40,7 +40,7 @@ describe("pendingWrites", () => {
   it("hands back the write's own promise, and settles after a failed write too", async () => {
     const failing = Promise.reject(new Error("disk full"));
     await expect(trackWrite(failing)).rejects.toThrow("disk full");
-    await expect(writesSettled()).resolves.toBeUndefined();
+    await expect(writesSettled()).resolves.toBe(true);
   });
 
   it("waits for writes started while it waits", async () => {
@@ -51,7 +51,7 @@ describe("pendingWrites", () => {
   });
 
   it("settles at once with nothing running", async () => {
-    await expect(writesSettled()).resolves.toBeUndefined();
+    await expect(writesSettled()).resolves.toBe(true);
   });
 
   it("tracks writeAtomic, so a write nobody awaits still lands", async () => {
@@ -89,5 +89,15 @@ describe("the binary", () => {
     );
     expect(code).toBe(0);
     expect(await readFile(target, "utf-8")).toBe("saved\n");
+  });
+});
+
+describe("writesSettled's time limit", () => {
+  it("gives up after its limit and says a write is still running, so a stuck keyring prompt can't hold the exit forever", async () => {
+    let finish = () => {};
+    trackWrite(new Promise<void>((resolve) => (finish = resolve)));
+    expect(await writesSettled(20)).toBe(false);
+    finish();
+    expect(await writesSettled(1_000)).toBe(true);
   });
 });
