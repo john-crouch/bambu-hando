@@ -13,6 +13,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { removeSecret, SECRETS, storedSecret } from "../src/secrets.js";
 import { installBambuStudio, installSpoolEaseConfig } from "./bambuStudioSetup.js";
 import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import { startSpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 
@@ -66,6 +67,7 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key set (binary)", () => 
   });
 
   async function prompted(): Promise<{ pty: IPty; output: () => string; exited: Promise<number> }> {
+    assertNoLoginKeyring(["key", "set", "3dfp"], env);
     const pty = spawn(process.execPath, [BIN, "key", "set", "3dfp"], {
       name: "xterm-256color",
       cols: 100,
@@ -132,6 +134,7 @@ describe("bambu-hando key without a reachable keyring (binary)", () => {
     env: Record<string, string>,
     stdin = "",
   ): Promise<{ code: number; stdout: string; stderr: string }> {
+    assertNoLoginKeyring(args, env);
     return new Promise((resolve) => {
       const child = execFile(process.execPath, [BIN, ...args], { env }, (err, stdout, stderr) =>
         resolve({ code: err ? Number(err.code) : 0, stdout, stderr }),

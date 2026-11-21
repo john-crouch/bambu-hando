@@ -13,6 +13,7 @@ import xterm from "@xterm/headless";
 import { type IPty, spawn } from "node-pty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installBambuStudio } from "./bambuStudioSetup.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import {
   type SpoolEaseServer,
@@ -61,11 +62,13 @@ class Terminal {
   constructor(args: string[], env: Record<string, string>, size = { cols: 120, rows: 36 }) {
     this.screenBuffer = new xterm.Terminal({ ...size, allowProposedApi: true });
     // A minimal env on purpose: CI-like variables would switch Ink to non-interactive rendering.
+    const fullEnv = { PATH: process.env.PATH ?? "", TERM: "xterm-256color", ...env };
+    assertNoLoginKeyring(["tui", ...args], fullEnv);
     this.pty = spawn(process.execPath, [BIN, "tui", ...args], {
       name: "xterm-256color",
       cols: size.cols,
       rows: size.rows,
-      env: { PATH: process.env.PATH ?? "", TERM: "xterm-256color", ...env },
+      env: fullEnv,
     });
     this.pty.onData((data) => {
       this.raw += data;
@@ -197,7 +200,13 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
   ];
 
   const start = (args: string[], size?: { cols: number; rows: number }) => {
-    terminal = new Terminal(args, { HOME: home, SPOOLMANDB_URL: spoolmanDb.url }, size);
+    // The key in the environment too, so the TUI never looks one up in a keyring (keyringGuard.ts).
+    const env = {
+      HOME: home,
+      SPOOLMANDB_URL: spoolmanDb.url,
+      SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+    };
+    terminal = new Terminal(args, env, size);
     return terminal;
   };
 
@@ -229,6 +238,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
       terminal = new Terminal(["--source", "spoolmandb", "--skip-spoolease"], {
         HOME: home,
         SPOOLMANDB_URL: `http://127.0.0.1:${port}`,
+        SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
       });
       // waitFor also waits for raw mode, so q isn't lost; landing on Add asks for the catalog right away.
       await terminal.waitFor("SpoolEase skipped");
@@ -406,6 +416,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
 describe("bambu-hando tui --help", () => {
   it("prints the TUI's own short usage with its keys, not the headless help", async () => {
     const { code, stdout } = await new Promise<{ code: number; stdout: string }>((resolve) => {
+      assertNoLoginKeyring(["tui", "--help"], process.env);
       execFile(process.execPath, [BIN, "tui", "--help"], (err, out) =>
         resolve({ code: err ? Number(err.code ?? 1) : 0, stdout: out }),
       );

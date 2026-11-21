@@ -17,6 +17,7 @@ import {
   startFilamentProfilesServer,
   TEST_API_KEY,
 } from "./filamentProfilesServer.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 import {
   type SpoolEaseServer,
   startSpoolEaseServer,
@@ -91,6 +92,7 @@ describe("bambu-hando 3dfp sync (binary)", () => {
     output: () => string;
     exited: Promise<number>;
   }> {
+    assertNoLoginKeyring(args().slice(1), env);
     const pty = spawn(process.execPath, args(), {
       name: "xterm-256color",
       cols: 160,
@@ -144,6 +146,7 @@ describe("bambu-hando 3dfp sync (binary)", () => {
 
   it("writes nothing when there's no terminal to ask on", async () => {
     const result = await new Promise<{ code: number; stdout: string }>((resolve) => {
+      assertNoLoginKeyring(args().slice(1), env);
       execFile(process.execPath, args(), { env }, (err, stdout) =>
         resolve({ code: err ? Number(err.code) : 0, stdout }),
       );
