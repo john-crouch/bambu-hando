@@ -21,12 +21,17 @@ export function listRows(
   return Math.max(MIN_LIST_ROWS, terminalRows - chrome);
 }
 
+/** A stream's height in rows: Ink types stdout as any writable stream, and only a terminal has one. */
+function streamRows(stream: NodeJS.WritableStream): number | undefined {
+  return "rows" in stream && typeof stream.rows === "number" ? stream.rows : undefined;
+}
+
 /** The terminal's height in rows, updated on resize; undefined when stdout isn't a terminal. */
 export function useTerminalRows(): number | undefined {
   const { stdout } = useStdout();
-  const [rows, setRows] = useState<number | undefined>(stdout.rows);
+  const [rows, setRows] = useState<number | undefined>(streamRows(stdout));
   useEffect(() => {
-    const onResize = (): void => setRows(stdout.rows);
+    const onResize = (): void => setRows(streamRows(stdout));
     stdout.on("resize", onResize);
     return () => {
       stdout.off("resize", onResize);
