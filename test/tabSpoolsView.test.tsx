@@ -260,7 +260,7 @@ describe.each(SIZES)("the labels overlay at %ix%i", (columns, rows) => {
     expect(text).toContain("[ ] location");
     expect(text).toContain("╭ #14");
     expect(text).toContain("Sunlu");
-    expect(text).toContain("230–250 °C");
+    expect(text).toContain("230–250°C");
     expect(text).toContain("Print 2 labels on DYMO");
   });
 
