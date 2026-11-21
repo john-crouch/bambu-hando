@@ -178,9 +178,9 @@ function swatchOf(preset: Preset): string | undefined {
   return undefined;
 }
 
-/** "25 per kg"; "" for 0, BambuStudio's "no cost given". */
-function costPerKg(preset: Preset): string {
-  return shown(preset, "filament_cost") === "0" ? "" : shown(preset, "filament_cost", " per kg");
+/** "25 money/kg", BambuStudio's own unit for its Price (in whatever currency); "" for 0, "no price given". */
+function pricePerKg(preset: Preset): string {
+  return shown(preset, "filament_cost") === "0" ? "" : shown(preset, "filament_cost", " money/kg");
 }
 
 /** "30–80%": the part cooling fan's range, or the one end the preset sets. */
@@ -218,7 +218,7 @@ export function presetDetail(preset: Preset): PresetDetail {
   add("Max flow", shown(preset, "filament_max_volumetric_speed", " mm³/s"));
   add("Fan", fanRange(preset));
   add("Density", shown(preset, "filament_density", " g/cm³"));
-  add("Cost", costPerKg(preset));
+  add("Price", pricePerKg(preset));
   const swatch = swatchOf(preset);
   return swatch ? { swatch, rows } : { rows };
 }
@@ -267,7 +267,7 @@ export function compactDetail(preset: Preset): DetailRow[] {
     },
     {
       label: "Filament",
-      value: join(shown(preset, "filament_density", " g/cm³"), costPerKg(preset)),
+      value: join(shown(preset, "filament_density", " g/cm³"), tagged("price", pricePerKg(preset))),
     },
   ];
   return rows.filter((row) => row.value);

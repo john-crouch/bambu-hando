@@ -300,7 +300,7 @@ describe("presetDetail", () => {
       { label: "Max flow", value: "21 mm³/s" },
       { label: "Fan", value: "30–80%" },
       { label: "Density", value: "1.24 g/cm³" },
-      { label: "Cost", value: "25 per kg" },
+      { label: "Price", value: "25 money/kg" },
     ]);
   });
 
@@ -326,7 +326,7 @@ describe("compactDetail", () => {
       { label: "Nozzle", value: "220°C · first 225°C · range 190–240°C" },
       { label: "Bed", value: "Textured 55°C · Smooth 60°C" },
       { label: "Flow", value: "ratio 0.98 · max 21 mm³/s · fan 30–80%" },
-      { label: "Filament", value: "1.24 g/cm³ · 25 per kg" },
+      { label: "Filament", value: "1.24 g/cm³ · price 25 money/kg" },
     ]);
     expect(compactDetail({ nozzle_temperature: ["220"] })).toEqual([
       { label: "Nozzle", value: "220°C" },
@@ -668,7 +668,7 @@ describe("saving", () => {
         type: "app/runFinished",
         summary: {
           ok: true,
-          lines: ["1 BambuStudio preset of Acme PLA Red saved: restart BambuStudio to load"],
+          lines: ["1 BambuStudio preset of Acme PLA Red saved: restart BambuStudio to load it"],
         },
       },
       { type: "app/load", resource: "presets", force: true },
@@ -710,7 +710,7 @@ describe("saving", () => {
         summary: {
           ok: true,
           lines: [
-            "2 BambuStudio presets of Acme PLA Red saved: restart BambuStudio to load",
+            "2 BambuStudio presets of Acme PLA Red saved: restart BambuStudio to load them",
             "SpoolEase's nozzle range for P1111111 is 190–250°C",
           ],
         },
@@ -771,7 +771,7 @@ describe("saving", () => {
         ok: false,
         exitCode: 1,
         lines: [
-          "1 BambuStudio preset of Acme PLA Red saved, 1 failed: restart BambuStudio to load",
+          "1 BambuStudio preset of Acme PLA Red saved, 1 failed: restart BambuStudio to load it",
           expect.stringMatching(/^Acme PLA Red @ X1C 0\.6: couldn't read it: /),
         ],
       },

@@ -287,7 +287,10 @@ describe.each([
     expect(text).toContain("Into 2 presets of Sunlu PETG 2.0 Vivid Yellow");
     expect(text).toMatch(/\[✓\] X1C 0\.4 +the one you edited/);
     expect(text).toMatch(/\[✓\] X1C 0\.6 +same filament ID/);
-    expect(text).toContain("Close BambuStudio first");
+    const warning = screen.findIndex((line) => line.includes("! Close BambuStudio first"));
+    const into = screen.findIndex((line) => line.includes("Into 2 presets"));
+    expect(warning).toBeGreaterThan(0);
+    expect(warning).toBeLessThan(into);
   });
 
   it("shows each preset's result once saved", () => {
@@ -315,7 +318,8 @@ describe.each([
     expect(screen[0]).toMatch(/^╭ Saved · /);
     expect(text).toContain("✓ saved");
     expect(text).toContain("✗ couldn't write it: EACCES");
-    expect(text).toContain("✗ 1 preset saved, 1 failed: restart BambuStudio to load them");
+    expect(text).toContain("✗ 1 preset saved, 1 failed: restart BambuStudio to load it");
+    expect(text).not.toContain("Close BambuStudio first");
   });
 });
 
@@ -331,4 +335,16 @@ it("says where to look when the folder has no presets of its own", () => {
   const screen = lines(presetsTab.init(empty, { query: "" })[0], empty);
   expectExact(screen, empty);
   expect(screen.join("\n")).toContain("No filament presets of your own yet");
+});
+
+it("wraps the review's notes at 60 columns instead of cutting them", () => {
+  const ctx = ctxFor(60, 20);
+  const review = drive(start(ctx), ctx, "s", "enter", "enter", "250", "enter", "a");
+  const screen = lines(review, ctx);
+  expectExact(screen, ctx);
+  // The words of every line, borders and indents dropped, read as one text.
+  const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+  expect(words).toContain("it may save its own copy over these presets.");
+  expect(words).toContain("uploads the change on its next sync.");
+  expect(screen.join("\n")).not.toContain("…");
 });

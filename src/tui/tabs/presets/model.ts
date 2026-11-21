@@ -379,7 +379,7 @@ function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
   const failed = msg.results.length - saved;
   const name = review.preset.name;
   const lines = [
-    `${plural(saved, "BambuStudio preset")} of ${name} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load`,
+    `${plural(saved, "BambuStudio preset")} of ${name} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load ${saved === 1 ? "it" : "them"}`,
     ...msg.results
       .filter((r) => !r.ok)
       .map((r) => {
