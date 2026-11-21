@@ -446,7 +446,7 @@ export function CheckView({ model, ctx }: { model: CheckModel; ctx: Ctx }) {
         lines={[
           "The check compares BambuStudio's presets with the console's",
           "custom filaments and spools, and lists what doesn't line up.",
-          "Set up the console in Settings, or turn Skip SpoolEase off.",
+          "Set up the console in Settings, or turn Use SpoolEase on.",
         ]}
         action={{ keys: "enter", label: "open Settings" }}
       />

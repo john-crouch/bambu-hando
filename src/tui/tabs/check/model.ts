@@ -334,7 +334,7 @@ function busy(model: CheckModel): string | null {
 function commands(model: CheckModel, ctx: Ctx): PaletteCommand[] {
   if (!consoleConfigured(ctx)) return [];
   return [
-    { title: "Check again", detail: "Check", msg: toTab("check", { type: "check/recheck" }) },
+    // Checking again is the shell's Data reload; this tab only adds what it alone can do.
     ...(fixesNow(ctx).length || model.ids?.running
       ? [
           {

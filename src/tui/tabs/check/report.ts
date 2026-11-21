@@ -3,8 +3,8 @@
 
 import { type CheckSection, checkCounts, checkSync, type UserPreset } from "../../../syncCheck.js";
 import type { CheckData, Ctx } from "../../core/types.js";
-import { consoleUrl, panelInner, plural, shortPrinter, textWidth } from "../../ui/index.js";
-import { connectionOf } from "../settings/connection.js";
+import { consoleUrl, panelInner, plural, textWidth } from "../../ui/index.js";
+import { connectionOf, shortPrinters } from "../settings/connection.js";
 import { wrapText } from "../settings/wrap.js";
 
 /** none: no console to check against (SpoolEase skipped or not set up). */
@@ -161,20 +161,6 @@ export function targetLabel(section: CheckSection["key"], target: ItemTarget): s
   if (target.kind === "ids") return "give it an ID";
   if (target.kind === "spools") return "show it in Spools";
   return section === "unknownCode" ? "find it in Add" : "sync it in Add";
-}
-
-/** Printers as people read them, nozzles of one model together: "X1C 0.4, 0.6, P1S 0.4". */
-export function shortPrinters(printers: readonly string[]): string {
-  const models = new Map<string, string[]>();
-  for (const printer of printers) {
-    const short = shortPrinter(printer);
-    const match = /^(.*) (\d+(?:\.\d+)?)$/.exec(short);
-    const [model, nozzle] = match ? [match[1] ?? short, match[2] ?? ""] : [short, ""];
-    models.set(model, [...(models.get(model) ?? []), nozzle].filter(Boolean));
-  }
-  return [...models]
-    .map(([model, nozzles]) => [model, nozzles.join(", ")].filter(Boolean).join(" "))
-    .join(", ");
 }
 
 /** "name (code)" at the end of an item. */

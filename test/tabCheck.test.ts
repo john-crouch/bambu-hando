@@ -359,11 +359,10 @@ describe("giving presets a filament ID", () => {
 });
 
 describe("palette commands", () => {
-  it("check again and give IDs, from anywhere", async () => {
+  it("give IDs from anywhere; checking again is the shell's reload", async () => {
     const h = await loaded();
     const commands = checkLogic.commands?.(h.model, h.ctx) ?? [];
     expect(commands.map((c) => [c.title, c.msg])).toEqual([
-      ["Check again", toTab("check", { type: "check/recheck" })],
       ["Give presets a filament ID", toTab("check", { type: "check/fix" })],
     ]);
     await h.dispatch({ type: "check/fix" });
