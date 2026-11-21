@@ -40,6 +40,7 @@ import {
   type Edits,
   type EditValue,
   editChanges,
+  editedText,
   editField,
   fieldText,
   lockedReason,
@@ -349,7 +350,7 @@ export function editorWarning(model: EditorModel): string {
   if (model.text !== null) return editWarning(row.key, model.text.value);
   const edit = model.edits.get(row.key);
   if (!edit) return "";
-  return editWarning(row.key, "every" in edit ? edit.every : (edit.each[0] ?? ""));
+  return editWarning(row.key, editedText(edit));
 }
 
 /** What the field being typed takes; "" when not typing. */

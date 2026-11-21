@@ -3,6 +3,7 @@
 
 import { Box } from "ink";
 
+import { editedText } from "../../../presetEdit.js";
 import type { Ctx } from "../../core/types.js";
 import { plural } from "../../ui/format.js";
 import {
@@ -67,7 +68,7 @@ function Note({
 function changeWarning(review: ReviewModel, key: string): string {
   const edit = review.edits.get(key);
   if (!edit) return "";
-  return editWarning(key, "every" in edit ? edit.every : (edit.each[0] ?? ""));
+  return editWarning(key, editedText(edit));
 }
 
 /** A change's warning in lines that fit under its value (indent, label, gap, icon); none without one. */

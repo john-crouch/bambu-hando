@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { FilamentProfile } from "../src/models.js";
 import {
+  activeVariant,
   applyEdits,
   EDIT_FIELDS,
   editChanges,
@@ -15,6 +16,7 @@ import {
   fieldText,
   lockedReason,
   nozzleRange,
+  nozzleSpecific,
   parseField,
   parseRaw,
   presetFamily,
@@ -23,7 +25,9 @@ import {
   readPreset,
   shownValue,
   syncedRange,
+  variantNames,
   writePresetEdits,
+  writePresetTargets,
 } from "../src/presetEdit.js";
 import { withNozzleRange } from "../src/spoolease.js";
 
@@ -237,6 +241,123 @@ describe("applyEdits", () => {
   });
 });
 
+describe("nozzle types (filament_extruder_variant)", () => {
+  const TWO = ["Direct Drive Standard", "Direct Drive High Flow"];
+  const flow = (speeds: string[], names: string[] | null = TWO) => ({
+    ...(names ? { filament_extruder_variant: names } : {}),
+    filament_max_volumetric_speed: speeds,
+  });
+  const edit = (preset: Record<string, unknown>, variant: string, value: string) =>
+    applyEdits(preset, new Map([["filament_max_volumetric_speed", { variant, value }]]));
+
+  it("names a preset's variants, BambuStudio's default when it lists none", () => {
+    expect(variantNames(flow(["22", "29"]))).toEqual(TWO);
+    expect(variantNames({})).toEqual(["Direct Drive Standard"]);
+  });
+
+  it("finds the variant BambuStudio uses for the printer's nozzle type, else the first", () => {
+    expect(activeVariant(flow(["22", "29"]), "Standard")).toBe(0);
+    expect(activeVariant(flow(["22", "29"]), "High Flow")).toBe(1);
+    expect(activeVariant(flow(["22", "29"], [...TWO].reverse()), "Standard")).toBe(1);
+    // Not in the preset, or unknown: BambuStudio falls back to the first.
+    expect(activeVariant(flow(["22"], ["Direct Drive Standard"]), "High Flow")).toBe(0);
+    expect(activeVariant(flow(["22", "29"]), "")).toBe(0);
+    // Another extruder type: the nozzle type still picks it, Direct Drive first when both are there.
+    expect(
+      activeVariant(flow(["1", "2"], ["Bowden Standard", "Bowden High Flow"]), "High Flow"),
+    ).toBe(1);
+    expect(
+      activeVariant(flow(["1", "2"], ["Bowden High Flow", "Direct Drive High Flow"]), "High Flow"),
+    ).toBe(1);
+  });
+
+  it("writes the named variant and those that held its value, never one set apart", () => {
+    expect(edit(flow(["22", "29"]), "Direct Drive Standard", "24").preset).toMatchObject(
+      flow(["24", "29"]),
+    );
+    expect(edit(flow(["22", "29"]), "Direct Drive High Flow", "30").preset).toMatchObject(
+      flow(["22", "30"]),
+    );
+    expect(edit(flow(["22", "22"]), "Direct Drive Standard", "24").preset).toMatchObject(
+      flow(["24", "24"]),
+    );
+    // Per file: another preset's variants are judged by their own values.
+    expect(
+      edit(flow(["22", "29"], [...TWO].reverse()), "Direct Drive Standard", "24").preset,
+    ).toMatchObject(flow(["22", "24"], [...TWO].reverse()));
+  });
+
+  it("keeps the printer's own value (nil) unless the named variant holds it", () => {
+    const retraction = (values: string[]) => ({
+      filament_extruder_variant: TWO,
+      filament_retraction_length: values,
+    });
+    const set = (preset: Record<string, unknown>, variant: string) =>
+      applyEdits(preset, new Map([["filament_retraction_length", { variant, value: "1" }]])).preset;
+    expect(set(retraction(["nil", "0.4"]), "Direct Drive High Flow")).toMatchObject(
+      retraction(["nil", "1"]),
+    );
+    expect(set(retraction(["nil", "0.4"]), "Direct Drive Standard")).toMatchObject(
+      retraction(["1", "0.4"]),
+    );
+    expect(set(retraction(["nil", "nil"]), "Direct Drive Standard")).toMatchObject(
+      retraction(["1", "1"]),
+    );
+  });
+
+  it("writes the first variant of a preset without the named one, as BambuStudio would use it", () => {
+    const one = flow(["22"], ["Direct Drive Standard"]);
+    expect(edit(one, "Direct Drive High Flow", "30").preset).toMatchObject(
+      flow(["30"], ["Direct Drive Standard"]),
+    );
+    expect(edit(flow(["22", "29"], null), "Direct Drive High Flow", "30").preset).toMatchObject(
+      flow(["30", "29"], null),
+    );
+    // A string, or a key the preset lacks, takes the value as an every-variant edit would.
+    expect(
+      applyEdits(
+        {},
+        new Map([
+          ["filament_notes", { variant: "Direct Drive Standard", value: "Dry" }],
+          ["nozzle_temperature", { variant: "Direct Drive Standard", value: "220" }],
+        ]),
+      ).preset,
+    ).toEqual({ filament_notes: "Dry", nozzle_temperature: ["220"] });
+  });
+
+  it("starts a field's text from the variant asked for", () => {
+    expect(fieldText(field("filament_max_volumetric_speed"), ["22", "29"], 1)).toBe("29");
+    expect(fieldText(field("filament_retraction_length"), ["nil", "0.4"], 0)).toBe("");
+    expect(fieldText(field("filament_max_volumetric_speed"), ["22"], 1)).toBe("22");
+  });
+});
+
+describe("nozzleSpecific", () => {
+  it("names the settings that depend on the nozzle size: flow speed, pressure advance, retraction, and raw keys", () => {
+    for (const key of [
+      "filament_max_volumetric_speed",
+      "enable_pressure_advance",
+      "pressure_advance",
+      "filament_retraction_length",
+      "filament_retraction_speed",
+      "filament_start_gcode",
+    ])
+      expect(nozzleSpecific(key), key).toBe(true);
+    for (const key of [
+      "nozzle_temperature",
+      "nozzle_temperature_range_low",
+      "hot_plate_temp",
+      "filament_flow_ratio",
+      "fan_max_speed",
+      "default_filament_colour",
+      "filament_density",
+      "filament_cost",
+      "filament_notes",
+    ])
+      expect(nozzleSpecific(key), key).toBe(false);
+  });
+});
+
 describe("syncedRange", () => {
   const profile = { nozzleTempMin: 200, nozzleTempMax: 220 } as FilamentProfile;
   const range = (low: string, high: string) => ({
@@ -296,6 +417,44 @@ describe("presetFamily", () => {
 
   it("is only the opened preset when it has no filament ID to match on", () => {
     expect(presetFamily(presets, presets[3]!).map((p) => p.path)).toEqual(["/p/Rock @X1.json"]);
+  });
+});
+
+describe("writePresetTargets", () => {
+  it("writes each preset only its own edits", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bambu-hando-targets-"));
+    const write = async (file: string) => {
+      const path = join(dir, file);
+      await writeFile(
+        path,
+        `${JSON.stringify({ nozzle_temperature: ["220"], filament_max_volumetric_speed: ["22"] }, null, 4)}\n`,
+      );
+      return path;
+    };
+    const a = await write("Red @A.json");
+    const b = await write("Red @B.json");
+    const results = await writePresetTargets(
+      [
+        {
+          path: a,
+          edits: new Map([
+            ["nozzle_temperature", { every: "230" }],
+            ["filament_max_volumetric_speed", { every: "24" }],
+          ]),
+        },
+        { path: b, edits: new Map([["nozzle_temperature", { every: "230" }]]) },
+      ],
+      1_800_000_000_000,
+    );
+    expect(results.map((r) => r.ok)).toEqual([true, true]);
+    expect(JSON.parse(await readFile(a, "utf-8"))).toEqual({
+      nozzle_temperature: ["230"],
+      filament_max_volumetric_speed: ["24"],
+    });
+    expect(JSON.parse(await readFile(b, "utf-8"))).toEqual({
+      nozzle_temperature: ["230"],
+      filament_max_volumetric_speed: ["22"],
+    });
   });
 });
 
