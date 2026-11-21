@@ -52,7 +52,8 @@ function Note({
     <>
       {lines.map((line, index) => (
         <Line
-          key={`${index}:${line}`}
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one note.
+          key={index}
           segments={[{ text: ` ${index === 0 ? lead : spaces(textWidth(lead))}${line}`, color }]}
           width={width}
         />
@@ -60,6 +61,9 @@ function Note({
     </>
   );
 }
+
+/** The targets list's widest before saving: a printer's note stays near its name on a wide terminal. */
+const TARGETS_MAX = 72;
 
 const CLOSE_FIRST = "Close BambuStudio first: it may save its own copy over these presets.";
 const UPLOADS = "Logged in to Bambu, BambuStudio uploads the change on its next sync.";
@@ -198,7 +202,7 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
           rows={targetRows(review)}
           cursor={review.cursor}
           height={review.targets.length}
-          width={w - 2}
+          width={review.results ? w - 2 : Math.min(w - 2, TARGETS_MAX)}
           marker="check"
           focused={review.phase === "review"}
         />
