@@ -4,6 +4,7 @@
 import type { InventoryRow } from "../../../spoolInventory.js";
 import {
   COLORS,
+  formatGrams,
   type ListRow,
   plural,
   type Segment,
@@ -54,7 +55,7 @@ export function addedText(seconds: number | null, now: number): string {
 function leftText(row: InventoryRow): string {
   if (row.left === null) return "–";
   if (row.left === 0) return "empty";
-  return `${row.left} g`;
+  return formatGrams(row.left);
 }
 
 /** Column widths for these rows in a list `width` wide; 0 is a column left out (the detail has it). */
@@ -138,7 +139,7 @@ export function spoolListRows(
 
 /** Grams as people read them: 640 g, 9.8 kg. */
 export function weightText(grams: number): string {
-  return grams < 1000 ? `${grams} g` : `${(grams / 1000).toFixed(1)} kg`;
+  return grams < 1000 ? formatGrams(grams) : `${(grams / 1000).toFixed(1)} kg`;
 }
 
 /** The summary's parts, most useful first: what to drop last when the line is short. */

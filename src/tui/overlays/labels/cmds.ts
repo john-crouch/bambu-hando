@@ -15,10 +15,7 @@ import { SpoolEaseClient, type SpoolEaseConnection } from "../../../spoolease.js
 import { checkKey, KeyCheckError } from "../../../sync.js";
 import type { Cmd } from "../../core/program.js";
 import type { AppMsg, RunSummary } from "../../core/types.js";
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
+import { plural } from "../../ui/format.js";
 
 /** The remembered choices and the CUPS destinations (none without CUPS). */
 export function loadLabelsCmd(): Cmd<AppMsg> {
