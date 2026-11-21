@@ -9,11 +9,12 @@ import { listPrinters } from "../../../labelPdf.js";
 import {
   type LabelSettings,
   loadLabelSettings,
-  saveLabelSettings,
+  updateLabelSettings,
 } from "../../../labelSettings.js";
 import { bambuConfigDir, bambuUserRoot } from "../../../paths.js";
 import { keyringName, removeSecret, SECRETS, storeSecret } from "../../../secrets.js";
 import { SpoolEaseClient, type SpoolEaseConnection } from "../../../spoolease.js";
+import { consoleKey } from "../../../spooleaseConfig.js";
 import { rememberConsole, type SavedConsole, saveTuiSettings } from "../../../tuiSettings.js";
 import type { Cmd } from "../../core/program.js";
 import { type AppMsg, toTab } from "../../core/types.js";
@@ -106,6 +107,25 @@ export function saveKey(key: string): Cmd<AppMsg> {
   };
 }
 
+/**
+ * Reads the key the console at `host` has saved (a session that skipped SpoolEase never read the keyring), and
+ * replies with it for that host; an unusable one is a warning that names where it came from, never what it is.
+ */
+export function loadStoredKey(host: string): Cmd<AppMsg> {
+  return async (dispatch) => {
+    try {
+      const key = await consoleKey(host);
+      if (key) dispatch(reply({ type: "settings/storedKey", host, key }));
+    } catch (err) {
+      dispatch({
+        type: "app/toast",
+        text: `Couldn't load the saved SpoolEase key: ${errorMessage(err)}`,
+        tone: "warning",
+      });
+    }
+  };
+}
+
 /** Removes the console's key from the keyring, saying whether one was there. */
 export function forgetKey(): Cmd<AppMsg> {
   return async (dispatch) => {
@@ -128,23 +148,20 @@ export function forgetKey(): Cmd<AppMsg> {
   };
 }
 
-/** Label saves, one after another, so each reads what the one before it wrote. */
-let labelSaves: Promise<unknown> = Promise.resolve();
-
 /**
  * Saves a change to the label settings, merged into labels.json as it is now (the labels overlay saves
  * there too), then reports what was saved, so the tab shows the file's settings, not a stale copy.
  */
 export function saveLabels(change: Partial<LabelSettings>): Cmd<AppMsg> {
   return async (dispatch) => {
-    const save = labelSaves.then(async () => {
-      const next = { ...(await loadLabelSettings()), ...change };
-      await saveLabelSettings(next);
-      return next;
-    });
-    labelSaves = save.catch(() => undefined);
     try {
-      dispatch(reply({ type: "settings/loaded", what: "labels", value: await save }));
+      dispatch(
+        reply({
+          type: "settings/loaded",
+          what: "labels",
+          value: await updateLabelSettings(change),
+        }),
+      );
     } catch (err) {
       dispatch({
         type: "app/toast",

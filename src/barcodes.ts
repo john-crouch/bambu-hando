@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { writeAtomic } from "./atomicWrite.js";
 import { configDir } from "./paths.js";
+import { trackWrite } from "./pendingWrites.js";
 
 export interface BarcodeFilament {
   /** The slicer filament code its spools carry. */
@@ -40,13 +41,24 @@ export async function loadBarcodes(path = barcodesPath()): Promise<Map<string, B
   return barcodes;
 }
 
-/** Saves the answer for `barcode`, replacing an earlier one; written atomically. */
-export async function rememberBarcode(
+/** Saves run one after another, each reading what the last one wrote, so none drops another's barcode. */
+let saving: Promise<unknown> = Promise.resolve();
+
+/**
+ * Saves the answer for `barcode`, replacing an earlier one; written atomically. The whole save is tracked
+ * (`pendingWrites.ts`), its read of barcodes.json included, so a quit before its write starts still lets it finish.
+ */
+export function rememberBarcode(
   barcode: string,
   filament: BarcodeFilament,
   path = barcodesPath(),
 ): Promise<void> {
-  const barcodes = await loadBarcodes(path);
-  barcodes.set(normalizeBarcode(barcode), filament);
-  await writeAtomic(path, `${JSON.stringify(Object.fromEntries(barcodes), null, 2)}\n`);
+  const save = async () => {
+    const barcodes = await loadBarcodes(path);
+    barcodes.set(normalizeBarcode(barcode), filament);
+    await writeAtomic(path, `${JSON.stringify(Object.fromEntries(barcodes), null, 2)}\n`);
+  };
+  const run = trackWrite(saving.then(save, save));
+  saving = run.catch(() => undefined);
+  return run;
 }

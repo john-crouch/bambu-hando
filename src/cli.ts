@@ -177,7 +177,7 @@ Options (each one prefills Settings for this session):
   --overwrite-presets             Replace BambuStudio presets that already exist
   --spoolease-host <host>         SpoolEase console (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>  Its security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>         SpoolEase port (default: 80)
+  --spoolease-port <port>         Port (default: saved with its host, or 80)
   --spoolease-https               Use HTTPS (--no-spoolease-https: don't)
                                   Without these: the console saved in Settings
                                   (its key in the system keyring, also stored

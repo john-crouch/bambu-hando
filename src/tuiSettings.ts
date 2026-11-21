@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { writeAtomic } from "./atomicWrite.js";
 import { configDir } from "./paths.js";
+import { trackWrite } from "./pendingWrites.js";
 import type { WeightChoice } from "./spoolWeights.js";
 
 export interface TuiSettings {
@@ -83,8 +84,12 @@ export async function loadTuiSettings(path = tuiSettingsPath()): Promise<TuiSett
 /** Saves run one after another, each reading what the last one wrote, so none drops another's change. */
 let saving: Promise<unknown> = Promise.resolve();
 
+/**
+ * Runs a save after the ones before it. The whole save is tracked (`pendingWrites.ts`), its wait and its read of
+ * tui.json included, so a quit before its write starts still lets it finish.
+ */
 function serially<T>(work: () => Promise<T>): Promise<T> {
-  const run = saving.then(work, work);
+  const run = trackWrite(saving.then(work, work));
   saving = run.catch(() => undefined);
   return run;
 }
@@ -120,10 +125,13 @@ export function rememberWeight(
   });
 }
 
-/** Remembers a change to the console's host, port or HTTPS beside the rest; an empty host forgets it. */
-export function rememberConsole(change: SavedConsole, path = tuiSettingsPath()): Promise<void> {
+/**
+ * Remembers the console (host, port, HTTPS) as one, replacing the saved one, so a port or HTTPS saved for one host
+ * never stays behind for another; the parts left out (an empty host too) are forgotten.
+ */
+export function rememberConsole(console: SavedConsole, path = tuiSettingsPath()): Promise<void> {
   return serially(async () => {
-    const current = await loadTuiSettings(path);
-    await write({ ...current, console: { ...current.console, ...change } }, path);
+    const { console: _old, ...current } = await loadTuiSettings(path);
+    await write({ ...current, console }, path);
   });
 }

@@ -1,13 +1,14 @@
 // ABOUTME: Tests for remembered spool barcodes: which filament a scanned barcode is, kept in barcodes.json.
 // ABOUTME: The Spools tab's scan dialog (and its scanner bursts) is tested with the tab, in tabSpools.test.ts.
 
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { barcodesPath, loadBarcodes, normalizeBarcode, rememberBarcode } from "../src/barcodes.js";
+import { writesSettled } from "../src/pendingWrites.js";
 
 describe("normalizeBarcode", () => {
   it("ignores case and spaces, so a typed code matches a scanned one", () => {
@@ -52,5 +53,22 @@ describe("remembered barcodes", () => {
 
     await writeFile(barcodesPath(), "{");
     expect(await loadBarcodes()).toEqual(new Map());
+  });
+
+  it("keeps every barcode remembered at once", async () => {
+    await Promise.all([
+      rememberBarcode("111", { code: "A", name: "Filament A" }),
+      rememberBarcode("222", { code: "B", name: "Filament B" }),
+    ]);
+    expect([...(await loadBarcodes()).keys()].sort()).toEqual(["111", "222"]);
+  });
+
+  it("lets a save finish before the exit, the read of barcodes.json before its write included", async () => {
+    const saving = rememberBarcode("111", { code: "A", name: "Filament A" });
+    expect(await writesSettled()).toBe(true);
+    expect(JSON.parse(await readFile(barcodesPath(), "utf-8"))).toEqual({
+      "111": { code: "A", name: "Filament A" },
+    });
+    await saving;
   });
 });

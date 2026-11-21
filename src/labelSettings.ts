@@ -12,6 +12,7 @@ import {
   parseLabelSize,
 } from "./labels.js";
 import { configDir } from "./paths.js";
+import { trackWrite } from "./pendingWrites.js";
 
 export interface LabelSettings {
   fields: LabelField[];
@@ -63,10 +64,39 @@ export async function loadLabelSettings(path = labelSettingsPath()): Promise<Lab
   };
 }
 
+/** Saves run one after another, so a change merged into labels.json never reads it while another save writes it. */
+let saving: Promise<unknown> = Promise.resolve();
+
+/** Runs a save after the ones before it, tracked whole (`pendingWrites.ts`) so a quit lets it finish. */
+function serially<T>(work: () => Promise<T>): Promise<T> {
+  const run = trackWrite(saving.then(work, work));
+  saving = run.catch(() => undefined);
+  return run;
+}
+
+async function write(settings: LabelSettings, path: string): Promise<void> {
+  await writeAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
+}
+
 /** Written atomically (a temp file of its own per save), so overlapping or interrupted saves never leave a broken file. */
-export async function saveLabelSettings(
+export function saveLabelSettings(
   settings: LabelSettings,
   path = labelSettingsPath(),
 ): Promise<void> {
-  await writeAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
+  return serially(() => write(settings, path));
+}
+
+/**
+ * Merges a change into labels.json as it is (another screen may have saved since) and returns what was saved; the
+ * read and the write are one tracked save, after the ones before it.
+ */
+export function updateLabelSettings(
+  change: Partial<LabelSettings>,
+  path = labelSettingsPath(),
+): Promise<LabelSettings> {
+  return serially(async () => {
+    const next = { ...(await loadLabelSettings(path)), ...change };
+    await write(next, path);
+    return next;
+  });
 }

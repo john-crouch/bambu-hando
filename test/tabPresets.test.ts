@@ -982,11 +982,15 @@ describe("saving", () => {
   });
 
   it.each(["80x", "0", "65536", ""])(
-    "leaves SpoolEase out when the console's port isn't a valid one (%j; Settings says why)",
+    "leaves SpoolEase out when the console's port isn't a valid one (%j), saying its range waits for the port",
     async (port) => {
       const ctx = ctxWith(presets, { ...consoleCtx.values, port });
       const reviewing = (await drive((await editRange(ctx)).model, ctx, "a")).model;
-      expect(reviewing.review?.range).toEqual({ state: "none" });
+      expect(reviewing.review?.range).toEqual({
+        state: "warning",
+        warning:
+          "SpoolEase's nozzle range for P1111111 won't be updated until the console's port is fixed in Settings",
+      });
       const { model } = await drive(reviewing, ctx, "a");
       expect(model.review?.results?.every((r) => r.ok)).toBe(true);
       expect(model.review?.spoolease).toBeNull();

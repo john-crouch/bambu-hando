@@ -6,13 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
   DEFAULT_LABEL_SETTINGS,
   labelSettingsPath,
   loadLabelSettings,
   saveLabelSettings,
+  updateLabelSettings,
 } from "../src/labelSettings.js";
+import { writesSettled } from "../src/pendingWrites.js";
 
 describe("label settings", () => {
   let home: string;
@@ -74,5 +75,29 @@ describe("label settings", () => {
       ...DEFAULT_LABEL_SETTINGS,
       fields: ["brand", "id"],
     });
+  });
+
+  it("merges a change into labels.json as it is, keeping every change made at once", async () => {
+    await saveLabelSettings({ ...DEFAULT_LABEL_SETTINGS, printer: "Old" });
+    const [first, second] = await Promise.all([
+      updateLabelSettings({ printer: "Dymo" }),
+      updateLabelSettings({ output: "/tmp/labels.pdf" }),
+    ]);
+    expect(first).toEqual({ ...DEFAULT_LABEL_SETTINGS, printer: "Dymo" });
+    expect(second).toEqual({
+      ...DEFAULT_LABEL_SETTINGS,
+      printer: "Dymo",
+      output: "/tmp/labels.pdf",
+    });
+    expect(await loadLabelSettings()).toEqual(second);
+  });
+
+  it("lets a change finish before the exit, the read of labels.json before its write included", async () => {
+    const saving = updateLabelSettings({ printer: "Dymo" });
+    expect(await writesSettled()).toBe(true);
+    expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toMatchObject({
+      printer: "Dymo",
+    });
+    await saving;
   });
 });
