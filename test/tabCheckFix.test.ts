@@ -203,7 +203,12 @@ describe("items", () => {
     const h = await loaded(value);
     await openSection(h, value, "presetsNoId");
     // enter is the same fix for this preset, so f isn't offered beside it.
-    expect(hintText(h)).toEqual(["↑↓ move", "enter give it an ID", "esc sections", "r check again"]);
+    expect(hintText(h)).toEqual([
+      "↑↓ move",
+      "enter give it an ID",
+      "esc sections",
+      "r check again",
+    ]);
     await h.press("enter");
     expect(h.model.page).toBe("ids");
     expect(h.model.ids?.fixes.map((f) => f.path)).toEqual(["/p/r4.json", "/p/r6.json"]);
@@ -363,8 +368,14 @@ describe("a console that can't be reached", () => {
   it("opens Settings on the row the console's problem points at", async () => {
     const cases: [string, string][] = [
       ["SpoolEase key validation failed", "spoolease.key"],
-      ["SpoolEase unreachable at http://10.0.0.5: fetch failed: connect ECONNREFUSED 10.0.0.5:81", "spoolease.port"],
-      ["SpoolEase unreachable at http://nope.local: fetch failed: getaddrinfo ENOTFOUND nope.local", "spoolease.host"],
+      [
+        "SpoolEase unreachable at http://10.0.0.5: fetch failed: connect ECONNREFUSED 10.0.0.5:81",
+        "spoolease.port",
+      ],
+      [
+        "SpoolEase unreachable at http://nope.local: fetch failed: getaddrinfo ENOTFOUND nope.local",
+        "spoolease.host",
+      ],
       ["SpoolEase unreachable at http://10.0.0.5: This operation was aborted", "spoolease.host"],
     ];
     for (const [error, focus] of cases) {
