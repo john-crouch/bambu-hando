@@ -34,7 +34,7 @@ import {
 import type { Box as Area } from "./layout.js";
 import { pageArea, splitPage } from "./layout.js";
 import { type AddModel, sourcesOf } from "./model.js";
-import { detailTitle, findDetailOf } from "./peek.js";
+import { addsHeading, detailTitle, findDetailOf } from "./peek.js";
 import { findRows } from "./update.js";
 import { wrapText } from "./wrap.js";
 
@@ -273,7 +273,7 @@ const MARK_COLORS: Record<AddLine["mark"], string> = {
 function AddLines({ adds, width }: { adds: AddLine[]; width: number }) {
   return (
     <>
-      <Line width={width} segments={[muted(" Adding it")]} />
+      <Line width={width} segments={[muted(` ${addsHeading(adds)}`)]} />
       {adds.flatMap((line) =>
         wrapText(line.text, Math.max(1, width - 4)).map((text, index) => (
           <Line
@@ -339,7 +339,7 @@ function CompactColor({
         <Line
           width={width}
           segments={[
-            muted(" Adding it "),
+            muted(` ${addsHeading(adds)} `),
             ...adds.flatMap((line, index) => [
               ...(index > 0 ? [muted(" · ")] : []),
               { text: line.short, color: MARK_COLORS[line.mark] },
