@@ -5,6 +5,7 @@ import { Box } from "ink";
 
 import { isCtrl, type KeyPress, typed } from "../core/keys.js";
 import type { AppMsg, Ctx, Hint, TabMsg } from "../core/types.js";
+import { plural } from "../ui/format.js";
 import {
   COLORS,
   Dialog,
@@ -12,6 +13,7 @@ import {
   dialogWidth,
   fitText,
   Line,
+  listPosition,
   listWindow,
   type Segment,
   textWidth,
@@ -262,17 +264,24 @@ export function rowSegments(
   ]);
 }
 
-/** The query line: prompt, query and cursor (or the placeholder), and the match count at the right. */
+/** The query line: prompt, query and cursor (or the placeholder), and, with a query, the match count at the right. */
 export function queryLine(model: PaletteModel, matches: number, width: number): Segment[] {
-  const count = `${matches}/${model.items.length}`;
+  const count = model.query.trim() ? plural(matches, "match", "matches") : "";
   const left: Segment[] = [
     { text: "› ", color: COLORS.accent, bold: true },
     ...(model.query ? [{ text: model.query }] : []),
     { text: " ", inverse: true },
     ...(model.query ? [] : [{ text: " Type to find a command", color: COLORS.muted }]),
   ];
+  if (!count) return padSegments(left, width);
   const room = Math.max(0, width - textWidth(count) - 1);
   return [...padSegments(left, room), { text: " " }, { text: count, color: COLORS.muted }];
+}
+
+/** The highlighted command's place, "3/30", for the bottom border; "" while every match shows. */
+export function paletteNote(model: PaletteModel, ctx: Ctx): string {
+  const count = paletteRows(model).length;
+  return count > paletteSize(ctx, model.items.length).rows ? listPosition(model.cursor, count) : "";
 }
 
 const HINTS: Hint[] = [
@@ -288,8 +297,9 @@ function PaletteView({ model, ctx }: { model: PaletteModel; ctx: Ctx }) {
   const { start, end } = listWindow(model.cursor, rows.length, height);
   const shown = rows.slice(start, end);
   const layout = paletteLayout(model.items);
+  const note = paletteNote(model, ctx);
   return (
-    <Dialog title="Commands" width={width}>
+    <Dialog title="Commands" width={width} {...(note ? { note } : {})}>
       <Line segments={queryLine(model, rows.length, inner)} width={inner} />
       <Box flexDirection="column" marginTop={1} height={height}>
         {shown.length === 0 ? (

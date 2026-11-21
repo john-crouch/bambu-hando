@@ -37,7 +37,7 @@ export const GLOBAL_HELP: Hint[] = [
   { keys: "ctrl+k", label: "find a command by name" },
   { keys: "?", label: "this help" },
   { keys: "esc", label: "back: close, clear a filter, up a level" },
-  { keys: "q", label: "quit (exits 1 if a run failed)" },
+  { keys: "q", label: "quit (asks first with unsaved changes; exits 1 if a run failed)" },
   { keys: "ctrl+c", label: "quit right away, from anywhere" },
 ];
 

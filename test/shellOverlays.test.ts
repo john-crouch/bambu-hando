@@ -20,7 +20,9 @@ import {
   type PaletteModel,
   paletteInput,
   paletteLayout,
+  paletteNote,
   paletteRows,
+  queryLine,
   rowSegments,
   SHELL_GROUPS,
 } from "../src/tui/app/palette.js";
@@ -171,6 +173,27 @@ describe("paletteInput", () => {
     const [m] = PALETTE.init([], ctx());
     const [next] = PALETTE.update(m, { type: "paste", text: "go\nto" }, ctx());
     expect(next.query).toBe("go to");
+  });
+});
+
+describe("palette position", () => {
+  const items = Array.from({ length: 30 }, (_, i) => item(`Command ${i}`));
+
+  it("puts the cursor's place in the bottom border once the list scrolls", () => {
+    const model: PaletteModel = { items, query: "", cursor: 2 };
+    expect(paletteNote(model, ctx())).toBe("3/30");
+    expect(paletteNote({ ...model, items: items.slice(0, 5) }, ctx())).toBe("");
+  });
+
+  it("counts the matches on the query line only while there's a query", () => {
+    const text = (model: PaletteModel) =>
+      queryLine(model, paletteRows(model).length, 40)
+        .map((s) => s.text)
+        .join("");
+    expect(text({ items, query: "", cursor: 0 }).trimEnd()).toBe("›   Type to find a command");
+    // Command 1 and 10-19 by word prefix, Command 21 loosely.
+    expect(text({ items, query: "command 1", cursor: 0 })).toMatch(/^› command 1 +12 matches$/);
+    expect(text({ items, query: "command 29", cursor: 0 })).toMatch(/ 1 match$/);
   });
 });
 
