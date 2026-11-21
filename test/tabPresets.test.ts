@@ -429,10 +429,11 @@ describe("editing", () => {
     const { model, sent } = await drive(started, ctx, msg);
     expect(sent).toEqual([{ type: "app/switchTab", tab: "presets" }]);
     expect(model.editor?.preset.path).toBe(presets[2]?.path);
-    expect(commands(started, ctx).map((c) => c.title).slice(0, 2)).toEqual([
-      "Filter presets",
-      "Edit Acme ABS Black @ X1 Carbon 0.4 nozzle",
-    ]);
+    expect(
+      commands(started, ctx)
+        .map((c) => c.title)
+        .slice(0, 2),
+    ).toEqual(["Filter presets", "Edit Acme ABS Black @ X1 Carbon 0.4 nozzle"]);
   });
 });
 
