@@ -3,8 +3,8 @@
 
 import { errorMessage } from "../../errors.js";
 import { checkCounts } from "../../syncCheck.js";
-import { isCtrl, type KeyPress } from "../core/keys.js";
-import type { Cmd } from "../core/program.js";
+import { isCtrl, type KeyPress, press } from "../core/keys.js";
+import { type Cmd, send } from "../core/program.js";
 import {
   type AppMsg,
   type CheckData,
@@ -21,11 +21,12 @@ import {
   type TabMsg,
 } from "../core/types.js";
 import type { FormValues } from "../core/values.js";
+import { plural } from "../ui/format.js";
 import { frameBody, type HeaderTab } from "../ui/index.js";
-import { CONFIRM } from "./confirm.js";
+import { CONFIRM, type ShellConfirmRequest } from "./confirm.js";
 import { HELP, type HelpRequest } from "./help.js";
 import type { PaletteItem, ShellMsg, ShellOverlay } from "./messages.js";
-import { PALETTE } from "./palette.js";
+import { PALETTE, SHELL_GROUPS } from "./palette.js";
 import type { AnyLabels, AnyTab } from "./registry.js";
 import { affectedResources, consoleConfigured, type Loaders, reloading } from "./resources.js";
 
@@ -97,6 +98,9 @@ const GLOBAL_HINTS: Hint[] = [
   { keys: "?", label: "help", primary: true },
   { keys: "q", label: "quit" },
 ];
+
+/** Keys a text field moves or deletes by word with meta: kept whole while text is being typed. */
+const WORD_KEYS = new Set(["left", "right", "backspace"]);
 
 const RESOURCE_TITLES: Record<ResourceId, string> = {
   console: "Reload spools from the console",
@@ -187,6 +191,7 @@ export function createShell(deps: ShellDeps) {
       (tab(model, id).commands?.(model.tabs[id], c) ?? []).map((command) => ({
         title: command.title,
         detail: command.detail ?? tab(model, id).title,
+        ...(command.keys ? { keys: command.keys } : {}),
         msg: command.msg,
         tab: id,
       }));
@@ -195,7 +200,7 @@ export function createShell(deps: ShellDeps) {
       ...TAB_ORDER.map(
         (id): PaletteItem => ({
           title: `Go to ${tab(model, id).title}`,
-          detail: "tab",
+          detail: SHELL_GROUPS.tab,
           msg: { type: "app/switchTab", tab: id },
         }),
       ),
@@ -205,12 +210,12 @@ export function createShell(deps: ShellDeps) {
         .map(
           (id): PaletteItem => ({
             title: RESOURCE_TITLES[id],
-            detail: "data",
+            detail: SHELL_GROUPS.data,
             msg: { type: "app/load", resource: id, force: true },
           }),
         ),
-      { title: "Help", detail: "?", msg: { type: "shell/help" } },
-      { title: "Quit", detail: "q", msg: { type: "app/quit" } },
+      { title: "Help", detail: SHELL_GROUPS.app, keys: "?", msg: { type: "shell/help" } },
+      { title: "Quit", detail: SHELL_GROUPS.app, keys: "q", msg: { type: "app/quit" } },
     ];
   }
 
@@ -271,9 +276,16 @@ export function createShell(deps: ShellDeps) {
     return toAll(setResource(model, id, kept), { type: "app/loaded", resource: id, result: kept });
   }
 
-  /** Makes a tab the active one and tells it, so it can load what it needs on its first visit. */
-  function show(model: ShellModel, tab: TabId): Step {
-    return toTab({ ...model, active: tab }, tab, { type: "app/switchTab", tab });
+  /**
+   * Makes a tab the active one and tells it, so it can load what it needs on its first visit; focus,
+   * from a deep link, is what it should open on.
+   */
+  function show(model: ShellModel, tab: TabId, focus?: string): Step {
+    return toTab({ ...model, active: tab }, tab, {
+      type: "app/switchTab",
+      tab,
+      ...(focus === undefined ? {} : { focus }),
+    });
   }
 
   /** A toast that clears itself after toastMs. */
@@ -303,17 +315,64 @@ export function createShell(deps: ShellDeps) {
     return null;
   }
 
-  /** Quits with the session's exit code, unless a write is running: leaving would cut it short. */
-  function quit(model: ShellModel): Step {
+  /** Each tab with changes quitting would drop, and how many, in tab order. */
+  function unsavedWork(model: ShellModel): { title: string; count: number }[] {
+    return TAB_ORDER.map((id) => ({
+      title: deps.tabs[id].title,
+      count: deps.tabs[id].unsaved?.(model.tabs[id]) ?? 0,
+    })).filter((tab) => tab.count > 0);
+  }
+
+  /**
+   * Quits with the session's exit code, unless a write is running (leaving would cut it short); with
+   * unsaved changes anywhere, asks first. confirmed skips the asking.
+   */
+  function quit(model: ShellModel, confirmed = false): Step {
     const what = busyWith(model);
     if (what)
       return withToast(model, `${what}: wait for it to finish, or ctrl+c to stop now`, "warning");
+    const unsaved = confirmed ? [] : unsavedWork(model);
+    if (unsaved.length > 0) {
+      const total = unsaved.reduce((sum, tab) => sum + tab.count, 0);
+      const request: ShellConfirmRequest = {
+        title: `Quit and drop ${plural(total, "unsaved change")}?`,
+        lines: unsaved.map((tab) => `${tab.title}: ${plural(tab.count, "change")} not saved`),
+        onApply: { type: "shell/quitNow" },
+        applyKeys: ["q"],
+        applyLabel: "quit",
+        cancelLabel: "stay",
+      };
+      return open(model, "confirm", request);
+    }
     return [{ ...model, exit: exitCode(model.summaries) }, []];
+  }
+
+  /** True while the active tab shows a dialog of its own: keys the shell would take go to it. */
+  function modal(model: ShellModel): boolean {
+    return tab(model).modal?.(model.tabs[model.active]) ?? false;
+  }
+
+  /** True while keys may be editing text: the tab takes text, or an overlay (which may have a field) is open. */
+  function typing(model: ShellModel): boolean {
+    return model.overlay !== null || capturing(model);
+  }
+
+  /**
+   * The keys a key event stands for. Ink holds a lone ESC for 20 ms and reads it together with the
+   * next key's bytes when they arrive in one chunk (a busy event loop), reporting meta+key: esc and
+   * the key, unless it's a word move (meta ←→ backspace) in a text field. Nothing binds alt+key.
+   */
+  function unmerged(model: ShellModel, key: KeyPress): KeyPress[] {
+    if (!key.meta || key.ctrl) return [key];
+    if (typing(model) && WORD_KEYS.has(key.name ?? "")) return [key];
+    return [press("esc"), { ...key, meta: false }];
   }
 
   function onKey(model: ShellModel, key: KeyPress): Step {
     const msg: AppMsg = { type: "key", key };
     if (model.overlay) return toOverlay(model, msg);
+    // A tab's own dialog takes every key, as an overlay does (ctrl+c never reaches here).
+    if (modal(model)) return toTab(model, model.active, msg);
     if (key.name === "tab" && !key.ctrl && !key.meta) {
       const at = TAB_ORDER.indexOf(model.active);
       const step = key.shift ? -1 : 1;
@@ -369,9 +428,16 @@ export function createShell(deps: ShellDeps) {
   function update(model: ShellModel, msg: ShellMsg): Step {
     if (model.exit !== null) return [model, []];
     switch (msg.type) {
-      case "key":
+      case "key": {
         // Any key dismisses the error banner, and still does what it does.
-        return onKey(model.error ? { ...model, error: null } : model, msg.key);
+        const current = model.error ? { ...model, error: null } : model;
+        const [first, second] = unmerged(current, msg.key);
+        const [next, cmds] = onKey(current, first as KeyPress);
+        // After esc's own commands (an overlay closing), so the key lands where esc left things.
+        return second
+          ? [next, [...cmds, send<ShellMsg>({ type: "key", key: second })]]
+          : [next, cmds];
+      }
       case "paste":
         // Text only lands where text is being taken: the overlay, or a tab with a field focused.
         if (model.overlay) return toOverlay(model, msg);
@@ -383,7 +449,7 @@ export function createShell(deps: ShellDeps) {
       case "overlay":
         return toOverlay(model, msg.msg);
       case "app/switchTab":
-        return show(model, msg.tab);
+        return show(model, msg.tab, msg.focus);
       case "app/load":
         if (!msg.force && model.requested.includes(msg.resource)) return [model, []];
         return load(model, msg.resource);
@@ -425,17 +491,32 @@ export function createShell(deps: ShellDeps) {
         return model.toast?.id === msg.id ? [{ ...model, toast: null }, []] : [model, []];
       case "shell/help":
         return open(model, "help", helpRequest(model));
+      case "shell/quitNow":
+        return quit(model, true);
     }
   }
 
-  /** The footer's keys: none while an overlay is open (its dialog shows its own), else the tab's and the global ones. */
-  function hints(model: ShellModel): Hint[] {
-    const c = ctx(model);
-    if (model.overlay) return [];
-    const own = tab(model).hints(model.tabs[model.active], c);
+  /**
+   * The footer's keys, the one place keys are listed: the tab's at the left, the global ones at the
+   * right end. Only the overlay's while one is open, only the tab's while its own dialog is open (both
+   * take every key), and no q or ? while the tab takes text.
+   */
+  function footer(model: ShellModel): { hints: Hint[]; global: Hint[] } {
+    if (model.overlay) {
+      const module = overlays[model.overlay.id];
+      return { hints: module.hints(model.overlay.model, ctx(model)), global: [] };
+    }
+    const own = tab(model).hints(model.tabs[model.active], ctx(model));
+    if (modal(model)) return { hints: own, global: [] };
     const global = capturing(model)
       ? GLOBAL_HINTS.filter((h) => h.keys !== "?" && h.keys !== "q")
       : GLOBAL_HINTS;
+    return { hints: own, global };
+  }
+
+  /** Every key the footer may show, in order. */
+  function hints(model: ShellModel): Hint[] {
+    const { hints: own, global } = footer(model);
     return [...own, ...global];
   }
 
@@ -456,6 +537,7 @@ export function createShell(deps: ShellDeps) {
     update,
     ctx,
     hints,
+    footer,
     headerTabs,
     tabModule: (id: TabId) => deps.tabs[id],
     overlayModule: (id: OverlayId) => overlays[id],

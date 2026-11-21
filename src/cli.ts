@@ -154,6 +154,40 @@ const {
   ...TUI_OPTIONS
 } = OPTIONS;
 
+const TUI_USAGE = `Usage: bambu-hando tui [options]
+
+Opens the full-screen terminal UI: your spools on the SpoolEase console, adding
+filaments from SpoolmanDB or a file, your BambuStudio presets, the sync check
+and settings. Nothing is written until you confirm it on a review page or in a
+dialog that names every target.
+
+Options (each one prefills Settings for this session):
+  --source <file|url>             Filaments to add from a JSON file or URL
+                                  (default: SpoolmanDB)
+  --preset-folder <name>          BambuStudio user preset folder
+  --printer-preset <name>         BambuStudio printer; repeat for several
+  --overwrite-presets             Replace BambuStudio presets that already exist
+  --spoolease-host <host>         SpoolEase console (env: SPOOLEASE_HOST)
+  --spoolease-security-key <key>  Its security key (env: SPOOLEASE_SECURITY_KEY)
+  --spoolease-port <port>         SpoolEase port (default: 80)
+  --spoolease-https               Use HTTPS for SpoolEase
+  --skip-spoolease                Leave SpoolEase out
+  --skip-spools                   Don't create a spool for each new filament
+  --brand, --material, --match    Open Add searching for these
+  --diameter <mm>                 Filament diameter (default: 1.75)
+  -h, --help                      Show this help
+
+Keys:
+  tab  shift+tab   next and previous tab (Spools Add Presets Check Settings)
+  ←→               pages inside a tab
+  ↑↓  enter  esc   move, open or choose, back
+  space  /  a      tick, filter, apply on a review
+  ?  ctrl+k        help for where you are, find a command by name
+  q  ctrl+c        quit (asks first if there are unsaved changes), quit now
+
+Exit codes: 0 every run went well, 1 a run failed, 2 a setup error, 130 ctrl+c.
+`;
+
 const LABELS_USAGE = `Usage:
   bambu-hando labels (--spool-id <id>... | --brand/--material/--match | --all)
                      (--output <file.pdf> | --printer <name>) [options]
@@ -628,11 +662,11 @@ async function tuiCommand(argv: string[], io: Io): Promise<number> {
     parsed = await parseTuiValues(argv);
   } catch (err) {
     if (!(err instanceof UsageError)) throw err;
-    io.stderr(`bambu-hando: error: ${err.message}\n\n${USAGE}`);
+    io.stderr(`bambu-hando: error: ${err.message}\n\n${TUI_USAGE}`);
     return 2;
   }
   if (parsed.help || !parsed.values) {
-    io.stdout(USAGE);
+    io.stdout(TUI_USAGE);
     return 0;
   }
   const { runTui } = await import("./tui/run.js");
