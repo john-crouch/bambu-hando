@@ -274,8 +274,25 @@ const SHORT_PLATES: Record<string, string> = {
   eng_plate_temp: "Engineering",
 };
 
-/** The same settings in at most four lines, for a detail panel under the list on a narrow terminal. */
-export function compactDetail(preset: Preset): DetailRow[] {
+/** Flow ratio, max flow and fan in one line when it fits width, else max flow on a line of its own. */
+function flowRows(preset: Preset, fan: string, width: number): DetailRow[] {
+  const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
+  const ratio = shown(preset, "filament_flow_ratio");
+  const max = shown(preset, "filament_max_volumetric_speed", " mm³/s");
+  const tagged = (tag: string, value: string) => (value ? `${tag} ${value}` : "");
+  const one = join(tagged("ratio", ratio), tagged("max", max), tagged("fan", fan));
+  if (textWidth(one) <= width || !max) return [{ label: "Flow", value: one }];
+  return [
+    { label: "Flow", value: join(tagged("ratio", ratio), tagged("fan", fan)) },
+    { label: "Max flow", value: max },
+  ];
+}
+
+/**
+ * The same settings in four lines, for a detail panel under the list on a narrow terminal; given the
+ * value column's width, a Flow line too long for it puts the max flow on a line of its own.
+ */
+export function compactDetail(preset: Preset, width = Infinity): DetailRow[] {
   const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
   const tagged = (tag: string, value: string) => (value ? `${tag} ${value}` : "");
   const low = shown(preset, "nozzle_temperature_range_low");
@@ -301,14 +318,7 @@ export function compactDetail(preset: Preset): DetailRow[] {
         }),
       ),
     },
-    {
-      label: "Flow",
-      value: join(
-        tagged("ratio", shown(preset, "filament_flow_ratio")),
-        tagged("max", shown(preset, "filament_max_volumetric_speed", " mm³/s")),
-        tagged("fan", fan),
-      ),
-    },
+    ...flowRows(preset, fan, width),
     {
       label: "Filament",
       value: join(shown(preset, "filament_density", " g/cm³"), tagged("cost", costPerKg(preset))),

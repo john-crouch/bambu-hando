@@ -260,6 +260,8 @@ function detailRows(
   others: UserPreset[],
   drafted: number,
   compact: boolean,
+  /** The compact detail's value column, so a long line can split. */
+  valueWidth: number,
 ): DetailRow[] {
   const id: DetailRow = preset.filamentId
     ? { label: "Filament ID", value: preset.filamentId, dim: true }
@@ -280,7 +282,7 @@ function detailRows(
       ...draft,
       printerRow(preset, group),
       id,
-      ...compactDetail(file),
+      ...compactDetail(file, valueWidth),
       ...(others.length
         ? [{ label: "Same ID", value: others.map((p) => presetTitle(p)).join(", ") }]
         : []),
@@ -347,7 +349,9 @@ function PresetDetail({
       </Panel>
     );
   const swatch = presetDetail(file.preset).swatch;
-  const listed = detailRows(preset, file.preset, group, others, drafted, compact);
+  // The compact detail: the swatch chip, a margin, 11 columns of labels, a gap and a margin.
+  const compactValues = inner.width - (swatch ? 4 : 0) - 1 - 11 - 2 - 1;
+  const listed = detailRows(preset, file.preset, group, others, drafted, compact, compactValues);
   // Detail's value column: what's left of the inside after a margin, the labels, a gap and a margin.
   const valueRoom = inner.width - 1 - labelColumn(listed) - 2 - 1;
   // The file's name stays in view; the folder gets its own row when the whole path doesn't fit.

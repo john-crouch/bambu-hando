@@ -305,21 +305,20 @@ describe.each([
     const screen = lines(cold, ctx);
     expectExact(screen, ctx);
     const note = screen.at(-2) ?? "";
-    expect(note).toContain("! 5°C is unusually low for a nozzle (most take 150–350°C)");
+    expect(note).toContain("! 5°C is low for a nozzle (most take 150–350°C)");
     const review = lines(drive(cold, ctx, "a"), ctx);
     expectExact(review, ctx);
     const change = review.findIndex((line) => /Nozzle +255°C → 5°C/.test(line));
     expect(change).toBeGreaterThan(0);
-    expect(review[change + 1]).toContain("! 5°C is unusually low for a nozzle");
+    expect(review[change + 1]).toContain("! 5°C is low for a nozzle");
+    expect(review.join("\n")).toContain("150–350°C)");
   });
 
   it("gives a value the width it needs, its nozzle types named", () => {
     const flow = drive(start(ctx), ctx, "s", "enter", "right", "right", "down");
     const screen = lines(flow, ctx);
     expectExact(screen, ctx);
-    expect(screen.join("\n")).toMatch(
-      /Max volumetric speed +standard 12 mm³\/s · high flow 16 mm³\/s/,
-    );
+    expect(screen.join("\n")).toMatch(/Max volumetric speed +standard 12 · high flow 16 mm³\/s/);
   });
 
   it("lists every key on All settings, filtered", () => {
@@ -483,5 +482,16 @@ it("wraps the review's notes at 60 columns instead of cutting them", () => {
   const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
   expect(words).toContain("it may save its own copy over these presets.");
   expect(words).toContain("uploads the change on its next sync.");
+  expect(screen.join("\n")).not.toContain("…");
+});
+
+it("wraps a change's warning at 60 columns instead of cutting it", () => {
+  const ctx = ctxFor(60, 20);
+  const review = drive(start(ctx), ctx, "s", "enter", "enter", "5", "enter", "a");
+  const screen = lines(review, ctx);
+  expectExact(screen, ctx);
+  const words = screen.map((line) => line.replace(/^[│╭╰]\s*|\s*[│╮╯]$/g, "")).join(" ");
+  expect(words).toContain("5°C is low for a nozzle (most take 150–350°C)");
+  expect(screen.some((line) => line.includes("! 5°C is low"))).toBe(true);
   expect(screen.join("\n")).not.toContain("…");
 });

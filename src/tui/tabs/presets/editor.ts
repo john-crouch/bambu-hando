@@ -202,7 +202,7 @@ function variantName(name: string): string {
 
 /**
  * A field's value for people: "220°C"; variants that differ each tagged with their nozzle type when
- * the preset names them ("standard 22 mm³/s · high flow 29 mm³/s").
+ * the preset names them ("standard 22 · high flow 29 mm³/s").
  */
 function fieldShown(field: EditField, preset: Preset, value: unknown): string {
   const names = preset.filament_extruder_variant;
@@ -212,12 +212,14 @@ function fieldShown(field: EditField, preset: Preset, value: unknown): string {
     Array.isArray(names) &&
     names.length === value.length &&
     names.every((n) => typeof n === "string" && n)
-  )
-    return value
-      .map((each, index) =>
-        tidyUnits(`${variantName(names[index] as string)} ${shownValue(field, [each])}`),
-      )
-      .join(" · ");
+  ) {
+    // The unit once, at the end: "standard 22 · high flow 29 mm³/s".
+    const bare: EditField = { ...field, unit: "" };
+    const each = value.map(
+      (entry, index) => `${variantName(names[index] as string)} ${shownValue(bare, [entry])}`,
+    );
+    return tidyUnits(`${each.join(" · ")}${field.unit ? ` ${field.unit}` : ""}`);
+  }
   return tidyUnits(shownValue(field, value));
 }
 
@@ -325,18 +327,18 @@ export function editorTakes(model: EditorModel): string {
 const NOZZLE_USUAL = { low: 150, high: 350 };
 const BED_USUAL_HIGH = 120;
 
-/** Why a value typed for key looks wrong ("5°C is unusually low for a nozzle…"); "" when it looks fine. */
+/** Why a value typed for key looks wrong ("5°C is low for a nozzle…"); "" when it looks fine. */
 export function editWarning(key: string, value: string): string {
   const text = value.trim();
   const n = Number(text);
   if (text === "" || !Number.isFinite(n)) return "";
   if (key.startsWith("nozzle_temperature")) {
     const usual = `(most take ${NOZZLE_USUAL.low}–${NOZZLE_USUAL.high}°C)`;
-    if (n < NOZZLE_USUAL.low) return `${n}°C is unusually low for a nozzle ${usual}`;
-    if (n > NOZZLE_USUAL.high) return `${n}°C is unusually high for a nozzle ${usual}`;
+    if (n < NOZZLE_USUAL.low) return `${n}°C is low for a nozzle ${usual}`;
+    if (n > NOZZLE_USUAL.high) return `${n}°C is high for a nozzle ${usual}`;
   }
   if (/_plate_temp(_initial_layer)?$/.test(key) && n > BED_USUAL_HIGH)
-    return `${n}°C is unusually high for a bed (most go up to ${BED_USUAL_HIGH}°C)`;
+    return `${n}°C is high for a bed (most go up to ${BED_USUAL_HIGH}°C)`;
   return "";
 }
 

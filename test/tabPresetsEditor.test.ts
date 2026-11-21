@@ -310,7 +310,7 @@ describe("variants", () => {
   it("names each nozzle type's value when they differ", () => {
     expect(editorCurrentRow(flow())).toMatchObject({
       key: "filament_max_volumetric_speed",
-      value: "standard 22 mm³/s · high flow 29 mm³/s",
+      value: "standard 22 · high flow 29 mm³/s",
     });
   });
 
@@ -327,30 +327,28 @@ describe("editorWarning", () => {
   it("warns, without refusing, about a nozzle outside 150–350°C or a bed over 120°C", () => {
     const cold = typed(open(), "5");
     expect(editorRows(cold)[0]).toMatchObject({ value: "5°C", changed: true });
-    expect(editorWarning(cold)).toBe("5°C is unusually low for a nozzle (most take 150–350°C)");
+    expect(editorWarning(cold)).toBe("5°C is low for a nozzle (most take 150–350°C)");
     expect(editorWarning(typed(open(), "400"))).toBe(
-      "400°C is unusually high for a nozzle (most take 150–350°C)",
+      "400°C is high for a nozzle (most take 150–350°C)",
     );
     expect(editorWarning(typed(open(), "230"))).toBe("");
     const bed = keys(open(), "right").model;
-    expect(editorWarning(typed(bed, "130"))).toBe(
-      "130°C is unusually high for a bed (most go up to 120°C)",
-    );
+    expect(editorWarning(typed(bed, "130"))).toBe("130°C is high for a bed (most go up to 120°C)");
     expect(editorWarning(typed(bed, "0"))).toBe("");
   });
 
   it("warns about the value being typed once it's a number", () => {
     const typing = keys(open(), "enter", "9").model;
-    expect(editorWarning(typing)).toBe("9°C is unusually low for a nozzle (most take 150–350°C)");
+    expect(editorWarning(typing)).toBe("9°C is low for a nozzle (most take 150–350°C)");
     expect(editorWarning(keys(typing, "backspace", "2", "0", "0").model)).toBe("");
   });
 
   it("checks an edit by key and value, for the review", () => {
     expect(editWarning("nozzle_temperature_initial_layer", "100")).toBe(
-      "100°C is unusually low for a nozzle (most take 150–350°C)",
+      "100°C is low for a nozzle (most take 150–350°C)",
     );
     expect(editWarning("cool_plate_temp_initial_layer", "121")).toBe(
-      "121°C is unusually high for a bed (most go up to 120°C)",
+      "121°C is high for a bed (most go up to 120°C)",
     );
     expect(editWarning("filament_flow_ratio", "5")).toBe("");
   });

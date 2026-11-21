@@ -350,6 +350,12 @@ describe("presetDetail", () => {
       { label: "Nozzle", value: "220°C" },
       { label: "Flow", value: "max standard 22 · high flow 29 mm³/s" },
     ]);
+    const flow = { ...variants, filament_flow_ratio: ["0.98"], fan_max_speed: ["100"] };
+    expect(compactDetail(flow, 40)).toEqual([
+      { label: "Nozzle", value: "220°C" },
+      { label: "Flow", value: "ratio 0.98 · fan 100%" },
+      { label: "Max flow", value: "standard 22 · high flow 29 mm³/s" },
+    ]);
   });
 });
 

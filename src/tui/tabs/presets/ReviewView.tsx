@@ -70,6 +70,12 @@ function changeWarning(review: ReviewModel, key: string): string {
   return editWarning(key, "every" in edit ? edit.every : (edit.each[0] ?? ""));
 }
 
+/** A change's warning in lines that fit under its value (indent, label, gap, icon); none without one. */
+function warningLines(warning: string, width: number, labelWidth: number): string[] {
+  if (!warning) return [];
+  return wrapWords(warning, Math.max(8, width - 3 - labelWidth - 2 - 2 - 1));
+}
+
 /** The targets list's widest before saving: a printer's note stays near its name on a wide terminal. */
 const TARGETS_MAX = 72;
 
@@ -173,7 +179,9 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
   const fixed =
     5 + review.targets.length + (spoolease.length || checking ? 2 : 0) + notes + (notes ? 1 : 0);
   // A change takes a line, and one more for its warning.
-  const heights = review.changes.map((c) => (changeWarning(review, c.key) ? 2 : 1));
+  const heights = review.changes.map(
+    (c) => 1 + warningLines(changeWarning(review, c.key), w, labelWidth).length,
+  );
   const room = Math.max(1, inner.height - fixed);
   const fits = (count: number, left: number) =>
     heights.slice(0, count).reduce((sum, h) => sum + h, 0) <= left;
@@ -212,15 +220,17 @@ export function ReviewView({ review, ctx }: { review: ReviewModel; ctx: Ctx }) {
                 { text: change.to, color: COLORS.accent, bold: true },
               ]}
             />
-            {warning ? (
+            {warningLines(warning, w, labelWidth).map((line, index) => (
               <Line
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional lines of one warning.
+                key={index}
                 width={w}
                 segments={[
-                  { text: `   ${spaces(labelWidth)}  ` },
-                  { text: `${ICONS.warning} ${warning}`, color: COLORS.warning },
+                  { text: `   ${spaces(labelWidth)}  ${index === 0 ? `${ICONS.warning} ` : "  "}` },
+                  { text: line, color: COLORS.warning },
                 ]}
               />
-            ) : null}
+            ))}
           </Box>
         );
       })}
