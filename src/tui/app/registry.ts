@@ -3,8 +3,8 @@
 
 import { createElement } from "react";
 
-import type { LabelsRequest, OverlayModule, TabId, TabModule } from "../core/types.js";
-import { Dialog, Empty } from "./stub-ui.js";
+import type { Ctx, LabelsRequest, OverlayModule, TabId, TabModule } from "../core/types.js";
+import { DIALOG_WIDTH, Dialog, dialogInner, Empty } from "../ui/index.js";
 
 /** Any tab module: the shell keeps each tab's model opaque. */
 // biome-ignore lint/suspicious/noExplicitAny: each tab has its own model type, opaque to the shell.
@@ -17,8 +17,13 @@ interface PlaceholderModel {
   title: string;
 }
 
-function PlaceholderView({ model }: { model: PlaceholderModel }) {
-  return createElement(Empty, { title: model.title, lines: ["Coming soon"] });
+function PlaceholderView({ model, ctx }: { model: PlaceholderModel; ctx: Ctx }) {
+  return createElement(Empty, {
+    title: model.title,
+    lines: ["Coming soon"],
+    width: ctx.bodyColumns,
+    height: ctx.bodyRows,
+  });
 }
 
 function placeholder(id: TabId, title: string): TabModule<PlaceholderModel> {
@@ -47,7 +52,12 @@ function LabelsView({ model }: { model: LabelsRequest }) {
   return createElement(
     Dialog,
     { title: "Labels", hints: CLOSE },
-    createElement(Empty, { title: `${model.spoolIds.length} spools`, lines: ["Coming soon"] }),
+    createElement(Empty, {
+      title: `${model.spoolIds.length} spools`,
+      lines: ["Coming soon"],
+      width: dialogInner(DIALOG_WIDTH),
+      height: 3,
+    }),
   );
 }
 

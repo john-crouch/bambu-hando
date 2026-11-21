@@ -6,9 +6,9 @@ import { render } from "ink";
 
 import { Shell } from "./app/Shell.js";
 import { summaryText } from "./app/shell.js";
-import { theme } from "./app/stub-ui.js";
 import type { RunSummary } from "./core/types.js";
 import type { FormValues } from "./core/values.js";
+import { theme } from "./ui/theme.js";
 
 // Conventional exit status for a process interrupted by SIGINT (128 + 2).
 const INTERRUPTED = 130;

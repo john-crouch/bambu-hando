@@ -21,6 +21,7 @@ import {
   type TabMsg,
 } from "../core/types.js";
 import type { FormValues } from "../core/values.js";
+import { frameBody, type HeaderTab } from "../ui/index.js";
 import { CONFIRM } from "./confirm.js";
 import { HELP, type HelpRequest } from "./help.js";
 import type { PaletteItem, ShellMsg, ShellOverlay } from "./messages.js";
@@ -97,9 +98,6 @@ const GLOBAL_HINTS: Hint[] = [
   { keys: "q", label: "quit" },
 ];
 
-// Header line and footer line.
-const CHROME_ROWS = 2;
-
 const RESOURCE_TITLES: Record<ResourceId, string> = {
   console: "Reload spools from the console",
   presets: "Reload BambuStudio presets",
@@ -119,13 +117,15 @@ export function createShell(deps: ShellDeps) {
   };
 
   function ctx(model: ShellModel): Ctx {
+    const body = frameBody(model.columns, model.rows);
     return {
       values: model.values,
       resources: model.resources,
       columns: model.columns,
       rows: model.rows,
-      bodyColumns: model.columns,
-      bodyRows: Math.max(1, model.rows - CHROME_ROWS - (model.error ? 1 : 0)),
+      bodyColumns: body.columns,
+      // The error banner takes the body's first line.
+      bodyRows: Math.max(1, body.rows - (model.error ? 1 : 0)),
       now: deps.now(),
     };
   }
@@ -413,7 +413,7 @@ export function createShell(deps: ShellDeps) {
   }
 
   /** The header's tabs, Check badged with its problem count once it has run. */
-  function headerTabs(model: ShellModel): { id: TabId; title: string; badge?: string }[] {
+  function headerTabs(model: ShellModel): HeaderTab[] {
     const check = model.resources.check;
     const problems =
       check.state === "ready" ? checkCounts((check.value as CheckData).sections).problems : 0;

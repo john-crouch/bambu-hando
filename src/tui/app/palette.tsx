@@ -1,13 +1,21 @@
 // ABOUTME: The command palette (ctrl+k): a fuzzy filter over every tab's commands and the shell's own; enter runs one.
 // ABOUTME: fuzzyMatch and paletteInput are pure; the view only draws the query line and the ranked list.
 
-import { Box, Text } from "ink";
-import stringWidth from "string-width";
+import { Box } from "ink";
 
 import { isCtrl, type KeyPress, typed } from "../core/keys.js";
 import type { AppMsg, Ctx, Hint, TabMsg } from "../core/types.js";
+import {
+  COLORS,
+  Dialog,
+  dialogInner,
+  Line,
+  listWindow,
+  type Segment,
+  textWidth,
+} from "../ui/index.js";
+import { padSegments } from "../ui/text.js";
 import { closeThen, type PaletteItem, type ShellMsg, type ShellOverlay } from "./messages.js";
-import { COLORS, Dialog } from "./stub-ui.js";
 
 export interface PaletteModel {
   items: PaletteItem[];
@@ -117,43 +125,58 @@ export function paletteInput(model: PaletteModel, key: KeyPress, pageRows: numbe
 export function paletteSize(ctx: Ctx, items: number): { width: number; rows: number } {
   return {
     width: Math.max(30, Math.min(72, ctx.columns - 4)),
-    // As tall as every command (so it doesn't jump while typing), within the body. Border, title, its
-    // gap, the query line and its gap, the hint line and its gap: 8.
+    // As tall as every command (so it doesn't jump while typing), within the body. The dialog's
+    // borders, padding and key line take 6, the query line and its gap 2.
     rows: Math.max(3, Math.min(12, items, ctx.bodyRows - 8)),
   };
 }
 
-/** The first row to show so the cursor stays in view. */
-function windowStart(cursor: number, count: number, height: number): number {
-  if (count <= height) return 0;
-  return Math.max(0, Math.min(cursor - Math.floor(height / 2), count - height));
+/** A title as segments, the matched characters in accent (accent 2 on the selection bar). */
+export function titleSegments(text: string, hits: readonly number[], selected: boolean): Segment[] {
+  const marked = new Set(hits);
+  const base: Omit<Segment, "text"> = selected ? { color: COLORS.selectionText } : {};
+  const out: Segment[] = [];
+  [...text].forEach((char, index) => {
+    const style: Omit<Segment, "text"> = marked.has(index)
+      ? { color: selected ? COLORS.accent2 : COLORS.accent, bold: true }
+      : base;
+    const last = out[out.length - 1];
+    if (last && last.color === style.color && last.bold === style.bold) last.text += char;
+    else out.push({ ...style, text: char });
+  });
+  return out;
 }
 
-function Highlighted({
-  text,
-  hits,
-  selected,
-}: {
-  text: string;
-  hits: number[];
-  selected: boolean;
-}) {
-  const marked = new Set(hits);
-  return (
-    <Text>
-      {[...text].map((char, index) =>
-        marked.has(index) ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: characters of a fixed string.
-          <Text key={index} color={selected ? COLORS.accent2 : COLORS.accent} bold>
-            {char}
-          </Text>
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: characters of a fixed string.
-          <Text key={index}>{char}</Text>
-        ),
-      )}
-    </Text>
-  );
+/** One palette row of exactly width columns: gutter mark, title (cut with …), detail at the right. */
+export function rowSegments(
+  item: PaletteItem,
+  hits: readonly number[],
+  selected: boolean,
+  width: number,
+): Segment[] {
+  const fill: Omit<Segment, "text"> = selected ? { backgroundColor: COLORS.selection } : {};
+  const paint = (segments: Segment[]): Segment[] => segments.map((seg) => ({ ...fill, ...seg }));
+  const detail = item.detail ?? "";
+  const detailWidth = detail ? textWidth(detail) + 1 : 0;
+  const titleWidth = Math.max(1, width - 2 - detailWidth);
+  return paint([
+    { text: selected ? "▌ " : "  ", color: COLORS.accent },
+    ...padSegments(titleSegments(item.title, hits, selected), titleWidth, fill),
+    ...(detail ? [{ text: ` ${detail}`, color: COLORS.muted }] : []),
+  ]);
+}
+
+/** The query line: prompt, query and cursor (or the placeholder), and the match count at the right. */
+export function queryLine(model: PaletteModel, matches: number, width: number): Segment[] {
+  const count = `${matches}/${model.items.length}`;
+  const left: Segment[] = [
+    { text: "› ", color: COLORS.accent, bold: true },
+    ...(model.query ? [{ text: model.query }] : []),
+    { text: " ", inverse: true },
+    ...(model.query ? [] : [{ text: " Type to find a command", color: COLORS.muted }]),
+  ];
+  const room = Math.max(0, width - textWidth(count) - 1);
+  return [...padSegments(left, room), { text: " " }, { text: count, color: COLORS.muted }];
 }
 
 const HINTS: Hint[] = [
@@ -164,60 +187,27 @@ const HINTS: Hint[] = [
 
 function PaletteView({ model, ctx }: { model: PaletteModel; ctx: Ctx }) {
   const { width, rows: height } = paletteSize(ctx, model.items.length);
-  const inner = width - 4;
+  const inner = dialogInner(width);
   const rows = paletteRows(model);
-  const top = windowStart(model.cursor, rows.length, height);
-  const shown = rows.slice(top, top + height);
-  const count = `${rows.length}/${model.items.length}`;
+  const { start, end } = listWindow(model.cursor, rows.length, height);
+  const shown = rows.slice(start, end);
   return (
     <Dialog title="Commands" width={width} hints={HINTS}>
-      <Box>
-        <Text color={COLORS.accent}>› </Text>
-        <Box flexGrow={1}>
-          {model.query ? (
-            <Text>
-              {model.query}
-              <Text inverse> </Text>
-            </Text>
-          ) : (
-            <Text>
-              <Text inverse> </Text>
-              <Text dimColor>Type to find a command</Text>
-            </Text>
-          )}
-        </Box>
-        <Text dimColor>{count}</Text>
-      </Box>
+      <Line segments={queryLine(model, rows.length, inner)} width={inner} />
       <Box flexDirection="column" marginTop={1} height={height}>
         {shown.length === 0 ? (
-          <Text dimColor>No command matches "{model.query}"</Text>
+          <Line
+            segments={[{ text: `No command matches "${model.query}"`, color: COLORS.muted }]}
+            width={inner}
+          />
         ) : (
-          shown.map((row, index) => {
-            const selected = top + index === model.cursor;
-            const detail = row.item.detail ?? "";
-            const titleRoom = inner - 2 - (detail ? stringWidth(detail) + 2 : 0);
-            return (
-              <Box
-                key={`${row.item.detail ?? ""}:${row.item.title}`}
-                width={inner}
-                backgroundColor={selected ? COLORS.selection : undefined}
-              >
-                <Box width={2} flexShrink={0}>
-                  <Text color={COLORS.accent}>{selected ? "▌" : " "}</Text>
-                </Box>
-                <Box width={Math.max(1, titleRoom)} flexShrink={0}>
-                  <Text wrap="truncate-end" {...(selected ? { color: COLORS.selectionText } : {})}>
-                    <Highlighted text={row.item.title} hits={row.hits} selected={selected} />
-                  </Text>
-                </Box>
-                {detail ? (
-                  <Box flexGrow={1} justifyContent="flex-end">
-                    <Text dimColor>{detail}</Text>
-                  </Box>
-                ) : null}
-              </Box>
-            );
-          })
+          shown.map((row, index) => (
+            <Line
+              key={`${row.item.detail ?? ""}:${row.item.title}`}
+              segments={rowSegments(row.item, row.hits, start + index === model.cursor, inner)}
+              width={inner}
+            />
+          ))
         )}
       </Box>
     </Dialog>

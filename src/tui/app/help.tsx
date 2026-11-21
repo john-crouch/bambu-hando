@@ -1,13 +1,20 @@
 // ABOUTME: The help overlay (?): what the active tab is for, its keys, and the keys that work everywhere.
 // ABOUTME: helpLines lays the page out for a width (pure); ↑↓ pgup pgdn home end scroll it and any other key closes it.
 
-import { Box, Text } from "ink";
-import stringWidth from "string-width";
+import { Box } from "ink";
 
 import type { KeyPress } from "../core/keys.js";
 import type { Ctx, Hint, TabId } from "../core/types.js";
+import {
+  COLORS,
+  Dialog,
+  dialogInner,
+  fitText,
+  Line,
+  type Segment,
+  textWidth,
+} from "../ui/index.js";
 import { closeThen, type ShellOverlay } from "./messages.js";
-import { COLORS, Dialog } from "./stub-ui.js";
 
 /** One paragraph per tab: what it is for. */
 export const TAB_ABOUT: Record<TabId, string> = {
@@ -59,7 +66,7 @@ export function wrap(text: string, width: number): string[] {
   let line = "";
   for (const word of text.split(/\s+/).filter(Boolean)) {
     const next = line ? `${line} ${word}` : word;
-    if (line && stringWidth(next) > width) {
+    if (line && textWidth(next) > width) {
       lines.push(line);
       line = word;
     } else line = next;
@@ -71,7 +78,7 @@ export function wrap(text: string, width: number): string[] {
 /** The help page for a width, line by line. */
 export function helpLines(request: HelpRequest, width: number): HelpLine[] {
   const keyWidth =
-    Math.max(...[...request.hints, ...GLOBAL_HELP].map((h) => stringWidth(h.keys))) + 2;
+    Math.max(...[...request.hints, ...GLOBAL_HELP].map((h) => textWidth(h.keys))) + 2;
   const keys = (hints: Hint[]): HelpLine[] =>
     hints.map((h) => ({ kind: "key", keys: h.keys, label: h.label, keyWidth }));
   const lines: HelpLine[] = [
@@ -97,7 +104,7 @@ export function helpLines(request: HelpRequest, width: number): HelpLine[] {
 
 /** Dialog width and the page's visible height. */
 export function helpSize(ctx: Ctx): { width: number; rows: number } {
-  // Border, title and its gap, the hint line and its gap: 6.
+  // The dialog's borders, padding and key line: 6.
   return {
     width: Math.max(30, Math.min(76, ctx.columns - 4)),
     rows: Math.max(3, ctx.bodyRows - 6),
@@ -106,7 +113,7 @@ export function helpSize(ctx: Ctx): { width: number; rows: number } {
 
 function maxScroll(model: HelpModel, ctx: Ctx): number {
   const { width, rows } = helpSize(ctx);
-  return Math.max(0, helpLines(model.request, width - 4).length - rows);
+  return Math.max(0, helpLines(model.request, dialogInner(width)).length - rows);
 }
 
 function helpHints(model: HelpModel, ctx: Ctx): Hint[] {
@@ -117,30 +124,21 @@ function helpHints(model: HelpModel, ctx: Ctx): Hint[] {
   ];
 }
 
-function HelpRow({ line }: { line: HelpLine }) {
-  if (line.kind === "blank") return <Text> </Text>;
-  if (line.kind === "heading")
-    return (
-      <Text bold color={COLORS.accent}>
-        {line.text}
-      </Text>
-    );
-  if (line.kind === "text") return <Text>{line.text}</Text>;
-  return (
-    <Box>
-      <Box width={line.keyWidth} flexShrink={0}>
-        <Text color={COLORS.accent2}>{line.keys}</Text>
-      </Box>
-      <Text dimColor wrap="truncate-end">
-        {line.label}
-      </Text>
-    </Box>
-  );
+/** One help line as segments. */
+export function helpSegments(line: HelpLine): Segment[] {
+  if (line.kind === "blank") return [];
+  if (line.kind === "heading") return [{ text: line.text, color: COLORS.accent, bold: true }];
+  if (line.kind === "text") return [{ text: line.text }];
+  return [
+    { text: fitText(line.keys, line.keyWidth), color: COLORS.accent2, bold: true },
+    { text: line.label, color: COLORS.muted },
+  ];
 }
 
 function HelpView({ model, ctx }: { model: HelpModel; ctx: Ctx }) {
   const { width, rows } = helpSize(ctx);
-  const lines = helpLines(model.request, width - 4);
+  const inner = dialogInner(width);
+  const lines = helpLines(model.request, inner);
   const scroll = Math.min(model.scroll, maxScroll(model, ctx));
   const shown = lines.slice(scroll, scroll + rows);
   const more = lines.length > rows ? ` · ${scroll + shown.length}/${lines.length}` : "";
@@ -153,7 +151,7 @@ function HelpView({ model, ctx }: { model: HelpModel; ctx: Ctx }) {
       <Box flexDirection="column">
         {shown.map((line, index) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: a window over fixed lines.
-          <HelpRow key={scroll + index} line={line} />
+          <Line key={scroll + index} segments={helpSegments(line)} width={inner} />
         ))}
       </Box>
     </Dialog>

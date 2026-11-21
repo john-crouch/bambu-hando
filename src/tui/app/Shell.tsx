@@ -1,7 +1,7 @@
 // ABOUTME: The TUI's root component: the one always-on useInput and usePaste, the terminal size, and the frame it draws.
 // ABOUTME: All behavior lives in shell.ts's pure update; this turns Ink's input into messages and renders the model.
 
-import { Box, Text, useInput, usePaste, useWindowSize } from "ink";
+import { Box, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useMemo } from "react";
 
 import { errorMessage } from "../../errors.js";
@@ -9,6 +9,17 @@ import { keyPress } from "../core/keys.js";
 import { Program, useProgram } from "../core/program.js";
 import type { RunSummary, StartOptions } from "../core/types.js";
 import type { FormValues } from "../core/values.js";
+import {
+  COLORS,
+  Footer,
+  Frame,
+  Header,
+  ICONS,
+  Line,
+  type Segment,
+  textWidth,
+} from "../ui/index.js";
+import { padSegments } from "../ui/text.js";
 import { LABELS, TABS } from "./registry.js";
 import { DEFAULT_LOADERS, headerStatus } from "./resources.js";
 import {
@@ -18,7 +29,6 @@ import {
   type ShellModel,
   type ShellMsg,
 } from "./shell.js";
-import { COLORS, Footer, Frame, Header } from "./stub-ui.js";
 
 const TOAST_MS = 4_000;
 
@@ -41,16 +51,18 @@ export interface ShellProps {
   onSummaries?: (summaries: RunSummary[]) => void;
 }
 
-function ErrorBanner({ error, columns }: { error: string; columns: number }) {
-  return (
-    <Box width={columns} paddingX={1} flexShrink={0}>
-      <Text color={COLORS.failed} wrap="truncate-end">
-        ✗ {error}
-      </Text>
-      <Box flexGrow={1} />
-      <Text dimColor> any key dismisses</Text>
-    </Box>
-  );
+/** The error banner's line: the error in red, cut with …, and how to dismiss it at the right. */
+export function errorSegments(error: string, columns: number): Segment[] {
+  const note = "any key dismisses";
+  const room = columns - 2 - textWidth(note) - 2;
+  const message = `${ICONS.failed} ${error.replace(/\s+/g, " ")}`;
+  return [
+    { text: " " },
+    ...padSegments([{ text: message, color: COLORS.failed, bold: true }], Math.max(0, room)),
+    { text: "  " },
+    { text: note, color: COLORS.muted },
+    { text: " " },
+  ];
 }
 
 /** The frame for a model: header, the active tab (or nothing but the frame), footer, and the open overlay. */
@@ -82,9 +94,19 @@ export function ShellView({ shell, model }: { shell: ShellApi; model: ShellModel
         OverlayView && model.overlay ? <OverlayView model={model.overlay.model} ctx={ctx} /> : null
       }
     >
-      {model.error ? <ErrorBanner error={model.error} columns={model.columns} /> : null}
-      <Box flexDirection="column" width={ctx.bodyColumns} height={ctx.bodyRows} overflow="hidden">
-        <TabView model={model.tabs[model.active]} ctx={ctx} />
+      <Box flexDirection="column" width={ctx.bodyColumns} flexShrink={0}>
+        {model.error ? (
+          <Line segments={errorSegments(model.error, ctx.bodyColumns)} width={ctx.bodyColumns} />
+        ) : null}
+        <Box
+          flexDirection="column"
+          width={ctx.bodyColumns}
+          height={ctx.bodyRows}
+          flexShrink={0}
+          overflow="hidden"
+        >
+          <TabView model={model.tabs[model.active]} ctx={ctx} />
+        </Box>
       </Box>
     </Frame>
   );

@@ -8,7 +8,7 @@ import { checkKey } from "../../sync.js";
 import { readCheck, readUserPresets } from "../../syncCheck.js";
 import type { Resource, ResourceId, Resources } from "../core/types.js";
 import type { FormValues } from "../core/values.js";
-import type { HeaderStatus } from "./stub-ui.js";
+import type { HeaderStatus } from "../ui/index.js";
 
 type Loaded<K extends ResourceId> = Resources[K] extends Resource<infer T> ? T : never;
 

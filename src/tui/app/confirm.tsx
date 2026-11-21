@@ -1,12 +1,11 @@
 // ABOUTME: The confirm overlay: names every target of a write, then a applies it and esc cancels.
 // ABOUTME: Tabs open it with app/confirm; the write itself is the request's onApply message.
 
-import { Box, Text } from "ink";
-import stringWidth from "string-width";
+import { Box } from "ink";
 
 import type { ConfirmRequest, Ctx, Hint } from "../core/types.js";
+import { Dialog, dialogInner, Line, textWidth } from "../ui/index.js";
 import { closeThen, type ShellOverlay } from "./messages.js";
-import { Dialog } from "./stub-ui.js";
 
 export interface ConfirmModel {
   request: ConfirmRequest;
@@ -22,27 +21,23 @@ function confirmHints(model: ConfirmModel): Hint[] {
 /** Wide enough for the longest line, within the terminal. */
 export function confirmWidth(request: ConfirmRequest, columns: number): number {
   const longest = Math.max(
-    stringWidth(request.title),
-    ...request.lines.map((line) => stringWidth(line)),
+    textWidth(request.title),
+    ...request.lines.map((line) => textWidth(line)),
   );
-  return Math.max(30, Math.min(longest + 4, 80, columns - 4));
+  // The dialog's border and padding take 3 columns a side.
+  return Math.max(30, Math.min(longest + 6, 80, columns - 4));
 }
 
 function ConfirmView({ model, ctx }: { model: ConfirmModel; ctx: Ctx }) {
   const { request } = model;
+  const width = confirmWidth(request, ctx.columns);
   return (
-    <Dialog
-      title={request.title}
-      width={confirmWidth(request, ctx.columns)}
-      hints={confirmHints(model)}
-    >
+    <Dialog title={request.title} width={width} hints={confirmHints(model)}>
       <Box flexDirection="column">
         {request.lines.map((line, index) => (
           // Lines may repeat (two blank ones), so the index keeps keys unique.
           // biome-ignore lint/suspicious/noArrayIndexKey: the lines never reorder.
-          <Text key={index} wrap="truncate-end">
-            {line}
-          </Text>
+          <Line key={index} segments={[{ text: line }]} width={dialogInner(width)} />
         ))}
       </Box>
     </Dialog>
