@@ -349,6 +349,8 @@ export function update(model: LabelsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step
         ? readyKey({ ...model, error: "" }, pasted(m.text), ctx)
         : [model, []];
     case "key": {
+      // While making, esc is ignored: closed, the overlay couldn't refuse q, which would cut the print short.
+      if (model.phase === "making") return [model, []];
       if (model.phase !== "ready")
         return m.key.name === "esc" ? [model, [send(close)]] : [model, []];
       const [next, cmds] = readyKey({ ...model, error: "" }, m.key, ctx);
@@ -361,6 +363,7 @@ export function update(model: LabelsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step
 
 export function hints(model: LabelsModel, _ctx: Ctx): Hint[] {
   const closeHint: Hint = { keys: "esc", label: "close", primary: true };
+  if (model.phase === "making") return [];
   if (model.phase !== "ready") return [closeHint];
   const move: Hint = { keys: "↑↓", label: "move", primary: true };
   if (model.picker)

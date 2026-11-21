@@ -7,6 +7,7 @@ import type { FormValues } from "../src/tui/core/values.js";
 import {
   byModelAndNozzle,
   connectionOf,
+  consoleProblem,
   printerLabel,
   printerList,
   shortPrinters,
@@ -80,6 +81,22 @@ describe("the console connection", () => {
     expect(connectionOf({ ...VALUES, host: " " })).toBeNull();
     expect(connectionOf({ ...VALUES, securityKey: "" })).toBeNull();
     expect(connectionOf({ ...VALUES, port: "x" })).toBeNull();
+  });
+
+  it("points a console read's error at the Settings row that fixes it", () => {
+    const focus = (error: string) => consoleProblem(error).focus;
+    expect(focus("SpoolEase key validation failed")).toBe("spoolease.key");
+    expect(
+      focus("SpoolEase unreachable at http://10.0.0.5:81: fetch failed: connect ECONNREFUSED"),
+    ).toBe("spoolease.port");
+    // fetch refuses ports on its blocked list (6000, 6665…) before connecting.
+    expect(focus("SpoolEase unreachable at http://10.0.0.5:6000: fetch failed: bad port")).toBe(
+      "spoolease.port",
+    );
+    expect(consoleProblem("fetch failed: Bad port").advice).toContain("port");
+    expect(
+      focus("SpoolEase unreachable at http://nope.local: fetch failed: getaddrinfo ENOTFOUND"),
+    ).toBe("spoolease.host");
   });
 
   it("splits the printers and shortens them for people, nozzles of a model together", () => {

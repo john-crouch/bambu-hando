@@ -79,6 +79,12 @@ export function consoleProblem(error: string): ConsoleProblem {
       advice:
         "The console answered but refused the key: check the security key, or the port if something else answers there.",
     };
+  // fetch refuses ports on its blocked list (6000, 6665…) before it connects.
+  if (/bad port/i.test(error))
+    return {
+      focus: "spoolease.port",
+      advice: "That port is blocked for web requests: check the port, 80 unless you changed it.",
+    };
   if (/ECONNREFUSED/.test(error))
     return {
       focus: "spoolease.port",

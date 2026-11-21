@@ -24,6 +24,7 @@ import {
   wrapText,
 } from "../../ui/index.js";
 import { segmentsWidth } from "../../ui/text.js";
+import { consoleProblem } from "../settings/connection.js";
 import {
   compactDetail,
   consoleConnection,
@@ -296,7 +297,11 @@ function EmptyState({ ctx, width, height }: { ctx: Ctx; width: number; height: n
       body = (
         <Empty
           title="Couldn't read the console's spools"
-          lines={[screen.error, "Check its address in Settings, or press r to try again."]}
+          lines={[
+            ...wrapText(screen.error, Math.min(inner.width - 4, 60)),
+            "",
+            ...wrapText(consoleProblem(screen.error).advice, Math.min(inner.width - 4, 60)),
+          ]}
           action={{ keys: "enter", label: "open Settings" }}
           width={inner.width}
           height={inner.height}
