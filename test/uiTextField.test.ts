@@ -143,8 +143,7 @@ describe("fieldView", () => {
     for (let width = 1; width < 20; width++) {
       for (let cursor = 0; cursor <= value.length; cursor++) {
         const v = fieldView(value, cursor, width);
-        const used =
-          textWidth(v.before + v.at + v.after) + (v.left ? 1 : 0) + (v.right ? 1 : 0);
+        const used = textWidth(v.before + v.at + v.after) + (v.left ? 1 : 0) + (v.right ? 1 : 0);
         expect(used, `width ${width} cursor ${cursor}`).toBeLessThanOrEqual(
           Math.max(width, textWidth(v.at)),
         );

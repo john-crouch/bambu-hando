@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { fitText, fitSegments, segmentsWidth, textWidth, truncate } from "../src/tui/ui/text.js";
+import { fitSegments, fitText, segmentsWidth, textWidth, truncate } from "../src/tui/ui/text.js";
 
 describe("textWidth", () => {
   it("counts columns as Ink does: one for the TUI's symbols, two for wide characters", () => {
