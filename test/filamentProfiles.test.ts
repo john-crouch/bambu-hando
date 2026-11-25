@@ -106,6 +106,7 @@ describe("FilamentProfilesClient", () => {
       notes: null,
       updatedAt: "2026-10-14T18:02:11.000Z",
       url: "https://spooldb.com/s/ABC123",
+      externalId: null,
     });
     expect(spools[1]).toMatchObject({
       shortCode: "XYZ789",
@@ -207,6 +208,28 @@ describe("FilamentProfilesClient", () => {
     };
     const [result] = await client.updateSpools([{ shortCode: "ABC123", remainingGrams: 600 }]);
     expect(result).toMatchObject({ shortCode: "ABC123", ok: false });
+  });
+
+  it("reads, sets and clears the ID another app keeps for a spool", async () => {
+    server.spools = [serverSpool({ external_id: "spoolease:3" })];
+    expect((await client.listSpools()).spools[0]?.externalId).toBe("spoolease:3");
+    expect((await client.getSpool("ABC123")).externalId).toBe("spoolease:3");
+    await client.updateSpools([{ shortCode: "ABC123", externalId: null }]);
+    expect(server.requests.at(-1)?.body).toEqual([{ short_code: "ABC123", external_id: null }]);
+    expect(server.spools[0]?.external_id).toBeNull();
+    server.filaments = [serverFilament()];
+    await client.addSpool({ filamentId: 101, externalId: "spoolease:4" });
+    expect(server.requests.at(-1)?.body).toEqual({ filament_id: 101, external_id: "spoolease:4" });
+    expect(server.spools[1]?.external_id).toBe("spoolease:4");
+    const before = server.requests.length;
+    const long = "x".repeat(101);
+    await expect(client.updateSpool("ABC123", { externalId: long })).rejects.toThrow(
+      FilamentProfilesError,
+    );
+    await expect(client.addSpool({ filamentId: 101, externalId: long })).rejects.toThrow(
+      FilamentProfilesError,
+    );
+    expect(server.requests).toHaveLength(before);
   });
 
   it("gets one spool with its Bambu IDs, which the list leaves out", async () => {

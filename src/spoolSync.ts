@@ -14,7 +14,7 @@ import {
 } from "./filamentProfiles.js";
 import type { SpoolRecord } from "./spoolease.js";
 import { remainingGrams } from "./spoolInventory.js";
-import type { SpoolLink } from "./spoolLinks.js";
+import { externalIdFor, externalIdIsOurs, type SpoolLink } from "./spoolLinks.js";
 
 /** Weights closer than this count as the same: scales and rounding wobble by a few grams. */
 export const WEIGHT_TOLERANCE_G = 5;
@@ -121,11 +121,16 @@ export function addCandidates(spool: SpoolRecord, filaments: TdfpFilament[]): Td
   );
 }
 
+export type LinkHow = "kept" | "recorded" | "matched" | "chosen";
+
 export type SyncRow =
-  /** A linked pair, already ("kept"), by name ("matched") or as asked ("chosen"); patch is what 3DFP gets. */
+  /**
+   * A linked pair, already ("kept"), by the SpoolEase ID 3DFP keeps for it ("recorded"), by name ("matched") or as
+   * asked ("chosen"); patch is what 3DFP gets.
+   */
   | {
       kind: "linked";
-      how: "kept" | "matched" | "chosen";
+      how: LinkHow;
       spool: SpoolRecord;
       tdfp: TdfpSpool;
       before: SpoolLink | null;
@@ -149,6 +154,8 @@ export type SyncRow =
       spool: SpoolRecord | null;
       tdfp: TdfpSpool | null;
       reason: "asked" | "replaced" | "spoolease-gone" | "tdfp-gone";
+      /** Clears the 3DFP spool's external_id when it still names this SpoolEase spool, so no sync relinks them. */
+      patch: SpoolPatch | null;
     }
   /** Several 3DFP spools fit, or the one that fits fits other SpoolEase spools too. */
   | { kind: "ambiguous"; spool: SpoolRecord; candidates: TdfpSpool[] }
@@ -192,7 +199,9 @@ export class SyncPlanError extends Error {}
 
 /** The calls applying these rows takes: their 3DFP updates go up to MAX_BULK_UPDATES a call, each add (tag included) one. */
 export function planCalls(rows: SyncRow[]): number {
-  const updates = rows.filter((row) => row.kind === "linked" && row.patch).length;
+  const updates = rows.filter(
+    (row) => (row.kind === "linked" || row.kind === "unlinked") && row.patch,
+  ).length;
   const adds = rows.filter((row) => row.kind === "add").length;
   return Math.ceil(updates / MAX_BULK_UPDATES) + adds;
 }
@@ -212,7 +221,7 @@ function linkedRow(
   spool: SpoolRecord,
   tdfp: TdfpSpool,
   before: SpoolLink | null,
-  how: "kept" | "matched" | "chosen",
+  how: LinkHow,
   now: Date,
 ): SyncRow {
   const left = remainingGrams(spool);
@@ -230,6 +239,10 @@ function linkedRow(
     patch.bambuTagId = spool.tagId;
     tag = spool.tagId;
   }
+  // Unread (undefined) or another app's ID stays as it is.
+  const id = externalIdFor(spool.id);
+  if (tdfp.externalId !== undefined && externalIdIsOurs(tdfp.externalId) && tdfp.externalId !== id)
+    patch.externalId = id;
   const after: SpoolLink = {
     spoolease: spool.id,
     tdfp: tdfp.shortCode,
@@ -322,8 +335,9 @@ export function planSync(input: SyncInput): SyncPlan {
       kind: "unlinked",
       link,
       spool: null,
-      tdfp: null,
+      tdfp: tdByCode.get(link.tdfp) ?? null,
       reason: reason ?? "spoolease-gone",
+      patch: null,
     });
     if (reason === "asked") settled.add(link.spoolease);
   }
@@ -338,6 +352,23 @@ export function planSync(input: SyncInput): SyncPlan {
     const spool = seById.get(id);
     if (spool)
       bySpool.set(id, addRow(spool, filamentId, input.filamentById?.(filamentId) ?? null, true));
+  }
+
+  // A 3DFP spool that names a SpoolEase spool in its external_id is that spool's, when brand and material agree
+  // too (another console's spool #1 is someone else's).
+  for (const spool of input.spoolease) {
+    if (bySpool.has(spool.id) || settled.has(spool.id)) continue;
+    const named = input.tdfp.filter(
+      (tdfp) =>
+        !takenCodes.has(tdfp.shortCode) &&
+        tdfp.externalId === externalIdFor(spool.id) &&
+        squash(tdfp.brand) === squash(spool.brand) &&
+        squash(tdfp.material) === squash(spool.material),
+    );
+    const only = named[0];
+    if (named.length !== 1 || !only) continue;
+    bySpool.set(spool.id, linkedRow(spool, only, null, "recorded", input.now));
+    takenCodes.add(only.shortCode);
   }
 
   const open = input.spoolease.filter((spool) => !bySpool.has(spool.id) && !settled.has(spool.id));
@@ -378,6 +409,19 @@ export function planSync(input: SyncInput): SyncPlan {
   const tdfpOnly: SyncRow[] = freeTdfp
     .filter((tdfp) => !claimed.has(tdfp.shortCode))
     .map((tdfp) => ({ kind: "tdfp-only", tdfp }));
+  // A link that goes clears the ID it left on 3DFP, unless that spool is linked to the same SpoolEase spool again.
+  const relinked = new Set(
+    spoolRows.flatMap((row) =>
+      row.kind === "linked" ? [`${row.spool.id} ${row.tdfp.shortCode}`] : [],
+    ),
+  );
+  for (const row of dropped)
+    if (
+      row.kind === "unlinked" &&
+      row.tdfp?.externalId === externalIdFor(row.link.spoolease) &&
+      !relinked.has(`${row.link.spoolease} ${row.tdfp.shortCode}`)
+    )
+      row.patch = { externalId: null };
   const rows = [...dropped, ...spoolRows, ...tdfpOnly];
   return {
     rows,
@@ -405,7 +449,12 @@ export interface AppliedSync {
 }
 
 type LinkedRow = Extract<SyncRow, { kind: "linked" }>;
+type UpdateRow = Extract<SyncRow, { kind: "linked" | "unlinked" }> & { patch: SpoolPatch };
 type AddRow = Extract<SyncRow, { kind: "add" }>;
+
+/** The 3DFP spool an update goes to. */
+const updateCode = (row: UpdateRow): string =>
+  row.kind === "linked" ? row.tdfp.shortCode : row.link.tdfp;
 
 /** A linked row whose update didn't go through keeps the link, without what wasn't sent. */
 const unsentLink = (row: LinkedRow): SpoolLink => ({
@@ -415,8 +464,8 @@ const unsentLink = (row: LinkedRow): SpoolLink => ({
 });
 
 /**
- * Sends the plan's 3DFP writes: the linked spools' updates in bulk, MAX_BULK_UPDATES a call, then each add with its
- * tag. A failed update or add doesn't stop the others; a used-up quota stops all calls.
+ * Sends the plan's 3DFP writes: the linked and unlinked spools' updates in bulk, MAX_BULK_UPDATES a call, then each
+ * add with its tag and SpoolEase ID. A failed update or add doesn't stop the others; a used-up quota stops all calls.
  */
 export async function applySync(
   plan: SyncPlan,
@@ -438,7 +487,8 @@ export async function applySync(
   };
 
   const updates = plan.rows.filter(
-    (row): row is LinkedRow => row.kind === "linked" && row.patch !== null,
+    (row): row is UpdateRow =>
+      (row.kind === "linked" || row.kind === "unlinked") && row.patch !== null,
   );
   for (let start = 0; start < updates.length; start += MAX_BULK_UPDATES) {
     const batch = updates.slice(start, start + MAX_BULK_UPDATES);
@@ -447,7 +497,7 @@ export async function applySync(
     if (!error) {
       try {
         answers = await client.updateSpools(
-          batch.map((row) => ({ shortCode: row.tdfp.shortCode, ...row.patch })),
+          batch.map((row) => ({ shortCode: updateCode(row), ...row.patch })),
         );
         calls += 1;
       } catch (err) {
@@ -456,9 +506,11 @@ export async function applySync(
     }
     batch.forEach((row, index) => {
       const answer = answers?.[index];
-      if (answer?.ok) settle(row, row.after, { row, ok: true, error: null });
+      // A link that goes is gone whether or not its ID was cleared.
+      const kept = row.kind === "linked" ? row : null;
+      if (answer?.ok) settle(row, kept?.after ?? null, { row, ok: true, error: null });
       else
-        settle(row, unsentLink(row), {
+        settle(row, kept ? unsentLink(kept) : null, {
           row,
           ok: false,
           error: answer && !answer.ok ? answer.error : (error ?? "not sent"),
@@ -477,6 +529,7 @@ export async function applySync(
         filamentId: row.filamentId,
         ...(row.grams === null ? {} : { remainingGrams: row.grams }),
         ...(row.tag ? { bambuTagId: row.tag } : {}),
+        externalId: externalIdFor(row.spool.id),
       });
     } catch (err) {
       settle(row, null, { row, ok: false, error: failed(err) });

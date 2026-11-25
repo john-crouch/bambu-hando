@@ -125,7 +125,14 @@ describe("bambu-hando 3dfp sync (binary)", () => {
     expect(await exited).toBe(0);
     expect(output()).toContain("Done: 1 change applied (1 API call; 998 of 1000 left this month).");
     expect(writes().map((r) => r.body)).toEqual([
-      [{ short_code: "ABC123", remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }],
+      [
+        {
+          short_code: "ABC123",
+          remaining_grams: 564,
+          bambu_tag_id: "04A1B2C3D4E5F6",
+          external_id: "spoolease:1",
+        },
+      ],
     ]);
     const saved = await readFile(
       join(configDir(process.platform, home, {}), "3dfp-links.json"),

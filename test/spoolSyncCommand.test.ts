@@ -128,7 +128,7 @@ describe("bambu-hando 3dfp sync", () => {
         "Spool sync: SpoolEase 127.0.0.1 (1 spool) · 3DFilamentProfiles (1 spool, 1 API call)",
         "",
         "Link      #1 Sunlu PETG 2.0 Vivid Yellow ↔ ABC123 Sunlu PETG Vivid Yellow (same brand, material and color)",
-        "          weight 1000 → 564 g, from SpoolEase; tag written to 3DFP",
+        "          weight 1000 → 564 g, from SpoolEase; tag and SpoolEase ID written to 3DFP",
         "",
         "1 change: 1 API call (899 of 1000 left this month). Dry run: nothing changed.",
         "",
@@ -163,7 +163,14 @@ describe("bambu-hando 3dfp sync", () => {
       [
         "PATCH",
         "/api/v1/my/spools",
-        [{ short_code: "ABC123", remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }],
+        [
+          {
+            short_code: "ABC123",
+            remaining_grams: 564,
+            bambu_tag_id: "04A1B2C3D4E5F6",
+            external_id: "spoolease:1",
+          },
+        ],
       ],
     ]);
     expect(stdout).toMatch(
@@ -212,19 +219,59 @@ describe("bambu-hando 3dfp sync", () => {
   it("takes SpoolEase's weight on a first link, even when 3DFP's is lower", async () => {
     tdfp.spools = [serverSpool({ remaining_grams: 400 })];
     const { stdout } = await sync("--yes");
-    expect(stdout).toContain("          weight 400 → 564 g, from SpoolEase; tag written to 3DFP");
+    expect(stdout).toContain(
+      "          weight 400 → 564 g, from SpoolEase; tag and SpoolEase ID written to 3DFP",
+    );
     expect(writes()).toEqual([
       [
         "PATCH",
         "/api/v1/my/spools",
-        [{ short_code: "ABC123", remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }],
+        [
+          {
+            short_code: "ABC123",
+            remaining_grams: 564,
+            bambu_tag_id: "04A1B2C3D4E5F6",
+            external_id: "spoolease:1",
+          },
+        ],
       ],
     ]);
   });
 
+  it("rebuilds lost links from the SpoolEase IDs 3DFP keeps, and points 3DFP-only spools at import", async () => {
+    tdfp.spools.push(
+      serverSpool({ short_code: "XYZ789", brand: "eSUN", material: "PLA", color: "Black" }),
+    );
+    await sync("--yes");
+    await writeFile(linkFile(), "{}", "utf-8");
+    // A renamed color no longer fits by name; the ID still says whose spool it is.
+    const first = tdfp.spools[0];
+    if (first) first.color = "Sunflower";
+    const { stdout } = await sync("--dry-run");
+    expect(stdout).toContain(
+      "Link      #1 Sunlu PETG 2.0 Vivid Yellow ↔ ABC123 Sunlu PETG Sunflower (3DFP keeps its SpoolEase ID)",
+    );
+    expect(stdout).toContain(
+      "3DFP only XYZ789 eSUN PLA Black: no SpoolEase spool fits: bring it in with `bambu-hando 3dfp import XYZ789`",
+    );
+  });
+
+  it("clears the SpoolEase ID on 3DFP when unlinking", async () => {
+    await sync("--yes");
+    const { stdout } = await sync("--yes", "--unlink", "1");
+    expect(stdout).toContain("Unlink    #1 ↔ ABC123: as asked; SpoolEase ID cleared on 3DFP");
+    expect(tdfp.spools[0]?.external_id).toBeNull();
+  });
+
   it("asks for a weigh when only 3DFP's weight moved since they agreed", async () => {
     await sync("--yes");
-    tdfp.spools = [serverSpool({ remaining_grams: 400, bambu_tag_id: "04A1B2C3D4E5F6" })];
+    tdfp.spools = [
+      serverSpool({
+        remaining_grams: 400,
+        bambu_tag_id: "04A1B2C3D4E5F6",
+        external_id: "spoolease:1",
+      }),
+    ];
     const before = writes().length;
     const { stdout } = await sync("--yes", "--refresh");
     expect(stdout).toContain(
@@ -256,7 +303,12 @@ describe("bambu-hando 3dfp sync", () => {
       [
         "POST",
         "/api/v1/my/spools",
-        { filament_id: 101, remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+        {
+          filament_id: 101,
+          remaining_grams: 564,
+          bambu_tag_id: "04A1B2C3D4E5F6",
+          external_id: "spoolease:1",
+        },
       ],
     ]);
     expect(await savedLinks()).toMatchObject([

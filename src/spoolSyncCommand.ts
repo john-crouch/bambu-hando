@@ -155,9 +155,18 @@ function rowLines(row: SyncRow): string[] {
   if (row.kind === "linked") {
     const left = remainingGrams(row.spool);
     const weight = weightText(row.weight, row.tdfp, left);
-    const tag = row.patch?.bambuTagId !== undefined ? "tag written to 3DFP" : null;
+    const written = [
+      row.patch?.bambuTagId !== undefined ? "tag" : null,
+      row.patch?.externalId !== undefined ? "SpoolEase ID" : null,
+    ].filter(Boolean);
+    const tag = written.length ? `${written.join(" and ")} written to 3DFP` : null;
     if (row.before === null) {
-      const why = row.how === "chosen" ? "as asked" : "same brand, material and color";
+      const why =
+        row.how === "chosen"
+          ? "as asked"
+          : row.how === "recorded"
+            ? "3DFP keeps its SpoolEase ID"
+            : "same brand, material and color";
       return [
         labelled("Link", `${se(row.spool)} ↔ ${row.tdfp.shortCode} ${tdName(row.tdfp)} (${why})`),
         " ".repeat(LABEL) + [weight, tag].filter(Boolean).join("; "),
@@ -194,7 +203,8 @@ function rowLines(row: SyncRow): string[] {
       "spoolease-gone": `SpoolEase has no spool #${row.link.spoolease} any more`,
       "tdfp-gone": `3DFilamentProfiles has no spool ${row.link.tdfp} any more`,
     }[row.reason];
-    return [labelled("Unlink", `#${row.link.spoolease} ↔ ${row.link.tdfp}: ${why}`)];
+    const cleared = row.patch ? "; SpoolEase ID cleared on 3DFP" : "";
+    return [labelled("Unlink", `#${row.link.spoolease} ↔ ${row.link.tdfp}: ${why}${cleared}`)];
   }
   if (row.kind === "ambiguous") {
     const codes = row.candidates.map((c) => c.shortCode).join(", ");
@@ -230,7 +240,10 @@ function rowLines(row: SyncRow): string[] {
     ];
   }
   return [
-    labelled("3DFP only", `${row.tdfp.shortCode} ${tdName(row.tdfp)}: no SpoolEase spool fits`),
+    labelled(
+      "3DFP only",
+      `${row.tdfp.shortCode} ${tdName(row.tdfp)}: no SpoolEase spool fits: bring it in with \`bambu-hando 3dfp import ${row.tdfp.shortCode}\``,
+    ),
   ];
 }
 
@@ -358,7 +371,9 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
         ? `#${row.spool.id} ↔ ${row.tdfp.shortCode}`
         : row.kind === "add"
           ? `#${row.spool.id}`
-          : "";
+          : row.kind === "unlinked"
+            ? `#${row.link.spoolease} ↔ ${row.link.tdfp}`
+            : "";
     failures.push(labelled("Failed", `${what}: ${outcome.error}`));
   });
   reportSetAside(await saveLinks(linksPath(), api.account, connection.host, applied.links), io);

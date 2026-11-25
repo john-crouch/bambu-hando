@@ -23,6 +23,7 @@ export interface ServerSpool {
   spool_properties: Record<string, unknown> | null;
   bambu_spool_id: string | null;
   bambu_tag_id: string | null;
+  external_id: string | null;
 }
 
 export interface ServerFilament {
@@ -99,6 +100,7 @@ export function serverSpool(overrides: Partial<ServerSpool> = {}): ServerSpool {
     spool_properties: null,
     bambu_spool_id: null,
     bambu_tag_id: null,
+    external_id: null,
     ...overrides,
   };
 }
@@ -164,6 +166,7 @@ function detailed(spool: ServerSpool): Record<string, unknown> {
     url: `https://spooldb.com/s/${spool.short_code}`,
     bambu_spool_id: spool.bambu_spool_id,
     bambu_tag_id: spool.bambu_tag_id,
+    external_id: spool.external_id,
     stores: [],
   };
 }
@@ -266,6 +269,12 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
           if (other.bambu_tag_id === value) other.bambu_tag_id = null;
       spool[field] = value;
     }
+    if (body.external_id !== undefined) {
+      const value = body.external_id === "" ? null : (body.external_id as string | null);
+      if (typeof value === "string" && value.length > 100)
+        return error(400, "invalid_request", "external_id: at most 100 characters");
+      spool.external_id = value;
+    }
     spool.updated_at = new Date().toISOString();
     return {
       status: 200,
@@ -276,6 +285,7 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
         location: spool.location ?? "Shelf",
         bambu_spool_id: spool.bambu_spool_id,
         bambu_tag_id: spool.bambu_tag_id,
+        external_id: spool.external_id,
       },
     };
   }
@@ -372,6 +382,11 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
           for (const other of state.spools)
             if (other.bambu_tag_id === value) other.bambu_tag_id = null;
         spool[field] = value;
+      }
+      if (typeof fields.external_id === "string" && fields.external_id !== "") {
+        if (fields.external_id.length > 100)
+          return error(400, "invalid_request", "external_id: at most 100 characters");
+        spool.external_id = fields.external_id;
       }
       spool.updated_at = new Date().toISOString();
       state.spools.push(spool);

@@ -20,6 +20,18 @@ export interface SpoolLink {
   linkedAt: string;
 }
 
+/** What bambu-hando puts in a 3DFP spool's external_id to name its SpoolEase spool. */
+export const EXTERNAL_ID_PREFIX = "spoolease:";
+
+export function externalIdFor(spooleaseId: string): string {
+  return `${EXTERNAL_ID_PREFIX}${spooleaseId}`;
+}
+
+/** An external_id bambu-hando may write over: none yet, or one of its own. Another app's ID is never touched. */
+export function externalIdIsOurs(externalId: string | null): boolean {
+  return externalId === null || externalId.startsWith(EXTERNAL_ID_PREFIX);
+}
+
 interface LinkBook {
   /** accountId of the 3DFP key. */
   account: string;

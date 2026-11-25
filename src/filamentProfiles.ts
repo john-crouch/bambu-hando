@@ -56,6 +56,8 @@ export interface TdfpSpool {
   url: string;
   bambuSpoolId?: string | null;
   bambuTagId?: string | null;
+  /** The ID another app keeps for this spool (bambu-hando's is "spoolease:<id>"). */
+  externalId?: string | null;
 }
 
 /** At most one of remainingGrams, usedGrams and usedMm; null clears location or an ID. */
@@ -66,6 +68,8 @@ export interface SpoolPatch {
   location?: string | null;
   bambuSpoolId?: string | null;
   bambuTagId?: string | null;
+  /** The ID bambu-hando keeps for the spool on 3DFP: "spoolease:<id>"; at most 100 characters. */
+  externalId?: string | null;
 }
 
 /** A spool list: every spool, or (with updatedSince) only those changed since, plus the ones deleted since. */
@@ -107,6 +111,7 @@ export interface NewSpool {
   notes?: string;
   /** Written with the spool, so a new spool's tag takes no second call. */
   bambuTagId?: string;
+  externalId?: string;
 }
 
 export type AddedSpool =
@@ -197,6 +202,7 @@ function spool(raw: Json): TdfpSpool {
   if ("empty_spool_weight" in raw) parsed.emptySpoolWeight = optNum(raw.empty_spool_weight);
   if ("bambu_spool_id" in raw) parsed.bambuSpoolId = optStr(raw.bambu_spool_id);
   if ("bambu_tag_id" in raw) parsed.bambuTagId = optStr(raw.bambu_tag_id);
+  if ("external_id" in raw) parsed.externalId = optStr(raw.external_id);
   return parsed;
 }
 
@@ -264,6 +270,8 @@ function patchBody(patch: SpoolPatch): Json {
   for (const id of [patch.bambuSpoolId, patch.bambuTagId])
     if (typeof id === "string" && id.length > 64)
       throw invalid("Bambu IDs are at most 64 characters");
+  if (typeof patch.externalId === "string" && patch.externalId.length > 100)
+    throw invalid("externalId is at most 100 characters");
   const body: Json = {};
   if (patch.remainingGrams !== undefined) body.remaining_grams = patch.remainingGrams;
   if (patch.usedGrams !== undefined) body.used_grams = patch.usedGrams;
@@ -271,6 +279,7 @@ function patchBody(patch: SpoolPatch): Json {
   if (patch.location !== undefined) body.location = patch.location;
   if (patch.bambuSpoolId !== undefined) body.bambu_spool_id = patch.bambuSpoolId;
   if (patch.bambuTagId !== undefined) body.bambu_tag_id = patch.bambuTagId;
+  if (patch.externalId !== undefined) body.external_id = patch.externalId;
   if (Object.keys(body).length === 0) throw invalid("the update changes nothing");
   return body;
 }
@@ -476,11 +485,14 @@ export class FilamentProfilesClient {
       throw invalid("notes are at most 500 characters");
     if (request.bambuTagId !== undefined && request.bambuTagId.length > 64)
       throw invalid("Bambu IDs are at most 64 characters");
+    if (request.externalId !== undefined && request.externalId.length > 100)
+      throw invalid("externalId is at most 100 characters");
     const body: Json = { filament_id: request.filamentId };
     if (request.remainingGrams !== undefined) body.remaining_grams = request.remainingGrams;
     if (request.notes !== undefined) body.notes = request.notes;
     if (request.ifNotOwned !== undefined) body.if_not_owned = request.ifNotOwned;
     if (request.bambuTagId !== undefined) body.bambu_tag_id = request.bambuTagId;
+    if (request.externalId !== undefined) body.external_id = request.externalId;
     const reply = await this.request("POST", "/my/spools", body);
     if (reply.created === true) return { created: true, spool: spool(reply.spool as Json) };
     const existing = Array.isArray(reply.spools)
