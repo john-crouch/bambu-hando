@@ -126,6 +126,16 @@ describe("bambu-hando 3dfp", () => {
     );
   });
 
+  it("never lets a spool's name drive the terminal, in text or JSON", async () => {
+    server.spools = [serverSpool({ color: "Red\u001b[2J\u001b]0;pwned\u0007\u202e" })];
+    const text = await run(["3dfp", "spools", "--refresh"]);
+    expect(text.stdout).toContain("Red\\u001b[2J\\u001b]0;pwned\\u0007\\u202e");
+    for (const char of ["\u001b", "\u0007", "\u202e"]) expect(text.stdout).not.toContain(char);
+    const json = await run(["3dfp", "spools", "--json", "--refresh"]);
+    for (const char of ["\u001b", "\u0007", "\u202e"]) expect(json.stdout).not.toContain(char);
+    expect(JSON.parse(json.stdout).spools[0].color).toBe("Red\u001b[2J\u001b]0;pwned\u0007\u202e");
+  });
+
   it("prints the spools as snake_case JSON", async () => {
     const { code, stdout } = await run(["3dfp", "spools", "--json"]);
     expect(code).toBe(0);

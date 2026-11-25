@@ -3,6 +3,7 @@
 
 import { errorMessage } from "../../errors.js";
 import { checkCounts } from "../../syncCheck.js";
+import { printableLine } from "../../terminalText.js";
 import { isCtrl, type KeyPress, press } from "../core/keys.js";
 import { type Cmd, send } from "../core/program.js";
 import {
@@ -97,8 +98,7 @@ export function summaryText(summaries: RunSummary[]): string {
  * (an error body), so control characters (escape sequences) are dropped and a tab becomes a space.
  */
 function printable(line: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point.
-  return line.replace(/\t/g, " ").replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+  return printableLine(line);
 }
 
 /** In the order they give way when the footer is narrow (Footer drops from the left, never ? help). */

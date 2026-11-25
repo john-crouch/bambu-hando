@@ -52,6 +52,7 @@ import {
 } from "./spoolWeights.js";
 import { checkKey, KeyCheckError, runSync, SetupError } from "./sync.js";
 import { checkCounts, checkLines, checkSummary, readCheck } from "./syncCheck.js";
+import { printableOutput } from "./terminalText.js";
 import type { FormValues } from "./tui/core/values.js";
 import { loadTuiSettings } from "./tuiSettings.js";
 
@@ -867,8 +868,16 @@ async function checkCommand(argv: string[], io: Io): Promise<number> {
   }
 }
 
-export async function main(argv: string[], io: Io = processIo): Promise<number> {
-  if (argv[0] === "tui") return tuiCommand(argv.slice(1), io);
+export async function main(argv: string[], given: Io = processIo): Promise<number> {
+  if (argv[0] === "tui") return tuiCommand(argv.slice(1), given);
+  if (argv[0] === "key")
+    return keyCommand(argv.slice(1), { ...given, stdin: given.stdin ?? process.stdin });
+  // Everything else prints names, colors and error bodies other systems sent: none of it may drive the terminal.
+  const io: Io = {
+    ...given,
+    stdout: (text) => given.stdout(printableOutput(text)),
+    stderr: (text) => given.stderr(printableOutput(text)),
+  };
   if (argv[0] === "labels") return labelsCommand(argv.slice(1), io);
   if (argv[0] === "check") return checkCommand(argv.slice(1), io);
   if (argv[0] === "3dfp")
@@ -876,8 +885,6 @@ export async function main(argv: string[], io: Io = processIo): Promise<number> 
       ...io,
       confirm: io.confirm ?? ((question) => askYesNo(question)),
     });
-  if (argv[0] === "key")
-    return keyCommand(argv.slice(1), { ...io, stdin: io.stdin ?? process.stdin });
 
   let parsed: Awaited<ReturnType<typeof parseSettings>>;
   try {

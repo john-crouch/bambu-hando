@@ -3,6 +3,8 @@
 
 import stringWidth from "string-width";
 
+import { printableLine } from "../../terminalText.js";
+
 export type Align = "left" | "right";
 
 /** A styled piece of a line. Components draw each as one <Text>. */
@@ -20,9 +22,12 @@ export const ELLIPSIS = "…";
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-/** Columns the text takes on screen, as Ink measures it (ANSI codes count for nothing). */
+/**
+ * Columns the text takes on screen. Every helper here draws text through printableLine first: a name from a console
+ * or an API can't send an escape sequence to the terminal, and what's measured is what's drawn.
+ */
 export function textWidth(text: string): number {
-  return stringWidth(text);
+  return stringWidth(printableLine(text));
 }
 
 /** The longest start of text that fits in width columns, whole characters only. */
@@ -39,8 +44,9 @@ function head(text: string, width: number): string {
 }
 
 /** The text when it fits; else cut so that it ends in … and still fits. Never wider than width. */
-export function truncate(text: string, width: number): string {
+export function truncate(raw: string, width: number): string {
   if (width <= 0) return "";
+  const text = printableLine(raw);
   if (stringWidth(text) <= width) return text;
   return `${head(text, width - 1).trimEnd()}${ELLIPSIS}`;
 }
@@ -59,7 +65,7 @@ export function fitText(text: string, width: number, align: Align = "left"): str
 }
 
 export function segmentsWidth(segments: readonly Segment[]): number {
-  return segments.reduce((sum, segment) => sum + stringWidth(segment.text), 0);
+  return segments.reduce((sum, segment) => sum + textWidth(segment.text), 0);
 }
 
 /**
@@ -67,7 +73,9 @@ export function segmentsWidth(segments: readonly Segment[]): number {
  * own style, the rest are dropped. Empty segments are dropped too. Not padded.
  */
 export function fitSegments(segments: readonly Segment[], width: number): Segment[] {
-  const kept = segments.filter((segment) => segment.text !== "");
+  const kept = segments
+    .map((segment) => ({ ...segment, text: printableLine(segment.text) }))
+    .filter((segment) => segment.text !== "");
   if (width <= 0) return [];
   if (segmentsWidth(kept) <= width) return kept;
   const out: Segment[] = [];

@@ -10,7 +10,8 @@ describe("textWidth", () => {
     expect(textWidth("abc")).toBe(3);
     expect(textWidth("✓ ✗ ▰ ▱ ▸ ╭ ─ ° · …")).toBe(19);
     expect(textWidth("日本")).toBe(4);
-    expect(textWidth("\u001B[31mred\u001B[39m")).toBe(3);
+    // Styles go in Segment props; an escape inside text is someone else's text, drawn without its ESC.
+    expect(textWidth("\u001B[31mred\u001B[39m")).toBe(11);
   });
 });
 

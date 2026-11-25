@@ -58,7 +58,8 @@ the checklist for changing it.
   `app/values`, `app/runFinished`), never by importing each other's models. A shared piece (the presets editor)
   exports a pure API another tab embeds in its own model.
 - **Draw with `src/tui/ui/`.** Every line is built to an exact width (`Line`, `Segments`, `fitText`, `truncate`);
-  side-by-side panels get exact widths from `splitWidths`, inner sizes from `panelInner` / `dialogInner` /
+  they drop control characters and bidi overrides (`printableLine`), so a name another system sent can't drive the
+  terminal; style with `Segment` props, never escape codes in text. Side-by-side panels get exact widths from `splitWidths`, inner sizes from `panelInner` / `dialogInner` /
   `frameBody`. Nothing may be wider than the terminal: a wrapped row throws off Ink's redraws.
 - **Keys that arrive together reach Ink as one input**: the shell splits a burst at its control characters
   (`keyPresses`: `"\t?"` is tab then ?) and a meta key into esc + key, so tabs see one key per message; a run of
