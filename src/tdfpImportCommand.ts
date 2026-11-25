@@ -6,29 +6,29 @@ import { parseArgs } from "node:util";
 import { QuotaError } from "./apiQuota.js";
 import { bambuDefaults } from "./bambuProfiles.js";
 import { errorMessage } from "./errors.js";
-import { FilamentCatalog } from "./filamentCatalog.js";
-import { filamentRecord } from "./filamentCatalogSync.js";
 import { FilamentProfilesError, MAX_BULK_UPDATES } from "./filamentProfiles.js";
-import { forgetSpools, mySpools } from "./filamentProfilesCache.js";
 import {
   connectFilamentProfiles,
   type FilamentProfilesConnection,
   MissingKeyError,
 } from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
-import { type PresetSettings, settingsFromSpoolProfile } from "./presetSettings.js";
 import { holdsSecret, InvalidSecretError, KEY_ARGUMENT_ERROR } from "./secrets.js";
-import { SpoolEaseClient } from "./spoolease.js";
 import {
   type ConsoleSettings,
   consoleSettings,
   SPOOLEASE_SETTINGS_HINT,
   spooleaseConnectionFrom,
 } from "./spooleaseConfig.js";
-import { linksPath, loadLinks, saveLinks } from "./spoolLinks.js";
 import type { SyncIo } from "./spoolSyncCommand.js";
-import { checkKey, KeyCheckError } from "./sync.js";
-import { applyImport, type ImportItem, prepareImport } from "./tdfpImport.js";
+import { KeyCheckError } from "./sync.js";
+import { applyImport } from "./tdfpImport.js";
+import {
+  importSettingsText,
+  prepareFromApi,
+  readImportBasis,
+  saveImportLinks,
+} from "./tdfpImportSession.js";
 import { loadTuiSettings } from "./tuiSettings.js";
 
 export const IMPORT_USAGE = `Usage: bambu-hando 3dfp import <short code>... [options]
@@ -70,22 +70,6 @@ class ImportUsageError extends Error {}
 const LABEL = 10;
 const labelled = (label: string, text: string): string => `${label.padEnd(LABEL)}${text}`;
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`;
-
-/** "print 245°C · bed 65°C · flow 0.95 · max 11.5 mm³/s", and where they came from. */
-function settingsText(item: ImportItem): string {
-  const s = item.profile.settings ?? {};
-  const parts = [
-    s.printTemp === undefined ? null : `print ${s.printTemp}°C`,
-    s.bedTemp === undefined ? null : `bed ${s.bedTemp}°C`,
-    s.flowRatio === undefined ? null : `flow ${s.flowRatio}`,
-    s.maxVolumetricSpeed === undefined ? null : `max ${s.maxVolumetricSpeed} mm³/s`,
-    s.pressureAdvance?.enabled ? `PA ${s.pressureAdvance.k}` : null,
-  ].filter(Boolean);
-  const from = item.calibrated ? "your calibration, then 3DFP's record" : "3DFP's record";
-  return parts.length
-    ? `${parts.join(" · ")} (${from})`
-    : "Generic's print settings (3DFP has none)";
-}
 
 async function connection(values: Record<string, unknown>) {
   let settings: ConsoleSettings;
@@ -138,38 +122,12 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     values["printer-preset"] ??
     (remembered.printers.length ? remembered.printers : [defaults.printer]);
 
-  const spoolease = new SpoolEaseClient(target);
-  await checkKey(spoolease);
-  const seSpools = await spoolease.listSpools();
-  const listed = await mySpools(api.client, { account: api.account, refresh: values.refresh });
-  const { links, warning } = await loadLinks(linksPath(), api.account, target.host);
-  if (warning) io.stderr(`${warning}\n`);
-
-  let calls = listed.fromCache ? 0 : 1;
-  const catalog = FilamentCatalog.open();
-  let prepared: Awaited<ReturnType<typeof prepareImport>>;
-  try {
-    prepared = await prepareImport({
-      codes: positionals,
-      tdfp: listed.spools,
-      links,
-      spoolease: seSpools,
-      record: async (id) => {
-        const found = await filamentRecord({ client: api.client, catalog, ledger: api.ledger }, id);
-        if (found.fetched) calls += 1;
-        if (found.warning) io.stderr(`${found.warning}\n`);
-        if (!found.entry.record)
-          throw new FilamentProfilesError(`3DFilamentProfiles has no record for filament #${id}`);
-        return found.entry.record;
-      },
-      calibration: async (code): Promise<PresetSettings> => {
-        calls += 1;
-        return settingsFromSpoolProfile((await api.client.spoolProfile(code)).applied);
-      },
-    });
-  } finally {
-    catalog.close();
-  }
+  const basis = await readImportBasis(api, target, { refresh: values.refresh });
+  if (basis.linkWarning) io.stderr(`${basis.linkWarning}\n`);
+  const read = await prepareFromApi(api, basis, positionals);
+  for (const warning of read.warnings) io.stderr(`${warning}\n`);
+  const { prepared } = read;
+  const calls = (basis.fromCache ? 0 : 1) + read.calls;
 
   io.stdout(
     `3DFP import: presets in ${presetFolder} for ${printers.join(", ")} · SpoolEase ${target.host}\n\n`,
@@ -180,7 +138,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
         "Import",
         `${item.spool.shortCode} ${item.profile.name}: presets, SpoolEase filament ${item.profile.filamentId} and a spool`,
       ),
-      " ".repeat(LABEL) + settingsText(item),
+      " ".repeat(LABEL) + importSettingsText(item),
     ]),
     ...prepared.refused.map((refusal) => labelled("Skip", `${refusal.code}: ${refusal.reason}`)),
   ];
@@ -220,12 +178,8 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     tdfp: api.client,
     now: new Date(),
   });
-  const setAside = await saveLinks(linksPath(), api.account, target.host, [
-    ...links,
-    ...applied.links,
-  ]);
+  const setAside = await saveImportLinks(api, target.host, applied);
   if (setAside) io.stderr(`The unreadable spool link file was kept as ${tildePath(setAside)}.\n`);
-  if (applied.calls > 0) await forgetSpools();
 
   const report = applied.outcomes.map((outcome) =>
     outcome.spoolId
