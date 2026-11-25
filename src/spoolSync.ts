@@ -8,6 +8,7 @@ import {
   type BulkSpoolResult,
   type FilamentProfilesClient,
   MAX_BULK_UPDATES,
+  patchProblem,
   type SpoolPatch,
   type TdfpFilament,
   type TdfpSpool,
@@ -191,6 +192,8 @@ export interface SyncInput {
   filamentsFor?: (spool: SpoolRecord) => TdfpFilament[];
   /** A catalog filament by id, for a chosen add. */
   filamentById?: (id: number) => TdfpFilament | null;
+  /** 3DFP spools linked to another console's spools: never linked here by the SpoolEase ID they keep. */
+  linkedElsewhere?: ReadonlySet<string>;
   now: Date;
 }
 
@@ -361,6 +364,7 @@ export function planSync(input: SyncInput): SyncPlan {
     const named = input.tdfp.filter(
       (tdfp) =>
         !takenCodes.has(tdfp.shortCode) &&
+        !input.linkedElsewhere?.has(tdfp.shortCode) &&
         tdfp.externalId === externalIdFor(spool.id) &&
         squash(tdfp.brand) === squash(spool.brand) &&
         squash(tdfp.material) === squash(spool.material),
@@ -486,10 +490,24 @@ export async function applySync(
     return errorMessage(err);
   };
 
-  const updates = plan.rows.filter(
+  // A link that goes but whose ID couldn't be cleared stays, so the next sync clears it instead of relinking.
+  const keptOnFailure = (row: UpdateRow): SpoolLink | null =>
+    row.kind === "linked"
+      ? unsentLink(row)
+      : row.reason === "asked" || row.reason === "spoolease-gone"
+        ? row.link
+        : null;
+  const pending = plan.rows.filter(
     (row): row is UpdateRow =>
       (row.kind === "linked" || row.kind === "unlinked") && row.patch !== null,
   );
+  // An update the API would refuse fails alone, without a call, instead of failing its whole batch.
+  const updates: UpdateRow[] = [];
+  for (const row of pending) {
+    const problem = patchProblem(row.patch);
+    if (problem) settle(row, keptOnFailure(row), { row, ok: false, error: problem });
+    else updates.push(row);
+  }
   for (let start = 0; start < updates.length; start += MAX_BULK_UPDATES) {
     const batch = updates.slice(start, start + MAX_BULK_UPDATES);
     let answers: BulkSpoolResult[] | null = null;
@@ -506,11 +524,11 @@ export async function applySync(
     }
     batch.forEach((row, index) => {
       const answer = answers?.[index];
-      // A link that goes is gone whether or not its ID was cleared.
-      const kept = row.kind === "linked" ? row : null;
-      if (answer?.ok) settle(row, kept?.after ?? null, { row, ok: true, error: null });
+      // A link that goes is gone once its ID is cleared.
+      if (answer?.ok)
+        settle(row, row.kind === "linked" ? row.after : null, { row, ok: true, error: null });
       else
-        settle(row, kept ? unsentLink(kept) : null, {
+        settle(row, keptOnFailure(row), {
           row,
           ok: false,
           error: answer && !answer.ok ? answer.error : (error ?? "not sent"),

@@ -140,6 +140,30 @@ describe("bambu-hando 3dfp import", () => {
     expect(sync.stdout).toContain("#1 SUNLU PETG Elite Mildewed Red ↔ izDGMo7fU");
   });
 
+  it("exits 0 for a code given twice, and 2 for an unknown printer", async () => {
+    const twice = await run(
+      "import",
+      "izDGMo7fU",
+      "izDGMo7fU",
+      "--printer-preset",
+      X1C_04,
+      "--yes",
+    );
+    expect(twice.code).toBe(0);
+    tdfp.spools.push(
+      serverSpool({
+        short_code: "OTHER1",
+        filament_id: 10512,
+        brand: "eSUN",
+        color: "Black",
+        updated_at: new Date().toISOString(),
+      }),
+    );
+    const unknown = await run("import", "OTHER1", "--printer-preset", "No Such Printer", "--yes");
+    expect(unknown.code).toBe(2);
+    expect(unknown.stderr).toContain("No Such Printer");
+  });
+
   it("refuses without short codes, or with something that isn't one", async () => {
     expect((await run("import")).code).toBe(2);
     const odd = await run("import", "a b");

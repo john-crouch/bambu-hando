@@ -26,12 +26,20 @@ describe("spool links", () => {
   });
 
   it("starts with no links when there's no file", async () => {
-    expect(await loadLinks(path, "acct1", "console-a")).toEqual({ links: [], warning: null });
+    expect(await loadLinks(path, "acct1", "console-a")).toEqual({
+      links: [],
+      warning: null,
+      linkedElsewhere: new Set(),
+    });
   });
 
   it("saves the links and reads them back, readable only by the owner", async () => {
     expect(await saveLinks(path, "acct1", "console-a", [link()])).toBeNull();
-    expect(await loadLinks(path, "acct1", "console-a")).toEqual({ links: [link()], warning: null });
+    expect(await loadLinks(path, "acct1", "console-a")).toEqual({
+      links: [link()],
+      warning: null,
+      linkedElsewhere: new Set(),
+    });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
@@ -42,6 +50,15 @@ describe("spool links", () => {
     expect((await loadLinks(path, "acct1", "console-a")).links).toEqual([link()]);
     expect((await loadLinks(path, "acct2", "console-a")).links).toEqual([link({ tdfp: "XYZ789" })]);
     expect((await loadLinks(path, "acct1", "console-b")).links).toEqual([link({ spoolease: "7" })]);
+  });
+
+  it("names the 3DFP spools the account links to other consoles' spools", async () => {
+    await saveLinks(path, "acct1", "console-a", [link()]);
+    await saveLinks(path, "acct1", "console-b", [link({ tdfp: "BBB222" })]);
+    await saveLinks(path, "acct2", "console-c", [link({ tdfp: "CCC333" })]);
+    expect((await loadLinks(path, "acct1", "console-a")).linkedElsewhere).toEqual(
+      new Set(["BBB222"]),
+    );
   });
 
   it("replaces a book's links when saved again", async () => {
@@ -74,6 +91,7 @@ describe("spool links", () => {
     expect(await loadLinks(path, "acct1", "console-a")).toEqual({
       links: [link({ tdfp: "XYZ789" })],
       warning: null,
+      linkedElsewhere: new Set(),
     });
   });
 

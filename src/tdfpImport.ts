@@ -54,9 +54,13 @@ export function importProfile(
   const colorName = words(spool.materialType, spool.color);
   const low = record.tempMin ?? record.tempMax;
   const high = record.tempMax ?? record.tempMin;
-  const [nozzleTempMin, nozzleTempMax] =
-    low !== null && high !== null ? [Math.round(low), Math.round(high)] : DEFAULT_TEMPS;
   const settings = layered(calibration, settingsFromRecord(record));
+  const [recordMin, recordMax] =
+    low !== null && high !== null ? [Math.round(low), Math.round(high)] : DEFAULT_TEMPS;
+  // The spool's own calibrated temperature widens the range rather than being clamped into it.
+  const own = calibration.printTemp;
+  const nozzleTempMin = own === undefined ? recordMin : Math.min(recordMin, Math.round(own));
+  const nozzleTempMax = own === undefined ? recordMax : Math.max(recordMax, Math.round(own));
   return {
     name,
     brand: spool.brand,
@@ -139,24 +143,39 @@ export async function prepareImport(input: ImportInput): Promise<PreparedImport>
       record = input.record(spool.filamentId);
       records.set(spool.filamentId, record);
     }
-    const calibrated = hasCalibration(spool);
-    const profile = importProfile(
-      spool,
-      await record,
-      calibrated ? await input.calibration(code) : {},
-    );
-    // A SpoolEase spool of this filament that no link claims is likely this very spool, named apart.
+    const uncalibrated = importProfile(spool, await record, {});
+    // A SpoolEase spool of this filament that no link claims is likely this very spool, named apart. Checked
+    // before the calibration read, so a spool refused here costs no call (the filament ID is the name's).
     const twin = input.spoolease.find(
-      (se) => se.slicerFilament === profile.filamentId && !claimed.has(se.id),
+      (se) => se.slicerFilament === uncalibrated.filamentId && !claimed.has(se.id),
     );
     if (twin) {
       refused.push({
         code,
-        reason: `SpoolEase spool #${twin.id} is already this filament (${profile.filamentId}): link it with \`bambu-hando 3dfp sync --link ${twin.id}=${code}\``,
+        reason: `SpoolEase spool #${twin.id} is already this filament (${uncalibrated.filamentId}): link it with \`bambu-hando 3dfp sync --link ${twin.id}=${code}\``,
       });
       continue;
     }
-    items.push({ spool, profile, calibrated });
+    const calibrated = hasCalibration(spool);
+    let calibration: PresetSettings = {};
+    if (calibrated) {
+      try {
+        calibration = await input.calibration(code);
+      } catch (err) {
+        // A used-up quota stops every read; anything else costs only this spool.
+        if (err instanceof QuotaError) throw err;
+        refused.push({
+          code,
+          reason: `its own calibration couldn't be read: ${errorMessage(err)}`,
+        });
+        continue;
+      }
+    }
+    items.push({
+      spool,
+      profile: calibrated ? importProfile(spool, await record, calibration) : uncalibrated,
+      calibrated,
+    });
   }
   return { items, refused };
 }
@@ -225,8 +244,10 @@ export async function applyImport(
     if (deps.sync.dryRun || outcome.error) continue;
     try {
       const created = await client.addSpool(item.profile);
-      if (created.ok) outcome.spoolId = created.id;
-      else outcome.error = `SpoolEase refused the spool: ${created.error}`;
+      if (!created.ok) outcome.error = `SpoolEase refused the spool: ${created.error}`;
+      else if (!created.id)
+        outcome.error = "SpoolEase answered with no spool ID, so it can't be linked";
+      else outcome.spoolId = created.id;
     } catch (err) {
       outcome.error = `adding the SpoolEase spool failed: ${errorMessage(err)}`;
     }

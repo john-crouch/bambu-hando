@@ -1,6 +1,7 @@
 // ABOUTME: What `bambu-hando 3dfp import` and the TUI's Add tab share: the basis an import reads, a preview from the local
 // ABOUTME: catalog (no API call), the preparation (catalog first, then the API, calls counted) and saving the new links.
 
+import { QuotaError } from "./apiQuota.js";
 import { FilamentCatalog } from "./filamentCatalog.js";
 import { filamentRecord, localRecord } from "./filamentCatalogSync.js";
 import { FilamentProfilesError, type TdfpSpool } from "./filamentProfiles.js";
@@ -136,8 +137,15 @@ export async function prepareFromApi(
         return found.entry.record;
       },
       calibration: async (code): Promise<PresetSettings> => {
-        calls += 1;
-        return settingsFromSpoolProfile((await api.client.spoolProfile(code)).applied);
+        try {
+          const profile = await api.client.spoolProfile(code);
+          calls += 1;
+          return settingsFromSpoolProfile(profile.applied);
+        } catch (err) {
+          // A refused request still cost a call; one the quota stopped was never sent.
+          if (!(err instanceof QuotaError)) calls += 1;
+          throw err;
+        }
       },
     });
     return { prepared, calls, warnings };

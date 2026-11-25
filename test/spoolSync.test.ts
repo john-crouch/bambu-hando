@@ -455,6 +455,19 @@ describe("planSync", () => {
       expect(kinds(result.rows)).toEqual(["suggest", "tdfp-only"]);
     });
 
+    it("doesn't rebuild a link to a 3DFP spool another console's spool is linked to", () => {
+      const result = plan({
+        tdfp: [tdSpool({ color: "Sunflower", externalId: "spoolease:1" })],
+        linkedElsewhere: new Set(["ABC123"]),
+      });
+      expect(kinds(result.rows)).toEqual(["suggest", "tdfp-only"]);
+    });
+
+    it("treats an empty ID as none", () => {
+      const result = plan({ tdfp: [tdSpool({ externalId: "" })] });
+      expect(result.rows[0]).toMatchObject({ patch: { externalId: "spoolease:1" } });
+    });
+
     it("clears the ID on 3DFP when a link goes, so the next sync doesn't bring it back", () => {
       const asked = plan({
         links: [link()],
@@ -819,6 +832,51 @@ describe("applySync", () => {
     ]);
     expect(result).toMatchObject({ links: [], outcomes: [{ ok: true }], calls: 1 });
     expect(server.spools[0]?.external_id).toBeNull();
+  });
+
+  it("keeps an unlink's link when clearing its ID on 3DFP fails, so the next sync doesn't relink it", async () => {
+    server.spools = [serverSpool({ external_id: "spoolease:1" })];
+    const tdfp = await listed();
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 500,
+      body: { error: { code: "internal", message: "An unexpected error occurred" } },
+    };
+    const plan = planSync({
+      spoolease: [sePool()],
+      tdfp,
+      links: [link()],
+      choices: { unlink: new Set(["1"]) },
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    const result = await applySync(plan, client);
+    expect(result.outcomes).toMatchObject([{ ok: false }]);
+    expect(result.links).toEqual([link()]);
+  });
+
+  it("fails only the row whose update the API would refuse, sending the rest and spending no call on it", async () => {
+    server.spools = [
+      serverSpool({ remaining_grams: 1000 }),
+      serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
+    ];
+    const tdfp = await listed();
+    const plan = planSync({
+      spoolease: [
+        sePool({ tagId: "x".repeat(65) }),
+        sePool({ id: "2", colorName: "Black", tagId: "" }),
+      ],
+      tdfp,
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    const result = await applySync(plan, client);
+    expect(result.outcomes.map((o) => o.ok)).toEqual([false, true]);
+    expect(result.outcomes[0]?.error).toMatch(/at most 64 characters/);
+    expect(result.calls).toBe(1);
+    expect(
+      server.requests.filter((r) => r.method === "PATCH").map((r) => (r.body as unknown[]).length),
+    ).toEqual([1]);
   });
 
   it("drops unlinked pairs and keeps links that needed nothing", async () => {

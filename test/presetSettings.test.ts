@@ -175,6 +175,18 @@ describe("applySettings", () => {
     expect(preset).not.toHaveProperty("enable_pressure_advance");
   });
 
+  it("never turns on a plate the template marks as unsupported (0)", () => {
+    const preset = applySettings(
+      { ...template, eng_plate_temp: ["0"], eng_plate_temp_initial_layer: ["0"] },
+      { bedTemp: 65 },
+    );
+    expect(preset).toMatchObject({
+      hot_plate_temp: ["65"],
+      eng_plate_temp: ["0"],
+      eng_plate_temp_initial_layer: ["0"],
+    });
+  });
+
   it("writes pressure advance with its switch", () => {
     expect(applySettings(template, { pressureAdvance: { k: 0.031, enabled: true } })).toMatchObject(
       { enable_pressure_advance: ["1"], pressure_advance: ["0.031"] },

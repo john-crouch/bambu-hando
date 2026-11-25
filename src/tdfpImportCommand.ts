@@ -21,7 +21,7 @@ import {
   spooleaseConnectionFrom,
 } from "./spooleaseConfig.js";
 import type { SyncIo } from "./spoolSyncCommand.js";
-import { KeyCheckError } from "./sync.js";
+import { KeyCheckError, SetupError } from "./sync.js";
 import { applyImport } from "./tdfpImport.js";
 import {
   importSettingsText,
@@ -194,7 +194,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
   io.stdout(
     `Done: ${plural(imported, "spool")} imported (${plural(calls + applied.calls, "API call")}). Weigh them on SpoolEase: \`bambu-hando 3dfp sync\` then keeps the weights in step.\n`,
   );
-  return imported === positionals.length ? 0 : 1;
+  return imported === new Set(positionals).size ? 0 : 1;
 }
 
 export async function tdfpImportCommand(argv: string[], io: SyncIo): Promise<number> {
@@ -215,6 +215,7 @@ export async function tdfpImportCommand(argv: string[], io: SyncIo): Promise<num
     io.stderr(`bambu-hando: error: ${errorMessage(err)}\n`);
     const keyOrQuota =
       err instanceof QuotaError ||
+      err instanceof SetupError ||
       (err instanceof FilamentProfilesError && (err.status === 401 || err.status === 402));
     return keyOrQuota ? 2 : 1;
   }

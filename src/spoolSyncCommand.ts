@@ -299,7 +299,11 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
   await checkKey(spoolease);
   const seSpools = await spoolease.listSpools();
   const listed = await mySpools(api.client, { account: api.account, refresh: values.refresh });
-  const { links, warning } = await loadLinks(linksPath(), api.account, connection.host);
+  const { links, warning, linkedElsewhere } = await loadLinks(
+    linksPath(),
+    api.account,
+    connection.host,
+  );
   if (warning) io.stderr(`${warning}\n`);
 
   const catalog = FilamentCatalog.open();
@@ -313,6 +317,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
       filamentsFor: (spool) =>
         catalog.search({ words: `${spool.brand} ${spool.material}` }, CATALOG_LOOKUP),
       filamentById: (id) => catalog.get(id)?.filament ?? null,
+      linkedElsewhere,
       now: new Date(),
     });
   } finally {

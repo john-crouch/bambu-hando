@@ -143,7 +143,12 @@ export function applySettings(preset: PresetConfig, settings: PresetSettings): P
     );
   }
   if (checked.bedTemp !== undefined)
-    for (const key of BED_KEYS) result[key] = [String(checked.bedTemp)];
+    for (const key of BED_KEYS) {
+      // 0 is "this plate can't take the filament": a source's bed temperature never turns a plate on.
+      const current = preset[key];
+      if (Array.isArray(current) && current.every((value) => String(value) === "0")) continue;
+      result[key] = [String(checked.bedTemp)];
+    }
   if (checked.flowRatio !== undefined)
     result.filament_flow_ratio = everyVariant(
       preset.filament_flow_ratio,

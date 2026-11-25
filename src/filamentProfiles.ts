@@ -217,7 +217,8 @@ function spool(raw: Json): TdfpSpool {
   if ("empty_spool_weight" in raw) parsed.emptySpoolWeight = optNum(raw.empty_spool_weight);
   if ("bambu_spool_id" in raw) parsed.bambuSpoolId = optStr(raw.bambu_spool_id);
   if ("bambu_tag_id" in raw) parsed.bambuTagId = optStr(raw.bambu_tag_id);
-  if ("external_id" in raw) parsed.externalId = optStr(raw.external_id);
+  // "" is how the API clears it: no ID.
+  if ("external_id" in raw) parsed.externalId = optStr(raw.external_id) || null;
   if ("spool_properties" in raw)
     parsed.spoolProperties =
       raw.spool_properties && typeof raw.spool_properties === "object"
@@ -268,6 +269,16 @@ function invalid(message: string): FilamentProfilesError {
 
 const isInt = (value: number, min: number, max: number) =>
   Number.isInteger(value) && value >= min && value <= max;
+
+/** Why the API would refuse this update, or null when it would take it (checked without a call). */
+export function patchProblem(patch: SpoolPatch): string | null {
+  try {
+    patchBody(patch);
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
 
 // The API's documented bounds, checked here because a request it refuses still costs a call.
 function patchBody(patch: SpoolPatch): Json {

@@ -156,6 +156,19 @@ describe("importProfile", () => {
   });
 });
 
+describe("importProfile ranges", () => {
+  it("widens the nozzle range to take the spool's own calibrated temperature", () => {
+    const profile = importProfile(tdSpool(), record({ tempMin: 230, tempMax: 245 }), {
+      printTemp: 250,
+    });
+    expect(profile).toMatchObject({
+      nozzleTempMin: 230,
+      nozzleTempMax: 250,
+      settings: { printTemp: 250 },
+    });
+  });
+});
+
 describe("hasCalibration", () => {
   it("is true when spool_properties holds more than its dates and tag", () => {
     expect(hasCalibration(tdSpool())).toBe(false);
@@ -221,6 +234,35 @@ describe("prepareImport", () => {
         reason:
           "SpoolEase spool #3 is already this filament (Pf06dde9): link it with `bambu-hando 3dfp sync --link 3=izDGMo7fU`",
       },
+    ]);
+  });
+
+  it("reads no calibration for a spool it refuses, and refuses only the spool whose calibration fails", async () => {
+    const calibration = vi.fn(async (code: string) => {
+      if (code === "BROKEN") throw new Error("3DFilamentProfiles: no base preset (no_base_preset)");
+      return {};
+    });
+    const calibrated = { spoolProperties: { nozzle_temp: 250 } };
+    const prepared = await prepareImport({
+      record: async () => record(),
+      calibration,
+      codes: ["TWINNED", "BROKEN", "FINE"],
+      tdfp: [
+        tdSpool({ shortCode: "TWINNED", ...calibrated }),
+        tdSpool({ shortCode: "BROKEN", color: "Blue", ...calibrated }),
+        tdSpool({ shortCode: "FINE", color: "Green" }),
+      ],
+      links: [],
+      spoolease: [seSpool()],
+    });
+    expect(calibration).toHaveBeenCalledTimes(1);
+    expect(prepared.items.map((item) => item.spool.shortCode)).toEqual(["FINE"]);
+    expect(prepared.refused.map((r) => [r.code, r.reason])).toEqual([
+      ["TWINNED", expect.stringContaining("SpoolEase spool #3 is already this filament")],
+      [
+        "BROKEN",
+        "its own calibration couldn't be read: 3DFilamentProfiles: no base preset (no_base_preset)",
+      ],
     ]);
   });
 
@@ -361,6 +403,23 @@ describe("applyImport", () => {
     expect(result.outcomes[0]?.warning).toBe(
       "its external ID on 3DFP is another app's (other-app:7), so the SpoolEase ID wasn't written there",
     );
+  });
+
+  it("reports a SpoolEase reply without a spool ID as a failure, and links nothing", async () => {
+    se.replies["POST /api/spools/add-edit"] = { status: 200, body: "{}" };
+    const plan = await prepared(["izDGMo7fU"]);
+    const result = await applyImport(plan, {
+      sync: { presetFolder: "default", printers: [X1C_04], dryRun: false },
+      connection,
+      tdfp: api,
+      now: NOW,
+    });
+    expect(result.outcomes[0]).toMatchObject({
+      spoolId: null,
+      error: expect.stringMatching(/no spool ID/),
+    });
+    expect(result.links).toEqual([]);
+    expect(tdfp.requests.filter((r) => r.method === "PATCH")).toEqual([]);
   });
 
   it("changes nothing on a dry run", async () => {

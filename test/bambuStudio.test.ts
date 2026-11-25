@@ -111,6 +111,16 @@ describe("buildPreset", () => {
     });
   });
 
+  it("keeps a source's print temperature inside the filament's own range", () => {
+    const hot = preset({
+      ...profileAt(0),
+      nozzleTempMin: 200,
+      nozzleTempMax: 220,
+      settings: { printTemp: 240 },
+    });
+    expect(hot.nozzle_temperature).toEqual(["220"]);
+  });
+
   it("uses the base material's template and type for variants like PLA+", () => {
     const plus = preset({ ...profileAt(2), material: "PLA+" });
 

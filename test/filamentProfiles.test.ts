@@ -257,6 +257,11 @@ describe("FilamentProfilesClient", () => {
     );
   });
 
+  it("reads an empty external ID as none", async () => {
+    server.spools = [serverSpool({ external_id: "" })];
+    expect((await client.listSpools()).spools[0]?.externalId).toBeNull();
+  });
+
   it("gets one spool with its Bambu IDs, which the list leaves out", async () => {
     server.spools = [
       serverSpool({ short_code: "A/B 1", bambu_tag_id: "4C626FE6", bambu_spool_id: null }),
