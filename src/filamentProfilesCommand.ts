@@ -56,7 +56,7 @@ counts them and keeps what it read in a local catalog.
   catalog          What the catalog holds (no call)
 
 Options:
-  --refresh          spools: fetch the list again even when it's fresh
+  --refresh          spools: fetch the whole list again, even when it's fresh
   --refresh-stale    filament: fetch a record again when it's 30 days old or more
   --online           search: ask 3DFilamentProfiles (one call) and keep the results
   --brand <key>      search: only this brand key (e.g. sunlu)
@@ -384,6 +384,7 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
     const report = {
       fetched_at: result.fetchedAt.toISOString(),
       from_cache: result.fromCache,
+      changes_only: result.changesOnly,
       spools: result.spools.map(snakeKeys),
       quota: {
         limit: quota.limit,
@@ -402,7 +403,7 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
       : `; ${quota.exact ? "" : "about "}${quota.remaining} of ${quota.limit} left this month`;
   const footer = result.fromCache
     ? `${count} from the cache, fetched ${utcMinute(result.fetchedAt)} (no API call; --refresh fetches again)`
-    : `${count} from 3DFilamentProfiles (1 API call${left})`;
+    : `${count} from 3DFilamentProfiles${result.changesOnly ? ", with what changed since the last list" : ""} (1 API call${left})`;
   io.stdout(`${[...spoolLines(result.spools), footer].join("\n")}\n`);
   return 0;
 }

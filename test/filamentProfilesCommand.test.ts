@@ -116,6 +116,14 @@ describe("bambu-hando 3dfp", () => {
 
     await run(["3dfp", "spools", "--refresh"]);
     expect(server.requests).toHaveLength(2);
+    expect(server.requests[1]?.query).toEqual({});
+
+    vi.setSystemTime(new Date("2026-11-15T14:30:00Z"));
+    const third = await run(["3dfp", "spools"]);
+    expect(server.requests[2]?.query).toEqual({ updated_since: "2026-11-15T13:20:00.000Z" });
+    expect(third.stdout).toContain(
+      "2 spools from 3DFilamentProfiles, with what changed since the last list (1 API call; ",
+    );
   });
 
   it("prints the spools as snake_case JSON", async () => {

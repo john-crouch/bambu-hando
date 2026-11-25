@@ -1,4 +1,4 @@
-// ABOUTME: Local stand-in for the 3DFilamentProfiles v1 API: bearer key, monthly quota headers, spools and filaments.
+// ABOUTME: Local stand-in for the 3DFilamentProfiles v1 API: bearer key, monthly quota headers, spools (changes since, bulk updates) and filaments.
 // ABOUTME: Follows the documented shapes, status codes and quota rules (401/402 don't count), and records every request.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -72,6 +72,8 @@ export interface FilamentProfilesServer {
   /** "no_access" makes every request with the right key answer 402. */
   access: "active" | "no_access";
   spools: ServerSpool[];
+  /** Spools taken out of the account, which a list with updated_since reports by short code. */
+  deleted: Array<{ short_code: string; deleted_at: string }>;
   filaments: ServerFilament[];
   locations: string[];
   /** Overrides keyed by "METHOD /path" or "/path"; still counted against the quota. */
@@ -132,6 +134,9 @@ export function serverFilament(overrides: Partial<ServerFilament> = {}): ServerF
     ...overrides,
   };
 }
+
+/** What updated_since takes: an ISO 8601 time with a timezone. */
+const ISO_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 function error(status: number, code: string, message: string): { status: number; body: unknown } {
   return { status, body: { error: { code, message } } };
@@ -200,6 +205,7 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     sendQuotaHeaders: true,
     access: "active",
     spools: [],
+    deleted: [],
     filaments: [],
     locations: ["Shelf A", "Shelf B", "AMS 1 Slot 1"],
     replies: {},
@@ -283,8 +289,49 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     if (body === Symbol.for("invalid-json"))
       return error(400, "invalid_request", "Body is not valid JSON");
     const fields = (body ?? {}) as Record<string, unknown>;
-    if (method === "GET" && path === "/api/v1/my/spools")
-      return { status: 200, body: { data: state.spools.map(listed) } };
+    if (method === "GET" && path === "/api/v1/my/spools") {
+      const asOf = new Date().toISOString();
+      if (query.updated_since === undefined)
+        return { status: 200, body: { data: state.spools.map(listed), as_of: asOf } };
+      const since = Date.parse(query.updated_since);
+      if (!ISO_WITH_ZONE.test(query.updated_since) || Number.isNaN(since))
+        return error(
+          400,
+          "invalid_request",
+          "updated_since: expected an ISO 8601 time with a timezone",
+        );
+      return {
+        status: 200,
+        body: {
+          data: state.spools.filter((s) => Date.parse(s.updated_at) >= since).map(listed),
+          deleted: state.deleted
+            .filter((d) => Date.parse(d.deleted_at) >= since)
+            .map((d) => d.short_code),
+          as_of: asOf,
+        },
+      };
+    }
+    if (method === "PATCH" && path === "/api/v1/my/spools") {
+      // A single object behaves exactly like PATCH /my/spools/{short_code}.
+      if (!Array.isArray(body)) {
+        const spool = state.spools.find((s) => s.short_code === fields.short_code);
+        if (!spool) return error(404, "not_found", "Spool not found");
+        const { short_code: _code, ...rest } = fields;
+        return spoolUpdate(spool, rest);
+      }
+      if (body.length < 1 || body.length > 50)
+        return error(400, "invalid_request", "Send 1 to 50 updates");
+      const data = body.map((entry) => {
+        const { short_code: code, ...rest } = (entry ?? {}) as Record<string, unknown>;
+        const spool = state.spools.find((s) => s.short_code === code);
+        if (!spool)
+          return { short_code: code, error: { code: "not_found", message: "Spool not found" } };
+        const result = spoolUpdate(spool, rest);
+        if (result.status === 200) return result.body;
+        return { short_code: code, error: (result.body as { error: unknown }).error };
+      });
+      return { status: 200, body: { data } };
+    }
     if (method === "POST" && path === "/api/v1/my/spools") {
       const filament = state.filaments.find((f) => f.id === fields.filament_id);
       if (!filament) return error(404, "filament_not_found", "No filament has that filament_id");
@@ -316,6 +363,17 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
         notes: (fields.notes as string | undefined) ?? null,
         empty_spool_weight: filament.spool_weight,
       });
+      for (const field of ["bambu_spool_id", "bambu_tag_id"] as const) {
+        const value = fields[field];
+        if (value === undefined || value === null || value === "") continue;
+        if (typeof value !== "string" || value.length > 64)
+          return error(400, "invalid_request", `${field}: at most 64 characters`);
+        if (field === "bambu_tag_id")
+          for (const other of state.spools)
+            if (other.bambu_tag_id === value) other.bambu_tag_id = null;
+        spool[field] = value;
+      }
+      spool.updated_at = new Date().toISOString();
       state.spools.push(spool);
       return { status: 201, body: { created: true, spool: detailed(spool) } };
     }

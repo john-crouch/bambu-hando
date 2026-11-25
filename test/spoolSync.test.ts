@@ -363,10 +363,10 @@ describe("planSync", () => {
         tag: "04A1B2C3D4E5F6",
       },
     ]);
-    expect(result).toMatchObject({ calls: 2, changes: 1 });
+    expect(result).toMatchObject({ calls: 1, changes: 1 });
   });
 
-  it("adds an unweighed spool at the filament's own weight, and without a tag in one call", () => {
+  it("adds an unweighed spool at the filament's own weight, and without a tag", () => {
     const result = plan({
       spoolease: [sePool({ currentWeight: null, tagId: "" })],
       tdfp: [],
@@ -504,9 +504,9 @@ describe("applySync", () => {
     await server.close();
   });
 
-  const listed = async () => client.listSpools();
+  const listed = async () => (await client.listSpools()).spools;
 
-  it("sends a new link's weight and tag in one call and returns the links to keep", async () => {
+  it("sends a new link's weight and tag in one bulk update and returns the links to keep", async () => {
     const tdfp = await listed();
     const plan = planSync({
       spoolease: [sePool()],
@@ -520,11 +520,11 @@ describe("applySync", () => {
     expect(server.requests.slice(before).map((r) => [r.method, r.path, r.body])).toEqual([
       [
         "PATCH",
-        "/api/v1/my/spools/ABC123",
-        { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+        "/api/v1/my/spools",
+        [{ short_code: "ABC123", remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }],
       ],
     ]);
-    expect(result.outcomes).toMatchObject([{ ok: true, error: null }]);
+    expect(result).toMatchObject({ calls: 1, outcomes: [{ ok: true, error: null }] });
     expect(result.links).toEqual([
       {
         spoolease: "1",
@@ -540,7 +540,7 @@ describe("applySync", () => {
     });
   });
 
-  it("adds a spool, then writes its tag, and links it", async () => {
+  it("adds a spool with its tag in one call, and links it", async () => {
     server.spools = [];
     const plan = planSync({
       spoolease: [sePool()],
@@ -551,10 +551,14 @@ describe("applySync", () => {
     });
     const result = await applySync(plan, client);
     expect(server.requests.map((r) => [r.method, r.path, r.body])).toEqual([
-      ["POST", "/api/v1/my/spools", { filament_id: 101, remaining_grams: 564 }],
-      ["PATCH", "/api/v1/my/spools/NEW001", { bambu_tag_id: "04A1B2C3D4E5F6" }],
+      [
+        "POST",
+        "/api/v1/my/spools",
+        { filament_id: 101, remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+      ],
     ]);
-    expect(result.outcomes).toMatchObject([{ ok: true, created: "NEW001" }]);
+    expect(result).toMatchObject({ calls: 1, outcomes: [{ ok: true, created: "NEW001" }] });
+    expect(server.spools[0]?.bambu_tag_id).toBe("04A1B2C3D4E5F6");
     expect(result.links).toEqual([
       {
         spoolease: "1",
@@ -566,16 +570,24 @@ describe("applySync", () => {
     ]);
   });
 
-  it("keeps a new link without the unsent changes when its call fails, and goes on", async () => {
+  it("keeps a new link without the unsent changes when its update fails, and goes on", async () => {
     server.spools = [
       serverSpool({ remaining_grams: 1000 }),
       serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
     ];
-    server.replies["PATCH /api/v1/my/spools/ABC123"] = {
-      status: 500,
-      body: { error: { code: "internal", message: "An unexpected error occurred" } },
-    };
     const tdfp = await listed();
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 200,
+      body: {
+        data: [
+          {
+            short_code: "ABC123",
+            error: { code: "internal", message: "An unexpected error occurred" },
+          },
+          { short_code: "DEF456", remaining_grams: 564, deducted_grams: 0, location: "Shelf A" },
+        ],
+      },
+    };
     const plan = planSync({
       spoolease: [sePool(), sePool({ id: "2", colorName: "Black", tagId: "" })],
       tdfp,
@@ -610,17 +622,59 @@ describe("applySync", () => {
       filamentsFor: () => [],
     });
     const result = await applySync(plan, client);
-    expect(result.outcomes[0]?.error).toMatch(/No spool matches/);
+    expect(result.outcomes[0]?.error).toBe("3DFilamentProfiles: Spool not found (not_found)");
     expect(result.links).toEqual([
       { spoolease: "1", tdfp: "ABC123", agreed: null, tag: null, linkedAt: NOW.toISOString() },
     ]);
   });
 
-  it("stops calling once the quota runs out, keeping what's unsent for next time", async () => {
+  it("fails every spool in a bulk update the API refused as a whole", async () => {
     server.spools = [
       serverSpool({ remaining_grams: 1000 }),
       serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
     ];
+    const tdfp = await listed();
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 500,
+      body: { error: { code: "internal", message: "An unexpected error occurred" } },
+    };
+    const plan = planSync({
+      spoolease: [sePool(), sePool({ id: "2", colorName: "Black", tagId: "" })],
+      tdfp,
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    const result = await applySync(plan, client);
+    expect(result.outcomes.map((o) => o.error)).toEqual([
+      "3DFilamentProfiles: An unexpected error occurred (internal)",
+      "3DFilamentProfiles: An unexpected error occurred (internal)",
+    ]);
+    expect(result.links.map((l) => l.agreed)).toEqual([null, null]);
+  });
+
+  it("sends up to 50 updates per call", async () => {
+    const count = 51;
+    const codes = Array.from({ length: count }, (_, i) => `S${String(i).padStart(3, "0")}`);
+    server.spools = codes.map((code) => serverSpool({ short_code: code, remaining_grams: 1000 }));
+    const plan = planSync({
+      spoolease: codes.map((_, i) => sePool({ id: String(i + 1), tagId: "" })),
+      tdfp: codes.map((code) => tdSpool({ shortCode: code, remainingGrams: 1000 })),
+      links: codes.map((code, i) => link({ spoolease: String(i + 1), tdfp: code, tag: null })),
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    expect(plan.calls).toBe(2);
+    const result = await applySync(plan, client);
+    expect(server.requests.map((r) => (r.body as unknown[]).length)).toEqual([50, 1]);
+    expect(result.calls).toBe(2);
+    expect(result.outcomes).toHaveLength(count);
+    expect(result.outcomes.every((o) => o.ok)).toBe(true);
+    expect(server.spools.every((s) => s.remaining_grams === 564)).toBe(true);
+  });
+
+  it("stops calling once the quota runs out, keeping what's unsent for next time", async () => {
+    server.spools = [serverSpool({ remaining_grams: 1000 })];
     const tdfp = await listed();
     server.quota.remaining = 1;
     const plan = planSync({
@@ -628,11 +682,14 @@ describe("applySync", () => {
       tdfp,
       links: [],
       now: NOW,
-      filamentsFor: () => [],
+      filamentsFor: (spool) =>
+        spool.colorName === "Black" ? [filament({ id: 102, color: "Black", rgb: null })] : [],
     });
+    expect(plan.rows.map((row) => row.kind)).toEqual(["linked", "add"]);
     const before = server.requests.length;
     const result = await applySync(plan, client);
     expect(server.requests.length - before).toBe(1);
+    expect(result.calls).toBe(1);
     expect(result.outcomes[0]).toMatchObject({ ok: true });
     expect(result.outcomes[1]?.error).toMatch(/quota is used up/);
   });

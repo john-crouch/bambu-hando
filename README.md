@@ -235,14 +235,14 @@ A key is never taken as an argument, since it would end up in your shell history
 ```bash
 bambu-hando 3dfp usage              # calls left this month and when the quota resets; makes no call
 bambu-hando 3dfp spools             # your spools: one call, or none while the last list is under an hour old
-bambu-hando 3dfp spools --refresh   # fetch the list again anyway
-bambu-hando 3dfp spools --json      # snake_case JSON: fetched_at, from_cache, spools, quota
+bambu-hando 3dfp spools --refresh   # fetch the whole list again anyway
+bambu-hando 3dfp spools --json      # snake_case JSON: fetched_at, from_cache, changes_only, spools, quota
 ```
 
 It needs Node 24 or later (the catalog uses Node's built-in SQLite).
 
 - Every response says how many calls are left, and bambu-hando keeps that in `3dfp-quota.json` in its config directory; once the server has said none are left, it refuses further calls itself until the quota resets (00:00 UTC on the 1st). A call that gets no answer is counted as spent.
-- The spool list is cached for an hour in its cache directory (the API asks integrations to poll no more than hourly), one cache per account: a fingerprint of the key tells them apart, never the key.
+- The spool list is cached for an hour in its cache directory (the API asks integrations to poll no more than hourly), one cache per account: a fingerprint of the key tells them apart, never the key. After that hour, the call asks only for the spools changed (or deleted) since the last list and folds them in; once a day, or with `--refresh`, it fetches the whole list, which also picks up changes to the filaments themselves, such as a renamed color.
 - Requests the API would refuse (out-of-range weights, too long a location) are refused before they're sent, since a refused request still costs a call.
 - The key goes only to `https://3dfilamentprofiles.com`; no redirect is followed. `FILAMENTPROFILES_API_URL` can point at a server on this machine (for tests) and nowhere else.
 
@@ -277,7 +277,8 @@ bambu-hando 3dfp sync --unlink 3             # forget #3's link
 
 - **Links** live in `3dfp-links.json` in the config directory (one set per 3DFP account and SpoolEase console), the source of truth. A SpoolEase spool and a 3DFP spool with the same brand, material and color are linked by themselves when no other spool fits either of them (a SpoolEase color with extra words, such as "2.0 Vivid Yellow" for "Vivid Yellow", fits only when the color codes agree too, so "Black" never fits "Matte Black"); otherwise the plan lists the candidates for `--link`. A linked spool's SpoolEase tag UID is also written to its 3DFP spool (`bambu_tag_id`), so the links could be rebuilt from 3DFP.
 - **Weights**: the link file remembers the weights both sides last agreed on. On a new link, SpoolEase's scale wins. After that, the side that changed since then wins; when both changed, the lower weight wins, since filament only gets used up. Differences under 5 g are ignored. 3DFP gets SpoolEase's weight; SpoolEase's own weight can only be set by its scale (its API doesn't take one), so when 3DFP's weight should win, the plan says to weigh the spool.
-- **New 3DFP spools**: a SpoolEase spool with no 3DFP spool is offered as a new one when exactly one filament in the local catalog fits it; with none or several, the plan says how to find it (`3dfp search --online`) and pick one (`--add`). It's created at SpoolEase's weight, then given its tag.
+- **New 3DFP spools**: a SpoolEase spool with no 3DFP spool is offered as a new one when exactly one filament in the local catalog fits it; with none or several, the plan says how to find it (`3dfp search --online`) and pick one (`--add`). It's created at SpoolEase's weight, with its tag, in one call.
+- **Calls**: the weights and tags for linked spools go up 50 spools to a call, so a sync costs one call per 50 changed spools plus one per new spool. One spool's failed update doesn't hold back the others.
 - **Cost**: one call for the spool list (none while the last one is under an hour old), one per weight or tag sent, two per new spool (one without a tag). It checks the quota covers the whole plan before sending anything.
 - Not done: adding 3DFP-only spools to SpoolEase (that needs a preset and a custom-filament row), and copying 3DFP's location or notes to SpoolEase (an edit there replaces the whole record, pressure-advance values included). Unlinking leaves the tag on the 3DFP spool.
 

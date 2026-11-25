@@ -28,7 +28,6 @@ import { linksPath, loadLinks, saveLinks } from "./spoolLinks.js";
 import {
   applySync,
   planSync,
-  rowCalls,
   type SyncChoices,
   type SyncPlan,
   SyncPlanError,
@@ -67,7 +66,7 @@ Options:
   --link <id>=<code>         Link SpoolEase spool <id> to 3DFP spool <code> (repeatable)
   --add <id>=<filament>      Add SpoolEase spool <id> to 3DFP as filament <filament> (repeatable)
   --unlink <id>              Forget SpoolEase spool <id>'s link (repeatable)
-  --refresh                  Fetch the 3DFP spool list even when the last one is under an hour old
+  --refresh                  Fetch the whole 3DFP spool list, even when the last one is under an hour old
   --spoolease-host <host>    Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>
                              Security key (env: SPOOLEASE_SECURITY_KEY)
@@ -365,10 +364,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
   reportSetAside(await saveLinks(linksPath(), api.account, connection.host, applied.links), io);
   if (applied.outcomes.some((outcome) => outcome.ok || outcome.created)) await forgetSpools();
 
-  const calls = applied.outcomes.reduce(
-    (sum, outcome) => sum + (outcome.ok ? rowCalls(outcome.row) : 0),
-    0,
-  );
+  const calls = applied.calls;
   const done = plan.changes - failures.length;
   if (failures.length) io.stdout(`${failures.join("\n")}\n`);
   const after = quotaLeft(await api.ledger.current());

@@ -162,8 +162,8 @@ describe("bambu-hando 3dfp sync", () => {
     expect(writes()).toEqual([
       [
         "PATCH",
-        "/api/v1/my/spools/ABC123",
-        { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+        "/api/v1/my/spools",
+        [{ short_code: "ABC123", remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }],
       ],
     ]);
     expect(stdout).toMatch(
@@ -216,8 +216,8 @@ describe("bambu-hando 3dfp sync", () => {
     expect(writes()).toEqual([
       [
         "PATCH",
-        "/api/v1/my/spools/ABC123",
-        { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+        "/api/v1/my/spools",
+        [{ short_code: "ABC123", remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" }],
       ],
     ]);
   });
@@ -251,10 +251,13 @@ describe("bambu-hando 3dfp sync", () => {
     expect(stdout).toContain(
       "Add       #1 Sunlu PETG 2.0 Vivid Yellow to 3DFP as #101 Sunlu PETG Vivid Yellow at 564 g, with its tag",
     );
-    expect(stdout).toContain("1 change: 2 API calls");
+    expect(stdout).toContain("1 change: 1 API call");
     expect(writes()).toEqual([
-      ["POST", "/api/v1/my/spools", { filament_id: 101, remaining_grams: 564 }],
-      ["PATCH", "/api/v1/my/spools/NEW001", { bambu_tag_id: "04A1B2C3D4E5F6" }],
+      [
+        "POST",
+        "/api/v1/my/spools",
+        { filament_id: 101, remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+      ],
     ]);
     expect(await savedLinks()).toMatchObject([
       { spoolease: "1", tdfp: "NEW001", tag: "04A1B2C3D4E5F6" },

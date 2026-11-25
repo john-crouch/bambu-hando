@@ -68,6 +68,28 @@ export interface SpoolPatch {
   bambuTagId?: string | null;
 }
 
+/** A spool list: every spool, or (with updatedSince) only those changed since, plus the ones deleted since. */
+export interface SpoolList {
+  spools: TdfpSpool[];
+  /** Short codes deleted since updatedSince; always empty for the full list. */
+  deleted: string[];
+  /** The API's time for the next poll's updatedSince; null when it sent none. */
+  asOf: string | null;
+}
+
+/** One spool's part of a bulk update. */
+export interface BulkSpoolPatch extends SpoolPatch {
+  shortCode: string;
+}
+
+/** One spool's result in a bulk update: one that fails doesn't stop the others. */
+export type BulkSpoolResult =
+  | { shortCode: string; ok: true; update: SpoolUpdate }
+  | { shortCode: string; ok: false; error: string; code: string | null };
+
+/** The most spools one bulk update takes; the request counts as one call. */
+export const MAX_BULK_UPDATES = 50;
+
 export interface SpoolUpdate {
   shortCode: string;
   remainingGrams: number;
@@ -83,6 +105,8 @@ export interface NewSpool {
   ifNotOwned?: boolean;
   remainingGrams?: number;
   notes?: string;
+  /** Written with the spool, so a new spool's tag takes no second call. */
+  bambuTagId?: string;
 }
 
 export type AddedSpool =
@@ -175,6 +199,25 @@ function spool(raw: Json): TdfpSpool {
   if ("bambu_tag_id" in raw) parsed.bambuTagId = optStr(raw.bambu_tag_id);
   return parsed;
 }
+
+function spoolUpdate(raw: Json): SpoolUpdate {
+  return {
+    shortCode: str(raw.short_code),
+    remainingGrams: num(raw.remaining_grams),
+    deductedGrams: num(raw.deducted_grams),
+    location: str(raw.location),
+    bambuSpoolId: optStr(raw.bambu_spool_id),
+    bambuTagId: optStr(raw.bambu_tag_id),
+  };
+}
+
+/** The API's message for a failed request or bulk entry: "3DFilamentProfiles: <message> (<code>)". */
+function apiMessage(message: string, code: string | null): string {
+  return `3DFilamentProfiles: ${message}${code ? ` (${code})` : ""}`;
+}
+
+/** What updated_since takes: an ISO 8601 time with a timezone. */
+const ISO_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 function filament(raw: Json): TdfpFilament {
   return {
@@ -275,7 +318,7 @@ export class FilamentProfilesClient {
     }
   }
 
-  private async request(method: string, path: string, body?: Json): Promise<Json> {
+  private async request(method: string, path: string, body?: Json | Json[]): Promise<Json> {
     await this.options.ledger.ensure(1);
     let resp: Response;
     try {
@@ -349,19 +392,31 @@ export class FilamentProfilesClient {
         resp.status,
         code,
       );
-    throw new FilamentProfilesError(
-      `3DFilamentProfiles: ${message}${code ? ` (${code})` : ""}`,
-      resp.status,
-      code,
-    );
+    throw new FilamentProfilesError(apiMessage(message, code), resp.status, code);
   }
 
-  /** Every spool in the account, in one call. */
-  async listSpools(): Promise<TdfpSpool[]> {
-    const reply = await this.request("GET", "/my/spools");
+  /**
+   * Every spool in the account, in one call; with updatedSince (an ISO 8601 time with a timezone, usually the last
+   * list's asOf), only the spools changed at or after it, plus the short codes of those deleted since.
+   */
+  async listSpools(updatedSince?: string): Promise<SpoolList> {
+    if (
+      updatedSince !== undefined &&
+      (!ISO_WITH_ZONE.test(updatedSince) || Number.isNaN(Date.parse(updatedSince)))
+    )
+      throw invalid("updatedSince must be an ISO 8601 time with a timezone");
+    const query =
+      updatedSince === undefined ? "" : `?${new URLSearchParams({ updated_since: updatedSince })}`;
+    const reply = await this.request("GET", `/my/spools${query}`);
     if (!Array.isArray(reply.data))
       throw new FilamentProfilesError("3DFilamentProfiles sent a spool list without data");
-    return reply.data.map((raw) => spool(raw as Json));
+    return {
+      spools: reply.data.map((raw) => spool(raw as Json)),
+      deleted: Array.isArray(reply.deleted)
+        ? reply.deleted.filter((code): code is string => typeof code === "string")
+        : [],
+      asOf: optStr(reply.as_of),
+    };
   }
 
   async getSpool(shortCode: string): Promise<TdfpSpool> {
@@ -374,14 +429,44 @@ export class FilamentProfilesClient {
       `/my/spools/${encodeURIComponent(shortCode)}`,
       patchBody(patch),
     );
-    return {
-      shortCode: str(reply.short_code),
-      remainingGrams: num(reply.remaining_grams),
-      deductedGrams: num(reply.deducted_grams),
-      location: str(reply.location),
-      bambuSpoolId: optStr(reply.bambu_spool_id),
-      bambuTagId: optStr(reply.bambu_tag_id),
-    };
+    return spoolUpdate(reply);
+  }
+
+  /**
+   * Up to MAX_BULK_UPDATES spools in one call, each with its own fields. The API applies them in order and a
+   * failed one doesn't stop the rest: each spool gets its own result, in the order sent.
+   */
+  async updateSpools(updates: BulkSpoolPatch[]): Promise<BulkSpoolResult[]> {
+    if (updates.length < 1 || updates.length > MAX_BULK_UPDATES)
+      throw invalid(`a bulk update takes 1 to ${MAX_BULK_UPDATES} spools`);
+    const body = updates.map(({ shortCode, ...patch }) => {
+      if (!shortCode) throw invalid("every update needs the spool's short code");
+      return { short_code: shortCode, ...patchBody(patch) };
+    });
+    const reply = await this.request("PATCH", "/my/spools", body);
+    const data = Array.isArray(reply.data) ? reply.data : null;
+    if (!data || data.length !== updates.length)
+      throw new FilamentProfilesError(
+        `3DFilamentProfiles sent ${data?.length ?? "no"} results for ${updates.length} updates`,
+      );
+    return updates.map(({ shortCode }, index): BulkSpoolResult => {
+      const entry = (data[index] ?? {}) as Json;
+      if (entry.short_code !== shortCode)
+        return {
+          shortCode,
+          ok: false,
+          error:
+            "3DFilamentProfiles answered for another spool here, so this update's outcome is unknown",
+          code: null,
+        };
+      const error = entry.error as { code?: unknown; message?: unknown } | undefined;
+      if (error && typeof error === "object") {
+        const code = typeof error.code === "string" ? error.code : null;
+        const message = typeof error.message === "string" ? error.message : "the update failed";
+        return { shortCode, ok: false, error: apiMessage(message, code), code };
+      }
+      return { shortCode, ok: true, update: spoolUpdate(entry) };
+    });
   }
 
   async addSpool(request: NewSpool): Promise<AddedSpool> {
@@ -389,10 +474,13 @@ export class FilamentProfilesClient {
       throw invalid("remainingGrams must be a whole number from 0 to 10000");
     if (request.notes !== undefined && request.notes.length > 500)
       throw invalid("notes are at most 500 characters");
+    if (request.bambuTagId !== undefined && request.bambuTagId.length > 64)
+      throw invalid("Bambu IDs are at most 64 characters");
     const body: Json = { filament_id: request.filamentId };
     if (request.remainingGrams !== undefined) body.remaining_grams = request.remainingGrams;
     if (request.notes !== undefined) body.notes = request.notes;
     if (request.ifNotOwned !== undefined) body.if_not_owned = request.ifNotOwned;
+    if (request.bambuTagId !== undefined) body.bambu_tag_id = request.bambuTagId;
     const reply = await this.request("POST", "/my/spools", body);
     if (reply.created === true) return { created: true, spool: spool(reply.spool as Json) };
     const existing = Array.isArray(reply.spools)
