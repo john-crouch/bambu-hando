@@ -99,12 +99,16 @@ Instead of SpoolmanDB you can provide your own JSON file or URL. Example:
     "diameter": 1.75,
     "weight": 1000,
     "spool_weight": 200,
-    "slicer_filament_code": "PABC1234"
+    "slicer_filament_code": "PABC1234",
+    "print_temp": 245,
+    "bed_temp": 75,
+    "flow_ratio": 0.96,
+    "max_volumetric_speed": 14
   }
 ]
 ```
 
-`weight` (net filament) and `spool_weight` (empty spool) are in grams and go to SpoolEase spools; they default to 1000 and 200.
+`weight` (net filament) and `spool_weight` (empty spool) are in grams and go to SpoolEase spools; they default to 1000 and 200. `print_temp`, `bed_temp`, `flow_ratio` and `max_volumetric_speed` are optional and go into the presets; any you leave out keep the Generic preset's value.
 
 ## Headless run
 
@@ -161,7 +165,8 @@ bambu-hando --source ./profiles.json --skip-spoolease
 
 Each filament becomes one BambuStudio custom filament per printer, built the way BambuStudio's own "Create filament" dialog builds them:
 
-- The tool clones the matching Generic system preset (`Generic PETG` for PETG; `PLA+` falls back to `Generic PLA`), so fan, flow, volumetric-speed, plate-temperature and gcode settings are Bambu's own. It then sets the name, vendor, `filament_id`, color, density, diameter and nozzle range. Bambu's tuned print temperature is kept unless the filament's range excludes it.
+- The tool clones the matching Generic system preset (`Generic PETG` for PETG; `PLA+` falls back to `Generic PLA`), sets the name, vendor, `filament_id`, color, density, diameter and nozzle range, then writes every print setting the filament's source has over Generic's: print temperature, bed temperature (smooth and textured PEI and the engineering plate; the cool and supertack plates keep Generic's, where 0 means the plate can't take the filament), flow ratio and max volumetric speed. The order is your own calibration on a 3DFP spool, then 3DFP's record, then SpoolmanDB (the entry's value, else the middle of its range, else its material's) or your JSON file; Generic fills in only what none of them has, such as fan and gcode settings. Bambu's tuned print temperature is kept only when the source has none, and then only inside the filament's range.
+- Pressure advance is turned on in the preset only with your own calibrated K (a community K is stored but left off). BambuStudio doesn't send a preset's K to Bambu printers anyway; they use their own flow-dynamics calibration.
 - The preset inherits nothing and carries its own `filament_id`, which is what links it to SpoolEase. Filaments without a Generic template for the printer (PVB, GREENTEC, …) fail with a message instead of getting a guessed preset.
 - Printers are BambuStudio printer presets such as `Bambu Lab X1 Carbon 0.4 nozzle`; repeat `--printer-preset` for several (the TUI takes a comma-separated list and remembers it for the next run, in `~/.config/bambu-hando/tui.json`). Without it, the printer selected in BambuStudio is used. Unknown names exit 2 with the list of known printers.
 - Presets go to the preset folder BambuStudio is using: your numeric user ID when logged in, `default` otherwise (read from `BambuStudio.conf`; `--preset-folder` overrides it). Restart BambuStudio to load new presets; when logged in it then syncs them to your Bambu account like presets you create yourself.
@@ -277,10 +282,26 @@ bambu-hando 3dfp sync --unlink 3             # forget #3's link
 
 - **Links** live in `3dfp-links.json` in the config directory (one set per 3DFP account and SpoolEase console), the source of truth. A SpoolEase spool and a 3DFP spool with the same brand, material and color are linked by themselves when no other spool fits either of them (a SpoolEase color with extra words, such as "2.0 Vivid Yellow" for "Vivid Yellow", fits only when the color codes agree too, so "Black" never fits "Matte Black"); otherwise the plan lists the candidates for `--link`. A linked spool's SpoolEase tag UID is also written to its 3DFP spool (`bambu_tag_id`), so the links could be rebuilt from 3DFP.
 - **Weights**: the link file remembers the weights both sides last agreed on. On a new link, SpoolEase's scale wins. After that, the side that changed since then wins; when both changed, the lower weight wins, since filament only gets used up. Differences under 5 g are ignored. 3DFP gets SpoolEase's weight; SpoolEase's own weight can only be set by its scale (its API doesn't take one), so when 3DFP's weight should win, the plan says to weigh the spool.
-- **New 3DFP spools**: a SpoolEase spool with no 3DFP spool is offered as a new one when exactly one filament in the local catalog fits it; with none or several, the plan says how to find it (`3dfp search --online`) and pick one (`--add`). It's created at SpoolEase's weight, with its tag, in one call.
+- **SpoolEase IDs on 3DFP**: each linked 3DFP spool gets `spoolease:<id>` in its external ID, so links lost with the link file come back: a 3DFP spool naming a SpoolEase spool links to it again when brand and material agree, even if a color was renamed. Unlinking clears it. An external ID another app set is never touched.
+- **New 3DFP spools**: a SpoolEase spool with no 3DFP spool is offered as a new one when exactly one filament in the local catalog fits it; with none or several, the plan says how to find it (`3dfp search --online`) and pick one (`--add`). It's created at SpoolEase's weight, with its tag and SpoolEase ID, in one call.
 - **Calls**: the weights and tags for linked spools go up 50 spools to a call, so a sync costs one call per 50 changed spools plus one per new spool. One spool's failed update doesn't hold back the others.
 - **Cost**: one call for the spool list (none while the last one is under an hour old), one per weight or tag sent, two per new spool (one without a tag). It checks the quota covers the whole plan before sending anything.
-- Not done: adding 3DFP-only spools to SpoolEase (that needs a preset and a custom-filament row), and copying 3DFP's location or notes to SpoolEase (an edit there replaces the whole record, pressure-advance values included). Unlinking leaves the tag on the 3DFP spool.
+- **3DFP-only spools** are listed with the command that brings them in (below).
+- Not done: copying 3DFP's location or notes to SpoolEase (an edit there replaces the whole record, pressure-advance values included). Unlinking leaves the tag on the 3DFP spool.
+
+### Bringing 3DFP spools into BambuStudio and SpoolEase
+
+`bambu-hando 3dfp import` takes spools you already keep on 3DFilamentProfiles and sets them up on the other side: a BambuStudio preset per printer and SpoolEase's custom-filament row for each filament, one SpoolEase spool for each 3DFP spool, and a link between them (with the SpoolEase ID written to 3DFP). Like `sync`, it shows what it would write and asks first.
+
+```bash
+bambu-hando 3dfp import izDGMo7fU --dry-run          # what it would write; changes nothing
+bambu-hando 3dfp import izDGMo7fU GkUIKRacF          # the plan, then "Import? [y/N]"
+bambu-hando 3dfp import izDGMo7fU --printer-preset "Bambu Lab X1 Carbon 0.6 nozzle" --yes
+```
+
+- The presets come from the filament's 3DFP record: its temperatures (mid-range, as 3DFP's own generated profiles), bed temperature, flow ratio and max volumetric speed, with the spool's own calibration first when it has some. The record costs one call the first time and is kept in the catalog; a calibrated spool costs one more.
+- It refuses, and says what to do instead, for a spool that's already linked, a Bambu Lab filament (BambuStudio ships its presets), and a filament an unlinked SpoolEase spool already is (link that one with `3dfp sync --link`).
+- SpoolEase hasn't weighed the new spools yet: weigh them, and `3dfp sync` keeps the weights in step from then on.
 
 `3dfp` exits `0` on success, `1` when the API or network fails (for `sync`: when any write failed), and `2` for invalid arguments, a missing or rejected key, lapsed API access or a used-up quota.
 
