@@ -63,7 +63,7 @@ describe("bambu-hando 3dfp", () => {
       const { code, stdout } = await run(argv);
       expect(code).toBe(0);
       expect(stdout).toContain(
-        "Usage: bambu-hando 3dfp <usage|spools|sync|filament|search|fill|catalog> [options]",
+        "Usage: bambu-hando 3dfp <usage|spools|sync|import|filament|search|fill|catalog> [options]",
       );
     }
   });

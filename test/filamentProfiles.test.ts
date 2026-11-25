@@ -107,6 +107,7 @@ describe("FilamentProfilesClient", () => {
       updatedAt: "2026-10-14T18:02:11.000Z",
       url: "https://spooldb.com/s/ABC123",
       externalId: null,
+      spoolProperties: null,
     });
     expect(spools[1]).toMatchObject({
       shortCode: "XYZ789",
@@ -230,6 +231,30 @@ describe("FilamentProfilesClient", () => {
       FilamentProfilesError,
     );
     expect(server.requests).toHaveLength(before);
+  });
+
+  it("reads a spool's generated profile: which values are its own calibration", async () => {
+    server.spools = [
+      serverSpool({
+        spool_properties: { purchase_date: null, nozzle_temp: 250, flow_ratio: 0.97 },
+      }),
+    ];
+    expect((await client.listSpools()).spools[0]?.spoolProperties).toEqual({
+      purchase_date: null,
+      nozzle_temp: 250,
+      flow_ratio: 0.97,
+    });
+    const profile = await client.spoolProfile("ABC123");
+    expect(server.requests.at(-1)).toMatchObject({
+      path: "/api/v1/my/spools/ABC123/profile",
+      query: { slicer: "bambu", pressure_advance: "true" },
+    });
+    expect(profile.applied).toEqual(
+      expect.arrayContaining([
+        { key: "nozzle_temperature", value: "250", source: "spool" },
+        { key: "filament_flow_ratio", value: "0.97", source: "spool" },
+      ]),
+    );
   });
 
   it("gets one spool with its Bambu IDs, which the list leaves out", async () => {

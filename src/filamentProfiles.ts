@@ -58,6 +58,21 @@ export interface TdfpSpool {
   bambuTagId?: string | null;
   /** The ID another app keeps for this spool (bambu-hando's is "spoolease:<id>"). */
   externalId?: string | null;
+  /** Per-spool values (only the list has them): purchase_date, last_dried_date, and the spool's own calibration. */
+  spoolProperties?: Record<string, unknown> | null;
+}
+
+/** One value a generated profile wrote, and where it came from: "spool" marks the spool's own calibration. */
+export interface ProfileValue {
+  key: string;
+  value: string;
+  source: string;
+}
+
+/** A 3DFP generated slicer profile, reduced to what bambu-hando reads from it. */
+export interface GeneratedProfile {
+  applied: ProfileValue[];
+  warnings: string[];
 }
 
 /** At most one of remainingGrams, usedGrams and usedMm; null clears location or an ID. */
@@ -203,6 +218,11 @@ function spool(raw: Json): TdfpSpool {
   if ("bambu_spool_id" in raw) parsed.bambuSpoolId = optStr(raw.bambu_spool_id);
   if ("bambu_tag_id" in raw) parsed.bambuTagId = optStr(raw.bambu_tag_id);
   if ("external_id" in raw) parsed.externalId = optStr(raw.external_id);
+  if ("spool_properties" in raw)
+    parsed.spoolProperties =
+      raw.spool_properties && typeof raw.spool_properties === "object"
+        ? (raw.spool_properties as Record<string, unknown>)
+        : null;
   return parsed;
 }
 
@@ -425,6 +445,28 @@ export class FilamentProfilesClient {
         ? reply.deleted.filter((code): code is string => typeof code === "string")
         : [],
       asOf: optStr(reply.as_of),
+    };
+  }
+
+  /**
+   * The Bambu Studio profile 3DFP generates for a spool, with pressure advance: its `applied` list says which values
+   * are the spool's own calibration (`source: "spool"`). One call; the printer is left at 3DFP's default (any).
+   */
+  async spoolProfile(shortCode: string): Promise<GeneratedProfile> {
+    const query = new URLSearchParams({ slicer: "bambu", pressure_advance: "true" });
+    const reply = await this.request(
+      "GET",
+      `/my/spools/${encodeURIComponent(shortCode)}/profile?${query}`,
+    );
+    const applied = Array.isArray(reply.applied) ? reply.applied : [];
+    return {
+      applied: applied.map((raw) => {
+        const entry = raw as Json;
+        return { key: str(entry.key), value: str(entry.value), source: str(entry.source) };
+      }),
+      warnings: Array.isArray(reply.warnings)
+        ? reply.warnings.filter((w): w is string => typeof w === "string")
+        : [],
     };
   }
 

@@ -188,6 +188,51 @@ function summary(filament: ServerFilament): Record<string, unknown> {
   };
 }
 
+/**
+ * A generated profile's applied values, as the live API reports them: the filament's community values, with the
+ * spool's own calibration (from spool_properties: nozzle_temp, bed_temp, flow_ratio, k_value) marked "spool".
+ */
+function spoolProfile(
+  spool: ServerSpool,
+  filaments: ServerFilament[],
+  query: Record<string, string>,
+): Record<string, unknown> {
+  const filament = filaments.find((f) => f.id === spool.filament_id);
+  const own = (spool.spool_properties ?? {}) as Record<string, unknown>;
+  const applied: Array<{ key: string; value: string; label: string; source: string }> = [];
+  const add = (key: string, value: unknown, source: string) => {
+    if (typeof value === "number") applied.push({ key, value: String(value), label: key, source });
+  };
+  const mid = (a: number | null | undefined, b: number | null | undefined) =>
+    a == null || b == null ? null : Math.round((a + b) / 2);
+  const pick = (ownKey: string, key: string, community: unknown, source: string) =>
+    typeof own[ownKey] === "number" ? add(key, own[ownKey], "spool") : add(key, community, source);
+  pick(
+    "nozzle_temp",
+    "nozzle_temperature",
+    mid(filament?.temp_min, filament?.temp_max),
+    "temp_min/temp_max",
+  );
+  pick(
+    "bed_temp",
+    "hot_plate_temp",
+    mid(filament?.bed_temp_min, filament?.bed_temp_max),
+    "bed_temp_min/bed_temp_max",
+  );
+  pick("flow_ratio", "filament_flow_ratio", filament?.flow_ratio, "flow_ratio");
+  add("filament_max_volumetric_speed", filament?.max_volumetric_speed, "max_volumetric_speed");
+  if (query.pressure_advance === "true")
+    pick("k_value", "pressure_advance", filament?.k_value, "k_value");
+  return {
+    file_name: `${spool.brand} ${spool.material} ${spool.color} (3DFP ${spool.short_code}).json`,
+    inherits: `Generic ${spool.material}`,
+    preset: Object.fromEntries(applied.map((entry) => [entry.key, [entry.value]])),
+    applied,
+    omitted: [],
+    warnings: [],
+  };
+}
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   let text = "";
   for await (const chunk of req) text += chunk;
@@ -391,6 +436,16 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
       spool.updated_at = new Date().toISOString();
       state.spools.push(spool);
       return { status: 201, body: { created: true, spool: detailed(spool) } };
+    }
+    const profileMatch = /^\/api\/v1\/my\/spools\/([^/]+)\/profile$/.exec(path);
+    if (method === "GET" && profileMatch) {
+      const spool = state.spools.find(
+        (s) => s.short_code === decodeURIComponent(profileMatch[1] ?? ""),
+      );
+      if (!spool) return error(404, "not_found", "No spool matches the identifier");
+      if (query.slicer !== "bambu" && query.slicer !== "orca")
+        return error(400, "invalid_request", "slicer: expected bambu or orca");
+      return { status: 200, body: spoolProfile(spool, state.filaments, query) };
     }
     const spoolMatch = /^\/api\/v1\/my\/spools\/([^/]+)$/.exec(path);
     if (spoolMatch) {
