@@ -46,7 +46,9 @@ describe("assertNoLoginKeyring", () => {
   });
 
   it("takes the console's key from the environment or a flag, or a headless run without SpoolEase", () => {
-    expect(() => assertNoLoginKeyring(["tui"], key)).not.toThrow();
+    expect(() =>
+      assertNoLoginKeyring(["tui"], { ...key, FILAMENTPROFILES_API_KEY: "3dfp_x" }),
+    ).not.toThrow();
     expect(() =>
       assertNoLoginKeyring(["check", "--spoolease-security-key", "k"], {}),
     ).not.toThrow();
@@ -56,7 +58,8 @@ describe("assertNoLoginKeyring", () => {
     ).not.toThrow();
   });
 
-  it("wants the 3DFilamentProfiles key for 3dfp commands", () => {
+  it("wants the 3DFilamentProfiles key for 3dfp commands and the TUI, whose Add tab imports 3DFP spools", () => {
+    expect(() => assertNoLoginKeyring(["tui"], key)).toThrow(/FILAMENTPROFILES_API_KEY/);
     expect(() => assertNoLoginKeyring(["3dfp", "spools"], {})).toThrow(/FILAMENTPROFILES_API_KEY/);
     expect(() => assertNoLoginKeyring(["3dfp", "sync"], key)).toThrow(/FILAMENTPROFILES_API_KEY/);
     expect(() =>

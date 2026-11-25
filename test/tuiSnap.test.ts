@@ -22,12 +22,13 @@ function snap(
   args: string[],
   home: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  // A key in the environment, so the TUI never looks one up in a keyring (keyringGuard.ts).
+  // Keys in the environment, so the TUI never looks one up in a keyring (keyringGuard.ts).
   const env = {
     PATH: process.env.PATH ?? "",
     HOME: home,
     SPOOLMANDB_URL: spoolmanDb.url,
     SPOOLEASE_SECURITY_KEY: "snap-test-key",
+    FILAMENTPROFILES_API_KEY: "3dfp_snap_test_key",
   };
   // The script passes the arguments after "--" to bambu-hando tui, with the environment above.
   const dashes = args.indexOf("--");

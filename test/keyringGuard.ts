@@ -52,7 +52,8 @@ export function assertNoLoginKeyring(
     throw new Error(
       `give bambu-hando ${args.join(" ")} SPOOLEASE_SECURITY_KEY or --spoolease-security-key: ${LOGIN_KEYRING_OFF_LIMITS}`,
     );
-  if (command === "3dfp" && !env.FILAMENTPROFILES_API_KEY?.trim())
+  // The TUI's Add tab imports 3DFP spools, which looks the 3DFP key up too.
+  if ((command === "3dfp" || command === "tui") && !env.FILAMENTPROFILES_API_KEY?.trim())
     throw new Error(
       `give bambu-hando ${args.join(" ")} FILAMENTPROFILES_API_KEY: ${LOGIN_KEYRING_OFF_LIMITS}`,
     );

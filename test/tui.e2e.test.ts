@@ -208,11 +208,12 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
   ];
 
   const start = (args: string[], size?: { cols: number; rows: number }) => {
-    // The key in the environment too, so the TUI never looks one up in a keyring (keyringGuard.ts).
+    // The keys in the environment too, so the TUI never looks one up in a keyring (keyringGuard.ts).
     const env = {
       HOME: home,
       SPOOLMANDB_URL: spoolmanDb.url,
       SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+      FILAMENTPROFILES_API_KEY: TEST_API_KEY,
     };
     terminal = new Terminal(args, env, size);
     return terminal;
@@ -247,6 +248,7 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
         HOME: home,
         SPOOLMANDB_URL: `http://127.0.0.1:${port}`,
         SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+        FILAMENTPROFILES_API_KEY: TEST_API_KEY,
       });
       // waitFor also waits for raw mode, so q isn't lost; landing on Add asks for the catalog right away.
       await terminal.waitFor("SpoolEase skipped");

@@ -64,6 +64,8 @@ const PASSED_ENV = [
   "SPOOLMANDB_URL",
   "SPOOLEASE_HOST",
   "SPOOLEASE_SECURITY_KEY",
+  "FILAMENTPROFILES_API_URL",
+  "FILAMENTPROFILES_API_KEY",
 ];
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC and BEL delimit the escape sequences this strips.
