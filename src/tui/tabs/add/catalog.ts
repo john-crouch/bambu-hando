@@ -9,14 +9,20 @@ import type { FormValues } from "../../core/values.js";
 import { formatGrams, formatRange, plural } from "../../ui/format.js";
 
 export const SPOOLMANDB_LABEL = "SpoolmanDB";
+export const TDFP_LABEL = "Your 3DFilamentProfiles spools";
 export const OTHER_COLOR = "Other color…";
 
-/** What Find lists: SpoolmanDB (with the session's own colors) and the profiles of an imported file or URL. */
+/**
+ * What Find lists: SpoolmanDB (with the session's own colors), the profiles of an imported file or URL, and how
+ * many of your 3DFilamentProfiles spools could be imported (tdfp.ts lists them).
+ */
 export interface Sources {
   db: FilamentProfile[];
   imported: FilamentProfile[];
   /** The import's file name; null without an import source. */
   importName: string | null;
+  /** Your 3DFP spools not linked yet (count null until read) and how many are ticked. */
+  tdfp?: { count: number | null; ticked: number };
 }
 
 /** Selection keys: catalog profiles by filament ID, imported ones by position (a file can repeat an ID). */
@@ -48,11 +54,20 @@ export type Level =
   | { kind: "materials"; brand: string }
   | { kind: "colors"; brand: string; material: string }
   | { kind: "import" }
+  /** Your 3DFilamentProfiles spools not linked yet: tdfp.ts has its rows and keys. */
+  | { kind: "tdfp" }
   /** A deep link to a filament nothing lists (by ID or name): an empty state saying where to add it. */
   | { kind: "missing"; id: string; name: string };
 
 export type FindRow =
-  | { kind: "source"; source: "db" | "import"; label: string; count: number; ticked: number }
+  /** count is null for 3DFP's spools until they're read (each read costs an API call, so only on opening). */
+  | {
+      kind: "source";
+      source: "db" | "import" | "tdfp";
+      label: string;
+      count: number | null;
+      ticked: number;
+    }
   | { kind: "brand"; label: string; count: number; ticked: number }
   | { kind: "material"; label: string; count: number; ticked: number }
   | { kind: "color"; label: string; key: string; profile: FilamentProfile }
@@ -172,6 +187,7 @@ export function levelRows(
 ): FindRow[] {
   switch (level.kind) {
     case "missing":
+    case "tdfp":
       return [];
     case "root": {
       const imported = importEntries(sources);
@@ -194,6 +210,13 @@ export function levelRows(
                 ticked: imported.filter((e) => selected.has(e.key)).length,
               },
             ]),
+        {
+          kind: "source",
+          source: "tdfp",
+          label: TDFP_LABEL,
+          count: sources.tdfp?.count ?? null,
+          ticked: sources.tdfp?.ticked ?? 0,
+        },
       ];
     }
     case "brands": {
@@ -335,17 +358,28 @@ export function findDetail(
   if (!row) return null;
   switch (row.kind) {
     case "source": {
+      if (row.source === "tdfp")
+        return {
+          kind: "source",
+          title: row.label,
+          lines: [
+            ...(row.count === null
+              ? []
+              : [`${plural(row.count, "spool")} not on this SpoolEase console yet`]),
+            "Spools you keep on 3DFilamentProfiles: importing one writes its BambuStudio presets, SpoolEase's custom filament and a SpoolEase spool, and links the two.",
+          ],
+        };
       if (row.source === "import")
         return {
           kind: "source",
           title: row.label,
-          lines: [`${plural(row.count, "filament")} to import`],
+          lines: [`${plural(row.count ?? 0, "filament")} to import`],
         };
       const brands = brandCount(sources);
       return {
         kind: "source",
         title: row.label,
-        lines: [`${plural(row.count, "filament")} from ${plural(brands, "brand")}`],
+        lines: [`${plural(row.count ?? 0, "filament")} from ${plural(brands, "brand")}`],
       };
     }
     case "brand":

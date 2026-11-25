@@ -70,6 +70,24 @@ import {
   runErrorFocus,
   sameBasis,
 } from "./targets.js";
+import {
+  onTdfpLevel,
+  openTdfp,
+  running,
+  shownTdfp,
+  showsTdfp,
+  TDFP_FOCUS,
+  tdfpBusy,
+  tdfpListHints,
+  tdfpListKey,
+  tdfpReviewHints,
+  tdfpReviewKey,
+  tdfpRunHints,
+  tdfpRunKey,
+  tdfpUpdate,
+  tickedRows,
+} from "./tdfp.js";
+import type { TdfpMsg } from "./tdfpCmds.js";
 import { itemIndex, weightItems, weightSourceName } from "./weights.js";
 
 type Result = Step<AddModel>;
@@ -107,7 +125,12 @@ export function update(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result 
 
 /** Add is shown again: a plan read with settings changed meanwhile is read again; a deep link opens its filament. */
 function shown(model: AddModel, focus: unknown, ctx: Ctx): Result {
-  const [fresh, cmds] = reviewStale(model, ctx) ? reread(model, ctx) : none(model);
+  if (focus === TDFP_FOCUS) return running(model) ? none(model) : openTdfp(model, ctx);
+  const [fresh, cmds] = reviewStale(model, ctx)
+    ? reread(model, ctx)
+    : showsTdfp(model)
+      ? shownTdfp(model, ctx)
+      : none(model);
   if (typeof focus !== "string" || focus === "") return [fresh, cmds];
   const [focused, more] = openFocus(fresh, focus, ctx);
   return [focused, [...cmds, ...more]];
@@ -132,7 +155,7 @@ export function parseFocus(focus: string): { id: string; name: string } {
  * the link waits in model.focus for it.
  */
 function openFocus(model: AddModel, focus: string, ctx: Ctx): Result {
-  if (model.run?.state === "running") return none({ ...model, focus: null });
+  if (running(model)) return none({ ...model, focus: null });
   const { id, name } = parseFocus(focus);
   const sources = sourcesOf(model, ctx);
   const hasImport = model.imported.source !== null;
@@ -169,7 +192,7 @@ function openFocus(model: AddModel, focus: string, ctx: Ctx): Result {
       selected,
     );
     stack = [
-      ...(hasImport ? [{ level: { kind: "root" as const }, cursor: 0 }] : []),
+      { level: { kind: "root" as const }, cursor: 0 },
       {
         level: { kind: "brands" },
         cursor: Math.max(
@@ -199,7 +222,15 @@ function openFocus(model: AddModel, focus: string, ctx: Ctx): Result {
       { level: { kind: "import" }, cursor: importAt },
     ];
   }
-  return none({ ...ticks, page: "find", run: null, search: null, dialog: null, stack });
+  return none({
+    ...ticks,
+    page: "find",
+    run: null,
+    search: null,
+    dialog: null,
+    stack,
+    tdfp: { ...ticks.tdfp, active: false },
+  });
 }
 
 /** Follows the settings' import source, and asks for the catalog once. */
@@ -235,7 +266,12 @@ function route(model: AddModel, msg: AppMsg | TabMsg, ctx: Ctx): Result {
   return none(model);
 }
 
+function isTdfpMsg(msg: AddMsg): msg is TdfpMsg {
+  return msg.type.startsWith("add/tdfp") || msg.type === "add/openTdfp";
+}
+
 function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
+  if (isTdfpMsg(msg)) return tdfpUpdate(model, msg, ctx);
   switch (msg.type) {
     case "add/imported": {
       if (msg.source !== model.imported.source) return none(model);
@@ -323,7 +359,7 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
       return next.page === "review" ? enterReview(next, ctx) : none(next);
     }
     case "add/openSearch": {
-      if (model.run?.state === "running") return none(model);
+      if (running(model)) return none(model);
       // Review's editor closes as esc closes it, its edits kept for the run; edits it can't keep refuse.
       const closed = closeEditor(model);
       const show = send<AppMsg>({ type: "app/switchTab", tab: "add" });
@@ -332,7 +368,7 @@ function ownUpdate(model: AddModel, msg: AddMsg, ctx: Ctx): Result {
       return [opened, [show]];
     }
     case "add/review": {
-      if (model.run?.state === "running") return none(model);
+      if (running(model)) return none(model);
       const closed = closeEditor(model);
       const show = send<AppMsg>({ type: "app/switchTab", tab: "add" });
       if (typeof closed === "string") return [{ ...model, notice: closed }, [show]];
@@ -352,6 +388,8 @@ function keyUpdate(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     // Type-ahead gathers letters typed in a row; any other key starts it over.
     typed: letter(key) ? model.typed : null,
   };
+  if (fresh.tdfp.active && fresh.page === "review") return tdfpReviewKey(fresh, key, ctx);
+  if (fresh.tdfp.active && fresh.page === "run") return tdfpRunKey(fresh, key, ctx);
   switch (fresh.page) {
     case "find":
       return findKey(fresh, key, ctx);
@@ -411,6 +449,7 @@ function findKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
 }
 
 function drillKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
+  if (onTdfpLevel(model)) return tdfpListKey(model, key, ctx);
   const frame = top(model);
   const sources = sourcesOf(model, ctx);
   const rows = levelRows(frame.level, sources, model.selected);
@@ -439,6 +478,7 @@ function drillKey(model: AddModel, key: KeyPress, ctx: Ctx): Result {
     if (!row) return none(model);
     switch (row.kind) {
       case "source":
+        if (row.source === "tdfp") return openTdfp(model, ctx);
         return push(model, row.source === "db" ? { kind: "brands" } : { kind: "import" });
       case "brand": {
         const materials = materialsOf(sources, row.label);
@@ -622,7 +662,8 @@ function weightsSignature(model: AddModel, ctx: Ctx): string {
   return JSON.stringify([profiles, connection ? consoleUrl(connection) : ""]);
 }
 
-function enterWeights(model: AddModel, ctx: Ctx): Result {
+function enterWeights(base: AddModel, ctx: Ctx): Result {
+  const model = base.tdfp.active ? { ...base, tdfp: { ...base.tdfp, active: false } } : base;
   const signature = weightsSignature(model, ctx);
   const { weights } = model;
   if (weights.signature === signature && weights.state === "ready")
@@ -786,7 +827,9 @@ export function weightsNeeded(model: AddModel, ctx: Ctx): boolean | null {
 
 // ── Review ──────────────────────────────────────────────────────────────────
 
-function enterReview(model: AddModel, ctx: Ctx): Result {
+function enterReview(base: AddModel, ctx: Ctx): Result {
+  // Review shows this run's plan from here on, not a 3DFP import's.
+  const model = base.tdfp.active ? { ...base, tdfp: { ...base.tdfp, active: false } } : base;
   const entries = ticked(model, ctx);
   if (entries.length === 0)
     return none({ ...model, page: "find", notice: "Tick filaments with space first" });
@@ -819,6 +862,7 @@ function enterReview(model: AddModel, ctx: Ctx): Result {
 function reviewStale(model: AddModel, ctx: Ctx): boolean {
   const { review } = model;
   return (
+    !model.tdfp.active &&
     model.page === "review" &&
     review.editing === null &&
     review.basis !== null &&
@@ -1116,10 +1160,12 @@ const PAGE_TITLES: Record<PageId, string> = {
 
 export function pageBar(model: AddModel, ctx: Ctx): PageTab[] {
   const current = PAGE_ORDER.indexOf(model.page);
-  const count = ticked(model, ctx).length;
+  // The import's ticks while it's shown; it has no Weights page (3DFP knows each spool's empty weight).
+  const importing = showsTdfp(model);
+  const count = importing ? tickedRows(model).length : ticked(model, ctx).length;
   return PAGE_ORDER.map((id, index): PageTab => {
     const state: PageState =
-      id === "weights" && weightsNeeded(model, ctx) === false
+      id === "weights" && (importing || weightsNeeded(model, ctx) === false)
         ? "disabled"
         : index < current
           ? "done"
@@ -1137,6 +1183,8 @@ const h = (keys: string, label: string, primary = false): Hint =>
   primary ? { keys, label, primary } : { keys, label };
 
 export function hints(model: AddModel, ctx: Ctx): Hint[] {
+  if (model.tdfp.active && model.page === "review") return tdfpReviewHints(model, ctx);
+  if (model.tdfp.active && model.page === "run") return tdfpRunHints(model);
   switch (model.page) {
     case "find":
       return findHints(model, ctx);
@@ -1203,6 +1251,7 @@ function findHints(model: AddModel, ctx: Ctx): Hint[] {
       h("esc", "cancel", true),
     ];
   }
+  if (onTdfpLevel(model)) return tdfpListHints(model, ctx);
   const hasTicks = ticked(model, ctx).length > 0;
   if (model.search) {
     if (model.search.focus === "query")
@@ -1258,7 +1307,8 @@ export function capturesText(model: AddModel): boolean {
 /** What a run is writing, while it runs: the shell won't quit on q meanwhile. */
 export function busy(model: AddModel): string | null {
   const { run } = model;
-  return run?.state === "running" ? `Adding ${plural(run.profiles.length, "filament")}` : null;
+  if (run?.state === "running") return `Adding ${plural(run.profiles.length, "filament")}`;
+  return tdfpBusy(model);
 }
 
 /** The plan edits a quit would drop: those kept for the run, and those in the open editor. */
@@ -1294,5 +1344,10 @@ export function commands(model: AddModel, ctx: Ctx): PaletteCommand[] {
           { title: "Untick everything", detail: "Add", msg: addMsg({ type: "add/clear" }) },
         ]
       : []),
+    {
+      title: "Import your 3DFilamentProfiles spools",
+      detail: "Add",
+      msg: addMsg({ type: "add/openTdfp" }),
+    },
   ];
 }

@@ -27,6 +27,7 @@ import { importCmd } from "./cmds.js";
 import type { ColorDialog } from "./color.js";
 import type { RowProgress } from "./plan.js";
 import { consoleSetup, type PlanBasis } from "./targets.js";
+import { emptyTdfp, type TdfpModel, tickedRows } from "./tdfp.js";
 
 export type PageId = "find" | "weights" | "review" | "run";
 
@@ -153,6 +154,8 @@ export interface AddModel {
   focus: string | null;
   /** What adding Find's highlighted color would do, read as Review reads it. */
   peek: PeekModel;
+  /** Importing your 3DFilamentProfiles spools: the list, its ticks, review and run (tdfp.ts). */
+  tdfp: TdfpModel;
 }
 
 export function emptyWeights(): WeightsModel {
@@ -186,11 +189,17 @@ export function emptyReview(seq = 0): ReviewModel {
   };
 }
 
-/** The top of Find: both sources when there's an import (on the import), else straight into the brands. */
+/**
+ * The top of Find: the sources on the import when there's one; else SpoolmanDB's brands, with the sources (3DFP's
+ * spools beside SpoolmanDB) one esc up.
+ */
 export function rootStack(hasImport: boolean): FindFrame[] {
   return hasImport
     ? [{ level: { kind: "root" }, cursor: 1 }]
-    : [{ level: { kind: "brands" }, cursor: 0 }];
+    : [
+        { level: { kind: "root" }, cursor: 0 },
+        { level: { kind: "brands" }, cursor: 0 },
+      ];
 }
 
 function catalogOf(resource: Resource<Catalog>): Catalog | null {
@@ -230,6 +239,10 @@ export function sourcesOf(model: AddModel, ctx: Ctx): Sources {
     db: dbProfiles(model, ctx),
     imported: model.imported.profiles,
     importName: model.imported.source === null ? null : importName(model.imported.source),
+    tdfp: {
+      count: model.tdfp.list.state === "ready" ? model.tdfp.list.rows.length : null,
+      ticked: tickedRows(model).length,
+    },
   };
 }
 
@@ -300,6 +313,7 @@ export function init(ctx: Ctx, start: StartOptions): Step<AddModel> {
     weightMemory: new Map(),
     focus: null,
     peek: emptyPeek(),
+    tdfp: emptyTdfp(),
   };
   // SpoolmanDB is a download: fetched now only when the app opens on Add, else on Add's first visit.
   const [requested, cmds] = landsOnAdd(ctx.values, start)

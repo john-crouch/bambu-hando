@@ -30,11 +30,13 @@ import {
   type Level,
   SPOOLMANDB_LABEL,
   swatchOf,
+  TDFP_LABEL,
 } from "./catalog.js";
 import type { Box as Area } from "./layout.js";
 import { pageArea, splitPage } from "./layout.js";
 import { type AddModel, sourcesOf } from "./model.js";
 import { addsHeading, detailTitle, findDetailOf } from "./peek.js";
+import { TdfpFindView } from "./TdfpView.js";
 import { findRows } from "./update.js";
 import { wrapText } from "./wrap.js";
 
@@ -43,9 +45,14 @@ const tickCell = (ticked: boolean) =>
     ? { text: "[✓]", width: 3, color: COLORS.ok }
     : { text: "[ ]", width: 3, color: COLORS.muted };
 
-function countCells(count: number, ticked: number, noun: string) {
+function countCells(count: number | null, ticked: number, noun: string) {
   return [
-    { text: plural(count, noun), width: 15, align: "right" as const, dim: true },
+    {
+      text: count === null ? "" : plural(count, noun),
+      width: 15,
+      align: "right" as const,
+      dim: true,
+    },
     ticked > 0 ? { text: `✓ ${ticked}`, width: 6, color: COLORS.ok } : { text: "", width: 6 },
   ];
 }
@@ -60,7 +67,11 @@ export function listRow(row: FindRow, selected: ReadonlySet<string>): ListRow {
         key: `${row.kind}:${row.label}`,
         cells: [
           { text: row.label, grow: true },
-          ...countCells(row.count, row.ticked, row.kind === "source" ? "filament" : "color"),
+          ...countCells(
+            row.count,
+            row.ticked,
+            row.kind !== "source" ? "color" : row.source === "tdfp" ? "spool" : "filament",
+          ),
         ],
       };
     case "color": {
@@ -112,6 +123,8 @@ export function findTitle(model: AddModel, ctx: Ctx): { title: string; subtitle:
       };
     case "missing":
       return { title: "Not in SpoolmanDB", subtitle: "" };
+    case "tdfp":
+      return { title: TDFP_LABEL, subtitle: "" };
   }
 }
 
@@ -490,6 +503,8 @@ function DetailPanel({
 
 export function FindView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
   const area = pageArea(ctx.bodyColumns, ctx.bodyRows);
+  if (!model.search && currentLevel(model).kind === "tdfp")
+    return <TdfpFindView model={model} ctx={ctx} />;
   // A filament nothing lists has no row to detail: its one panel takes the page.
   if (!model.search && currentLevel(model).kind === "missing")
     return <ListPanel model={model} ctx={ctx} box={area} />;

@@ -33,11 +33,18 @@ describe("importSourceOf", () => {
 });
 
 describe("levelRows", () => {
-  it("lists the two sources at the root with counts and ticks", () => {
+  it("lists the sources at the root with counts and ticks, 3DFP's spools last", () => {
     const rows = levelRows({ kind: "root" }, sources, new Set([importKey(0), dbKey(PROFILES[0]!)]));
     expect(rows).toEqual([
       { kind: "source", source: "db", label: "SpoolmanDB", count: 5, ticked: 1 },
       { kind: "source", source: "import", label: "mine.json", count: 2, ticked: 1 },
+      {
+        kind: "source",
+        source: "tdfp",
+        label: "Your 3DFilamentProfiles spools",
+        count: null,
+        ticked: 0,
+      },
     ]);
   });
 

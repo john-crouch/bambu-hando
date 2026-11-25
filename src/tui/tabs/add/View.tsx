@@ -15,12 +15,15 @@ import { FindView } from "./FindView.js";
 import { pageArea } from "./layout.js";
 import { type AddModel, catalogWarnings, ticked } from "./model.js";
 import { PlanView } from "./PlanView.js";
+import { TdfpPlanView } from "./TdfpView.js";
+import { showsTdfp, tdfpTray } from "./tdfp.js";
 import { pageBar } from "./update.js";
 import { WeightsView } from "./WeightsView.js";
 
 /** The bottom line: what the last key needs, else a warning, else what's ticked across brands. */
 export function statusSegments(model: AddModel, ctx: Ctx): Segment[] {
   if (model.notice) return [{ text: ` ! ${model.notice}`, color: COLORS.warning }];
+  if (showsTdfp(model)) return tdfpStatus(model);
   if (model.page === "review" && model.review.editing) {
     // The footer says esc keeps the edits; this line says where they go.
     const { editor } = model.review.editing;
@@ -37,6 +40,22 @@ export function statusSegments(model: AddModel, ctx: Ctx): Segment[] {
     return [{ text: " Selection cleared for the next run", color: COLORS.muted }];
   const tray = trayText(ticked(model, ctx));
   if (!tray) return [{ text: " Nothing ticked yet: space ticks a color", color: COLORS.muted }];
+  const [count = "", rest = ""] = tray.split(": ");
+  return [
+    { text: ` ✓ ${count}`, color: COLORS.ok, bold: true },
+    { text: `  ${rest}`, color: COLORS.muted },
+  ];
+}
+
+/** The import's bottom line: the list's warning, else what's ticked. */
+function tdfpStatus(model: AddModel): Segment[] {
+  const { run, list } = model.tdfp;
+  if (run?.state === "done")
+    return [{ text: " Imported spools are linked now", color: COLORS.muted }];
+  const [warning] = list.warnings;
+  if (warning && model.page === "find") return [{ text: ` ! ${warning}`, color: COLORS.warning }];
+  const tray = tdfpTray(model);
+  if (!tray) return [{ text: " Nothing ticked yet: space ticks a spool", color: COLORS.muted }];
   const [count = "", rest = ""] = tray.split(": ");
   return [
     { text: ` ✓ ${count}`, color: COLORS.ok, bold: true },
@@ -62,6 +81,8 @@ export function AddView({ model, ctx }: { model: AddModel; ctx: Ctx }) {
           <FindView model={model} ctx={ctx} />
         ) : model.page === "weights" ? (
           <WeightsView model={model} ctx={ctx} />
+        ) : model.tdfp.active ? (
+          <TdfpPlanView model={model} ctx={ctx} />
         ) : model.page === "review" && model.review.editing ? (
           <EditorView model={model.review.editing.editor} width={width} height={area.height} />
         ) : (

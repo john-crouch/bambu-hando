@@ -543,12 +543,16 @@ describe("palette commands while Review's editor is open", () => {
 describe("palette commands", () => {
   it("offers search, and review and untick once something is ticked", async () => {
     const d = start({ createSpools: false });
-    expect(commands(d.model, d.context).map((c) => c.title)).toEqual(["Search SpoolmanDB"]);
+    expect(commands(d.model, d.context).map((c) => c.title)).toEqual([
+      "Search SpoolmanDB",
+      "Import your 3DFilamentProfiles spools",
+    ]);
     tick(d, "punkfil");
     expect(commands(d.model, d.context).map((c) => c.title)).toEqual([
       "Search SpoolmanDB",
       "Review the 1 ticked",
       "Untick everything",
+      "Import your 3DFilamentProfiles spools",
     ]);
     const review = commands(d.model, d.context)[1]?.msg;
     if (review?.type !== "tab") throw new Error("expected a tab message");

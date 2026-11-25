@@ -134,6 +134,7 @@ describe("palette", () => {
       ["Search SpoolmanDB", "/"],
       ["Review the 1 ticked", "→"],
       ["Untick everything", undefined],
+      ["Import your 3DFilamentProfiles spools", undefined],
     ]);
   });
 });

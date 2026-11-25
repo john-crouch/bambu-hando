@@ -23,7 +23,7 @@ import { closeThen, type ShellOverlay } from "./messages.js";
 export const TAB_ABOUT: Record<TabId, string> = {
   spools:
     "Your spools on the SpoolEase console: what's left of each, what's running low and where it is. Print labels for the ticked spools, add more spools like one you have, or scan a barcode to add the spool it belongs to.",
-  add: "Add filaments from SpoolmanDB or a file: pick brand, material and color, see what would be written, then write the BambuStudio presets, SpoolEase's custom filaments and the new spools in one go.",
+  add: "Add filaments from SpoolmanDB or a file: pick brand, material and color, see what would be written, then write the BambuStudio presets, SpoolEase's custom filaments and the new spools in one go. Spools you keep on 3DFilamentProfiles are a source too: importing one writes the same and links the two.",
   presets:
     "Your own BambuStudio filament presets, grouped by filament ID. Open one to change its settings; you see every change, and every preset it saves to, before anything is written.",
   check:

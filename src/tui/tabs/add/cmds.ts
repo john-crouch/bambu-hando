@@ -23,6 +23,7 @@ import type { Cmd } from "../../core/program.js";
 import { type AppMsg, toTab } from "../../core/types.js";
 import type { FormValues } from "../../core/values.js";
 import { consoleOf, createsSpools, type PlanBasis, printersOf } from "./targets.js";
+import type { TdfpMsg } from "./tdfpCmds.js";
 
 /** The Add tab's own messages, as its commands send them (wrapped for the shell by toTab). */
 export type AddMsg =
@@ -65,7 +66,9 @@ export type AddMsg =
   /** From the command palette. */
   | { type: "add/openSearch" }
   | { type: "add/review" }
-  | { type: "add/clear" };
+  | { type: "add/clear" }
+  /** Importing your 3DFilamentProfiles spools (tdfpCmds.ts). */
+  | TdfpMsg;
 
 export const ADD_MSG_TYPES: ReadonlySet<string> = new Set<AddMsg["type"]>([
   "add/imported",
@@ -84,6 +87,14 @@ export const ADD_MSG_TYPES: ReadonlySet<string> = new Set<AddMsg["type"]>([
   "add/openSearch",
   "add/review",
   "add/clear",
+  "add/tdfpListed",
+  "add/tdfpListFailed",
+  "add/tdfpPrepared",
+  "add/tdfpPrepareFailed",
+  "add/tdfpRunEvent",
+  "add/tdfpApplied",
+  "add/tdfpApplyFailed",
+  "add/openTdfp",
 ]);
 
 export function addMsg(msg: AddMsg): AppMsg {

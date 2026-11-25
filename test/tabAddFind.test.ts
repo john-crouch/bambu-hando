@@ -274,6 +274,13 @@ describe("import source", () => {
     expect(findRows(d.model, d.context)).toEqual([
       { kind: "source", source: "db", label: "SpoolmanDB", count: 5, ticked: 0 },
       { kind: "source", source: "import", label: "source.json", count: 3, ticked: 3 },
+      {
+        kind: "source",
+        source: "tdfp",
+        label: "Your 3DFilamentProfiles spools",
+        count: null,
+        ticked: 0,
+      },
     ]);
     d.key(press("enter"));
     expect(findRows(d.model, d.context).map((r) => r.label)).toEqual([
@@ -316,7 +323,8 @@ describe("import source", () => {
 describe("hints", () => {
   it("lists what works on the highlighted row", () => {
     const d = start();
-    expect(hints(d.model, d.context).map((h) => h.keys)).toEqual(["↑↓", "enter", "/"]);
+    // esc goes up from the brands to the sources (3DFP's spools beside SpoolmanDB).
+    expect(hints(d.model, d.context).map((h) => h.keys)).toEqual(["↑↓", "enter", "/", "esc"]);
     d.key(press("enter"), press("down"), press("enter"));
     expect(hints(d.model, d.context).map((h) => h.keys)).toEqual([
       "↑↓",

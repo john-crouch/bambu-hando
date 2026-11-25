@@ -1,5 +1,5 @@
 // ABOUTME: End-to-end tests of the full-screen TUI: the built binary inside a real pseudo-terminal, drawn by xterm.
-// ABOUTME: Covers the alternate screen, landing tab, tab cycling, help, the palette, quitting, exit codes and resizing.
+// ABOUTME: Covers the alternate screen, landing tab, tab cycling, help, the palette, quitting, exit codes, resizing and a 3DFP import.
 
 import { execFile } from "node:child_process";
 import { mkdtemp } from "node:fs/promises";
@@ -13,6 +13,12 @@ import xterm from "@xterm/headless";
 import { type IPty, spawn } from "node-pty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installBambuStudio } from "./bambuStudioSetup.js";
+import {
+  serverFilament,
+  serverSpool,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
 import { assertNoLoginKeyring } from "./keyringGuard.js";
 import { SOURCE_FIXTURE } from "./parity.js";
 import {
@@ -28,6 +34,8 @@ const CTRL_C = "\u0003";
 const CTRL_K = "\u000B";
 const TAB = "\t";
 const SHIFT_TAB = "\u001B[Z";
+const DOWN = "\u001B[B";
+const RIGHT = "\u001B[C";
 const ESC = "\u001B";
 const ENTER_ALT_SCREEN = "\u001B[?1049h";
 const LEAVE_ALT_SCREEN = "\u001B[?1049l";
@@ -394,6 +402,55 @@ describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
 
     expect(await t.exited).toBe(130);
     expect(t.raw.lastIndexOf(LEAVE_ALT_SCREEN)).toBeGreaterThan(t.raw.indexOf(ENTER_ALT_SCREEN));
+  });
+
+  it("imports a 3DFilamentProfiles spool from Add: list, review, apply, and the summary after", async () => {
+    const tdfp = await startFilamentProfilesServer();
+    try {
+      tdfp.quota.remaining = 900;
+      tdfp.filaments = [
+        serverFilament({ id: 10512, material_type: "Elite", color: "Mildewed Red" }),
+      ];
+      tdfp.spools = [
+        serverSpool({
+          short_code: "izDGMo7fU",
+          filament_id: 10512,
+          brand: "SUNLU",
+          material_type: "Elite",
+          color: "Mildewed Red",
+        }),
+      ];
+      terminal = new Terminal(consoleFlags(), {
+        HOME: home,
+        SPOOLMANDB_URL: spoolmanDb.url,
+        SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+        FILAMENTPROFILES_API_URL: tdfp.url,
+        FILAMENTPROFILES_API_KEY: TEST_API_KEY,
+      });
+      const t = terminal;
+      await t.waitFor("✓ SpoolEase 127.0.0.1");
+      // Add opens on SpoolmanDB's brands; the sources are one esc up, 3DFP's spools after SpoolmanDB.
+      await t.pressEach(TAB);
+      await t.waitForOnScreen("SpoolmanDB ·");
+      await t.pressEach(ESC, DOWN, ENTER);
+      await t.waitForOnScreen("SUNLU PETG Elite Mildewed Red");
+      await t.pressEach(" ", RIGHT);
+      await t.waitForOnScreen("1 API call read, 1 to apply");
+      await t.pressEach("a");
+      await t.waitForOnScreen("✓ spool #1");
+      expect(server.spools).toHaveLength(1);
+      expect(tdfp.spools[0]?.external_id).toBe("spoolease:1");
+      await t.pressEach("q");
+
+      expect(await t.exited).toBe(0);
+      expect(t.text).toContain(
+        "Imported izDGMo7fU SUNLU PETG Elite Mildewed Red → SpoolEase spool #1",
+      );
+      expect(t.text).not.toContain(TEST_API_KEY);
+      expect(t.text).not.toContain(TEST_SECURITY_KEY);
+    } finally {
+      await tdfp.close();
+    }
   });
 
   it("follows a resize: the frame refits the terminal", async () => {
