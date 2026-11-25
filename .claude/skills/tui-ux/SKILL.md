@@ -35,7 +35,7 @@ the checklist for changing it.
   screen.
 - **Every problem has a key that fixes it**: deep-link with `app/switchTab { tab, focus }` using the focus strings in
   each tab's `index.ts` (settings rows like `spoolease.host`, a check section key, a preset path, a spool id, a
-  filament ID or `id:<id>|name:<name>` for Add).
+  filament ID, `id:<id>|name:<name>` or `3dfp` for Add).
 - **One spelling**: values through `ui/format.ts` (`formatTemp` `220°C`, `formatRange` `190–230°C`, `formatGrams`,
   `shortPrinter` `X1C 0.4`, `plural`, `fitPath` for paths, which keeps the file name); one-of choices with the
   List `radio` marker (`●`/`○`); sentence case; hints ordered move → act → navigate → global, `?` always kept.
@@ -64,6 +64,9 @@ the checklist for changing it.
   (`keyPresses`: `"\t?"` is tab then ?) and a meta key into esc + key, so tabs see one key per message; a run of
   text ending in enter stays whole (a scanner's `"00150603Z\r"`), and `editText` types it and reports `submit`.
   Tests send one key per write unless testing a burst.
+- **The 3DFilamentProfiles quota is the user's.** Never call its API per key or frame, nor again for what was read:
+  show things from the cached spool list and the local catalog, and spend calls only on an explicit step (opening the
+  list, continuing to a review, `r`, `a`), saying on the review how many it took and will take.
 - **Heavy work stays off the keystroke path.** The SpoolmanDB catalog has ~6k profiles: index it once per loaded
   array (memoize), never walk it per frame; a blocked event loop makes Ink merge keys (esc+tab arrive as one).
 
@@ -80,7 +83,9 @@ npm run tui:snap -- --cols 120 --rows 36 "wait=Spools" key=tab key=tab snap=pres
 It uses your real HOME (BambuStudio settings, SpoolEase console), so look only: never press `a` on a review or
 confirm, never make labels, never change Settings (they save at once). For anything that writes, use a
 throwaway HOME: copy `test/fixtures/bambustudio/system` into `$H/.config/BambuStudio/` with a `BambuStudio.conf`,
-and run with `HOME=$H` and `--skip-spoolease` (or the stand-in servers in `test/`).
+and run with `HOME=$H` and `--skip-spoolease` (or the stand-in servers in `test/`). For Add's 3DFP import, set
+`FILAMENTPROFILES_API_URL` to `test/filamentProfilesServer.ts`'s URL and `FILAMENTPROFILES_API_KEY` to its
+`TEST_API_KEY` (tui-snap passes both through), never the real API.
 
 ## Tests for a screen change
 

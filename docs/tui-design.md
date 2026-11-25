@@ -105,10 +105,26 @@ Pages: **Find → Weights → Review → Done**, in a page bar (Weights only whe
 brand has several empty-spool weights). Find drills SpoolmanDB brand → material → color with `enter`/`esc`;
 the detail panel previews the next level, or the filament and what saving adds; `/` searches the whole
 catalog by name; `space` ticks; a tray line shows what's ticked across brands. "Other color…" ends each
-color list. An imported file or URL source is a root entry beside SpoolmanDB. Review names every target
-(preset folder, printers, console) and shows per row what happens; `e` edits a row's preset before it's
-written; `a` runs. The run streams statuses into the same table with a progress bar; Done summarizes and
+color list. An imported file or URL source is a root entry beside SpoolmanDB, and so is **Your
+3DFilamentProfiles spools** (without an import, Find opens on SpoolmanDB's brands, the sources one `esc`
+up). Review names every target (preset folder, printers, console) and shows per row what happens; `e`
+edits a row's preset before it's written; `a` runs. The run streams statuses into the same table with a progress bar; Done summarizes and
 offers labels for the new spools.
+
+The 3DFP source (`tabs/add/tdfp.ts`, `tdfpCmds.ts`, `TdfpView.tsx`, on `tdfpImportSession.ts`, which `3dfp import`
+uses too) lists the account's spools not linked to this console yet, with swatch, name and grams left; refused ones
+(Bambu Lab, already a SpoolEase filament) stay listed, dim, with the reason in the detail panel, which otherwise says
+what importing writes (presets for the printers, the custom filament ID, a spool and a link) from the local catalog's
+record, or that Review reads it. The list is read once per console when opened (the spool list is cached for an
+hour; reading it never fetches a record), so moving through it spends no API calls. `space` ticks, `enter`/`→`
+continue to its Review with no Weights page (3DFP knows each spool's empty weight): targets (preset folder, printers,
+console, 3DFP and the calls it took and will take), a row per spool (preset `+ new`/`= kept`, SpoolEase `add + spool
++ link`, refused rows `✗ not imported`) and the highlighted one in full under it. Reading it again costs calls, so
+going back and forth with the same ticks and settings shows the same review; `r` reads it again. `a` runs
+`applyImport` and adds the links to the link book as it is by then; Done lists each spool's new SpoolEase spool,
+offers labels, and the session summary lists what was imported. States: no console (enter opens Settings ›
+SpoolEase), no 3DFP key (says `bambu-hando key set 3dfp`), the console refused (`s`), failed (`r`; one 3DFP refused is
+read again only on `r`), every spool linked already. Deep link and palette: focus `3dfp`.
 
 ### Presets
 List of your BambuStudio filament presets (grouped by filament ID), detail with key settings, file and
