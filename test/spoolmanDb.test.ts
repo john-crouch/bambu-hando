@@ -57,7 +57,25 @@ describe("catalogProfiles", () => {
       filamentId: "Peddfd02",
       labelWeight: 1000,
       coreWeight: 140,
+      settings: { printTemp: 235, bedTemp: 75 },
     });
+  });
+
+  it("gives the presets SpoolmanDB's print and bed temperatures: the value, the mid-range, or the material's", () => {
+    expect(byName("RatRig ABS Punkfil Brute Black").settings).toEqual({
+      printTemp: 245,
+      bedTemp: 105,
+    });
+    expect(byName("3DHoJor PLA Crystal Rainbow Flame").settings).toEqual({
+      printTemp: 215,
+      bedTemp: 43,
+    });
+    expect(byName("3D Printing Canada PLA Budget Latte").settings).toEqual({
+      printTemp: 210,
+      bedTemp: 50,
+    });
+    // Neither the entry nor materials.json has a temperature for this PETG: the template keeps its own.
+    expect(byName("3DO PETG Black")).not.toHaveProperty("settings");
   });
 
   it("names products by manufacturer and material, keeps one per name, and skips Bambu Lab", () => {

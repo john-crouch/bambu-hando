@@ -100,6 +100,31 @@ describe("loadProfiles", () => {
     await expect(loadProfiles(path)).rejects.toThrow("Unsupported profile source shape");
   });
 
+  it("reads optional print settings for the presets", async () => {
+    const path = await writeSource([
+      {
+        name: "Tuned",
+        print_temp: 245,
+        bed_temp: 65,
+        flow_ratio: 0.96,
+        max_volumetric_speed: 14,
+      },
+      { name: "Plain" },
+    ]);
+    const [tuned, plain] = await loadProfiles(path);
+    expect(tuned?.settings).toEqual({
+      printTemp: 245,
+      bedTemp: 65,
+      flowRatio: 0.96,
+      maxVolumetricSpeed: 14,
+    });
+    expect(plain).not.toHaveProperty("settings");
+    const bad = await writeSource([{ name: "Bad", flow_ratio: "lots" }]);
+    await expect(loadProfiles(bad)).rejects.toThrow(
+      "Profile entry at index 0 has invalid flow_ratio",
+    );
+  });
+
   it("rejects non-integer temperatures", async () => {
     const path = await writeSource([{ name: "Hot", nozzle_temp_max: "hot" }]);
     await expect(loadProfiles(path)).rejects.toThrow(
