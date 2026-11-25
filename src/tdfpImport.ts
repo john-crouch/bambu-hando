@@ -14,7 +14,7 @@ import type { FilamentProfile } from "./models.js";
 import { layered, type PresetSettings, settingsFromRecord } from "./presetSettings.js";
 import { derivedFilamentId } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection, type SpoolRecord } from "./spoolease.js";
-import { externalIdFor, type SpoolLink } from "./spoolLinks.js";
+import { externalIdFor, externalIdIsOurs, type SpoolLink } from "./spoolLinks.js";
 import { runSync, type SyncEvent, type SyncOutcome } from "./sync.js";
 
 /** spool_properties keys that aren't calibration: what every spool has. */
@@ -242,9 +242,19 @@ export async function applyImport(
     linkedAt: deps.now.toISOString(),
   }));
 
+  // An ID another app keeps is never written over; one that wasn't read (an older cached list) is left to the sync.
+  const writable = made.filter((outcome) => {
+    const current = outcome.item.spool.externalId;
+    if (current === undefined)
+      outcome.warning =
+        "its external ID on 3DFP wasn't read, so the SpoolEase ID wasn't written there yet: `bambu-hando 3dfp sync --refresh` writes it";
+    else if (!externalIdIsOurs(current))
+      outcome.warning = `its external ID on 3DFP is another app's (${current}), so the SpoolEase ID wasn't written there`;
+    return current !== undefined && externalIdIsOurs(current);
+  });
   let calls = 0;
-  for (let start = 0; start < made.length; start += MAX_BULK_UPDATES) {
-    const batch = made.slice(start, start + MAX_BULK_UPDATES);
+  for (let start = 0; start < writable.length; start += MAX_BULK_UPDATES) {
+    const batch = writable.slice(start, start + MAX_BULK_UPDATES);
     try {
       const results = await deps.tdfp.updateSpools(
         batch.map((outcome) => ({

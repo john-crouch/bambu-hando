@@ -343,6 +343,26 @@ describe("applyImport", () => {
     expect(result.calls).toBe(1);
   });
 
+  it("links without writing over an external ID another app keeps", async () => {
+    const first = tdfp.spools[0];
+    if (first) first.external_id = "other-app:7";
+    const plan = await prepared(["izDGMo7fU", "TWIN"]);
+    const result = await applyImport(plan, {
+      sync: { presetFolder: "default", printers: [X1C_04], dryRun: false },
+      connection,
+      tdfp: api,
+      now: NOW,
+    });
+    expect(tdfp.requests.filter((r) => r.method === "PATCH").map((r) => r.body)).toEqual([
+      [{ short_code: "TWIN", external_id: "spoolease:2" }],
+    ]);
+    expect(tdfp.spools[0]?.external_id).toBe("other-app:7");
+    expect(result.links.map((link) => link.tdfp)).toEqual(["izDGMo7fU", "TWIN"]);
+    expect(result.outcomes[0]?.warning).toBe(
+      "its external ID on 3DFP is another app's (other-app:7), so the SpoolEase ID wasn't written there",
+    );
+  });
+
   it("changes nothing on a dry run", async () => {
     const plan = await prepared(["izDGMo7fU"]);
     const before = tdfp.requests.length;
