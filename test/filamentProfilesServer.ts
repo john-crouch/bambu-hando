@@ -1,4 +1,4 @@
-// ABOUTME: Local stand-in for the 3DFilamentProfiles v1 API: bearer key, monthly quota headers, spools and filaments.
+// ABOUTME: Local stand-in for the 3DFilamentProfiles v1 API: bearer key, monthly quota headers, spools (changes since, bulk updates) and filaments.
 // ABOUTME: Follows the documented shapes, status codes and quota rules (401/402 don't count), and records every request.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -23,6 +23,7 @@ export interface ServerSpool {
   spool_properties: Record<string, unknown> | null;
   bambu_spool_id: string | null;
   bambu_tag_id: string | null;
+  external_id: string | null;
 }
 
 export interface ServerFilament {
@@ -72,6 +73,8 @@ export interface FilamentProfilesServer {
   /** "no_access" makes every request with the right key answer 402. */
   access: "active" | "no_access";
   spools: ServerSpool[];
+  /** Spools taken out of the account, which a list with updated_since reports by short code. */
+  deleted: Array<{ short_code: string; deleted_at: string }>;
   filaments: ServerFilament[];
   locations: string[];
   /** Overrides keyed by "METHOD /path" or "/path"; still counted against the quota. */
@@ -97,6 +100,7 @@ export function serverSpool(overrides: Partial<ServerSpool> = {}): ServerSpool {
     spool_properties: null,
     bambu_spool_id: null,
     bambu_tag_id: null,
+    external_id: null,
     ...overrides,
   };
 }
@@ -133,6 +137,9 @@ export function serverFilament(overrides: Partial<ServerFilament> = {}): ServerF
   };
 }
 
+/** What updated_since takes: an ISO 8601 time with a timezone. */
+const ISO_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
 function error(status: number, code: string, message: string): { status: number; body: unknown } {
   return { status, body: { error: { code, message } } };
 }
@@ -159,6 +166,7 @@ function detailed(spool: ServerSpool): Record<string, unknown> {
     url: `https://spooldb.com/s/${spool.short_code}`,
     bambu_spool_id: spool.bambu_spool_id,
     bambu_tag_id: spool.bambu_tag_id,
+    external_id: spool.external_id,
     stores: [],
   };
 }
@@ -177,6 +185,51 @@ function summary(filament: ServerFilament): Record<string, unknown> {
     td_value: filament.td_value,
     discontinued: filament.discontinued,
     url: `https://3dfilamentprofiles.com/filament/details/${filament.id}`,
+  };
+}
+
+/**
+ * A generated profile's applied values, as the live API reports them: the filament's community values, with the
+ * spool's own calibration (from spool_properties: nozzle_temp, bed_temp, flow_ratio, k_value) marked "spool".
+ */
+function spoolProfile(
+  spool: ServerSpool,
+  filaments: ServerFilament[],
+  query: Record<string, string>,
+): Record<string, unknown> {
+  const filament = filaments.find((f) => f.id === spool.filament_id);
+  const own = (spool.spool_properties ?? {}) as Record<string, unknown>;
+  const applied: Array<{ key: string; value: string; label: string; source: string }> = [];
+  const add = (key: string, value: unknown, source: string) => {
+    if (typeof value === "number") applied.push({ key, value: String(value), label: key, source });
+  };
+  const mid = (a: number | null | undefined, b: number | null | undefined) =>
+    a == null || b == null ? null : Math.round((a + b) / 2);
+  const pick = (ownKey: string, key: string, community: unknown, source: string) =>
+    typeof own[ownKey] === "number" ? add(key, own[ownKey], "spool") : add(key, community, source);
+  pick(
+    "nozzle_temp",
+    "nozzle_temperature",
+    mid(filament?.temp_min, filament?.temp_max),
+    "temp_min/temp_max",
+  );
+  pick(
+    "bed_temp",
+    "hot_plate_temp",
+    mid(filament?.bed_temp_min, filament?.bed_temp_max),
+    "bed_temp_min/bed_temp_max",
+  );
+  pick("flow_ratio", "filament_flow_ratio", filament?.flow_ratio, "flow_ratio");
+  add("filament_max_volumetric_speed", filament?.max_volumetric_speed, "max_volumetric_speed");
+  if (query.pressure_advance === "true")
+    pick("k_value", "pressure_advance", filament?.k_value, "k_value");
+  return {
+    file_name: `${spool.brand} ${spool.material} ${spool.color} (3DFP ${spool.short_code}).json`,
+    inherits: `Generic ${spool.material}`,
+    preset: Object.fromEntries(applied.map((entry) => [entry.key, [entry.value]])),
+    applied,
+    omitted: [],
+    warnings: [],
   };
 }
 
@@ -200,6 +253,7 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     sendQuotaHeaders: true,
     access: "active",
     spools: [],
+    deleted: [],
     filaments: [],
     locations: ["Shelf A", "Shelf B", "AMS 1 Slot 1"],
     replies: {},
@@ -260,6 +314,12 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
           if (other.bambu_tag_id === value) other.bambu_tag_id = null;
       spool[field] = value;
     }
+    if (body.external_id !== undefined) {
+      const value = body.external_id === "" ? null : (body.external_id as string | null);
+      if (typeof value === "string" && value.length > 100)
+        return error(400, "invalid_request", "external_id: at most 100 characters");
+      spool.external_id = value;
+    }
     spool.updated_at = new Date().toISOString();
     return {
       status: 200,
@@ -270,6 +330,7 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
         location: spool.location ?? "Shelf",
         bambu_spool_id: spool.bambu_spool_id,
         bambu_tag_id: spool.bambu_tag_id,
+        external_id: spool.external_id,
       },
     };
   }
@@ -283,8 +344,49 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
     if (body === Symbol.for("invalid-json"))
       return error(400, "invalid_request", "Body is not valid JSON");
     const fields = (body ?? {}) as Record<string, unknown>;
-    if (method === "GET" && path === "/api/v1/my/spools")
-      return { status: 200, body: { data: state.spools.map(listed) } };
+    if (method === "GET" && path === "/api/v1/my/spools") {
+      const asOf = new Date().toISOString();
+      if (query.updated_since === undefined)
+        return { status: 200, body: { data: state.spools.map(listed), as_of: asOf } };
+      const since = Date.parse(query.updated_since);
+      if (!ISO_WITH_ZONE.test(query.updated_since) || Number.isNaN(since))
+        return error(
+          400,
+          "invalid_request",
+          "updated_since: expected an ISO 8601 time with a timezone",
+        );
+      return {
+        status: 200,
+        body: {
+          data: state.spools.filter((s) => Date.parse(s.updated_at) >= since).map(listed),
+          deleted: state.deleted
+            .filter((d) => Date.parse(d.deleted_at) >= since)
+            .map((d) => d.short_code),
+          as_of: asOf,
+        },
+      };
+    }
+    if (method === "PATCH" && path === "/api/v1/my/spools") {
+      // A single object behaves exactly like PATCH /my/spools/{short_code}.
+      if (!Array.isArray(body)) {
+        const spool = state.spools.find((s) => s.short_code === fields.short_code);
+        if (!spool) return error(404, "not_found", "Spool not found");
+        const { short_code: _code, ...rest } = fields;
+        return spoolUpdate(spool, rest);
+      }
+      if (body.length < 1 || body.length > 50)
+        return error(400, "invalid_request", "Send 1 to 50 updates");
+      const data = body.map((entry) => {
+        const { short_code: code, ...rest } = (entry ?? {}) as Record<string, unknown>;
+        const spool = state.spools.find((s) => s.short_code === code);
+        if (!spool)
+          return { short_code: code, error: { code: "not_found", message: "Spool not found" } };
+        const result = spoolUpdate(spool, rest);
+        if (result.status === 200) return result.body;
+        return { short_code: code, error: (result.body as { error: unknown }).error };
+      });
+      return { status: 200, body: { data } };
+    }
     if (method === "POST" && path === "/api/v1/my/spools") {
       const filament = state.filaments.find((f) => f.id === fields.filament_id);
       if (!filament) return error(404, "filament_not_found", "No filament has that filament_id");
@@ -316,8 +418,34 @@ export async function startFilamentProfilesServer(): Promise<FilamentProfilesSer
         notes: (fields.notes as string | undefined) ?? null,
         empty_spool_weight: filament.spool_weight,
       });
+      for (const field of ["bambu_spool_id", "bambu_tag_id"] as const) {
+        const value = fields[field];
+        if (value === undefined || value === null || value === "") continue;
+        if (typeof value !== "string" || value.length > 64)
+          return error(400, "invalid_request", `${field}: at most 64 characters`);
+        if (field === "bambu_tag_id")
+          for (const other of state.spools)
+            if (other.bambu_tag_id === value) other.bambu_tag_id = null;
+        spool[field] = value;
+      }
+      if (typeof fields.external_id === "string" && fields.external_id !== "") {
+        if (fields.external_id.length > 100)
+          return error(400, "invalid_request", "external_id: at most 100 characters");
+        spool.external_id = fields.external_id;
+      }
+      spool.updated_at = new Date().toISOString();
       state.spools.push(spool);
       return { status: 201, body: { created: true, spool: detailed(spool) } };
+    }
+    const profileMatch = /^\/api\/v1\/my\/spools\/([^/]+)\/profile$/.exec(path);
+    if (method === "GET" && profileMatch) {
+      const spool = state.spools.find(
+        (s) => s.short_code === decodeURIComponent(profileMatch[1] ?? ""),
+      );
+      if (!spool) return error(404, "not_found", "No spool matches the identifier");
+      if (query.slicer !== "bambu" && query.slicer !== "orca")
+        return error(400, "invalid_request", "slicer: expected bambu or orca");
+      return { status: 200, body: spoolProfile(spool, state.filaments, query) };
     }
     const spoolMatch = /^\/api\/v1\/my\/spools\/([^/]+)$/.exec(path);
     if (spoolMatch) {

@@ -1,38 +1,44 @@
-// ABOUTME: End-to-end TUI tests that run the built binary inside a real pseudo-terminal.
-// ABOUTME: Sends real keystrokes via node-pty and asserts on rendered frames, files, and exit codes.
+// ABOUTME: End-to-end tests of the full-screen TUI: the built binary inside a real pseudo-terminal, drawn by xterm.
+// ABOUTME: Covers the alternate screen, landing tab, tab cycling, help, the palette, quitting, exit codes, resizing and a 3DFP import.
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import xterm from "@xterm/headless";
 import { type IPty, spawn } from "node-pty";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { installBambuStudio } from "./bambuStudioSetup.js";
 import {
-  baseFilamentDir,
-  installBambuStudio,
-  installSpoolEaseConfig,
-  X1C_04,
-  X1C_06,
-} from "./bambuStudioSetup.js";
-import { installFakeLp } from "./fakeLp.js";
+  serverFilament,
+  serverSpool,
+  startFilamentProfilesServer,
+  TEST_API_KEY,
+} from "./filamentProfilesServer.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 import { SOURCE_FIXTURE } from "./parity.js";
-import { readPdf } from "./pdf.js";
 import {
   type SpoolEaseServer,
   startSpoolEaseServer,
   TEST_SECURITY_KEY,
 } from "./spooleaseServer.js";
-import { startSpoolmanDbServer } from "./spoolmanDbServer.js";
+import { type SpoolmanDbServer, startSpoolmanDbServer } from "./spoolmanDbServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const ENTER = "\r";
 const CTRL_C = "\u0003";
-const DOWN = "\u001B[B";
-const UP = "\u001B[A";
+const CTRL_K = "\u000B";
 const TAB = "\t";
+const SHIFT_TAB = "\u001B[Z";
+const DOWN = "\u001B[B";
+const RIGHT = "\u001B[C";
 const ESC = "\u001B";
+const ENTER_ALT_SCREEN = "\u001B[?1049h";
+const LEAVE_ALT_SCREEN = "\u001B[?1049l";
 const SHOW_CURSOR = "\u001B[?25h";
 const WAIT_MS = 8_000;
 
@@ -51,23 +57,30 @@ function rawModeOn(ptsName: string): Promise<boolean> {
   );
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 class Terminal {
   raw = "";
   private cursor = 0;
   private rawMode = false;
   readonly exited: Promise<number>;
   private readonly pty: IPty;
+  private readonly screenBuffer: xterm.Terminal;
 
-  constructor(args: string[], env: Record<string, string>, size = { cols: 120, rows: 40 }) {
+  constructor(args: string[], env: Record<string, string>, size = { cols: 120, rows: 36 }) {
+    this.screenBuffer = new xterm.Terminal({ ...size, allowProposedApi: true });
     // A minimal env on purpose: CI-like variables would switch Ink to non-interactive rendering.
+    const fullEnv = { PATH: process.env.PATH ?? "", TERM: "xterm-256color", ...env };
+    assertNoLoginKeyring(["tui", ...args], fullEnv);
     this.pty = spawn(process.execPath, [BIN, "tui", ...args], {
       name: "xterm-256color",
       cols: size.cols,
       rows: size.rows,
-      env: { PATH: process.env.PATH ?? "", TERM: "xterm-256color", ...env },
+      env: fullEnv,
     });
     this.pty.onData((data) => {
       this.raw += data;
+      this.screenBuffer.write(data);
     });
     this.exited = new Promise((resolve) => this.pty.onExit(({ exitCode }) => resolve(exitCode)));
   }
@@ -76,9 +89,41 @@ class Terminal {
     return this.raw.replace(ANSI, "");
   }
 
+  /** The screen's lines as the terminal shows them now. */
+  async screen(): Promise<string[]> {
+    await new Promise<void>((resolve) => this.screenBuffer.write("", resolve));
+    const buffer = this.screenBuffer.buffer.active;
+    return Array.from(
+      { length: this.screenBuffer.rows },
+      (_, row) => buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "",
+    );
+  }
+
+  /** Wait until some line of the screen passes test. */
+  /**
+   * Waits until text is on the drawn screen. Prefer this to waitFor for text that replaces other text on
+   * the same line (one help title after another): Ink 8 rewrites only the changed part of a line.
+   */
+  async waitForOnScreen(text: string): Promise<string[]> {
+    return this.waitForScreen(
+      (lines) => lines.some((line) => line.includes(text)),
+      JSON.stringify(text),
+    );
+  }
+
+  async waitForScreen(test: (lines: string[]) => boolean, what: string): Promise<string[]> {
+    const deadline = Date.now() + WAIT_MS;
+    while (Date.now() < deadline) {
+      const lines = await this.screen();
+      if (test(lines)) return lines;
+      await sleep(25);
+    }
+    throw new Error(`Timed out waiting for ${what}. Screen:\n${(await this.screen()).join("\n")}`);
+  }
+
   /**
    * Wait until `needle` appears in output rendered after the previous match, and until the app reads
-   * keys in raw mode (App's useInput stays active, so raw mode stays on once it is on).
+   * keys in raw mode (the shell's useInput stays active, so raw mode stays on once it is on).
    */
   async waitFor(needle: string): Promise<void> {
     const deadline = Date.now() + WAIT_MS;
@@ -93,7 +138,7 @@ class Terminal {
       }
       if (found && !this.rawMode) this.rawMode = await rawModeOn(this.ptsName);
       if (found && this.rawMode) return;
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await sleep(25);
     }
     const what = found ? "raw mode after" : "";
     throw new Error(
@@ -106,23 +151,20 @@ class Terminal {
     return (this.pty as unknown as { ptsName: string }).ptsName;
   }
 
-  press(keys: string): void {
-    this.pty.write(keys);
-  }
-
   /**
-   * One key per write, spaced: keys arriving in one read reach the app as a single input ("s\r"), which
+   * One key per write, spaced: keys arriving in one read reach the app as a single input, which
    * matches no key, and a burst of escape sequences reads as one escape.
    */
   async pressEach(...keys: string[]): Promise<void> {
     for (const key of keys) {
       this.pty.write(key);
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await sleep(30);
     }
   }
 
   resize(cols: number, rows: number): void {
     this.pty.resize(cols, rows);
+    this.screenBuffer.resize(cols, rows);
   }
 
   kill(): void {
@@ -135,8 +177,10 @@ class Terminal {
 }
 
 // Each waitFor may take WAIT_MS, and a test chains several; vitest's 5 s default cut slow runs short.
-describe("TUI in a real terminal", { timeout: 30_000 }, () => {
+describe("full-screen TUI in a real terminal", { timeout: 30_000 }, () => {
   let server: SpoolEaseServer;
+  // Tests never reach the internet: Add loads SpoolmanDB from this stand-in on its first visit.
+  let spoolmanDb: SpoolmanDbServer;
   let home: string;
   let terminal: Terminal | undefined;
 
@@ -144,15 +188,17 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     home = await mkdtemp(join(tmpdir(), "bambu-hando-pty-"));
     await installBambuStudio(home);
     server = await startSpoolEaseServer();
+    spoolmanDb = await startSpoolmanDbServer();
   });
 
   afterEach(async () => {
     terminal?.kill();
     terminal = undefined;
     await server.close();
+    await spoolmanDb.close();
   });
 
-  const spooleaseFlags = (key = TEST_SECURITY_KEY): string[] => [
+  const consoleFlags = (key = TEST_SECURITY_KEY): string[] => [
     "--spoolease-host",
     "127.0.0.1",
     "--spoolease-port",
@@ -161,318 +207,299 @@ describe("TUI in a real terminal", { timeout: 30_000 }, () => {
     key,
   ];
 
-  // SOURCE_FIXTURE's brands, Polymaker and Generic, aren't in the test console's empty spool catalog,
-  // so each asks for an empty spool weight once; enter keeps the source's.
-  async function keepSourceWeights(t: Terminal): Promise<void> {
-    for (const step of ["brand 1 of 2", "brand 2 of 2"]) {
-      await t.waitFor(step);
-      t.press(ENTER);
-    }
-  }
-
-  it("applies a full sync, restores the cursor, and exits 0", async () => {
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags()], { HOME: home });
-
-    await terminal.waitFor("Add spools from SpoolmanDB");
-    terminal.press(ENTER);
-    await keepSourceWeights(terminal);
-    await terminal.waitFor("register filaments + create spools");
-    await terminal.waitFor("[a] apply");
-    terminal.press("a");
-    await terminal.waitFor("Done: 3 written, 0 failed");
-    terminal.press("q");
-
-    expect(await terminal.exited).toBe(0);
-    expect(terminal.raw.endsWith(SHOW_CURSOR) || terminal.raw.includes(SHOW_CURSOR)).toBe(true);
-    expect(await readdir(baseFilamentDir(home))).toHaveLength(3);
-    expect(server.requests.filter((r) => r.path === "/api/spools/add-edit")).toHaveLength(3);
-  });
-
-  it("prints labels for the new spools from the summary", async () => {
-    const lpLog = await installFakeLp(home);
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, ...spooleaseFlags()], { HOME: home });
-
-    await terminal.waitFor("Add spools from SpoolmanDB");
-    terminal.press(ENTER);
-    await keepSourceWeights(terminal);
-    await terminal.waitFor("[a] apply");
-    terminal.press("a");
-    await terminal.waitFor("[l] labels for 3 new spools");
-    terminal.press("l");
-    await terminal.waitFor("Labels for 3 new spools");
-    // The cursor starts on Make labels; Printer is two rows up. One key per write, spaced: Ink reads a
-    // burst of escape sequences as a single (escape) keypress.
-    for (const k of [UP, UP, ENTER]) {
-      terminal.press(k);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    await terminal.waitFor("Don't print");
-    for (const k of [DOWN, ENTER]) {
-      terminal.press(k);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    await terminal.waitFor("Label-Printer");
-    for (const k of [DOWN, DOWN, ENTER]) {
-      terminal.press(k);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    await terminal.waitFor("Sent 3 labels to Label-Printer");
-    terminal.press("q");
-
-    expect(await terminal.exited).toBe(0);
-    expect(readPdf(await readFile(join(lpLog, "printed.pdf")))).toHaveLength(3);
-  });
-
-  it("fits a list to the terminal's height and follows a resize", async () => {
-    for (let i = 1; i <= 12; i++) {
-      server.spools.push({
-        id: String(i),
-        brand: "Acme",
-        material_type: "PLA",
-        color_name: `Color ${i}`,
-        color_code: "808080FF",
-      });
-    }
-    terminal = new Terminal(
-      ["--skip-spools", ...spooleaseFlags()],
-      { HOME: home },
-      { cols: 100, rows: 16 },
-    );
-
-    await terminal.waitFor("Print labels for existing spools");
-    terminal.press("p");
-    await terminal.waitFor("Print labels for existing spools");
-    terminal.press(ENTER);
-    // 16 rows hold 9 of the 12 spools, newest first, around the title, hints and a spare line.
-    await terminal.waitFor("#4 Acme PLA Color 4");
-    await terminal.waitFor("… 3 more");
-    expect(terminal.text).not.toContain("#3 Acme PLA Color 3");
-
-    terminal.resize(100, 30);
-    await terminal.waitFor("#1 Acme PLA Color 1");
-    terminal.press(CTRL_C);
-    expect(await terminal.exited).toBe(130);
-  });
-
-  it("reads a scanner's barcode, sent with its enter in one burst", async () => {
-    server.customFilaments = "PA000001,Sunlu PETG Elite Red,240,260,PETG";
-    server.spools.push({
-      id: "1",
-      brand: "Sunlu",
-      material_type: "PETG",
-      color_name: "Red",
-      slicer_filament: "PA000001",
-    });
-    terminal = new Terminal(["--skip-spools", ...spooleaseFlags()], { HOME: home });
-
-    await terminal.waitFor("Barcode: more spools of what you scan");
-    await terminal.pressEach("b", ENTER);
-    // Not "Barcode: ": the menu's own "Barcode: more spools…" row redraws with it, before the scan screen is up.
-    await terminal.waitFor("Scan the spool's barcode, or type it and press enter.");
-    terminal.press("00150603Z\r");
-    await terminal.waitFor("Which filament is barcode 00150603Z?");
-    terminal.press(CTRL_C);
-    expect(await terminal.exited).toBe(130);
-  });
-
-  it("edits a preset's field, typed in one burst with its enter like a paste, and saves it", async () => {
-    const base = baseFilamentDir(home);
-    await mkdir(base, { recursive: true });
-    const path = join(base, `Red @${X1C_04}.json`);
-    const preset = {
-      name: `Red @${X1C_04}`,
-      inherits: "",
-      filament_id: "PA000001",
-      nozzle_temperature: ["220"],
-      filament_flow_ratio: ["0.98"],
-    };
-    await writeFile(path, `${JSON.stringify(preset, null, 4)}\n`);
-    terminal = new Terminal(["--skip-spoolease"], { HOME: home });
-
-    await terminal.waitFor("Edit a filament preset");
-    await terminal.pressEach("e", ENTER);
-    await terminal.waitFor("1 in BambuStudio folder default");
-    terminal.press(ENTER);
-    await terminal.waitFor("Edit Red @ X1 Carbon 0.4 nozzle");
-    await terminal.pressEach(ENTER, "\u007F", "\u007F", "\u007F");
-    terminal.press("215\r");
-    await terminal.waitFor("was 220 °C");
-    await terminal.pressEach("\u001B[6~", "\u001B[6~", ENTER);
-    await terminal.waitFor("[a] save");
-    terminal.press("a");
-    await terminal.waitFor("Done: 1 preset saved, 0 failed");
-    terminal.press("q");
-
-    expect(await terminal.exited).toBe(0);
-    expect(await readFile(path, "utf-8")).toBe(
-      `${JSON.stringify({ ...preset, nozzle_temperature: ["215"] }, null, 4)}\n`,
-    );
-  });
-
-  it("edits a filament's new preset on the plan and writes it with the run", async () => {
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease"], { HOME: home });
-
-    await terminal.waitFor("Add spools from SpoolmanDB");
-    terminal.press(ENTER);
-    await terminal.waitFor("[e] edit presets");
-    terminal.press("e");
-    await terminal.waitFor("Edit the new presets of which filament?");
-    terminal.press(ENTER);
-    await terminal.waitFor("the run writes it");
-    await terminal.pressEach(DOWN, DOWN, DOWN, ENTER, "\u007F", "\u007F", "\u007F");
-    terminal.press("245\r");
-    await terminal.waitFor("was 255 °C");
-    terminal.press(ESC);
-    await terminal.waitFor("✎ PABC1234: 1 change goes into the 1 preset the run writes");
-    terminal.press("a");
-    await terminal.waitFor("Done: 3 written, 0 failed");
-    terminal.press("q");
-
-    expect(await terminal.exited).toBe(0);
-    const written = JSON.parse(
-      await readFile(join(baseFilamentDir(home), `PETG Red @${X1C_04}.json`), "utf-8"),
-    );
-    expect(written.nozzle_temperature_range_high).toEqual(["245"]);
-  });
-
-  it("accepts typed input and never echoes the security key from the environment", async () => {
-    terminal = new Terminal(
-      ["--spoolease-host", "127.0.0.1", "--spoolease-port", String(server.port)],
-      {
-        HOME: home,
-        SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
-      },
-    );
-
-    await terminal.waitFor("Add spools from SpoolmanDB");
-    await terminal.pressEach("s", ENTER);
-    await terminal.waitFor("Import file or URL");
-    terminal.press(SOURCE_FIXTURE);
-    await terminal.waitFor("source.json");
-    // Down to the SpoolEase console row and open it, to see the key masked. One key per write, spaced:
-    // Ink reads a burst of escape sequences as a single (escape) keypress.
-    for (const k of [...Array<string>(6).fill(DOWN), ENTER]) {
-      terminal.press(k);
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    await terminal.waitFor("Security key");
-    terminal.press(ESC);
-    await terminal.waitFor("Import source.json");
-    terminal.press(ENTER);
-    await keepSourceWeights(terminal);
-    await terminal.waitFor("3 profiles from");
-    await terminal.waitFor("PABC1234");
-    terminal.press("q");
-
-    expect(await terminal.exited).toBe(0);
-    expect(terminal.raw).not.toContain(TEST_SECURITY_KEY);
-    expect(terminal.text).toContain("*******");
-  });
-
-  it("prefills SpoolEase from BambuStudio's SpoolEase settings without echoing the key", async () => {
-    await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--spoolease-port", String(server.port)], {
+  const start = (args: string[], size?: { cols: number; rows: number }) => {
+    // The keys in the environment too, so the TUI never looks one up in a keyring (keyringGuard.ts).
+    const env = {
       HOME: home,
-    });
+      SPOOLMANDB_URL: spoolmanDb.url,
+      SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+      FILAMENTPROFILES_API_KEY: TEST_API_KEY,
+    };
+    terminal = new Terminal(args, env, size);
+    return terminal;
+  };
 
-    await terminal.waitFor("Add spools from SpoolmanDB");
-    terminal.press(ENTER);
-    await keepSourceWeights(terminal);
-    await terminal.waitFor("[a] apply");
-    terminal.press("a");
-    await terminal.waitFor("Done: 3 written, 0 failed");
-    terminal.press("q");
+  it("draws in the alternate screen, lands on Spools with a console, and leaves on q with 0", async () => {
+    const t = start(consoleFlags());
 
-    expect(await terminal.exited).toBe(0);
-    expect(server.requests[0]?.path).toBe("/api/test-key");
-    expect(terminal.raw).not.toContain(TEST_SECURITY_KEY);
+    await t.waitFor("✓ SpoolEase 127.0.0.1");
+    expect(t.raw).toContain(ENTER_ALT_SCREEN);
+    await t.pressEach("?");
+    await t.waitForOnScreen("Help · Spools");
+    await t.pressEach(ESC, "q");
+
+    expect(await t.exited).toBe(0);
+    expect(t.raw.lastIndexOf(LEAVE_ALT_SCREEN)).toBeGreaterThan(t.raw.indexOf(ENTER_ALT_SCREEN));
+    expect(t.raw).toContain(SHOW_CURSOR);
+    // The key never reaches the screen.
+    expect(t.text).not.toContain(TEST_SECURITY_KEY);
   });
 
-  describe("remembered printers", () => {
-    beforeEach(async () => {
-      await mkdir(join(home, ".config", "bambu-hando"), { recursive: true });
-      await writeFile(
-        join(home, ".config", "bambu-hando", "tui.json"),
-        JSON.stringify({ printers: [X1C_04, X1C_06] }),
-        "utf-8",
-      );
+  it("quits on q right away, even while a SpoolmanDB download is still waiting for an answer", async () => {
+    let asked = 0;
+    // A catalog server that takes the request and never answers it.
+    const hanging: Server = createServer(() => {
+      asked += 1;
     });
-
-    it("starts from the printers of the last run", async () => {
-      terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease"], { HOME: home });
-
-      await terminal.waitFor(`${X1C_04}, ${X1C_06}`);
-      terminal.press(CTRL_C);
-      await terminal.exited;
-    });
-
-    it("lets --printer-preset override them", async () => {
-      terminal = new Terminal(
-        ["--source", SOURCE_FIXTURE, "--skip-spoolease", "--printer-preset", X1C_06],
-        { HOME: home },
-      );
-
-      await terminal.waitFor("BambuStudio:");
-      await terminal.waitFor(X1C_06);
-      terminal.press(CTRL_C);
-      await terminal.exited;
-      expect(terminal.text).not.toContain(X1C_04);
-    });
-  });
-
-  it("shows a rejected key and exits 2", async () => {
-    // Without spools the key is first checked on apply; with them, before the plan (see tui.test.tsx).
-    terminal = new Terminal(
-      ["--source", SOURCE_FIXTURE, "--skip-spools", ...spooleaseFlags("WRONG")],
-      { HOME: home },
-    );
-
-    await terminal.waitFor("Add spools from SpoolmanDB");
-    terminal.press(ENTER);
-    await terminal.waitFor("[a] apply");
-    terminal.press("a");
-    await terminal.waitFor("SpoolEase key validation failed");
-    terminal.press("q");
-
-    expect(await terminal.exited).toBe(2);
-    expect(server.requests).toEqual([]);
-  });
-
-  it("picks a SpoolmanDB filament prefilled from --brand and applies it", async () => {
-    const spoolmanDb = await startSpoolmanDbServer();
+    await new Promise<void>((resolve) => hanging.listen(0, "127.0.0.1", resolve));
+    const { port } = hanging.address() as AddressInfo;
     try {
-      terminal = new Terminal(["--source", "spoolmandb", "--brand", "RatRig", "--skip-spoolease"], {
+      terminal = new Terminal(["--source", "spoolmandb", "--skip-spoolease"], {
+        HOME: home,
+        SPOOLMANDB_URL: `http://127.0.0.1:${port}`,
+        SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+        FILAMENTPROFILES_API_KEY: TEST_API_KEY,
+      });
+      // waitFor also waits for raw mode, so q isn't lost; landing on Add asks for the catalog right away.
+      await terminal.waitFor("SpoolEase skipped");
+      await terminal.waitForScreen(() => asked > 0, "the catalog request");
+      await terminal.pressEach("q");
+      const quit = await Promise.race([
+        terminal.exited,
+        new Promise<string>((resolve) => setTimeout(() => resolve("still running"), 3_000)),
+      ]);
+      expect(quit).toBe(0);
+    } finally {
+      hanging.closeAllConnections();
+      await new Promise((resolve) => hanging.close(resolve));
+    }
+  });
+
+  it("lands on Add without a console, and says the console is skipped", async () => {
+    const t = start(["--source", SOURCE_FIXTURE, "--skip-spoolease"]);
+
+    await t.waitFor("SpoolEase skipped");
+    await t.pressEach("?");
+    await t.waitForOnScreen("Help · Add");
+  });
+
+  it("shows a rejected key as an unreachable console", async () => {
+    const t = start(consoleFlags("WRONG"));
+
+    await t.waitFor("✗ SpoolEase 127.0.0.1");
+  });
+
+  it("cycles tabs with tab and shift+tab, wrapping around", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    // The drawn screen, not the output stream: going from "Help · Add" to "Help · Presets", Ink 8
+    // rewrites only the changed part of the line, so the whole title may never pass by in one piece.
+    const helpFor = (title: string) => t.waitForOnScreen(`Help · ${title}`);
+    for (const title of ["Add", "Presets", "Check", "Settings", "Spools"]) {
+      await t.pressEach(TAB, "?");
+      await helpFor(title);
+      await t.pressEach(ESC);
+    }
+    await t.pressEach(SHIFT_TAB, "?");
+    await helpFor("Settings");
+  });
+
+  it("keeps esc, tab and ? in order when they arrive in one read over an open help", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    await t.pressEach("?");
+    await t.waitForOnScreen("Help · Spools");
+    // One write: Ink reads esc+tab as one meta+tab and the ? after it in the same tick.
+    await t.pressEach(`${ESC}${TAB}?`);
+    await t.waitForOnScreen("Help · Add");
+  });
+
+  it("keeps both keys when tab and ? arrive in one read", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    // One write: the pty hands both keys to the app in one read, as a busy machine does.
+    await t.pressEach(`${TAB}?`);
+    await t.waitForOnScreen("Help · Add");
+  });
+
+  it("keeps both keys when esc and the next key arrive in one read", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    await t.pressEach("?");
+    await t.waitForOnScreen("Help · Spools");
+    // One write: Ink reads it as meta+tab. The shell splits it: esc closes help, tab goes to Add.
+    await t.pressEach(ESC + TAB, "?");
+    await t.waitForOnScreen("Help · Add");
+  });
+
+  it("opens help with ?, which lists the global keys, and closes on any key", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    await t.pressEach("?");
+    await t.waitFor("Everywhere");
+    const lines = await t.waitForScreen(
+      (screen) => screen.some((line) => line.includes("shift+tab")),
+      "the global keys",
+    );
+    expect(lines.some((line) => line.includes("ctrl+k"))).toBe(true);
+    await t.pressEach("x");
+    await t.waitForScreen(
+      (screen) => !screen.some((line) => line.includes("Everywhere")),
+      "help to close",
+    );
+  });
+
+  it("floats help in a blank halo over the body, as the terminal draws it", async () => {
+    // Spools whose rows run under the dialog's sides, so a missing halo shows.
+    for (let id = 1; id <= 30; id++)
+      server.spools.push({
+        id: String(id),
+        brand: "Polymaker",
+        material_type: "PETG",
+        color_name: "Very Long Color Name That Runs Under The Dialog",
+        color_code: "112233FF",
+        weight_advertised: "1000",
+        weight_current: "500",
+        slicer_filament: "PABC1234",
+      });
+    const t = start(consoleFlags());
+    await t.waitFor("#30");
+
+    await t.pressEach("?");
+    const lines = await t.waitForScreen(
+      (screen) => screen.some((line) => line.includes("quit right away")),
+      "help's last key",
+    );
+    const top = lines.findIndex((line) => line.includes("╭ Help · Spools"));
+    const bottom = lines.findIndex((line, index) => index > top && line.includes("╰"));
+    const left = lines[top]?.indexOf("╭") ?? -1;
+    const right = lines[top]?.indexOf("╮", left) ?? -1;
+    expect([top > 1, bottom > top, left > 1, right > left]).toEqual([true, true, true, true]);
+    // A blank cell each side of every row of it, and blank rows above and below it.
+    for (let row = top; row <= bottom; row++) {
+      expect(lines[row]?.[left - 1], `row ${row}`).toBe(" ");
+      expect(lines[row]?.[right + 1], `row ${row}`).toBe(" ");
+    }
+    for (const row of [top - 1, bottom + 1])
+      expect(lines[row]?.slice(left - 1, right + 2).trim(), `row ${row}`).toBe("");
+  });
+
+  it("finds a command in the palette with ctrl+k and runs it", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    await t.pressEach(CTRL_K);
+    await t.waitFor("Type to find a command");
+    await t.pressEach(..."go to check");
+    await t.waitFor("› go to check");
+    await t.pressEach(ENTER, "?");
+    await t.waitForOnScreen("Help · Check");
+    await t.pressEach(ESC, CTRL_K, ..."quit", ENTER);
+
+    expect(await t.exited).toBe(0);
+  });
+
+  it("exits 130 on ctrl+c, from an overlay too", async () => {
+    const t = start(consoleFlags());
+    await t.waitFor("Spools");
+
+    await t.pressEach(CTRL_K);
+    await t.waitFor("Type to find a command");
+    await t.pressEach(CTRL_C);
+
+    expect(await t.exited).toBe(130);
+    expect(t.raw.lastIndexOf(LEAVE_ALT_SCREEN)).toBeGreaterThan(t.raw.indexOf(ENTER_ALT_SCREEN));
+  });
+
+  it("imports a 3DFilamentProfiles spool from Add: list, review, apply, and the summary after", async () => {
+    const tdfp = await startFilamentProfilesServer();
+    try {
+      tdfp.quota.remaining = 900;
+      tdfp.filaments = [
+        serverFilament({ id: 10512, material_type: "Elite", color: "Mildewed Red" }),
+      ];
+      tdfp.spools = [
+        serverSpool({
+          short_code: "izDGMo7fU",
+          filament_id: 10512,
+          brand: "SUNLU",
+          material_type: "Elite",
+          color: "Mildewed Red",
+        }),
+      ];
+      terminal = new Terminal(consoleFlags(), {
         HOME: home,
         SPOOLMANDB_URL: spoolmanDb.url,
+        SPOOLEASE_SECURITY_KEY: TEST_SECURITY_KEY,
+        FILAMENTPROFILES_API_URL: tdfp.url,
+        FILAMENTPROFILES_API_KEY: TEST_API_KEY,
       });
+      const t = terminal;
+      await t.waitFor("✓ SpoolEase 127.0.0.1");
+      // Add opens on SpoolmanDB's brands; the sources are one esc up, 3DFP's spools after SpoolmanDB.
+      await t.pressEach(TAB);
+      await t.waitForOnScreen("SpoolmanDB ·");
+      await t.pressEach(ESC, DOWN, ENTER);
+      await t.waitForOnScreen("SUNLU PETG Elite Mildewed Red");
+      await t.pressEach(" ", RIGHT);
+      await t.waitForOnScreen("1 API call read, 1 to apply");
+      await t.pressEach("a");
+      await t.waitForOnScreen("✓ spool #1");
+      expect(server.spools).toHaveLength(1);
+      expect(tdfp.spools[0]?.external_id).toBe("spoolease:1");
+      await t.pressEach("q");
 
-      await terminal.waitFor("Add spools from SpoolmanDB");
-      terminal.press(ENTER);
-      await terminal.waitFor("1 match");
-      terminal.press(TAB);
-      await terminal.waitFor("1 selected");
-      terminal.press(ENTER);
-      await terminal.waitFor("[a] apply");
-      terminal.press("a");
-      await terminal.waitFor("Done: 1 written, 0 failed");
-      terminal.press("q");
-
-      expect(await terminal.exited).toBe(0);
-      expect(await readdir(baseFilamentDir(home))).toEqual([
-        `RatRig ABS Punkfil Brute Black @${X1C_04}.json`,
-      ]);
+      expect(await t.exited).toBe(0);
+      expect(t.text).toContain(
+        "Imported izDGMo7fU SUNLU PETG Elite Mildewed Red → SpoolEase spool #1",
+      );
+      expect(t.text).not.toContain(TEST_API_KEY);
+      expect(t.text).not.toContain(TEST_SECURITY_KEY);
     } finally {
-      await spoolmanDb.close();
+      await tdfp.close();
     }
   });
 
-  it("exits 130 on ctrl+c", async () => {
-    terminal = new Terminal(["--source", SOURCE_FIXTURE, "--skip-spoolease"], { HOME: home });
+  it("follows a resize: the frame refits the terminal", async () => {
+    const t = start(consoleFlags(), { cols: 120, rows: 36 });
+    await t.waitFor("✓ SpoolEase 127.0.0.1");
+    let lines = await t.waitForScreen(
+      (screen) => (screen[0] ?? "").includes("X1C 0.4") && (screen[35] ?? "").includes("? help"),
+      "the header's printer and the footer on the last row",
+    );
 
-    await terminal.waitFor("Add spools from SpoolmanDB");
-    terminal.press(CTRL_C);
+    t.resize(80, 24);
+    lines = await t.waitForScreen(
+      (screen) =>
+        (screen[0] ?? "").includes("✓ SpoolEase 127.0.0.1") &&
+        !(screen[0] ?? "").includes("X1C") &&
+        (screen[23] ?? "").includes("? help"),
+      "the header and footer refit to 80x24",
+    );
+    expect(lines[0]).toContain("bambu-hando");
 
-    expect(await terminal.exited).toBe(130);
-    expect(terminal.raw).toContain(SHOW_CURSOR);
+    await t.pressEach("?");
+    await t.waitForOnScreen("Help · Spools");
+    lines = await t.waitForScreen(
+      (screen) => screen.some((line) => line.includes("╭") && line.length <= 80),
+      "help within 80 columns",
+    );
+    expect(lines.every((line) => line.length <= 80)).toBe(true);
+  });
+});
+
+describe("bambu-hando tui --help", () => {
+  it("prints the TUI's own short usage with its keys, not the headless help", async () => {
+    const { code, stdout } = await new Promise<{ code: number; stdout: string }>((resolve) => {
+      assertNoLoginKeyring(["tui", "--help"], process.env);
+      execFile(process.execPath, [BIN, "tui", "--help"], (err, out) =>
+        resolve({ code: err ? Number(err.code ?? 1) : 0, stdout: out }),
+      );
+    });
+    expect(code).toBe(0);
+    expect(stdout).toMatch(/^Usage: bambu-hando tui \[options\]\n/);
+    expect(stdout).toContain("ctrl+k");
+    expect(stdout).toContain("shift+tab");
+    expect(stdout).toContain("--printer-preset");
+    // Headless-only flags and the other commands stay in the main help.
+    expect(stdout).not.toContain("--dry-run");
+    expect(stdout).not.toContain("--label-output");
+    expect(stdout).not.toContain("bambu-hando labels");
+    for (const line of stdout.split("\n")) expect(line.length).toBeLessThanOrEqual(80);
   });
 });

@@ -1,50 +1,99 @@
 ---
 name: tui-ux
-description: Interaction and layout rules for bambu-hando's Ink TUI (src/tui/), and how to check a screen the way a real terminal shows it. Use before adding or changing any TUI screen, key binding, menu, column layout or TUI test.
+description: Interaction and layout rules for bambu-hando's full-screen Ink TUI (src/tui/), and how to check a screen the way a real terminal shows it. Use before adding or changing any TUI tab, dialog, key binding, list, column layout or TUI test.
 ---
 
 # bambu-hando TUI: UX rules and workflow
 
-The TUI is for adding a spool without typing. Every screen offers choices; text entry is the exception.
+The TUI is where you look after your filament without typing. `docs/tui-design.md` is the design; this is
+the checklist for changing it.
 
 ## Interaction rules
 
-- **Choose, don't type.** Offer a list built from what bambu-hando can already read: BambuStudio's folders and printers, the SpoolmanDB catalog, SpoolEase's spool catalog, `lpstat -e`, remembered choices. Free text only where no list can exist (a new file path, an unlisted host), and then as the last item of a list ("Other…"), not as the default.
-- **Preselect what the user picked last.** Remember choices in `configDir()` JSON (`labelSettings.ts`, `tuiSettings.ts` pattern: atomic write, damaged or unknown values fall back to defaults) and put the cursor on them.
-- **Same keys everywhere.** ↑/↓ move · enter choose or continue · esc back one screen · space toggles a checkbox · ctrl+c quits from anywhere. Letters jump to the next item starting with them in plain lists. Where letters type a search (the picker), tab selects instead of space. Summary screens use single letters (`a`, `b`, `l`, `q`) and say so.
-- **Every screen ends with a dim hint line** listing its keys, and the `back` hint names the screen it returns to.
-- **Never lose work going back.** Selections, weight choices and form values survive esc and `b`.
-- **Every summary leads back to the menu** with `m`, and the menu says what the run did (`outcome`). Quitting later keeps a failed run's exit code.
-- **Waiting shows `Busy`** (spinner + message), never bare text.
-- **Show colors as swatches**: `ChoiceItem.swatch` ("#RRGGBB") in lists, `backgroundColor` cells in tables.
-- **Unlisted values go last as "Other…"** and open a small form that copies from a listed one, so only the differing fields are typed.
-- **A new list starts a new type-ahead:** reset `typed` whenever the rows change level.
-- **Show the consequence before acting.** Nothing writes until the plan screen's `a`; the plan names every target (preset folder, printers, console) and, per row, what happens to it (`planPreview.ts`). Any other screen that writes (preset IDs, copies) lists each target first and waits for `a`.
-- **`?` opens the screen's help page** (`Help.tsx` `helpPage`, one topic per screen; add one for a new screen, it's tested to fit 80 columns). Hints stay short and end in `? help`; rare keys (type-ahead, ctrl+a, paging) live in the help page. In a free-text field `?` is typed instead (`formTyping`, `colorFormTyping`, `labelFormTyping`), and that screen's hint drops `? help` while it is.
+- **Places, not sequences.** Five tabs (Spools, Add, Presets, Check, Settings), switched with tab/shift+tab.
+  Inside a tab, pages (steps or sections) sit in a `PageBar` and move with ←/→. A new feature goes into the
+  tab it belongs to, as a page, a dialog or an action, never as a new top-level screen.
+- **Choose, don't type.** Offer a list built from what bambu-hando can read (BambuStudio folders and printers,
+  SpoolmanDB, the console's spools and catalog, `lpstat -e`, remembered choices). Free text only where no list
+  can exist, and then as the last item ("Other…").
+- **Same keys everywhere.** ↑↓ pgup pgdn home end move · enter open/choose/continue · esc back (close a dialog,
+  clear a filter, up a level, previous page) · space ticks · `/` filters or searches · letters type-ahead in
+  plain lists · `a` applies on a review or confirm · `?` help · `ctrl+k` palette · `q` quits · ctrl+c quits from
+  anywhere. A tab's own single-letter actions (`l`, `+`, `b`, `e`, `f`, `r`, `s`, `t`) are listed in its hints.
+- **Text fields take every printable key.** While one is focused, `capturesText` is true, so `q`, `?`, `/` and
+  letters type; the footer drops `q` and `?` meanwhile.
+- **Show, then act.** Lists come with a detail panel that says what an action would change. Anything that writes
+  goes through a review page or a confirm dialog naming every target, then `a`. After a write: `app/runFinished`
+  (with `exitCode` for failures), `app/load {force}` of what changed, and a toast (tone only; the footer draws the
+  icon).
+- **Never lose work.** A tab's model survives switching tabs; selections, drafts and form values survive esc.
+- **Dialogs belong to the shell's layer.** A tab's own dialog is drawn by `dialog(model, ctx)`, never inside its
+  View: the shell puts it over the dimmed body with a clear halo. Size it with `dialogWidth` / `dialogRows`, give it
+  no key line (the footer shows the tab's `hints()` while `modal()` is true, and q/tab go to the tab then).
+- **Never lose work or cut a write short.** `busy(model)` names a running write (q is refused meanwhile);
+  `unsaved(model)` counts edits q would drop (q asks first). Say each outcome once: no toast when the result is on
+  screen.
+- **Every problem has a key that fixes it**: deep-link with `app/switchTab { tab, focus }` using the focus strings in
+  each tab's `index.ts` (settings rows like `spoolease.host`, a check section key, a preset path, a spool id, a
+  filament ID, `id:<id>|name:<name>` or `3dfp` for Add).
+- **One spelling**: values through `ui/format.ts` (`formatTemp` `220°C`, `formatRange` `190–230°C`, `formatGrams`,
+  `shortPrinter` `X1C 0.4`, `plural`, `fitPath` for paths, which keeps the file name); one-of choices with the
+  List `radio` marker (`●`/`○`); sentence case; hints ordered move → act → navigate → global, `?` always kept.
+- **Every list has a state for loading, failed (with `r`), and empty** (what to do, and where: `Empty` with an
+  action), never a blank panel.
+- **Preselect what the user picked last**, remembered in `configDir()` JSON (`tuiSettings.ts`, `labelSettings.ts`,
+  `barcodes.ts` pattern: atomic write, damaged values fall back to defaults).
+- **Show colors as swatches** (`Swatch`, a list row's `swatch`) and values for people: `220°C`, `190–230°C`,
+  `564 g`, `56%`; codes and IDs dim, mostly in the detail panel.
+- **`?` help comes from the same hints as the footer**, plus the tab's paragraph in `app/help.tsx`; add one for a
+  new tab.
 
 ## Code rules
 
-- `App.tsx` is a screen state machine with one `useInput` that is always active and branches on `screen.name`. Never toggle `isActive`: re-attaching the listener after a screen change drops keys pressed right away.
-- A screen's key handling is a pure function returning an action (`pickerInput`, `weightInput`, `labelFormInput`); its component only renders. Unit-test the pure function without rendering.
-- Columns: give each cell a fixed width with `paddingRight={1}` and `wrap="truncate-end"`, so a cut value ends in `…` and keeps a gap. Size label columns from the longest label, not a constant.
-- Ambiguous-width characters (`™`, `°`, `·`, `…`) are measured as two columns by Ink and drawn as one by most terminals. Leave a spare column wherever a header or value may contain one.
-- **Every fixed-width box gets `flexShrink={0}`** (cursor, marks, swatches, label columns). A row cut with `…` is measured a column too wide and Yoga takes the difference from whichever box can shrink, so a row starts a column early. Let exactly one column shrink on a narrow terminal (a name), and cut it with `truncate-end`.
-- **Size scrolling lists from the terminal** (`screenSize.ts` `listRows`, `useTerminalRows`): count the screen's other lines as its `CHROME`, plus a spare one, pass `height` to the component and the same rows to its input function for paging, and add the screen to `test/screenFit.test.tsx`.
-- **Keys that arrive together reach the app as one input** (`"s\r"`, a scanner's `"00150603Z\r"`): Ink splits only at escape sequences and backspaces. Text entry that may get a burst splits it at `\r`/`\n` (`scanInput`); tests and PTY tests send one key per write (`pressEach`) unless testing a burst.
+- **Bubble Tea's architecture.** A tab is a `TabModule` (`core/types.ts`): `init`, pure `update(model, msg, ctx)
+  → [model, cmds]`, `View`, `hints`, `capturesText`, `commands`. Side effects live in `Cmd`s (`cmds.ts`) that
+  dispatch `toTab("<id>", msg)`. No component reads input or the terminal size: the shell's one `useInput` turns
+  keys into messages, and sizes come from `ctx` (`bodyColumns`, `bodyRows`).
+- **Tabs talk through `AppMsg`s** (`app/switchTab`, `app/openLabels`, `app/confirm`, `app/toast`, `app/load`,
+  `app/values`, `app/runFinished`), never by importing each other's models. A shared piece (the presets editor)
+  exports a pure API another tab embeds in its own model.
+- **Draw with `src/tui/ui/`.** Every line is built to an exact width (`Line`, `Segments`, `fitText`, `truncate`);
+  they drop control characters and bidi overrides (`printableLine`), so a name another system sent can't drive the
+  terminal; style with `Segment` props, never escape codes in text. Side-by-side panels get exact widths from `splitWidths`, inner sizes from `panelInner` / `dialogInner` /
+  `frameBody`. Nothing may be wider than the terminal: a wrapped row throws off Ink's redraws.
+- **Keys that arrive together reach Ink as one input**: the shell splits a burst at its control characters
+  (`keyPresses`: `"\t?"` is tab then ?) and a meta key into esc + key, so tabs see one key per message; a run of
+  text ending in enter stays whole (a scanner's `"00150603Z\r"`), and `editText` types it and reports `submit`.
+  Tests send one key per write unless testing a burst.
+- **The 3DFilamentProfiles quota is the user's.** Never call its API per key or frame, nor again for what was read:
+  show things from the cached spool list and the local catalog, and spend calls only on an explicit step (opening the
+  list, continuing to a review, `r`, `a`), saying on the review how many it took and will take.
+- **Heavy work stays off the keystroke path.** The SpoolmanDB catalog has ~6k profiles: index it once per loaded
+  array (memoize), never walk it per frame; a blocked event loop makes Ink merge keys (esc+tab arrive as one).
 
 ## Checking a screen
 
-`ink-testing-library` frames do not match a real terminal for wide or ambiguous characters. After changing any screen, look at it in a real pseudo-terminal:
+`ink-testing-library` frames are what the components draw; a real terminal is what the user sees. After
+changing any screen, look at it in a real pseudo-terminal:
 
 ```bash
-npm run tui:snap -- "wait=ctrl+c quit" snap=menu key=enter wait=SpoolmanDB: "type=polylite petg" snap=picker -- --source spoolmandb
+npm run tui:snap -- --cols 80 --rows 24 "wait=Spools" snap=spools key=tab snap=add
+npm run tui:snap -- --cols 120 --rows 36 "wait=Spools" key=tab key=tab snap=presets
 ```
 
-It uses your real HOME (BambuStudio settings, SpoolEase console), so stop before the plan's `a` unless the run is meant to write. Use the fixture source with `--skip-spoolease` for anything that must not touch the console.
+It uses your real HOME (BambuStudio settings, SpoolEase console), so look only: never press `a` on a review or
+confirm, never make labels, never change Settings (they save at once). For anything that writes, use a
+throwaway HOME: copy `test/fixtures/bambustudio/system` into `$H/.config/BambuStudio/` with a `BambuStudio.conf`,
+and run with `HOME=$H` and `--skip-spoolease` (or the stand-in servers in `test/`). For Add's 3DFP import, set
+`FILAMENTPROFILES_API_URL` to `test/filamentProfilesServer.ts`'s URL and `FILAMENTPROFILES_API_KEY` to its
+`TEST_API_KEY` (tui-snap passes both through), never the real API.
 
 ## Tests for a screen change
 
-1. Pure input function: unit test (`test/<screen>.test.ts`).
-2. Screen behavior in `test/tui.test.tsx` (`ink-testing-library`, `settle()` between keys, `vi.waitFor` on `lastFrame()`).
-3. Anything that depends on raw mode, the cursor, terminal size, input bursts or exit codes in `test/tui.e2e.test.ts` (built binary in node-pty; `pressEach` for one key per write, `resize` for a resize).
-4. Check the screen with `tui:snap` at 80 columns as well as the default 110 (`--cols 80 --rows 24`): column bugs only show when something is cut.
+1. The pure update: `test/tab<Name>*.test.ts`, driving `update()` with `press()` keys and asserting the model and
+   the dispatched messages; run cmds against the stand-ins (`test/spooleaseServer.ts`, `test/spoolmanDbServer.ts`,
+   `test/bambuStudioSetup.ts`, `test/fakeLp.ts`).
+2. The view: `test/tab<Name>View.test.tsx` at 80x24 and 120x36, asserting every line's width.
+3. Anything that depends on raw mode, the alternate screen, terminal size, bursts or exit codes:
+   `test/tui.e2e.test.ts` (built binary in node-pty; `pressEach`, `waitForScreen`, `resize`).
+4. Look at it with `tui:snap` at 80 and 120 columns: column bugs only show when something is cut.

@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 
 import { normalizeRgba } from "./colors.js";
 import type { FilamentProfile } from "./models.js";
+import { checkedSettings, type PresetSettings } from "./presetSettings.js";
 
 const FETCH_TIMEOUT_MS = 20_000;
 
@@ -50,7 +51,8 @@ function decimal(value: unknown, fallback: number, field: string, idx: number): 
  * Load profiles from a JSON list or an object with a `profiles` key.
  *
  * Supported item keys: name, brand, material, color_name, color_rgba|color_hex,
- * nozzle_temp_min, nozzle_temp_max, density, diameter, slicer_filament_code, weight, spool_weight.
+ * nozzle_temp_min, nozzle_temp_max, density, diameter, slicer_filament_code, weight, spool_weight, and the optional
+ * print settings print_temp, bed_temp, flow_ratio, max_volumetric_speed.
  */
 export async function loadProfiles(source: string): Promise<FilamentProfile[]> {
   const payload: unknown = JSON.parse(await readText(source));
@@ -93,6 +95,31 @@ export async function loadProfiles(source: string): Promise<FilamentProfile[]> {
       // SpoolEase takes whole grams (i32).
       labelWeight: Math.round(decimal(entry.weight, 1000, "weight", idx)),
       coreWeight: Math.round(decimal(entry.spool_weight, 200, "spool_weight", idx)),
+      ...presetSettings(entry, idx),
     };
   });
+}
+
+/** The optional print settings: print_temp, bed_temp, flow_ratio, max_volumetric_speed. */
+function presetSettings(
+  entry: Record<string, unknown>,
+  idx: number,
+): { settings?: PresetSettings } {
+  const raw: PresetSettings = {};
+  const read = (field: string) =>
+    entry[field] === undefined || entry[field] === null
+      ? undefined
+      : decimal(entry[field], 0, field, idx);
+  const fields = [
+    ["printTemp", "print_temp"],
+    ["bedTemp", "bed_temp"],
+    ["flowRatio", "flow_ratio"],
+    ["maxVolumetricSpeed", "max_volumetric_speed"],
+  ] as const;
+  for (const [key, field] of fields) {
+    const value = read(field);
+    if (value !== undefined) raw[key] = value;
+  }
+  const settings = checkedSettings(raw);
+  return Object.keys(settings).length ? { settings } : {};
 }

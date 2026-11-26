@@ -17,6 +17,7 @@ import {
   startFilamentProfilesServer,
   TEST_API_KEY,
 } from "./filamentProfilesServer.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 import {
   type SpoolEaseServer,
   startSpoolEaseServer,
@@ -91,6 +92,7 @@ describe("bambu-hando 3dfp sync (binary)", () => {
     output: () => string;
     exited: Promise<number>;
   }> {
+    assertNoLoginKeyring(args().slice(1), env);
     const pty = spawn(process.execPath, args(), {
       name: "xterm-256color",
       cols: 160,
@@ -123,7 +125,14 @@ describe("bambu-hando 3dfp sync (binary)", () => {
     expect(await exited).toBe(0);
     expect(output()).toContain("Done: 1 change applied (1 API call; 998 of 1000 left this month).");
     expect(writes().map((r) => r.body)).toEqual([
-      { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+      [
+        {
+          short_code: "ABC123",
+          remaining_grams: 564,
+          bambu_tag_id: "04A1B2C3D4E5F6",
+          external_id: "spoolease:1",
+        },
+      ],
     ]);
     const saved = await readFile(
       join(configDir(process.platform, home, {}), "3dfp-links.json"),
@@ -144,6 +153,7 @@ describe("bambu-hando 3dfp sync (binary)", () => {
 
   it("writes nothing when there's no terminal to ask on", async () => {
     const result = await new Promise<{ code: number; stdout: string }>((resolve) => {
+      assertNoLoginKeyring(args().slice(1), env);
       execFile(process.execPath, args(), { env }, (err, stdout) =>
         resolve({ code: err ? Number(err.code) : 0, stdout }),
       );

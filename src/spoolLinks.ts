@@ -20,6 +20,18 @@ export interface SpoolLink {
   linkedAt: string;
 }
 
+/** What bambu-hando puts in a 3DFP spool's external_id to name its SpoolEase spool. */
+export const EXTERNAL_ID_PREFIX = "spoolease:";
+
+export function externalIdFor(spooleaseId: string): string {
+  return `${EXTERNAL_ID_PREFIX}${spooleaseId}`;
+}
+
+/** An external_id bambu-hando may write over: none yet, or one of its own. Another app's ID is never touched. */
+export function externalIdIsOurs(externalId: string | null): boolean {
+  return !externalId || externalId.startsWith(EXTERNAL_ID_PREFIX);
+}
+
 interface LinkBook {
   /** accountId of the 3DFP key. */
   account: string;
@@ -83,16 +95,23 @@ export async function loadLinks(
   path: string,
   account: string,
   console: string,
-): Promise<{ links: SpoolLink[]; warning: string | null }> {
+): Promise<{ links: SpoolLink[]; warning: string | null; linkedElsewhere: Set<string> }> {
   const books = await readBooks(path);
   if (books === null)
     return {
       links: [],
       warning: `the spool link file ${tildePath(path)} can't be read: starting with no links; it will be set aside, not overwritten`,
+      linkedElsewhere: new Set(),
     };
   return {
     links: books.find((book) => book.account === account && book.console === console)?.links ?? [],
     warning: null,
+    // 3DFP spools this account links to another console's spools: their "spoolease:<id>" names that console's.
+    linkedElsewhere: new Set(
+      books
+        .filter((book) => book.account === account && book.console !== console)
+        .flatMap((book) => book.links.map((link) => link.tdfp)),
+    ),
   };
 }
 

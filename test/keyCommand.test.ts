@@ -10,7 +10,10 @@ import { removeSecret, SECRETS, storedSecret, storeSecret } from "../src/secrets
 import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
 
 const TDFP = SECRETS["3dfp"];
+const CONSOLE = SECRETS.spoolease;
 const KEY = "3dfp_fake_key_for_tests";
+/** A console key: no prefix, so nothing but the no-echo checks tells it apart. */
+const CONSOLE_KEY = "fake_key_console";
 
 async function run(
   argv: string[],
@@ -34,6 +37,9 @@ describe("bambu-hando key usage", () => {
       expect(code).toBe(0);
       expect(stdout).toContain("Usage: bambu-hando key <set|status|remove> [name]");
       expect(stdout).toContain("FILAMENTPROFILES_API_KEY");
+      expect(stdout).toContain(
+        "spoolease       SpoolEase security key; SPOOLEASE_SECURITY_KEY overrides the stored one",
+      );
     }
   });
 
@@ -47,7 +53,7 @@ describe("bambu-hando key usage", () => {
   it("rejects an unknown key name and lists the known ones", async () => {
     const { code, stderr } = await run(["key", "set", "github"], KEY);
     expect(code).toBe(2);
-    expect(stderr).toContain("unknown key (known: 3dfp)");
+    expect(stderr).toContain("unknown key (known: 3dfp, spoolease)");
     expect(stderr).not.toContain("github");
   });
 
@@ -71,6 +77,8 @@ describe("bambu-hando key usage", () => {
       ["key", "set", KEY],
       ["key", "status", KEY],
       ["key", KEY],
+      ["key", "set", "spoolease", CONSOLE_KEY],
+      ["key", "set", "spoolease", `--key=${CONSOLE_KEY}`],
     ]) {
       const { code, stderr } = await run(argv);
       expect(code).toBe(2);
@@ -94,10 +102,12 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
   beforeEach(() => {
     for (const [name, value] of Object.entries(keyring.env)) vi.stubEnv(name, value);
     vi.stubEnv(TDFP.env, undefined);
+    vi.stubEnv(CONSOLE.env, undefined);
   });
 
   afterEach(async () => {
     await removeSecret(TDFP);
+    await removeSecret(CONSOLE);
     vi.unstubAllEnvs();
   });
 
@@ -136,9 +146,36 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
     expect(stderr).toContain("FILAMENTPROFILES_API_KEY is set and overrides the stored key");
   });
 
+  it("stores a piped SpoolEase security key, whatever it starts with", async () => {
+    const { code, stdout, stderr } = await run(["key", "set", "spoolease"], `${CONSOLE_KEY}\n`);
+    expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+    expect(stdout).toBe(
+      "Stored the SpoolEase security key in the system keyring (Secret Service).\n",
+    );
+    expect(await storedSecret(CONSOLE)).toBe(CONSOLE_KEY);
+    expect(await storedSecret(TDFP)).toBeNull();
+    expect((await run(["key", "status", "spoolease"])).stdout).toBe(
+      "spoolease  SpoolEase security key: stored in the system keyring (Secret Service)\n",
+    );
+    expect(await run(["key", "remove", "spoolease"])).toMatchObject({
+      code: 0,
+      stdout: "Removed the SpoolEase security key from the system keyring (Secret Service).\n",
+    });
+  });
+
+  it("stores a SpoolEase key with spaces inside, and refuses one with a tab", async () => {
+    expect((await run(["key", "set", "spoolease"], " fake_key two words \n")).code).toBe(0);
+    expect(await storedSecret(CONSOLE)).toBe(" fake_key two words ");
+    const { code, stderr } = await run(["key", "set", "spoolease"], "fake_key\ttabbed");
+    expect(code).toBe(2);
+    expect(stderr).toContain("the key contains control characters");
+    expect(await storedSecret(CONSOLE)).toBe(" fake_key two words ");
+  });
+
   it("reports where each key comes from, never its value", async () => {
     expect((await run(["key", "status"])).stdout).toBe(
-      "3dfp  3DFilamentProfiles API key: not set (bambu-hando key set 3dfp)\n",
+      "3dfp  3DFilamentProfiles API key: not set (bambu-hando key set 3dfp)\n" +
+        "spoolease  SpoolEase security key: not set (bambu-hando key set spoolease)\n",
     );
 
     await storeSecret(TDFP, KEY);
@@ -147,19 +184,31 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key with a keyring", () =
     );
 
     vi.stubEnv(TDFP.env, "3dfp_env_key");
-    expect((await run(["key", "status"])).stdout).toBe(
+    expect((await run(["key", "status", "3dfp"])).stdout).toBe(
       "3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY (overrides the one stored in the system keyring (Secret Service))\n",
     );
     await removeSecret(TDFP);
-    expect((await run(["key", "status"])).stdout).toBe(
+    expect((await run(["key", "status", "3dfp"])).stdout).toBe(
       "3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY\n",
     );
   });
 
   it("says when the environment's key isn't usable, without printing it", async () => {
     vi.stubEnv(TDFP.env, "3dfp_fake_key\nfor_tests");
-    expect((await run(["key", "status"])).stdout).toBe(
+    expect((await run(["key", "status", "3dfp"])).stdout).toBe(
       "3dfp  3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY, but not usable (the key contains spaces or control characters: paste only the key)\n",
+    );
+  });
+
+  it("checks SPOOLEASE_SECURITY_KEY as every command does, untrimmed, without printing it", async () => {
+    // Commands refuse a tab around it (only a trailing line break is dropped): status must not call it usable.
+    vi.stubEnv(CONSOLE.env, "fake_console_key\t");
+    expect((await run(["key", "status", "spoolease"])).stdout).toBe(
+      "spoolease  SpoolEase security key: from SPOOLEASE_SECURITY_KEY, but not usable (the key contains control characters: paste only the key)\n",
+    );
+    vi.stubEnv(CONSOLE.env, " fake console key \n");
+    expect((await run(["key", "status", "spoolease"])).stdout).toBe(
+      "spoolease  SpoolEase security key: from SPOOLEASE_SECURITY_KEY\n",
     );
   });
 

@@ -2,8 +2,9 @@
 // ABOUTME: Runs against a private gnome-keyring on its own D-Bus session, never the login keyring; keyCommand.e2e covers an unreachable one.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { writesSettled } from "../src/pendingWrites.js";
 import {
+  holdsSecret,
   InvalidSecretError,
   keyringName,
   loadSecret,
@@ -17,6 +18,7 @@ import {
 import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
 
 const TDFP = SECRETS["3dfp"];
+const CONSOLE = SECRETS.spoolease;
 
 describe("validateSecret", () => {
   it("trims surrounding whitespace, such as the newline a paste or pipe adds", () => {
@@ -47,6 +49,70 @@ describe("validateSecret with a key's prefix", () => {
   });
 });
 
+describe("the SpoolEase security key", () => {
+  it("is kept like the 3DFilamentProfiles key, under its own account and variable", () => {
+    expect(CONSOLE).toEqual({
+      name: "spoolease",
+      label: "SpoolEase security key",
+      account: "spoolease-security-key",
+      env: "SPOOLEASE_SECURITY_KEY",
+      prefix: "",
+      spaces: true,
+    });
+  });
+
+  it("takes any key without control characters, spaces inside included, since it has no prefix", () => {
+    expect(validateSecret("anything-goes_123\n", CONSOLE)).toBe("anything-goes_123");
+    expect(validateSecret("two words", CONSOLE)).toBe("two words");
+    expect(() => validateSecret(" \n", CONSOLE)).toThrow(/empty/);
+    for (const bad of ["abc\ndef", "abc\tdef", "abc\u0007def"]) {
+      expect(() => validateSecret(bad, CONSOLE)).toThrow(
+        "the key contains control characters: paste only the key",
+      );
+    }
+  });
+
+  it("keeps the key as typed, surrounding spaces included, dropping only the line end a paste or pipe adds", () => {
+    expect(validateSecret("  two words \n", CONSOLE)).toBe("  two words ");
+    expect(validateSecret(" key\r\n", CONSOLE)).toBe(" key");
+    expect(validateSecret("key\n\n", CONSOLE)).toBe("key");
+    expect(() => validateSecret("\tkey", CONSOLE)).toThrow(/control characters/);
+  });
+
+  it("keeps SPOOLEASE_SECURITY_KEY as set, surrounding spaces included", async () => {
+    expect(await loadSecret(CONSOLE, { [CONSOLE.env]: " spaced key " })).toEqual({
+      value: " spaced key ",
+      from: "env",
+    });
+  });
+
+  it("still refuses spaces inside a 3DFilamentProfiles key", () => {
+    expect(() => validateSecret("3dfp_two words", TDFP)).toThrow(/spaces or control characters/);
+  });
+
+  it("refuses a mangled one in SPOOLEASE_SECURITY_KEY, naming the variable without echoing it", async () => {
+    const err: unknown = await loadSecret(CONSOLE, { [CONSOLE.env]: "LEAK\tME" }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(InvalidSecretError);
+    expect((err as Error).message).toMatch(
+      /^SPOOLEASE_SECURITY_KEY doesn't hold a usable SpoolEase security key: /,
+    );
+    expect((err as Error).message).not.toContain("LEAK");
+  });
+});
+
+describe("holdsSecret", () => {
+  it("spots a key with a prefix anywhere in an argument", () => {
+    expect(holdsSecret("--key=3dfp_abc")).toBe(true);
+  });
+
+  it("doesn't take every argument for a key because one key has no prefix", () => {
+    for (const arg of ["set", "spoolease", "--spoolease-host=10.0.0.5", ""])
+      expect(holdsSecret(arg)).toBe(false);
+  });
+});
+
 describe("loadSecret from the environment", () => {
   it("refuses a mangled or wrong key, naming the variable without echoing the value", async () => {
     for (const value of ["3dfp_LEAK\nME", "sk_live_LEAKME"]) {
@@ -61,8 +127,9 @@ describe("loadSecret from the environment", () => {
 });
 
 describe("secretByName", () => {
-  it("finds the 3DFilamentProfiles key and nothing else", () => {
+  it("finds the 3DFilamentProfiles and SpoolEase keys and nothing else", () => {
     expect(secretByName("3dfp")).toBe(TDFP);
+    expect(secretByName("spoolease")).toBe(CONSOLE);
     expect(secretByName("nope")).toBeUndefined();
     expect(secretByName("toString")).toBeUndefined();
   });
@@ -92,13 +159,53 @@ describe.skipIf(!privateKeyringSupported)("secrets in the system keyring", () =>
 
   afterEach(async () => {
     await removeSecret(TDFP);
+    await removeSecret(CONSOLE);
     vi.unstubAllEnvs();
+  });
+
+  it("keeps the SpoolEase key apart from the 3DFilamentProfiles one", async () => {
+    await storeSecret(TDFP, "3dfp_abc123");
+    await storeSecret(CONSOLE, "console-key");
+    expect(await loadSecret(CONSOLE, {})).toEqual({ value: "console-key", from: "keyring" });
+    expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
+    expect(await removeSecret(CONSOLE)).toBe(true);
+    expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
+  });
+
+  it("reads the SpoolEase key back as it was stored, surrounding spaces included", async () => {
+    await storeSecret(CONSOLE, " spaced key ");
+    expect(await loadSecret(CONSOLE, {})).toEqual({ value: " spaced key ", from: "keyring" });
+  });
+
+  it("refuses a mangled SpoolEase key in the keyring, says how to replace it, and never echoes it", async () => {
+    await storeSecret(CONSOLE, "LEAK\tME");
+    const err: unknown = await loadSecret(CONSOLE, {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidSecretError);
+    expect((err as Error).message).toMatch(
+      /^the SpoolEase security key stored in .* isn't usable: .*bambu-hando key set spoolease/,
+    );
+    expect((err as Error).message).not.toContain("LEAK");
   });
 
   it("stores a key and reads it back from the keyring", async () => {
     await storeSecret(TDFP, "3dfp_abc123");
     expect(await storedSecret(TDFP)).toBe("3dfp_abc123");
     expect(await loadSecret(TDFP, {})).toEqual({ value: "3dfp_abc123", from: "keyring" });
+  });
+
+  it("tracks storing and removing as writes, so the binary lets them finish before it exits", async () => {
+    let stored = false;
+    void storeSecret(TDFP, "3dfp_unawaited").then(() => {
+      stored = true;
+    });
+    await writesSettled();
+    expect(stored).toBe(true);
+    let removed = false;
+    void removeSecret(TDFP).then(() => {
+      removed = true;
+    });
+    await writesSettled();
+    expect(removed).toBe(true);
   });
 
   it("replaces a stored key", async () => {

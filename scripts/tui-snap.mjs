@@ -17,7 +17,7 @@ and SpoolEase settings), plays the steps in order, then quits with ctrl+c.
 
 Steps:
   wait=<text>      wait until <text> appears after the previous wait's match
-  key=<name>       press a key: ${"enter tab esc up down left right space backspace ctrl+a ctrl+c"}
+  key=<name>       press a key: ${"enter tab shift+tab esc up down left right pgup pgdn home end space backspace ctrl+a ctrl+c ctrl+k"}
   type=<text>      type <text> one character at a time
   snap[=<title>]   print the screen
   sleep=<ms>       pause
@@ -46,6 +46,12 @@ const KEYS = {
   backspace: "\u007F",
   "ctrl+a": "\u0001",
   "ctrl+c": "\u0003",
+  "ctrl+k": "\u000B",
+  "shift+tab": "\u001B[Z",
+  pgup: "\u001B[5~",
+  pgdn: "\u001B[6~",
+  home: "\u001B[H",
+  end: "\u001B[F",
 };
 
 // Ink switches to non-interactive rendering under CI-like variables, so the TUI gets only these.
@@ -58,6 +64,8 @@ const PASSED_ENV = [
   "SPOOLMANDB_URL",
   "SPOOLEASE_HOST",
   "SPOOLEASE_SECURITY_KEY",
+  "FILAMENTPROFILES_API_URL",
+  "FILAMENTPROFILES_API_KEY",
 ];
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ESC and BEL delimit the escape sequences this strips.

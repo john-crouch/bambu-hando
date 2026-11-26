@@ -87,8 +87,11 @@ describe("FilamentProfilesClient", () => {
       serverSpool(),
       serverSpool({ short_code: "XYZ789", location: null, rgb: null, remaining_grams: 0 }),
     ];
-    const spools = await client.listSpools();
+    const { spools, deleted, asOf } = await client.listSpools();
     expect(server.requests).toHaveLength(1);
+    expect(server.requests[0]?.query).toEqual({});
+    expect(deleted).toEqual([]);
+    expect(asOf).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(spools[0]).toEqual({
       shortCode: "ABC123",
       filamentId: 101,
@@ -103,6 +106,8 @@ describe("FilamentProfilesClient", () => {
       notes: null,
       updatedAt: "2026-10-14T18:02:11.000Z",
       url: "https://spooldb.com/s/ABC123",
+      externalId: null,
+      spoolProperties: null,
     });
     expect(spools[1]).toMatchObject({
       shortCode: "XYZ789",
@@ -110,6 +115,151 @@ describe("FilamentProfilesClient", () => {
       rgb: null,
       remainingGrams: 0,
     });
+  });
+
+  it("lists only the spools changed since a time, and the ones deleted since", async () => {
+    server.spools = [
+      serverSpool({ updated_at: "2026-11-01T00:00:00.000Z" }),
+      serverSpool({ short_code: "NEW777", updated_at: "2026-11-18T09:00:00.000Z" }),
+    ];
+    server.deleted = [
+      { short_code: "OLD111", deleted_at: "2026-11-02T00:00:00.000Z" },
+      { short_code: "XYZ789", deleted_at: "2026-11-19T00:00:00.000Z" },
+    ];
+    const changes = await client.listSpools("2026-11-18T09:00:00Z");
+    expect(server.requests[0]?.query).toEqual({ updated_since: "2026-11-18T09:00:00Z" });
+    expect(changes.spools.map((s) => s.shortCode)).toEqual(["NEW777"]);
+    expect(changes.deleted).toEqual(["XYZ789"]);
+    expect(changes.asOf).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("refuses a since time without a timezone without spending a call", async () => {
+    for (const since of ["2026-11-18T09:00:00", "2026-11-18", "yesterday", ""])
+      await expect(client.listSpools(since)).rejects.toThrow(FilamentProfilesError);
+    expect(server.requests).toHaveLength(0);
+  });
+
+  it("updates several spools in one call, each with its own fields and result", async () => {
+    server.spools = [serverSpool(), serverSpool({ short_code: "XYZ789", remaining_grams: 500 })];
+    const results = await client.updateSpools([
+      { shortCode: "ABC123", remainingGrams: 600 },
+      { shortCode: "NOPE99", usedGrams: 18 },
+      { shortCode: "XYZ789", bambuTagId: "04A1B2C3D4E5F6" },
+    ]);
+    expect(server.requests).toHaveLength(1);
+    expect(server.requests[0]).toMatchObject({
+      method: "PATCH",
+      path: "/api/v1/my/spools",
+      body: [
+        { short_code: "ABC123", remaining_grams: 600 },
+        { short_code: "NOPE99", used_grams: 18 },
+        { short_code: "XYZ789", bambu_tag_id: "04A1B2C3D4E5F6" },
+      ],
+    });
+    expect(results).toEqual([
+      {
+        shortCode: "ABC123",
+        ok: true,
+        update: expect.objectContaining({ shortCode: "ABC123", remainingGrams: 600 }),
+      },
+      {
+        shortCode: "NOPE99",
+        ok: false,
+        error: "3DFilamentProfiles: Spool not found (not_found)",
+        code: "not_found",
+      },
+      {
+        shortCode: "XYZ789",
+        ok: true,
+        update: expect.objectContaining({ bambuTagId: "04A1B2C3D4E5F6" }),
+      },
+    ]);
+  });
+
+  it("refuses a bulk update the API would refuse without spending a call", async () => {
+    const many = Array.from({ length: 51 }, (_, i) => ({ shortCode: `S${i}`, usedGrams: 1 }));
+    for (const updates of [
+      [],
+      many,
+      [{ shortCode: "", usedGrams: 1 }],
+      [{ shortCode: "ABC123" }],
+      [{ shortCode: "ABC123", remainingGrams: 10, usedGrams: 5 }],
+    ])
+      await expect(client.updateSpools(updates)).rejects.toThrow(FilamentProfilesError);
+    expect(server.requests).toHaveLength(0);
+    server.spools = [serverSpool()];
+    await client.updateSpools(many.slice(0, 50));
+    expect(server.requests).toHaveLength(1);
+  });
+
+  it("fails a bulk update whose results don't line up with what was sent", async () => {
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 200,
+      body: { data: [{ short_code: "ABC123", remaining_grams: 600 }] },
+    };
+    await expect(
+      client.updateSpools([
+        { shortCode: "ABC123", remainingGrams: 600 },
+        { shortCode: "XYZ789", remainingGrams: 600 },
+      ]),
+    ).rejects.toThrow(/2 updates/);
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 200,
+      body: { data: [{ short_code: "XYZ789", remaining_grams: 600 }] },
+    };
+    const [result] = await client.updateSpools([{ shortCode: "ABC123", remainingGrams: 600 }]);
+    expect(result).toMatchObject({ shortCode: "ABC123", ok: false });
+  });
+
+  it("reads, sets and clears the ID another app keeps for a spool", async () => {
+    server.spools = [serverSpool({ external_id: "spoolease:3" })];
+    expect((await client.listSpools()).spools[0]?.externalId).toBe("spoolease:3");
+    expect((await client.getSpool("ABC123")).externalId).toBe("spoolease:3");
+    await client.updateSpools([{ shortCode: "ABC123", externalId: null }]);
+    expect(server.requests.at(-1)?.body).toEqual([{ short_code: "ABC123", external_id: null }]);
+    expect(server.spools[0]?.external_id).toBeNull();
+    server.filaments = [serverFilament()];
+    await client.addSpool({ filamentId: 101, externalId: "spoolease:4" });
+    expect(server.requests.at(-1)?.body).toEqual({ filament_id: 101, external_id: "spoolease:4" });
+    expect(server.spools[1]?.external_id).toBe("spoolease:4");
+    const before = server.requests.length;
+    const long = "x".repeat(101);
+    await expect(client.updateSpool("ABC123", { externalId: long })).rejects.toThrow(
+      FilamentProfilesError,
+    );
+    await expect(client.addSpool({ filamentId: 101, externalId: long })).rejects.toThrow(
+      FilamentProfilesError,
+    );
+    expect(server.requests).toHaveLength(before);
+  });
+
+  it("reads a spool's generated profile: which values are its own calibration", async () => {
+    server.spools = [
+      serverSpool({
+        spool_properties: { purchase_date: null, nozzle_temp: 250, flow_ratio: 0.97 },
+      }),
+    ];
+    expect((await client.listSpools()).spools[0]?.spoolProperties).toEqual({
+      purchase_date: null,
+      nozzle_temp: 250,
+      flow_ratio: 0.97,
+    });
+    const profile = await client.spoolProfile("ABC123");
+    expect(server.requests.at(-1)).toMatchObject({
+      path: "/api/v1/my/spools/ABC123/profile",
+      query: { slicer: "bambu", pressure_advance: "true" },
+    });
+    expect(profile.applied).toEqual(
+      expect.arrayContaining([
+        { key: "nozzle_temperature", value: "250", source: "spool" },
+        { key: "filament_flow_ratio", value: "0.97", source: "spool" },
+      ]),
+    );
+  });
+
+  it("reads an empty external ID as none", async () => {
+    server.spools = [serverSpool({ external_id: "" })];
+    expect((await client.listSpools()).spools[0]?.externalId).toBeNull();
   });
 
   it("gets one spool with its Bambu IDs, which the list leaves out", async () => {
@@ -186,6 +336,17 @@ describe("FilamentProfilesClient", () => {
 
     const again = await client.addSpool({ filamentId: 101, ifNotOwned: true });
     expect(again).toEqual({ created: false, existing: ["NEW001"] });
+  });
+
+  it("adds a spool with its tag in the same call", async () => {
+    server.filaments = [serverFilament()];
+    const added = await client.addSpool({ filamentId: 101, bambuTagId: "04A1B2C3D4E5F6" });
+    expect(server.requests[0]?.body).toEqual({ filament_id: 101, bambu_tag_id: "04A1B2C3D4E5F6" });
+    expect(added).toMatchObject({ created: true, spool: { bambuTagId: "04A1B2C3D4E5F6" } });
+    await expect(client.addSpool({ filamentId: 101, bambuTagId: "x".repeat(65) })).rejects.toThrow(
+      FilamentProfilesError,
+    );
+    expect(server.requests).toHaveLength(1);
   });
 
   it("searches filaments with the documented filters and page bounds", async () => {
@@ -331,7 +492,7 @@ describe("FilamentProfilesClient", () => {
       base: server.url,
       ledger: new QuotaLedger(join(notADir, "quota.json"), "acct1"),
     });
-    expect(await unwritable.listSpools()).toHaveLength(server.spools.length);
+    expect((await unwritable.listSpools()).spools).toHaveLength(server.spools.length);
     await server.close();
     await expect(unwritable.listSpools()).rejects.toThrow(/can't reach 3DFilamentProfiles/);
   });

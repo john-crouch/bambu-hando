@@ -2,13 +2,20 @@
 // ABOUTME: Uses a private gnome-keyring, and checks the typed key is never echoed to the terminal.
 
 import { execFile, spawn as spawnProcess } from "node:child_process";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type IPty, spawn } from "node-pty";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { removeSecret, SECRETS, storedSecret } from "../src/secrets.js";
+import { installBambuStudio, installSpoolEaseConfig } from "./bambuStudioSetup.js";
 import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
+import { SOURCE_FIXTURE } from "./parity.js";
+import { startSpoolEaseServer, TEST_SECURITY_KEY } from "./spooleaseServer.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 const TDFP = SECRETS["3dfp"];
@@ -60,6 +67,7 @@ describe.skipIf(!privateKeyringSupported)("bambu-hando key set (binary)", () => 
   });
 
   async function prompted(): Promise<{ pty: IPty; output: () => string; exited: Promise<number> }> {
+    assertNoLoginKeyring(["key", "set", "3dfp"], env);
     const pty = spawn(process.execPath, [BIN, "key", "set", "3dfp"], {
       name: "xterm-256color",
       cols: 100,
@@ -126,6 +134,7 @@ describe("bambu-hando key without a reachable keyring (binary)", () => {
     env: Record<string, string>,
     stdin = "",
   ): Promise<{ code: number; stdout: string; stderr: string }> {
+    assertNoLoginKeyring(args, env);
     return new Promise((resolve) => {
       const child = execFile(process.execPath, [BIN, ...args], { env }, (err, stdout, stderr) =>
         resolve({ code: err ? Number(err.code) : 0, stdout, stderr }),
@@ -153,12 +162,36 @@ describe("bambu-hando key without a reachable keyring (binary)", () => {
   it.skipIf(process.platform !== "linux")(
     "reports a key from the environment even when the keyring can't be read",
     async () => {
-      const { code, stdout } = await cli(["key", "status"], { ...noKeyring, [TDFP.env]: KEY });
+      const { code, stdout } = await cli(["key", "status", "3dfp"], {
+        ...noKeyring,
+        [TDFP.env]: KEY,
+      });
       expect(code).toBe(0);
       expect(stdout).toMatch(
         /^3dfp {2}3DFilamentProfiles API key: from FILAMENTPROFILES_API_KEY \(can't check the system keyring \(Secret Service\)\)\n$/,
       );
       expect(stdout).not.toContain("fake_key");
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "falls back to BambuStudio's console key when the keyring can't be read",
+    async () => {
+      const home = await mkdtemp(join(tmpdir(), "bh-nokeyring-"));
+      await installBambuStudio(home);
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: TEST_SECURITY_KEY });
+      const server = await startSpoolEaseServer();
+      try {
+        const { code, stdout, stderr } = await cli(
+          ["--source", SOURCE_FIXTURE, "--dry-run", "--spoolease-port", String(server.port)],
+          { ...noKeyring, HOME: home },
+        );
+        expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+        expect(server.requests[0]?.path).toBe("/api/test-key");
+        expect(stdout).not.toContain(TEST_SECURITY_KEY);
+      } finally {
+        await server.close();
+      }
     },
   );
 });

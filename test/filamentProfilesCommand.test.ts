@@ -63,7 +63,7 @@ describe("bambu-hando 3dfp", () => {
       const { code, stdout } = await run(argv);
       expect(code).toBe(0);
       expect(stdout).toContain(
-        "Usage: bambu-hando 3dfp <usage|spools|sync|filament|search|fill|catalog> [options]",
+        "Usage: bambu-hando 3dfp <usage|spools|sync|import|filament|search|fill|catalog> [options]",
       );
     }
   });
@@ -116,6 +116,24 @@ describe("bambu-hando 3dfp", () => {
 
     await run(["3dfp", "spools", "--refresh"]);
     expect(server.requests).toHaveLength(2);
+    expect(server.requests[1]?.query).toEqual({});
+
+    vi.setSystemTime(new Date("2026-11-15T14:30:00Z"));
+    const third = await run(["3dfp", "spools"]);
+    expect(server.requests[2]?.query).toEqual({ updated_since: "2026-11-15T13:20:00.000Z" });
+    expect(third.stdout).toContain(
+      "2 spools from 3DFilamentProfiles, with what changed since the last list (1 API call; ",
+    );
+  });
+
+  it("never lets a spool's name drive the terminal, in text or JSON", async () => {
+    server.spools = [serverSpool({ color: "Red\u001b[2J\u001b]0;pwned\u0007\u202e" })];
+    const text = await run(["3dfp", "spools", "--refresh"]);
+    expect(text.stdout).toContain("Red\\u001b[2J\\u001b]0;pwned\\u0007\\u202e");
+    for (const char of ["\u001b", "\u0007", "\u202e"]) expect(text.stdout).not.toContain(char);
+    const json = await run(["3dfp", "spools", "--json", "--refresh"]);
+    for (const char of ["\u001b", "\u0007", "\u202e"]) expect(json.stdout).not.toContain(char);
+    expect(JSON.parse(json.stdout).spools[0].color).toBe("Red\u001b[2J\u001b]0;pwned\u0007\u202e");
   });
 
   it("prints the spools as snake_case JSON", async () => {

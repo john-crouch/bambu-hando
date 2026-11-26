@@ -326,7 +326,14 @@ describe("planSync", () => {
       links: [link()],
     });
     expect(result.rows).toEqual([
-      { kind: "unlinked", link: link(), spool: null, tdfp: null, reason: "spoolease-gone" },
+      {
+        kind: "unlinked",
+        link: link(),
+        spool: null,
+        tdfp: null,
+        reason: "spoolease-gone",
+        patch: null,
+      },
       { kind: "tdfp-only", tdfp: tdSpool({ shortCode: "OTHER1", color: "Black" }) },
     ]);
     expect(plan({ tdfp: [], links: [link()] }).rows[0]).toMatchObject({
@@ -363,10 +370,10 @@ describe("planSync", () => {
         tag: "04A1B2C3D4E5F6",
       },
     ]);
-    expect(result).toMatchObject({ calls: 2, changes: 1 });
+    expect(result).toMatchObject({ calls: 1, changes: 1 });
   });
 
-  it("adds an unweighed spool at the filament's own weight, and without a tag in one call", () => {
+  it("adds an unweighed spool at the filament's own weight, and without a tag", () => {
     const result = plan({
       spoolease: [sePool({ currentWeight: null, tagId: "" })],
       tdfp: [],
@@ -389,6 +396,106 @@ describe("planSync", () => {
       tdfp: [tdSpool(), tdSpool({ shortCode: "ZZZ999", brand: "eSUN", color: "Light Khaki" })],
     });
     expect(kinds(result.rows)).toEqual(["linked", "tdfp-only"]);
+  });
+
+  describe("external IDs", () => {
+    it("writes the SpoolEase spool's ID into a new link's 3DFP spool", () => {
+      const result = plan({ tdfp: [tdSpool({ externalId: null })] });
+      expect(result.rows[0]).toMatchObject({
+        kind: "linked",
+        patch: { remainingGrams: 564, bambuTagId: "04A1B2C3D4E5F6", externalId: "spoolease:1" },
+      });
+      expect(result.calls).toBe(1);
+    });
+
+    it("fixes an ID that names another SpoolEase spool, and leaves a right one alone", () => {
+      const pair = {
+        spoolease: [sePool({ currentWeight: 789 })],
+        links: [link()],
+      };
+      expect(
+        plan({ ...pair, tdfp: [tdSpool({ remainingGrams: 600, externalId: "spoolease:7" })] })
+          .rows[0],
+      ).toMatchObject({ patch: { externalId: "spoolease:1" } });
+      expect(
+        plan({ ...pair, tdfp: [tdSpool({ remainingGrams: 600, externalId: "spoolease:1" })] })
+          .rows[0],
+      ).toMatchObject({ patch: null });
+    });
+
+    it("never overwrites an ID another app keeps, nor writes one it hasn't read", () => {
+      const pair = { spoolease: [sePool({ currentWeight: 789 })], links: [link()] };
+      for (const tdfp of [
+        tdSpool({ remainingGrams: 600, externalId: "inventree-42" }),
+        tdSpool({ remainingGrams: 600 }),
+      ])
+        expect(plan({ ...pair, tdfp: [tdfp] }).rows[0]).toMatchObject({ patch: null });
+    });
+
+    it("rebuilds a lost link from the ID 3DFP keeps, even when the colors are named apart", () => {
+      const result = plan({
+        tdfp: [
+          tdSpool({ color: "Sunflower", externalId: "spoolease:1" }),
+          tdSpool({ shortCode: "DEF456", externalId: null }),
+        ],
+      });
+      expect(result.rows[0]).toMatchObject({
+        kind: "linked",
+        how: "recorded",
+        tdfp: { shortCode: "ABC123" },
+        before: null,
+      });
+      expect(result.rows[1]).toMatchObject({ kind: "tdfp-only", tdfp: { shortCode: "DEF456" } });
+    });
+
+    it("doesn't trust an ID whose brand or material disagrees (another console's spool #1)", () => {
+      const result = plan({
+        tdfp: [tdSpool({ brand: "eSUN", color: "Black", externalId: "spoolease:1" })],
+      });
+      expect(kinds(result.rows)).toEqual(["suggest", "tdfp-only"]);
+    });
+
+    it("doesn't rebuild a link to a 3DFP spool another console's spool is linked to", () => {
+      const result = plan({
+        tdfp: [tdSpool({ color: "Sunflower", externalId: "spoolease:1" })],
+        linkedElsewhere: new Set(["ABC123"]),
+      });
+      expect(kinds(result.rows)).toEqual(["suggest", "tdfp-only"]);
+    });
+
+    it("treats an empty ID as none", () => {
+      const result = plan({ tdfp: [tdSpool({ externalId: "" })] });
+      expect(result.rows[0]).toMatchObject({ patch: { externalId: "spoolease:1" } });
+    });
+
+    it("clears the ID on 3DFP when a link goes, so the next sync doesn't bring it back", () => {
+      const asked = plan({
+        links: [link()],
+        tdfp: [tdSpool({ externalId: "spoolease:1" })],
+        choices: { unlink: new Set(["1"]) },
+      });
+      expect(asked.rows[0]).toMatchObject({
+        kind: "unlinked",
+        reason: "asked",
+        tdfp: { shortCode: "ABC123" },
+        patch: { externalId: null },
+      });
+      expect(asked.calls).toBe(1);
+
+      const gone = plan({
+        spoolease: [],
+        links: [link()],
+        tdfp: [tdSpool({ externalId: "spoolease:1" })],
+      });
+      expect(gone.rows[0]).toMatchObject({ reason: "spoolease-gone", patch: { externalId: null } });
+
+      const elsewhere = plan({
+        spoolease: [],
+        links: [link()],
+        tdfp: [tdSpool({ externalId: "inventree-42" })],
+      });
+      expect(elsewhere.rows[0]).toMatchObject({ kind: "unlinked", patch: null });
+    });
   });
 
   describe("choices", () => {
@@ -504,9 +611,9 @@ describe("applySync", () => {
     await server.close();
   });
 
-  const listed = async () => client.listSpools();
+  const listed = async () => (await client.listSpools()).spools;
 
-  it("sends a new link's weight and tag in one call and returns the links to keep", async () => {
+  it("sends a new link's weight and tag in one bulk update and returns the links to keep", async () => {
     const tdfp = await listed();
     const plan = planSync({
       spoolease: [sePool()],
@@ -520,11 +627,19 @@ describe("applySync", () => {
     expect(server.requests.slice(before).map((r) => [r.method, r.path, r.body])).toEqual([
       [
         "PATCH",
-        "/api/v1/my/spools/ABC123",
-        { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+        "/api/v1/my/spools",
+        [
+          {
+            short_code: "ABC123",
+            remaining_grams: 564,
+            bambu_tag_id: "04A1B2C3D4E5F6",
+            external_id: "spoolease:1",
+          },
+        ],
       ],
     ]);
-    expect(result.outcomes).toMatchObject([{ ok: true, error: null }]);
+    expect(result).toMatchObject({ calls: 1, outcomes: [{ ok: true, error: null }] });
+    expect(server.spools[0]?.external_id).toBe("spoolease:1");
     expect(result.links).toEqual([
       {
         spoolease: "1",
@@ -540,7 +655,7 @@ describe("applySync", () => {
     });
   });
 
-  it("adds a spool, then writes its tag, and links it", async () => {
+  it("adds a spool with its tag in one call, and links it", async () => {
     server.spools = [];
     const plan = planSync({
       spoolease: [sePool()],
@@ -551,10 +666,19 @@ describe("applySync", () => {
     });
     const result = await applySync(plan, client);
     expect(server.requests.map((r) => [r.method, r.path, r.body])).toEqual([
-      ["POST", "/api/v1/my/spools", { filament_id: 101, remaining_grams: 564 }],
-      ["PATCH", "/api/v1/my/spools/NEW001", { bambu_tag_id: "04A1B2C3D4E5F6" }],
+      [
+        "POST",
+        "/api/v1/my/spools",
+        {
+          filament_id: 101,
+          remaining_grams: 564,
+          bambu_tag_id: "04A1B2C3D4E5F6",
+          external_id: "spoolease:1",
+        },
+      ],
     ]);
-    expect(result.outcomes).toMatchObject([{ ok: true, created: "NEW001" }]);
+    expect(result).toMatchObject({ calls: 1, outcomes: [{ ok: true, created: "NEW001" }] });
+    expect(server.spools[0]?.bambu_tag_id).toBe("04A1B2C3D4E5F6");
     expect(result.links).toEqual([
       {
         spoolease: "1",
@@ -566,16 +690,24 @@ describe("applySync", () => {
     ]);
   });
 
-  it("keeps a new link without the unsent changes when its call fails, and goes on", async () => {
+  it("keeps a new link without the unsent changes when its update fails, and goes on", async () => {
     server.spools = [
       serverSpool({ remaining_grams: 1000 }),
       serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
     ];
-    server.replies["PATCH /api/v1/my/spools/ABC123"] = {
-      status: 500,
-      body: { error: { code: "internal", message: "An unexpected error occurred" } },
-    };
     const tdfp = await listed();
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 200,
+      body: {
+        data: [
+          {
+            short_code: "ABC123",
+            error: { code: "internal", message: "An unexpected error occurred" },
+          },
+          { short_code: "DEF456", remaining_grams: 564, deducted_grams: 0, location: "Shelf A" },
+        ],
+      },
+    };
     const plan = planSync({
       spoolease: [sePool(), sePool({ id: "2", colorName: "Black", tagId: "" })],
       tdfp,
@@ -610,17 +742,59 @@ describe("applySync", () => {
       filamentsFor: () => [],
     });
     const result = await applySync(plan, client);
-    expect(result.outcomes[0]?.error).toMatch(/No spool matches/);
+    expect(result.outcomes[0]?.error).toBe("3DFilamentProfiles: Spool not found (not_found)");
     expect(result.links).toEqual([
       { spoolease: "1", tdfp: "ABC123", agreed: null, tag: null, linkedAt: NOW.toISOString() },
     ]);
   });
 
-  it("stops calling once the quota runs out, keeping what's unsent for next time", async () => {
+  it("fails every spool in a bulk update the API refused as a whole", async () => {
     server.spools = [
       serverSpool({ remaining_grams: 1000 }),
       serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
     ];
+    const tdfp = await listed();
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 500,
+      body: { error: { code: "internal", message: "An unexpected error occurred" } },
+    };
+    const plan = planSync({
+      spoolease: [sePool(), sePool({ id: "2", colorName: "Black", tagId: "" })],
+      tdfp,
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    const result = await applySync(plan, client);
+    expect(result.outcomes.map((o) => o.error)).toEqual([
+      "3DFilamentProfiles: An unexpected error occurred (internal)",
+      "3DFilamentProfiles: An unexpected error occurred (internal)",
+    ]);
+    expect(result.links.map((l) => l.agreed)).toEqual([null, null]);
+  });
+
+  it("sends up to 50 updates per call", async () => {
+    const count = 51;
+    const codes = Array.from({ length: count }, (_, i) => `S${String(i).padStart(3, "0")}`);
+    server.spools = codes.map((code) => serverSpool({ short_code: code, remaining_grams: 1000 }));
+    const plan = planSync({
+      spoolease: codes.map((_, i) => sePool({ id: String(i + 1), tagId: "" })),
+      tdfp: codes.map((code) => tdSpool({ shortCode: code, remainingGrams: 1000 })),
+      links: codes.map((code, i) => link({ spoolease: String(i + 1), tdfp: code, tag: null })),
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    expect(plan.calls).toBe(2);
+    const result = await applySync(plan, client);
+    expect(server.requests.map((r) => (r.body as unknown[]).length)).toEqual([50, 1]);
+    expect(result.calls).toBe(2);
+    expect(result.outcomes).toHaveLength(count);
+    expect(result.outcomes.every((o) => o.ok)).toBe(true);
+    expect(server.spools.every((s) => s.remaining_grams === 564)).toBe(true);
+  });
+
+  it("stops calling once the quota runs out, keeping what's unsent for next time", async () => {
+    server.spools = [serverSpool({ remaining_grams: 1000 })];
     const tdfp = await listed();
     server.quota.remaining = 1;
     const plan = planSync({
@@ -628,13 +802,81 @@ describe("applySync", () => {
       tdfp,
       links: [],
       now: NOW,
+      filamentsFor: (spool) =>
+        spool.colorName === "Black" ? [filament({ id: 102, color: "Black", rgb: null })] : [],
+    });
+    expect(plan.rows.map((row) => row.kind)).toEqual(["linked", "add"]);
+    const before = server.requests.length;
+    const result = await applySync(plan, client);
+    expect(server.requests.length - before).toBe(1);
+    expect(result.calls).toBe(1);
+    expect(result.outcomes[0]).toMatchObject({ ok: true });
+    expect(result.outcomes[1]?.error).toMatch(/quota is used up/);
+  });
+
+  it("clears a dropped link's ID on 3DFP in the same bulk update", async () => {
+    server.spools = [serverSpool({ external_id: "spoolease:1" })];
+    const tdfp = await listed();
+    const plan = planSync({
+      spoolease: [sePool()],
+      tdfp,
+      links: [link()],
+      choices: { unlink: new Set(["1"]) },
+      now: NOW,
       filamentsFor: () => [],
     });
     const before = server.requests.length;
     const result = await applySync(plan, client);
-    expect(server.requests.length - before).toBe(1);
-    expect(result.outcomes[0]).toMatchObject({ ok: true });
-    expect(result.outcomes[1]?.error).toMatch(/quota is used up/);
+    expect(server.requests.slice(before).map((r) => r.body)).toEqual([
+      [{ short_code: "ABC123", external_id: null }],
+    ]);
+    expect(result).toMatchObject({ links: [], outcomes: [{ ok: true }], calls: 1 });
+    expect(server.spools[0]?.external_id).toBeNull();
+  });
+
+  it("keeps an unlink's link when clearing its ID on 3DFP fails, so the next sync doesn't relink it", async () => {
+    server.spools = [serverSpool({ external_id: "spoolease:1" })];
+    const tdfp = await listed();
+    server.replies["PATCH /api/v1/my/spools"] = {
+      status: 500,
+      body: { error: { code: "internal", message: "An unexpected error occurred" } },
+    };
+    const plan = planSync({
+      spoolease: [sePool()],
+      tdfp,
+      links: [link()],
+      choices: { unlink: new Set(["1"]) },
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    const result = await applySync(plan, client);
+    expect(result.outcomes).toMatchObject([{ ok: false }]);
+    expect(result.links).toEqual([link()]);
+  });
+
+  it("fails only the row whose update the API would refuse, sending the rest and spending no call on it", async () => {
+    server.spools = [
+      serverSpool({ remaining_grams: 1000 }),
+      serverSpool({ short_code: "DEF456", color: "Black", remaining_grams: 1000 }),
+    ];
+    const tdfp = await listed();
+    const plan = planSync({
+      spoolease: [
+        sePool({ tagId: "x".repeat(65) }),
+        sePool({ id: "2", colorName: "Black", tagId: "" }),
+      ],
+      tdfp,
+      links: [],
+      now: NOW,
+      filamentsFor: () => [],
+    });
+    const result = await applySync(plan, client);
+    expect(result.outcomes.map((o) => o.ok)).toEqual([false, true]);
+    expect(result.outcomes[0]?.error).toMatch(/at most 64 characters/);
+    expect(result.calls).toBe(1);
+    expect(
+      server.requests.filter((r) => r.method === "PATCH").map((r) => (r.body as unknown[]).length),
+    ).toEqual([1]);
   });
 
   it("drops unlinked pairs and keeps links that needed nothing", async () => {

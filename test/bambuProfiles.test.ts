@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { readBambuStudioConf, SystemProfiles } from "../src/bambuProfiles.js";
+import { nozzleTypeFor, readBambuStudioConf, SystemProfiles } from "../src/bambuProfiles.js";
 import { bambuConfigDir, installBambuStudio, X1C_04, X1C_06 } from "./bambuStudioSetup.js";
 
 describe("SystemProfiles", () => {
@@ -71,7 +71,35 @@ describe("readBambuStudioConf", () => {
     expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({
       presetFolder: "1234567890",
       printer: X1C_06,
+      nozzleTypes: {},
     });
+  });
+
+  it("reads each printer's nozzle type, the first of several, skipping what isn't text", async () => {
+    const home = await mkdtemp(join(tmpdir(), "bambu-hando-conf-"));
+    await installBambuStudio(home, null);
+    const conf = {
+      presets: { machine: X1C_04 },
+      nozzle_volume_types: {
+        [X1C_04]: "High Flow",
+        [X1C_06]: "Standard",
+        "Bambu Lab H2D 0.4 nozzle": "Standard,High Flow",
+        broken: 3,
+      },
+    };
+    await writeFile(join(bambuConfigDir(home), "BambuStudio.conf"), JSON.stringify(conf), "utf-8");
+    expect((await readBambuStudioConf(bambuConfigDir(home))).nozzleTypes).toEqual({
+      [X1C_04]: "High Flow",
+      [X1C_06]: "Standard",
+      "Bambu Lab H2D 0.4 nozzle": "Standard",
+    });
+  });
+
+  it("gives a printer's nozzle type, Standard when it's missing or unknown", () => {
+    const types = { [X1C_04]: "High Flow", [X1C_06]: "Bogus" };
+    expect(nozzleTypeFor(types, X1C_04)).toBe("High Flow");
+    expect(nozzleTypeFor(types, X1C_06)).toBe("Standard");
+    expect(nozzleTypeFor(types, "Some Printer")).toBe("Standard");
   });
 
   it("returns nulls when BambuStudio.conf is missing or unreadable", async () => {
@@ -79,6 +107,7 @@ describe("readBambuStudioConf", () => {
     expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({
       presetFolder: null,
       printer: null,
+      nozzleTypes: {},
     });
 
     await installBambuStudio(home, null);
@@ -86,6 +115,7 @@ describe("readBambuStudioConf", () => {
     expect(await readBambuStudioConf(bambuConfigDir(home))).toEqual({
       presetFolder: null,
       printer: null,
+      nozzleTypes: {},
     });
   });
 });

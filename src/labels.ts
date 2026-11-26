@@ -137,8 +137,8 @@ export function spoolTagUrl(spool: SpoolRecord): string {
 function temps(filament: CustomFilament | undefined): string {
   const { nozzleTempMin: low, nozzleTempMax: high } = filament ?? {};
   if (low == null && high == null) return "";
-  if (low == null || high == null || low === high) return `${low ?? high} °C`;
-  return `${low}–${high} °C`;
+  if (low == null || high == null || low === high) return `${low ?? high}°C`;
+  return `${low}–${high}°C`;
 }
 
 function addedDate(seconds: number | null): string {

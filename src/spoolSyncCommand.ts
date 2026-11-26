@@ -15,10 +15,11 @@ import {
   MissingKeyError,
 } from "./filamentProfilesConnect.js";
 import { tildePath } from "./paths.js";
-import { holdsSecret, KEY_ARGUMENT_ERROR } from "./secrets.js";
+import { holdsSecret, InvalidSecretError, KEY_ARGUMENT_ERROR } from "./secrets.js";
 import { SpoolEaseClient, type SpoolRecord } from "./spoolease.js";
 import {
-  readSpoolEaseConfig,
+  type ConsoleSettings,
+  consoleSettings,
   SPOOLEASE_SETTINGS_HINT,
   spooleaseConnectionFrom,
 } from "./spooleaseConfig.js";
@@ -27,7 +28,6 @@ import { linksPath, loadLinks, saveLinks } from "./spoolLinks.js";
 import {
   applySync,
   planSync,
-  rowCalls,
   type SyncChoices,
   type SyncPlan,
   SyncPlanError,
@@ -66,15 +66,16 @@ Options:
   --link <id>=<code>         Link SpoolEase spool <id> to 3DFP spool <code> (repeatable)
   --add <id>=<filament>      Add SpoolEase spool <id> to 3DFP as filament <filament> (repeatable)
   --unlink <id>              Forget SpoolEase spool <id>'s link (repeatable)
-  --refresh                  Fetch the 3DFP spool list even when the last one is under an hour old
+  --refresh                  Fetch the whole 3DFP spool list, even when the last one is under an hour old
   --spoolease-host <host>    Console host or IP (env: SPOOLEASE_HOST)
   --spoolease-security-key <key>
                              Security key (env: SPOOLEASE_SECURITY_KEY)
-  --spoolease-port <port>    Port (default: 80)
-  --spoolease-https          Use HTTPS
+  --spoolease-port <port>    Port (default: as saved in Settings with its host, else 80)
+  --spoolease-https          Use HTTPS (--no-spoolease-https: don't, even if saved)
   -h, --help                 Show this help
 
-SpoolEase defaults to the settings saved in BambuStudio.
+SpoolEase defaults to the console saved in the TUI's Settings (its key kept there
+or by bambu-hando key set spoolease), then to the settings saved in BambuStudio.
 `;
 
 const OPTIONS = {
@@ -86,8 +87,8 @@ const OPTIONS = {
   refresh: { type: "boolean", default: false },
   "spoolease-host": { type: "string" },
   "spoolease-security-key": { type: "string" },
-  "spoolease-port": { type: "string", default: "80" },
-  "spoolease-https": { type: "boolean", default: false },
+  "spoolease-port": { type: "string" },
+  "spoolease-https": { type: "boolean" },
   help: { type: "boolean", short: "h", default: false },
 } as const;
 
@@ -154,9 +155,18 @@ function rowLines(row: SyncRow): string[] {
   if (row.kind === "linked") {
     const left = remainingGrams(row.spool);
     const weight = weightText(row.weight, row.tdfp, left);
-    const tag = row.patch?.bambuTagId !== undefined ? "tag written to 3DFP" : null;
+    const written = [
+      row.patch?.bambuTagId !== undefined ? "tag" : null,
+      row.patch?.externalId !== undefined ? "SpoolEase ID" : null,
+    ].filter(Boolean);
+    const tag = written.length ? `${written.join(" and ")} written to 3DFP` : null;
     if (row.before === null) {
-      const why = row.how === "chosen" ? "as asked" : "same brand, material and color";
+      const why =
+        row.how === "chosen"
+          ? "as asked"
+          : row.how === "recorded"
+            ? "3DFP keeps its SpoolEase ID"
+            : "same brand, material and color";
       return [
         labelled("Link", `${se(row.spool)} ↔ ${row.tdfp.shortCode} ${tdName(row.tdfp)} (${why})`),
         " ".repeat(LABEL) + [weight, tag].filter(Boolean).join("; "),
@@ -193,7 +203,8 @@ function rowLines(row: SyncRow): string[] {
       "spoolease-gone": `SpoolEase has no spool #${row.link.spoolease} any more`,
       "tdfp-gone": `3DFilamentProfiles has no spool ${row.link.tdfp} any more`,
     }[row.reason];
-    return [labelled("Unlink", `#${row.link.spoolease} ↔ ${row.link.tdfp}: ${why}`)];
+    const cleared = row.patch ? "; SpoolEase ID cleared on 3DFP" : "";
+    return [labelled("Unlink", `#${row.link.spoolease} ↔ ${row.link.tdfp}: ${why}${cleared}`)];
   }
   if (row.kind === "ambiguous") {
     const codes = row.candidates.map((c) => c.shortCode).join(", ");
@@ -229,7 +240,10 @@ function rowLines(row: SyncRow): string[] {
     ];
   }
   return [
-    labelled("3DFP only", `${row.tdfp.shortCode} ${tdName(row.tdfp)}: no SpoolEase spool fits`),
+    labelled(
+      "3DFP only",
+      `${row.tdfp.shortCode} ${tdName(row.tdfp)}: no SpoolEase spool fits: bring it in with \`bambu-hando 3dfp import ${row.tdfp.shortCode}\``,
+    ),
   ];
 }
 
@@ -244,6 +258,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     args: argv,
     options: OPTIONS,
     allowPositionals: true,
+    allowNegative: true,
     strict: true,
   });
   if (values.help) {
@@ -258,10 +273,17 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
     add: values.add ?? [],
     unlink: values.unlink ?? [],
   });
-  const port = Number(values["spoolease-port"]);
+  let settings: ConsoleSettings;
+  try {
+    settings = await consoleSettings(values);
+  } catch (err) {
+    // Says where the key came from, never what it is.
+    throw err instanceof InvalidSecretError ? new SyncUsageError(err.message) : err;
+  }
+  const port = Number(settings.port);
   if (!Number.isInteger(port) || port < 1 || port > 65_535)
     throw new SyncUsageError("--spoolease-port must be a port number");
-  const connection = spooleaseConnectionFrom(values, port, await readSpoolEaseConfig());
+  const connection = spooleaseConnectionFrom(settings, port);
   if (!connection)
     throw new SyncUsageError(
       `SpoolEase host and security key are required: ${SPOOLEASE_SETTINGS_HINT}`,
@@ -277,7 +299,11 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
   await checkKey(spoolease);
   const seSpools = await spoolease.listSpools();
   const listed = await mySpools(api.client, { account: api.account, refresh: values.refresh });
-  const { links, warning } = await loadLinks(linksPath(), api.account, connection.host);
+  const { links, warning, linkedElsewhere } = await loadLinks(
+    linksPath(),
+    api.account,
+    connection.host,
+  );
   if (warning) io.stderr(`${warning}\n`);
 
   const catalog = FilamentCatalog.open();
@@ -291,6 +317,7 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
       filamentsFor: (spool) =>
         catalog.search({ words: `${spool.brand} ${spool.material}` }, CATALOG_LOOKUP),
       filamentById: (id) => catalog.get(id)?.filament ?? null,
+      linkedElsewhere,
       now: new Date(),
     });
   } finally {
@@ -349,16 +376,15 @@ async function run(argv: string[], io: SyncIo): Promise<number> {
         ? `#${row.spool.id} ↔ ${row.tdfp.shortCode}`
         : row.kind === "add"
           ? `#${row.spool.id}`
-          : "";
+          : row.kind === "unlinked"
+            ? `#${row.link.spoolease} ↔ ${row.link.tdfp}`
+            : "";
     failures.push(labelled("Failed", `${what}: ${outcome.error}`));
   });
   reportSetAside(await saveLinks(linksPath(), api.account, connection.host, applied.links), io);
   if (applied.outcomes.some((outcome) => outcome.ok || outcome.created)) await forgetSpools();
 
-  const calls = applied.outcomes.reduce(
-    (sum, outcome) => sum + (outcome.ok ? rowCalls(outcome.row) : 0),
-    0,
-  );
+  const calls = applied.calls;
   const done = plan.changes - failures.length;
   if (failures.length) io.stdout(`${failures.join("\n")}\n`);
   const after = quotaLeft(await api.ledger.current());

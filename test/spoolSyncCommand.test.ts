@@ -5,10 +5,13 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "../src/cli.js";
 import { configDir } from "../src/paths.js";
+import { removeSecret, SECRETS, storeSecret } from "../src/secrets.js";
+import { rememberConsole } from "../src/tuiSettings.js";
+import { installSpoolEaseConfig } from "./bambuStudioSetup.js";
 import {
   type FilamentProfilesServer,
   serverFilament,
@@ -16,11 +19,24 @@ import {
   startFilamentProfilesServer,
   TEST_API_KEY,
 } from "./filamentProfilesServer.js";
+import { type PrivateKeyring, privateKeyringSupported, startPrivateKeyring } from "./keyring.js";
 import {
   type SpoolEaseServer,
   startSpoolEaseServer,
   TEST_SECURITY_KEY,
 } from "./spooleaseServer.js";
+
+// A private keyring for the whole file, started before any test reads one: the keyring module keeps
+// its first D-Bus connection for the process's life.
+let keyring: PrivateKeyring | null = null;
+
+beforeAll(async () => {
+  if (privateKeyringSupported) keyring = await startPrivateKeyring();
+});
+
+afterAll(async () => {
+  await keyring?.close();
+});
 
 /** Sunlu PETG 2.0 Vivid Yellow on a 189 g core, weighing 753 g: 564 g left. */
 function seSpool(overrides: Record<string, string> = {}): Record<string, string> {
@@ -65,10 +81,12 @@ describe("bambu-hando 3dfp sync", () => {
     vi.stubEnv("FILAMENTPROFILES_API_URL", tdfp.url);
     vi.stubEnv("SPOOLEASE_HOST", "127.0.0.1");
     vi.stubEnv("SPOOLEASE_SECURITY_KEY", TEST_SECURITY_KEY);
+    for (const [name, value] of Object.entries(keyring?.env ?? {})) vi.stubEnv(name, value);
     vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-15T13:00:00Z") });
   });
 
   afterEach(async () => {
+    if (keyring) await removeSecret(SECRETS.spoolease);
     vi.useRealTimers();
     vi.unstubAllEnvs();
     await tdfp.close();
@@ -110,7 +128,7 @@ describe("bambu-hando 3dfp sync", () => {
         "Spool sync: SpoolEase 127.0.0.1 (1 spool) · 3DFilamentProfiles (1 spool, 1 API call)",
         "",
         "Link      #1 Sunlu PETG 2.0 Vivid Yellow ↔ ABC123 Sunlu PETG Vivid Yellow (same brand, material and color)",
-        "          weight 1000 → 564 g, from SpoolEase; tag written to 3DFP",
+        "          weight 1000 → 564 g, from SpoolEase; tag and SpoolEase ID written to 3DFP",
         "",
         "1 change: 1 API call (899 of 1000 left this month). Dry run: nothing changed.",
         "",
@@ -144,8 +162,15 @@ describe("bambu-hando 3dfp sync", () => {
     expect(writes()).toEqual([
       [
         "PATCH",
-        "/api/v1/my/spools/ABC123",
-        { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+        "/api/v1/my/spools",
+        [
+          {
+            short_code: "ABC123",
+            remaining_grams: 564,
+            bambu_tag_id: "04A1B2C3D4E5F6",
+            external_id: "spoolease:1",
+          },
+        ],
       ],
     ]);
     expect(stdout).toMatch(
@@ -194,19 +219,59 @@ describe("bambu-hando 3dfp sync", () => {
   it("takes SpoolEase's weight on a first link, even when 3DFP's is lower", async () => {
     tdfp.spools = [serverSpool({ remaining_grams: 400 })];
     const { stdout } = await sync("--yes");
-    expect(stdout).toContain("          weight 400 → 564 g, from SpoolEase; tag written to 3DFP");
+    expect(stdout).toContain(
+      "          weight 400 → 564 g, from SpoolEase; tag and SpoolEase ID written to 3DFP",
+    );
     expect(writes()).toEqual([
       [
         "PATCH",
-        "/api/v1/my/spools/ABC123",
-        { remaining_grams: 564, bambu_tag_id: "04A1B2C3D4E5F6" },
+        "/api/v1/my/spools",
+        [
+          {
+            short_code: "ABC123",
+            remaining_grams: 564,
+            bambu_tag_id: "04A1B2C3D4E5F6",
+            external_id: "spoolease:1",
+          },
+        ],
       ],
     ]);
   });
 
+  it("rebuilds lost links from the SpoolEase IDs 3DFP keeps, and points 3DFP-only spools at import", async () => {
+    tdfp.spools.push(
+      serverSpool({ short_code: "XYZ789", brand: "eSUN", material: "PLA", color: "Black" }),
+    );
+    await sync("--yes");
+    await writeFile(linkFile(), "{}", "utf-8");
+    // A renamed color no longer fits by name; the ID still says whose spool it is.
+    const first = tdfp.spools[0];
+    if (first) first.color = "Sunflower";
+    const { stdout } = await sync("--dry-run");
+    expect(stdout).toContain(
+      "Link      #1 Sunlu PETG 2.0 Vivid Yellow ↔ ABC123 Sunlu PETG Sunflower (3DFP keeps its SpoolEase ID)",
+    );
+    expect(stdout).toContain(
+      "3DFP only XYZ789 eSUN PLA Black: no SpoolEase spool fits: bring it in with `bambu-hando 3dfp import XYZ789`",
+    );
+  });
+
+  it("clears the SpoolEase ID on 3DFP when unlinking", async () => {
+    await sync("--yes");
+    const { stdout } = await sync("--yes", "--unlink", "1");
+    expect(stdout).toContain("Unlink    #1 ↔ ABC123: as asked; SpoolEase ID cleared on 3DFP");
+    expect(tdfp.spools[0]?.external_id).toBeNull();
+  });
+
   it("asks for a weigh when only 3DFP's weight moved since they agreed", async () => {
     await sync("--yes");
-    tdfp.spools = [serverSpool({ remaining_grams: 400, bambu_tag_id: "04A1B2C3D4E5F6" })];
+    tdfp.spools = [
+      serverSpool({
+        remaining_grams: 400,
+        bambu_tag_id: "04A1B2C3D4E5F6",
+        external_id: "spoolease:1",
+      }),
+    ];
     const before = writes().length;
     const { stdout } = await sync("--yes", "--refresh");
     expect(stdout).toContain(
@@ -233,10 +298,18 @@ describe("bambu-hando 3dfp sync", () => {
     expect(stdout).toContain(
       "Add       #1 Sunlu PETG 2.0 Vivid Yellow to 3DFP as #101 Sunlu PETG Vivid Yellow at 564 g, with its tag",
     );
-    expect(stdout).toContain("1 change: 2 API calls");
+    expect(stdout).toContain("1 change: 1 API call");
     expect(writes()).toEqual([
-      ["POST", "/api/v1/my/spools", { filament_id: 101, remaining_grams: 564 }],
-      ["PATCH", "/api/v1/my/spools/NEW001", { bambu_tag_id: "04A1B2C3D4E5F6" }],
+      [
+        "POST",
+        "/api/v1/my/spools",
+        {
+          filament_id: 101,
+          remaining_grams: 564,
+          bambu_tag_id: "04A1B2C3D4E5F6",
+          external_id: "spoolease:1",
+        },
+      ],
     ]);
     expect(await savedLinks()).toMatchObject([
       { spoolease: "1", tdfp: "NEW001", tag: "04A1B2C3D4E5F6" },
@@ -291,6 +364,52 @@ describe("bambu-hando 3dfp sync", () => {
       expect(stderr).toContain("shell history");
       expect(stderr).not.toContain("LEAKME");
     }
+  });
+
+  /** The sync with no console flags at all, so only what was saved can say where the console is. */
+  async function bareSync(...args: string[]): Promise<{ code: number; output: string }> {
+    let output = "";
+    const io = { stdout: (t: string) => (output += t), stderr: (t: string) => (output += t) };
+    const code = await main(["3dfp", "sync", "--dry-run", ...args], io);
+    expect(output).not.toContain(TEST_SECURITY_KEY);
+    return { code, output };
+  }
+
+  it("finds the console as every command does: tui.json's address with its port, the key from the environment", async () => {
+    vi.stubEnv("SPOOLEASE_HOST", "");
+    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: "WRONG" });
+    await rememberConsole({ host: "127.0.0.1", port: spoolease.port });
+    expect(await bareSync()).toMatchObject({ code: 0 });
+    expect(spoolease.requests[0]?.path).toBe("/api/test-key");
+  });
+
+  it("never sends BambuStudio's key to the console saved in Settings", async () => {
+    vi.stubEnv("SPOOLEASE_HOST", "");
+    vi.stubEnv("SPOOLEASE_SECURITY_KEY", "");
+    await installSpoolEaseConfig(home, { address: "192.0.2.1", security_key: TEST_SECURITY_KEY });
+    await rememberConsole({ host: "127.0.0.1", port: spoolease.port });
+    expect((await bareSync()).output).toMatch(/SpoolEase host and security key are required/);
+    expect(spoolease.requests).toEqual([]);
+  });
+
+  it.skipIf(!privateKeyringSupported)(
+    "takes the key for BambuStudio's console from the keyring when BambuStudio has none",
+    async () => {
+      vi.stubEnv("SPOOLEASE_HOST", "");
+      vi.stubEnv("SPOOLEASE_SECURITY_KEY", "");
+      await installSpoolEaseConfig(home, { address: "127.0.0.1", security_key: "" });
+      await storeSecret(SECRETS.spoolease, TEST_SECURITY_KEY);
+      expect(await bareSync("--spoolease-port", String(spoolease.port))).toMatchObject({
+        code: 0,
+      });
+    },
+  );
+
+  it("lets --no-spoolease-https switch off an HTTPS saved in Settings", async () => {
+    vi.stubEnv("SPOOLEASE_HOST", "");
+    await rememberConsole({ host: "127.0.0.1", port: spoolease.port, https: true });
+    expect((await sync("--dry-run")).code).not.toBe(0);
+    expect(await sync("--dry-run", "--no-spoolease-https")).toMatchObject({ code: 0 });
   });
 
   it("needs the SpoolEase console, and its key to work", async () => {

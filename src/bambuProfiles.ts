@@ -144,19 +144,45 @@ export class SystemProfiles {
   }
 }
 
-/** The logged-in preset folder and selected printer from BambuStudio.conf; nulls when unknown. */
-export async function readBambuStudioConf(
-  configDir: string,
-): Promise<{ presetFolder: string | null; printer: string | null }> {
+/** BambuStudio's nozzle types (NozzleVolumeType's names), each a filament_extruder_variant's second half. */
+const NOZZLE_TYPES = new Set([
+  "Standard",
+  "High Flow",
+  "TPU High Flow",
+  "TPU285",
+  "Hybrid",
+  "E3D High Flow",
+]);
+
+export interface BambuStudioConf {
+  presetFolder: string | null;
+  printer: string | null;
+  /** nozzle_volume_types: each printer preset's nozzle type ("High Flow"), the first extruder's when it lists several. */
+  nozzleTypes: Record<string, string>;
+}
+
+/** The logged-in preset folder, selected printer and nozzle types from BambuStudio.conf; nulls (and none) when unknown. */
+export async function readBambuStudioConf(configDir: string): Promise<BambuStudioConf> {
   try {
     const conf = await readJson(join(configDir, "BambuStudio.conf"));
     const app = conf.app as Record<string, unknown> | undefined;
     const presets = conf.presets as Record<string, unknown> | undefined;
     const text = (value: unknown) => (typeof value === "string" && value ? value : null);
-    return { presetFolder: text(app?.preset_folder), printer: text(presets?.machine) };
+    const types = conf.nozzle_volume_types;
+    const nozzleTypes: Record<string, string> = {};
+    if (types && typeof types === "object" && !Array.isArray(types))
+      for (const [printer, value] of Object.entries(types))
+        if (typeof value === "string") nozzleTypes[printer] = value.split(",")[0]?.trim() ?? "";
+    return { presetFolder: text(app?.preset_folder), printer: text(presets?.machine), nozzleTypes };
   } catch {
-    return { presetFolder: null, printer: null };
+    return { presetFolder: null, printer: null, nozzleTypes: {} };
   }
+}
+
+/** The printer preset's nozzle type in BambuStudio; Standard when it's missing or not one BambuStudio knows. */
+export function nozzleTypeFor(types: Record<string, string>, printer: string): string {
+  const type = types[printer] ?? "";
+  return NOZZLE_TYPES.has(type) ? type : "Standard";
 }
 
 /** Where presets go when not given: BambuStudio's current preset folder and printer, else "default" and DEFAULT_PRINTER. */

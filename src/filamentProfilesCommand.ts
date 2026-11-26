@@ -32,6 +32,7 @@ import {
 import { tildePath } from "./paths.js";
 import { holdsSecret, KEY_ARGUMENT_ERROR } from "./secrets.js";
 import { spoolSyncCommand } from "./spoolSyncCommand.js";
+import { tdfpImportCommand } from "./tdfpImportCommand.js";
 
 interface Io {
   stdout: (text: string) => void;
@@ -40,7 +41,7 @@ interface Io {
   confirm?: (question: string) => Promise<boolean | null>;
 }
 
-export const TDFP_USAGE = `Usage: bambu-hando 3dfp <usage|spools|sync|filament|search|fill|catalog> [options]
+export const TDFP_USAGE = `Usage: bambu-hando 3dfp <usage|spools|sync|import|filament|search|fill|catalog> [options]
 
 Reads your 3DFilamentProfiles account with the API key from \`bambu-hando key set 3dfp\`
 (or FILAMENTPROFILES_API_KEY). The API allows a monthly number of calls, so bambu-hando
@@ -50,13 +51,15 @@ counts them and keeps what it read in a local catalog.
   spools           Your spools: one call, or none while the last list is under an hour old
   sync             Link your SpoolEase spools to them and keep their weights current
                    (bambu-hando 3dfp sync --help)
+  import <code>... Bring 3DFP spools into BambuStudio and SpoolEase, and link them
+                   (bambu-hando 3dfp import --help)
   filament <id>    A filament's full record: one call the first time, then from the catalog
   search <words>   Filaments in the catalog (no call); --online searches 3DFilamentProfiles (one call)
   fill             From the ${FILL_FROM_DAY}th (UTC), spend the month's leftover calls filling the catalog
   catalog          What the catalog holds (no call)
 
 Options:
-  --refresh          spools: fetch the list again even when it's fresh
+  --refresh          spools: fetch the whole list again, even when it's fresh
   --refresh-stale    filament: fetch a record again when it's 30 days old or more
   --online           search: ask 3DFilamentProfiles (one call) and keep the results
   --brand <key>      search: only this brand key (e.g. sunlu)
@@ -384,6 +387,7 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
     const report = {
       fetched_at: result.fetchedAt.toISOString(),
       from_cache: result.fromCache,
+      changes_only: result.changesOnly,
       spools: result.spools.map(snakeKeys),
       quota: {
         limit: quota.limit,
@@ -402,13 +406,14 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
       : `; ${quota.exact ? "" : "about "}${quota.remaining} of ${quota.limit} left this month`;
   const footer = result.fromCache
     ? `${count} from the cache, fetched ${utcMinute(result.fetchedAt)} (no API call; --refresh fetches again)`
-    : `${count} from 3DFilamentProfiles (1 API call${left})`;
+    : `${count} from 3DFilamentProfiles${result.changesOnly ? ", with what changed since the last list" : ""} (1 API call${left})`;
   io.stdout(`${[...spoolLines(result.spools), footer].join("\n")}\n`);
   return 0;
 }
 
 export async function filamentProfilesCommand(argv: string[], io: Io): Promise<number> {
   if (argv[0] === "sync") return spoolSyncCommand(argv.slice(1), io);
+  if (argv[0] === "import") return tdfpImportCommand(argv.slice(1), io);
   try {
     // Before parsing: parseArgs quotes an unknown option, and a key typed there would be printed back.
     if (argv.some(holdsSecret)) throw new TdfpUsageError(KEY_ARGUMENT_ERROR);

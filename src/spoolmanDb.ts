@@ -8,6 +8,7 @@ import { normalizeRgba } from "./colors.js";
 import { errorMessage } from "./errors.js";
 import type { FilamentProfile } from "./models.js";
 import { cacheDir } from "./paths.js";
+import { checkedSettings, midpoint } from "./presetSettings.js";
 import { derivedFilamentId } from "./sources.js";
 
 /** --source value that selects SpoolmanDB instead of a file or URL. */
@@ -43,6 +44,11 @@ export interface ProfileFilters {
   match: string;
 }
 
+/** `{ [key]: value }` when there is a value, else nothing: for optional fields under exactOptionalPropertyTypes. */
+function optional<K extends string>(key: K, value: number | undefined): { [P in K]?: number } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]?: number });
+}
+
 function str(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -65,16 +71,34 @@ function nozzleTemps(
   return single === null ? DEFAULT_TEMPS : [Math.round(single), Math.round(single)];
 }
 
-function materialTemps(materials: unknown): Map<string, number> {
+/** materials.json's temperature for each material: `extruder_temp` or `bed_temp`. */
+function materialTemps(
+  materials: unknown,
+  field: "extruder_temp" | "bed_temp" = "extruder_temp",
+): Map<string, number> {
   const temps = new Map<string, number>();
   if (!Array.isArray(materials)) return temps;
   for (const item of materials) {
     if (typeof item !== "object" || item === null) continue;
     const record = item as Record<string, unknown>;
-    const temp = num(record.extruder_temp);
+    const temp = num(record[field]);
     if (str(record.material) && temp !== null) temps.set(str(record.material).toUpperCase(), temp);
   }
   return temps;
+}
+
+/** The entry's temperature for the presets: its own value, else the middle of its range, else the material's. */
+function presetTemp(
+  entry: Record<string, unknown>,
+  field: "extruder_temp" | "bed_temp",
+  materialTemp: number | undefined,
+): number | undefined {
+  const single = num(entry[field]);
+  if (single !== null) return Math.round(single);
+  const range = entry[`${field}_range`];
+  const mid =
+    Array.isArray(range) && range.length === 2 ? midpoint(num(range[0]), num(range[1])) : undefined;
+  return mid ?? (materialTemp === undefined ? undefined : Math.round(materialTemp));
 }
 
 /**
@@ -91,6 +115,7 @@ export function catalogProfiles(
 ): FilamentProfile[] {
   if (!Array.isArray(filaments)) throw new Error("SpoolmanDB filaments.json is not a list");
   const temps = materialTemps(materials);
+  const beds = materialTemps(materials, "bed_temp");
   const byName = new Map<string, FilamentProfile>();
 
   for (const item of filaments) {
@@ -110,6 +135,10 @@ export function catalogProfiles(
     const hexes = entry.color_hexes;
     const hex = str(entry.color_hex) || (Array.isArray(hexes) ? str(hexes[0]) : "");
     const [nozzleTempMin, nozzleTempMax] = nozzleTemps(entry, temps.get(material));
+    const settings = checkedSettings({
+      ...optional("printTemp", presetTemp(entry, "extruder_temp", temps.get(material))),
+      ...optional("bedTemp", presetTemp(entry, "bed_temp", beds.get(material))),
+    });
     byName.set(name, {
       name,
       brand: manufacturer,
@@ -125,6 +154,7 @@ export function catalogProfiles(
       filamentId: derivedFilamentId(name),
       labelWeight: Math.round(num(entry.weight) ?? 0),
       coreWeight: Math.round(num(entry.spool_weight) ?? 0),
+      ...(Object.keys(settings).length ? { settings } : {}),
     });
   }
   return [...byName.values()];

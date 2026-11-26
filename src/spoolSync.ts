@@ -3,15 +3,19 @@
 
 import { QuotaError } from "./apiQuota.js";
 import { errorMessage } from "./errors.js";
-import type {
-  FilamentProfilesClient,
-  SpoolPatch,
-  TdfpFilament,
-  TdfpSpool,
+import {
+  type AddedSpool,
+  type BulkSpoolResult,
+  type FilamentProfilesClient,
+  MAX_BULK_UPDATES,
+  patchProblem,
+  type SpoolPatch,
+  type TdfpFilament,
+  type TdfpSpool,
 } from "./filamentProfiles.js";
 import type { SpoolRecord } from "./spoolease.js";
 import { remainingGrams } from "./spoolInventory.js";
-import type { SpoolLink } from "./spoolLinks.js";
+import { externalIdFor, externalIdIsOurs, type SpoolLink } from "./spoolLinks.js";
 
 /** Weights closer than this count as the same: scales and rounding wobble by a few grams. */
 export const WEIGHT_TOLERANCE_G = 5;
@@ -118,11 +122,16 @@ export function addCandidates(spool: SpoolRecord, filaments: TdfpFilament[]): Td
   );
 }
 
+export type LinkHow = "kept" | "recorded" | "matched" | "chosen";
+
 export type SyncRow =
-  /** A linked pair, already ("kept"), by name ("matched") or as asked ("chosen"); patch is what 3DFP gets. */
+  /**
+   * A linked pair, already ("kept"), by the SpoolEase ID 3DFP keeps for it ("recorded"), by name ("matched") or as
+   * asked ("chosen"); patch is what 3DFP gets.
+   */
   | {
       kind: "linked";
-      how: "kept" | "matched" | "chosen";
+      how: LinkHow;
       spool: SpoolRecord;
       tdfp: TdfpSpool;
       before: SpoolLink | null;
@@ -146,6 +155,8 @@ export type SyncRow =
       spool: SpoolRecord | null;
       tdfp: TdfpSpool | null;
       reason: "asked" | "replaced" | "spoolease-gone" | "tdfp-gone";
+      /** Clears the 3DFP spool's external_id when it still names this SpoolEase spool, so no sync relinks them. */
+      patch: SpoolPatch | null;
     }
   /** Several 3DFP spools fit, or the one that fits fits other SpoolEase spools too. */
   | { kind: "ambiguous"; spool: SpoolRecord; candidates: TdfpSpool[] }
@@ -181,16 +192,21 @@ export interface SyncInput {
   filamentsFor?: (spool: SpoolRecord) => TdfpFilament[];
   /** A catalog filament by id, for a chosen add. */
   filamentById?: (id: number) => TdfpFilament | null;
+  /** 3DFP spools linked to another console's spools: never linked here by the SpoolEase ID they keep. */
+  linkedElsewhere?: ReadonlySet<string>;
   now: Date;
 }
 
 /** A choice that doesn't fit the spools; nothing was planned. */
 export class SyncPlanError extends Error {}
 
-export function rowCalls(row: SyncRow): number {
-  if (row.kind === "linked") return row.patch ? 1 : 0;
-  if (row.kind === "add") return row.tag ? 2 : 1;
-  return 0;
+/** The calls applying these rows takes: their 3DFP updates go up to MAX_BULK_UPDATES a call, each add (tag included) one. */
+export function planCalls(rows: SyncRow[]): number {
+  const updates = rows.filter(
+    (row) => (row.kind === "linked" || row.kind === "unlinked") && row.patch,
+  ).length;
+  const adds = rows.filter((row) => row.kind === "add").length;
+  return Math.ceil(updates / MAX_BULK_UPDATES) + adds;
 }
 
 function rowChanges(row: SyncRow): boolean {
@@ -208,7 +224,7 @@ function linkedRow(
   spool: SpoolRecord,
   tdfp: TdfpSpool,
   before: SpoolLink | null,
-  how: "kept" | "matched" | "chosen",
+  how: LinkHow,
   now: Date,
 ): SyncRow {
   const left = remainingGrams(spool);
@@ -226,6 +242,10 @@ function linkedRow(
     patch.bambuTagId = spool.tagId;
     tag = spool.tagId;
   }
+  // Unread (undefined) or another app's ID stays as it is.
+  const id = externalIdFor(spool.id);
+  if (tdfp.externalId !== undefined && externalIdIsOurs(tdfp.externalId) && tdfp.externalId !== id)
+    patch.externalId = id;
   const after: SpoolLink = {
     spoolease: spool.id,
     tdfp: tdfp.shortCode,
@@ -318,8 +338,9 @@ export function planSync(input: SyncInput): SyncPlan {
       kind: "unlinked",
       link,
       spool: null,
-      tdfp: null,
+      tdfp: tdByCode.get(link.tdfp) ?? null,
       reason: reason ?? "spoolease-gone",
+      patch: null,
     });
     if (reason === "asked") settled.add(link.spoolease);
   }
@@ -334,6 +355,24 @@ export function planSync(input: SyncInput): SyncPlan {
     const spool = seById.get(id);
     if (spool)
       bySpool.set(id, addRow(spool, filamentId, input.filamentById?.(filamentId) ?? null, true));
+  }
+
+  // A 3DFP spool that names a SpoolEase spool in its external_id is that spool's, when brand and material agree
+  // too (another console's spool #1 is someone else's).
+  for (const spool of input.spoolease) {
+    if (bySpool.has(spool.id) || settled.has(spool.id)) continue;
+    const named = input.tdfp.filter(
+      (tdfp) =>
+        !takenCodes.has(tdfp.shortCode) &&
+        !input.linkedElsewhere?.has(tdfp.shortCode) &&
+        tdfp.externalId === externalIdFor(spool.id) &&
+        squash(tdfp.brand) === squash(spool.brand) &&
+        squash(tdfp.material) === squash(spool.material),
+    );
+    const only = named[0];
+    if (named.length !== 1 || !only) continue;
+    bySpool.set(spool.id, linkedRow(spool, only, null, "recorded", input.now));
+    takenCodes.add(only.shortCode);
   }
 
   const open = input.spoolease.filter((spool) => !bySpool.has(spool.id) && !settled.has(spool.id));
@@ -374,10 +413,23 @@ export function planSync(input: SyncInput): SyncPlan {
   const tdfpOnly: SyncRow[] = freeTdfp
     .filter((tdfp) => !claimed.has(tdfp.shortCode))
     .map((tdfp) => ({ kind: "tdfp-only", tdfp }));
+  // A link that goes clears the ID it left on 3DFP, unless that spool is linked to the same SpoolEase spool again.
+  const relinked = new Set(
+    spoolRows.flatMap((row) =>
+      row.kind === "linked" ? [`${row.spool.id} ${row.tdfp.shortCode}`] : [],
+    ),
+  );
+  for (const row of dropped)
+    if (
+      row.kind === "unlinked" &&
+      row.tdfp?.externalId === externalIdFor(row.link.spoolease) &&
+      !relinked.has(`${row.link.spoolease} ${row.tdfp.shortCode}`)
+    )
+      row.patch = { externalId: null };
   const rows = [...dropped, ...spoolRows, ...tdfpOnly];
   return {
     rows,
-    calls: rows.reduce((sum, row) => sum + rowCalls(row), 0),
+    calls: planCalls(rows),
     changes: rows.filter(rowChanges).length,
     now: input.now,
   };
@@ -392,94 +444,139 @@ export interface RowOutcome {
 }
 
 export interface AppliedSync {
-  /** The links to keep: what was sent, or what was already there for rows whose calls failed. */
+  /** The links to keep, in the plan's order: what was sent, or what was already there for rows whose calls failed. */
   links: SpoolLink[];
-  /** One per row that needed API calls. */
+  /** One per row that needed API calls, in the plan's order. */
   outcomes: RowOutcome[];
+  /** Requests sent: what the quota was charged. */
+  calls: number;
 }
 
-/** Sends the plan's 3DFP writes one at a time; a failed row doesn't stop the others, a used-up quota stops all calls. */
+type LinkedRow = Extract<SyncRow, { kind: "linked" }>;
+type UpdateRow = Extract<SyncRow, { kind: "linked" | "unlinked" }> & { patch: SpoolPatch };
+type AddRow = Extract<SyncRow, { kind: "add" }>;
+
+/** The 3DFP spool an update goes to. */
+const updateCode = (row: UpdateRow): string =>
+  row.kind === "linked" ? row.tdfp.shortCode : row.link.tdfp;
+
+/** A linked row whose update didn't go through keeps the link, without what wasn't sent. */
+const unsentLink = (row: LinkedRow): SpoolLink => ({
+  ...row.after,
+  agreed: row.before?.agreed ?? null,
+  tag: row.before?.tag ?? null,
+});
+
+/**
+ * Sends the plan's 3DFP writes: the linked and unlinked spools' updates in bulk, MAX_BULK_UPDATES a call, then each
+ * add with its tag and SpoolEase ID. A failed update or add doesn't stop the others; a used-up quota stops all calls.
+ */
 export async function applySync(
   plan: SyncPlan,
   client: FilamentProfilesClient,
   onRow: (outcome: RowOutcome) => void = () => {},
 ): Promise<AppliedSync> {
-  const links: SpoolLink[] = [];
-  const outcomes: RowOutcome[] = [];
+  const results = new Map<SyncRow, { link: SpoolLink | null; outcome: RowOutcome }>();
+  let calls = 0;
   let quotaGone: string | null = null;
-  const report = (outcome: RowOutcome) => {
-    outcomes.push(outcome);
+  const settle = (row: SyncRow, link: SpoolLink | null, outcome: RowOutcome) => {
+    results.set(row, { link, outcome });
     onRow(outcome);
   };
+  // A request that failed still cost a call, unless the quota stopped it before it was sent.
   const failed = (err: unknown): string => {
     if (err instanceof QuotaError) quotaGone = err.message;
+    else calls += 1;
     return errorMessage(err);
   };
 
-  for (const row of plan.rows) {
-    if (row.kind === "linked") {
-      if (!row.patch) {
-        links.push(row.after);
-        continue;
-      }
-      if (quotaGone) {
-        links.push({
-          ...row.after,
-          agreed: row.before?.agreed ?? null,
-          tag: row.before?.tag ?? null,
-        });
-        report({ row, ok: false, error: quotaGone });
-        continue;
-      }
-      try {
-        await client.updateSpool(row.tdfp.shortCode, row.patch);
-        links.push(row.after);
-        report({ row, ok: true, error: null });
-      } catch (err) {
-        links.push({
-          ...row.after,
-          agreed: row.before?.agreed ?? null,
-          tag: row.before?.tag ?? null,
-        });
-        report({ row, ok: false, error: failed(err) });
-      }
-    } else if (row.kind === "add") {
-      if (quotaGone) {
-        report({ row, ok: false, error: quotaGone });
-        continue;
-      }
-      let code: string;
-      try {
-        const added = await client.addSpool({
-          filamentId: row.filamentId,
-          ...(row.grams === null ? {} : { remainingGrams: row.grams }),
-        });
-        if (!added.created) throw new Error("3DFilamentProfiles created no spool");
-        code = added.spool.shortCode;
-      } catch (err) {
-        report({ row, ok: false, error: failed(err) });
-        continue;
-      }
-      const link: SpoolLink = {
-        spoolease: row.spool.id,
-        tdfp: code,
-        agreed: row.grams === null ? null : { spoolease: row.grams, tdfp: row.grams },
-        tag: null,
-        linkedAt: plan.now.toISOString(),
-      };
-      let error: string | null = null;
-      if (row.tag) {
-        try {
-          if (quotaGone) throw new QuotaError(quotaGone);
-          await client.updateSpool(code, { bambuTagId: row.tag });
-          link.tag = row.tag;
-        } catch (err) {
-          error = `added as ${code}, but its tag wasn't written: ${failed(err)}`;
-        }
-      }
-      links.push(link);
-      report({ row, ok: error === null, error, created: code });
-    }
+  // A link that goes but whose ID couldn't be cleared stays, so the next sync clears it instead of relinking.
+  const keptOnFailure = (row: UpdateRow): SpoolLink | null =>
+    row.kind === "linked"
+      ? unsentLink(row)
+      : row.reason === "asked" || row.reason === "spoolease-gone"
+        ? row.link
+        : null;
+  const pending = plan.rows.filter(
+    (row): row is UpdateRow =>
+      (row.kind === "linked" || row.kind === "unlinked") && row.patch !== null,
+  );
+  // An update the API would refuse fails alone, without a call, instead of failing its whole batch.
+  const updates: UpdateRow[] = [];
+  for (const row of pending) {
+    const problem = patchProblem(row.patch);
+    if (problem) settle(row, keptOnFailure(row), { row, ok: false, error: problem });
+    else updates.push(row);
   }
-  return { links, outcomes };
+  for (let start = 0; start < updates.length; start += MAX_BULK_UPDATES) {
+    const batch = updates.slice(start, start + MAX_BULK_UPDATES);
+    let answers: BulkSpoolResult[] | null = null;
+    let error: string | null = quotaGone;
+    if (!error) {
+      try {
+        answers = await client.updateSpools(
+          batch.map((row) => ({ shortCode: updateCode(row), ...row.patch })),
+        );
+        calls += 1;
+      } catch (err) {
+        error = failed(err);
+      }
+    }
+    batch.forEach((row, index) => {
+      const answer = answers?.[index];
+      // A link that goes is gone once its ID is cleared.
+      if (answer?.ok)
+        settle(row, row.kind === "linked" ? row.after : null, { row, ok: true, error: null });
+      else
+        settle(row, keptOnFailure(row), {
+          row,
+          ok: false,
+          error: answer && !answer.ok ? answer.error : (error ?? "not sent"),
+        });
+    });
+  }
+
+  for (const row of plan.rows.filter((row): row is AddRow => row.kind === "add")) {
+    if (quotaGone) {
+      settle(row, null, { row, ok: false, error: quotaGone });
+      continue;
+    }
+    let added: AddedSpool;
+    try {
+      added = await client.addSpool({
+        filamentId: row.filamentId,
+        ...(row.grams === null ? {} : { remainingGrams: row.grams }),
+        ...(row.tag ? { bambuTagId: row.tag } : {}),
+        externalId: externalIdFor(row.spool.id),
+      });
+    } catch (err) {
+      settle(row, null, { row, ok: false, error: failed(err) });
+      continue;
+    }
+    calls += 1;
+    if (!added.created) {
+      settle(row, null, { row, ok: false, error: "3DFilamentProfiles created no spool" });
+      continue;
+    }
+    const code = added.spool.shortCode;
+    const link: SpoolLink = {
+      spoolease: row.spool.id,
+      tdfp: code,
+      agreed: row.grams === null ? null : { spoolease: row.grams, tdfp: row.grams },
+      tag: row.tag,
+      linkedAt: plan.now.toISOString(),
+    };
+    settle(row, link, { row, ok: true, error: null, created: code });
+  }
+
+  const links: SpoolLink[] = [];
+  const outcomes: RowOutcome[] = [];
+  for (const row of plan.rows) {
+    const result = results.get(row);
+    if (result) {
+      if (result.link) links.push(result.link);
+      outcomes.push(result.outcome);
+    } else if (row.kind === "linked") links.push(row.after);
+  }
+  return { links, outcomes, calls };
 }

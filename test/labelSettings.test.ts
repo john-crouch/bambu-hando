@@ -6,13 +6,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
   DEFAULT_LABEL_SETTINGS,
   labelSettingsPath,
   loadLabelSettings,
   saveLabelSettings,
+  updateLabelSettings,
 } from "../src/labelSettings.js";
+import { writesSettled } from "../src/pendingWrites.js";
 
 describe("label settings", () => {
   let home: string;
@@ -53,6 +54,13 @@ describe("label settings", () => {
     });
   });
 
+  it("survives saves that overlap, ending with one whole file", async () => {
+    const sizes = ["40x30mm", "50x30mm", "57x32mm", "62x29mm"];
+    await Promise.all(sizes.map((size) => saveLabelSettings({ ...DEFAULT_LABEL_SETTINGS, size })));
+
+    expect(sizes).toContain(JSON.parse(await readFile(labelSettingsPath(), "utf-8")).size);
+  });
+
   it("falls back to defaults for damaged files and values it doesn't know", async () => {
     await mkdir(join(home, ".config", "bambu-hando"), { recursive: true });
     await writeFile(labelSettingsPath(), "{ not json", "utf-8");
@@ -67,5 +75,29 @@ describe("label settings", () => {
       ...DEFAULT_LABEL_SETTINGS,
       fields: ["brand", "id"],
     });
+  });
+
+  it("merges a change into labels.json as it is, keeping every change made at once", async () => {
+    await saveLabelSettings({ ...DEFAULT_LABEL_SETTINGS, printer: "Old" });
+    const [first, second] = await Promise.all([
+      updateLabelSettings({ printer: "Dymo" }),
+      updateLabelSettings({ output: "/tmp/labels.pdf" }),
+    ]);
+    expect(first).toEqual({ ...DEFAULT_LABEL_SETTINGS, printer: "Dymo" });
+    expect(second).toEqual({
+      ...DEFAULT_LABEL_SETTINGS,
+      printer: "Dymo",
+      output: "/tmp/labels.pdf",
+    });
+    expect(await loadLabelSettings()).toEqual(second);
+  });
+
+  it("lets a change finish before the exit, the read of labels.json before its write included", async () => {
+    const saving = updateLabelSettings({ printer: "Dymo" });
+    expect(await writesSettled()).toBe(true);
+    expect(JSON.parse(await readFile(labelSettingsPath(), "utf-8"))).toMatchObject({
+      printer: "Dymo",
+    });
+    await saving;
   });
 });

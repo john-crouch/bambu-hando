@@ -93,6 +93,34 @@ describe("buildPreset", () => {
     expect(preset(profileAt(2)).nozzle_temperature).toEqual(["220"]);
   });
 
+  it("writes the source's print settings over the template's", () => {
+    const tuned = preset({
+      ...profileAt(0),
+      nozzleTempMin: 230,
+      nozzleTempMax: 260,
+      settings: { printTemp: 245, bedTemp: 65, flowRatio: 0.97, maxVolumetricSpeed: 11.5 },
+    });
+    expect(tuned).toMatchObject({
+      nozzle_temperature: ["245"],
+      nozzle_temperature_initial_layer: ["245"],
+      hot_plate_temp: ["65"],
+      textured_plate_temp_initial_layer: ["65"],
+      eng_plate_temp: ["65"],
+      filament_flow_ratio: ["0.97"],
+      filament_max_volumetric_speed: ["11.5"],
+    });
+  });
+
+  it("keeps a source's print temperature inside the filament's own range", () => {
+    const hot = preset({
+      ...profileAt(0),
+      nozzleTempMin: 200,
+      nozzleTempMax: 220,
+      settings: { printTemp: 240 },
+    });
+    expect(hot.nozzle_temperature).toEqual(["220"]);
+  });
+
   it("uses the base material's template and type for variants like PLA+", () => {
     const plus = preset({ ...profileAt(2), material: "PLA+" });
 

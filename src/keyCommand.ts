@@ -28,7 +28,9 @@ const KNOWN = Object.values(SECRETS);
 
 export const KEY_USAGE = `Usage: bambu-hando key <set|status|remove> [name]
 
-Keeps API keys in the system keyring (the macOS Keychain, or the Secret Service on Linux), never in a file.
+Keeps API keys and the SpoolEase console's security key in the system keyring (the macOS
+Keychain, or the Secret Service on Linux), never in a file. The TUI's Settings stores the
+SpoolEase key there too.
 
   set <name>      Read a key from a hidden prompt (or from stdin when piped) and store it
   status [name]   Say where each key comes from, never its value
@@ -102,9 +104,10 @@ async function statusLine(
   env: Record<string, string | undefined>,
 ): Promise<string> {
   const head = `${target.name}  ${target.label}`;
-  const fromEnv = env[target.env]?.trim();
-  if (fromEnv) {
-    // Checked as every command checks it, so status never says a key is in use that they'd refuse.
+  const fromEnv = env[target.env];
+  if (fromEnv?.trim()) {
+    // Checked as every command checks it (untrimmed, as loadSecret does), so status never says a key is in use
+    // that they'd refuse.
     const problem = secretProblem(target, fromEnv);
     const source = problem
       ? `from ${target.env}, but not usable (${problem})`

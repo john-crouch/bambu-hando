@@ -11,8 +11,19 @@ import type { UserPreset } from "./syncCheck.js";
 
 export type Preset = Record<string, unknown>;
 
-/** What an edit writes: one value for every variant (or the string), or one value per variant. */
-export type EditValue = { every: string } | { each: string[] };
+/**
+ * What an edit writes: one value for every variant (or the string); one value per variant; or one
+ * nozzle type's value (a filament_extruder_variant name), which goes to every variant of the preset
+ * that held the same value as that one, so a variant set apart keeps its own.
+ */
+export type EditValue = { every: string } | { each: string[] } | { variant: string; value: string };
+
+/** The value an edit writes (a per-variant list's first). */
+export function editedText(edit: EditValue): string {
+  if ("every" in edit) return edit.every;
+  if ("variant" in edit) return edit.value;
+  return edit.each[0] ?? "";
+}
 
 /** Edits by preset key. */
 export type Edits = ReadonlyMap<string, EditValue>;
@@ -146,6 +157,49 @@ export function editField(key: string): EditField | undefined {
   return EDIT_FIELDS.find((f) => f.key === key);
 }
 
+/** Curated settings tuned per nozzle size: an edit of one goes to the preset it was made on unless asked. */
+const NOZZLE_FIELDS = new Set([
+  "filament_max_volumetric_speed",
+  "enable_pressure_advance",
+  "pressure_advance",
+  "filament_retraction_length",
+  "filament_retraction_speed",
+]);
+
+/** Whether a setting belongs to the nozzle size (and raw settings, which may): not copied to the other sizes by default. */
+export function nozzleSpecific(key: string): boolean {
+  return NOZZLE_FIELDS.has(key) || !editField(key);
+}
+
+/** BambuStudio's filament_extruder_variant when a preset lists none. */
+const DEFAULT_VARIANTS = ["Direct Drive Standard"];
+
+/** The preset's nozzle types, one per variant of its per-variant settings ("Direct Drive High Flow"). */
+export function variantNames(preset: Preset): string[] {
+  const names = preset.filament_extruder_variant;
+  return Array.isArray(names) && names.length > 0 && names.every((n) => typeof n === "string")
+    ? names
+    : DEFAULT_VARIANTS;
+}
+
+/** BambuStudio's extruder types, in the order a variant for the nozzle type is looked for. */
+const EXTRUDER_TYPES = ["Direct Drive", "Bowden"];
+
+/**
+ * The variant BambuStudio prints with for the printer's nozzle type (BambuStudio.conf's
+ * nozzle_volume_types: "Standard", "High Flow"): the one named exactly "<extruder type> <nozzle type>",
+ * Direct Drive first; the first when the preset has none of those names, as BambuStudio falls back.
+ */
+export function activeVariant(preset: Preset, nozzleType: string): number {
+  const names = variantNames(preset);
+  if (!nozzleType) return 0;
+  for (const extruder of EXTRUDER_TYPES) {
+    const index = names.indexOf(`${extruder} ${nozzleType}`);
+    if (index >= 0) return index;
+  }
+  return 0;
+}
+
 const LOCKED: Record<string, string> = {
   name: "it comes from the file name",
   filament_settings_id: "BambuStudio keeps it equal to the name",
@@ -201,9 +255,10 @@ export function shownValue(field: EditField, value: unknown): string {
   return [...new Set(list.map((entry) => shownEntry(field, entry)))].join(" / ");
 }
 
-/** The text editing a field starts from: its first variant, with the printer's value as nothing. */
-export function fieldText(field: EditField, value: unknown): string {
-  const first = entries(value)?.[0] ?? "";
+/** The text editing a field starts from: its variant at index (else its first), with the printer's value as nothing. */
+export function fieldText(field: EditField, value: unknown, index = 0): string {
+  const list = entries(value);
+  const first = list?.[index] ?? list?.[0] ?? "";
   if (field.nilable && first === "nil") return "";
   if (field.kind === "color") return first.replace(/^#/, "");
   if (field.kind === "text") return escapeText(first);
@@ -291,14 +346,31 @@ export function parseRaw(current: unknown, text: string): { edit: EditValue } | 
   return { edit: { every: unescapeText(text) } };
 }
 
-function applyValue(current: unknown, edit: EditValue, missingAsString: boolean): unknown {
+function applyValue(
+  current: unknown,
+  edit: EditValue,
+  missingAsString: boolean,
+  names: string[],
+): unknown {
+  if ("variant" in edit) {
+    if (!Array.isArray(current) || current.length === 0)
+      return applyValue(current, { every: edit.value }, missingAsString, names);
+    // The variant's place in this preset, else its first (BambuStudio's fallback).
+    const at = names.length === current.length ? names.indexOf(edit.variant) : -1;
+    const old = current[Math.max(0, at)];
+    return current.map((entry) => (entry === old ? edit.value : entry));
+  }
   if ("each" in edit)
     return Array.isArray(current) && current.length === edit.each.length
       ? [...edit.each]
       : undefined;
   if (typeof current === "string") return edit.every;
-  if (Array.isArray(current))
-    return Array.from({ length: Math.max(1, current.length) }, () => edit.every);
+  if (Array.isArray(current)) {
+    if (current.length === 0) return [edit.every];
+    // "nil" is the printer's value: kept, as buildPreset's everyVariant keeps it, unless that's all there is.
+    const real = current.some((entry) => entry !== "nil");
+    return current.map((entry) => (real && entry === "nil" ? entry : edit.every));
+  }
   if (current === undefined) return missingAsString ? edit.every : [edit.every];
   return undefined;
 }
@@ -308,7 +380,12 @@ export function applyEdits(preset: Preset, edits: Edits): { preset: Preset; skip
   const next: Preset = { ...preset };
   const skipped: string[] = [];
   for (const [key, edit] of edits) {
-    const value = applyValue(preset[key], edit, editField(key)?.scalar ?? false);
+    const value = applyValue(
+      preset[key],
+      edit,
+      editField(key)?.scalar ?? false,
+      variantNames(preset),
+    );
     if (value === undefined) skipped.push(key);
     else next[key] = value;
   }
@@ -326,6 +403,11 @@ export interface EditChange {
 function shownRaw(field: EditField | undefined, value: unknown): string {
   if (field) return shownValue(field, value);
   return value === undefined ? "not set" : (rawText(value) ?? JSON.stringify(value));
+}
+
+/** A setting's value for people: a curated field's as the form shows it, any other as its raw text. */
+export function shownSetting(key: string, value: unknown): string {
+  return shownRaw(editField(key), value);
 }
 
 /** What the edits change in `preset`, in the order they were made; edits that change nothing are left out. */
@@ -436,17 +518,28 @@ export function skippedDetail(preset: Preset, edits: Edits, skipped: string[]): 
     .join("; ");
 }
 
-/**
- * Writes the edits into each preset, read again just before, one file at a time; dates its .info so
- * BambuStudio's cloud sync uploads the change. A preset that already has the values isn't written.
- */
-export async function writePresetEdits(
+/** Writes the same edits into each preset (writePresetTargets with one set of edits for all). */
+export function writePresetEdits(
   paths: string[],
   edits: Edits,
   nowMs: number = Date.now(),
 ): Promise<EditResult[]> {
+  return writePresetTargets(
+    paths.map((path) => ({ path, edits })),
+    nowMs,
+  );
+}
+
+/**
+ * Writes each preset its own edits, read again just before, one file at a time; dates its .info so
+ * BambuStudio's cloud sync uploads the change. A preset that already has the values isn't written.
+ */
+export async function writePresetTargets(
+  targets: readonly { path: string; edits: Edits }[],
+  nowMs: number = Date.now(),
+): Promise<EditResult[]> {
   const results: EditResult[] = [];
-  for (const path of paths) {
+  for (const { path, edits } of targets) {
     let preset: Preset;
     try {
       preset = JSON.parse(await readFile(path, "utf-8"));

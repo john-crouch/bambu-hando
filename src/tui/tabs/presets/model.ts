@@ -1,0 +1,688 @@
+// ABOUTME: The Presets tab's model and pure update: the preset list with its detail, the editor, drafts and the review.
+// ABOUTME: Keys and the tab's own messages come in, the next model and commands (file reads, saves) go out.
+
+import {
+  applyEdits,
+  type EditChange,
+  type EditResult,
+  type Edits,
+  nozzleRange,
+  nozzleSpecific,
+  type Preset,
+  presetFamily,
+} from "../../../presetEdit.js";
+import type { UserPreset } from "../../../syncCheck.js";
+import { type KeyPress, letter, typed } from "../../core/keys.js";
+import { type Cmd, send } from "../../core/program.js";
+import {
+  type AppMsg,
+  type Ctx,
+  type Hint,
+  type PaletteCommand,
+  type PresetsData,
+  type Resource,
+  type StartOptions,
+  type Step,
+  type TabMsg,
+  toTab,
+} from "../../core/types.js";
+import { plural } from "../../ui/format.js";
+import { editText, moveCursor, type TextState, typeAhead } from "../../ui/index.js";
+import { connectionOf, validPort } from "../settings/connection.js";
+import {
+  type PresetFileMsg,
+  type RangeMsg,
+  type RangeState,
+  rangeCmd,
+  readPresetCmd,
+  type SavedMsg,
+  type SpoolEaseOutcome,
+  saveCmd,
+} from "./cmds.js";
+import { type PresetGroup, presetGroups, presetRows, presetTitle } from "./detail.js";
+import {
+  type EditorModel,
+  editorCapturesText,
+  editorChanges,
+  editorHints,
+  initEditor,
+  updateEditor,
+} from "./editor.js";
+
+/** A preset file as read for the detail panel (and to open it). */
+export type FileState =
+  | { state: "loading" }
+  | { state: "ready"; preset: Preset }
+  | { state: "failed"; error: string };
+
+/** The review of an edit before it's saved, and its results once it is. */
+export interface ReviewModel {
+  /** The preset the edit was made on. */
+  preset: UserPreset;
+  edits: Edits;
+  changes: EditChange[];
+  /** The preset, then the others with its filament ID. */
+  targets: UserPreset[];
+  /** Each target's settings, read fresh for the review (the edited one's are the editor's). */
+  contents: ReadonlyMap<string, FileState>;
+  /** The rows (rowId: a change into a target) that save: material settings everywhere, nozzle-size ones into the edited preset. */
+  ticked: ReadonlySet<string>;
+  /** Over reviewRows. */
+  cursor: number;
+  range: RangeState;
+  phase: "review" | "saving" | "done";
+  /** One per ticked target, in targets order, once saved. */
+  results: EditResult[] | null;
+  spoolease: SpoolEaseOutcome | null;
+  error: string;
+}
+
+export interface PresetsModel {
+  view: "list" | "editor" | "review";
+  /** The highlighted preset's file. */
+  path: string | undefined;
+  filter: { text: TextState; focused: boolean };
+  /** Preset files read so far, by path; cleared when the presets reload. */
+  files: ReadonlyMap<string, FileState>;
+  /** The preset being read to open in the editor. */
+  opening: UserPreset | undefined;
+  /** Unsaved edits by preset path, kept for the session. */
+  drafts: ReadonlyMap<string, Edits>;
+  editor: { preset: UserPreset; model: EditorModel } | null;
+  review: ReviewModel | null;
+  /** A deep link's preset path that wasn't listed yet: highlighted once the presets load. */
+  focus: string | undefined;
+}
+
+type OwnMsg =
+  | PresetFileMsg
+  | RangeMsg
+  | SavedMsg
+  | { type: "presets/open"; path: string }
+  | { type: "presets/filter" };
+
+const EMPTY_TEXT: TextState = { value: "", cursor: 0 };
+
+function presetsIn(resource: Resource<PresetsData>): UserPreset[] {
+  if (resource.state === "ready") return resource.value.presets;
+  if (resource.state === "loading" || resource.state === "failed")
+    return resource.previous?.presets ?? [];
+  return [];
+}
+
+/** The presets the list shows now, in order, filtered. */
+export function visiblePresets(model: PresetsModel, ctx: Ctx): UserPreset[] {
+  return presetRows(presetsIn(ctx.resources.presets), model.filter.text.value);
+}
+
+/** The list's rows now: a filament each, filtered. */
+export function visibleGroups(model: PresetsModel, ctx: Ctx): PresetGroup[] {
+  return presetGroups(presetsIn(ctx.resources.presets), model.filter.text.value);
+}
+
+/** Rows a page key moves by: the body less the panel's border, summary and margins. */
+function pageRows(ctx: Ctx): number {
+  return Math.max(1, ctx.bodyRows - 6);
+}
+
+/** Highlights a listed preset (the same one when it still is) and reads it when it hasn't been. */
+function normalize(model: PresetsModel, presets: UserPreset[]): Step<PresetsModel> {
+  const rows = presetRows(presets, model.filter.text.value);
+  const path = rows.some((p) => p.path === model.path) ? model.path : rows[0]?.path;
+  const next = { ...model, path };
+  if (!path || next.files.has(path)) return [next, []];
+  return [
+    { ...next, files: new Map(next.files).set(path, { state: "loading" }) },
+    [readPresetCmd(path)],
+  ];
+}
+
+export function init(ctx: Ctx, _start: StartOptions): Step<PresetsModel> {
+  const model: PresetsModel = {
+    view: "list",
+    path: undefined,
+    filter: { text: EMPTY_TEXT, focused: false },
+    files: new Map(),
+    opening: undefined,
+    drafts: new Map(),
+    editor: null,
+    review: null,
+    focus: undefined,
+  };
+  const [next, cmds] = normalize(model, presetsIn(ctx.resources.presets));
+  return [next, [send<AppMsg>({ type: "app/load", resource: "presets" }), ...cmds]];
+}
+
+/** Reads the preset fresh and opens it in the editor once it's read. */
+function open(model: PresetsModel, preset: UserPreset): Step<PresetsModel> {
+  const files = model.files.has(preset.path)
+    ? model.files
+    : new Map(model.files).set(preset.path, { state: "loading" } as FileState);
+  return [
+    { ...model, path: preset.path, opening: preset, files },
+    [readPresetCmd(preset.path, preset.printer)],
+  ];
+}
+
+/** The group's preset for printer, else its first: moving between filaments keeps the printer. */
+function onPrinter(group: PresetGroup, printer: string | undefined): UserPreset | undefined {
+  return group.presets.find((p) => p.printer === printer) ?? group.presets[0];
+}
+
+function listKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsModel> {
+  const presets = presetsIn(ctx.resources.presets);
+  const groups = presetGroups(presets, model.filter.text.value);
+  const cursor = Math.max(
+    0,
+    groups.findIndex((g) => g.presets.some((p) => p.path === model.path)),
+  );
+  const group = groups[cursor];
+  const highlighted = group?.presets.find((p) => p.path === model.path) ?? group?.presets[0];
+  // Moving on cancels a preset still being read to open.
+  const select = (preset: UserPreset | undefined) =>
+    normalize({ ...model, path: preset?.path, opening: undefined }, presets);
+  const moveTo = (index: number) => {
+    const to = groups[index];
+    return select(to ? onPrinter(to, highlighted?.printer) : undefined);
+  };
+  const moved = (keys: KeyPress) => moveCursor(cursor, keys, groups.length, pageRows(ctx));
+  const clearFilter = () =>
+    normalize({ ...model, filter: { text: EMPTY_TEXT, focused: false } }, presets);
+
+  if (model.filter.focused) {
+    if (key.name === "esc") return clearFilter();
+    // enter keeps the filter and leaves the field; enter again opens.
+    if (key.name === "enter")
+      return [{ ...model, filter: { ...model.filter, focused: false } }, []];
+    if (
+      key.name === "up" ||
+      key.name === "down" ||
+      key.name === "pageUp" ||
+      key.name === "pageDown"
+    )
+      return moveTo(moved(key) ?? cursor);
+    const edited = editText(model.filter.text, key);
+    if (!edited) return [model, []];
+    const text = { value: edited.value, cursor: edited.cursor };
+    if (edited.submit) return normalize({ ...model, filter: { text, focused: false } }, presets);
+    return normalize({ ...model, filter: { text, focused: true } }, presets);
+  }
+
+  if (key.name === "esc") return model.filter.text.value ? clearFilter() : [model, []];
+  if (key.name === "enter") {
+    if (highlighted) return open(model, highlighted);
+    if (presets.length === 0) return [model, [send<AppMsg>({ type: "app/switchTab", tab: "add" })]];
+    return [model, []];
+  }
+  if ((key.name === "left" || key.name === "right") && group && highlighted) {
+    const at = group.presets.indexOf(highlighted) + (key.name === "left" ? -1 : 1);
+    const to = group.presets[Math.min(group.presets.length - 1, Math.max(0, at))];
+    return to === highlighted ? [model, []] : select(to);
+  }
+  const to = moved(key);
+  if (to !== null) return moveTo(to);
+  const text = typed(key);
+  if (text === "/") return [{ ...model, filter: { ...model.filter, focused: true } }, []];
+  if (text === "f" && highlighted && !highlighted.filamentId)
+    return [model, [send<AppMsg>({ type: "app/switchTab", tab: "check", focus: "presetsNoId" })]];
+  // With rows listed r is a letter like the others (the palette reloads); without, it reloads.
+  if (text === "r" && groups.length === 0)
+    return [model, [send<AppMsg>({ type: "app/load", resource: "presets", force: true })]];
+  const jump = letter(key);
+  if (jump)
+    return moveTo(
+      typeAhead(
+        groups.map((g) => g.name),
+        cursor,
+        jump,
+      ),
+    );
+  return [model, []];
+}
+
+/** One row of the review: a change going (when ticked) into one of the targets. */
+export interface ReviewRow {
+  id: string;
+  key: string;
+  path: string;
+  /** The change's first row, which names it. */
+  first: boolean;
+}
+
+export function rowId(key: string, path: string): string {
+  return `${key}\n${path}`;
+}
+
+/** The review's rows: each change, into each target in order. */
+export function reviewRows(review: ReviewModel): ReviewRow[] {
+  return review.changes.flatMap((change) =>
+    review.targets.map((target, index) => ({
+      id: rowId(change.key, target.path),
+      key: change.key,
+      path: target.path,
+      first: index === 0,
+    })),
+  );
+}
+
+/** What saving writes: each target its ticked edits, in targets order; targets with none left out. */
+export function targetEdits(review: ReviewModel): { path: string; edits: Edits }[] {
+  return review.targets.flatMap((target) => {
+    const edits = new Map(
+      [...review.edits].filter(([key]) => review.ticked.has(rowId(key, target.path))),
+    );
+    return edits.size > 0 ? [{ path: target.path, edits }] : [];
+  });
+}
+
+/** The review of the editor's edits: the targets, and SpoolEase's range when the edit changes it. */
+function startReview(
+  model: PresetsModel,
+  preset: UserPreset,
+  editor: EditorModel,
+  ctx: Ctx,
+): Step<PresetsModel> {
+  const edits = editor.edits;
+  const changes = editorChanges(editor);
+  const targets = presetFamily(presetsIn(ctx.resources.presets), preset);
+  const range = nozzleRange(applyEdits(editor.original, edits).preset);
+  const connection = connectionOf(ctx.values);
+  const rangeEdited =
+    changes.some((c) => c.key.startsWith("nozzle_temperature_range_")) &&
+    range !== null &&
+    preset.filamentId !== "";
+  const checks = rangeEdited && connection !== null;
+  // SpoolEase set up but on a port that isn't one: say its range waits, rather than leave it out unsaid.
+  const portBlocks =
+    rangeEdited &&
+    connection === null &&
+    !ctx.values.skipSpoolease &&
+    ctx.values.host.trim() !== "" &&
+    ctx.values.securityKey !== "" &&
+    validPort(ctx.values.port) === null;
+  // A nozzle-size (or raw) setting is tuned for the preset it was made on: the others only when ticked.
+  const ticked = new Set(
+    changes.flatMap((change) =>
+      targets
+        .filter((target) => target.path === preset.path || !nozzleSpecific(change.key))
+        .map((target) => rowId(change.key, target.path)),
+    ),
+  );
+  const others = targets.filter((target) => target.path !== preset.path);
+  const contents = new Map<string, FileState>([
+    [preset.path, { state: "ready", preset: editor.original }],
+    ...others.map((target) => [target.path, { state: "loading" }] as [string, FileState]),
+  ]);
+  const review: ReviewModel = {
+    preset,
+    edits,
+    changes,
+    targets,
+    contents,
+    ticked,
+    cursor: 0,
+    range: checks
+      ? { state: "checking" }
+      : portBlocks
+        ? {
+            state: "warning",
+            warning: `SpoolEase's nozzle range for ${preset.filamentId} won't be updated until the console's port is fixed in Settings`,
+          }
+        : { state: "none" },
+    phase: "review",
+    results: null,
+    spoolease: null,
+    error: "",
+  };
+  return [
+    { ...model, view: "review", review, editor: { preset, model: editor } },
+    [
+      ...others.map((target) => readPresetCmd(target.path)),
+      ...(checks && range && connection
+        ? [rangeCmd(preset.path, preset.filamentId, range, connection)]
+        : []),
+    ],
+  ];
+}
+
+function withDraft(drafts: ReadonlyMap<string, Edits>, path: string, edits: Edits) {
+  const next = new Map(drafts);
+  if (edits.size > 0) next.set(path, edits);
+  else next.delete(path);
+  return next;
+}
+
+function editorKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsModel> {
+  const editor = model.editor;
+  if (!editor) return [{ ...model, view: "list" }, []];
+  const step = updateEditor(editor.model, key, pageRows(ctx));
+  const outcome = step.outcome;
+  if (outcome?.type === "leave")
+    return [
+      {
+        ...model,
+        view: "list",
+        editor: null,
+        drafts: withDraft(model.drafts, editor.preset.path, outcome.edits),
+      },
+      [],
+    ];
+  if (outcome?.type === "review") return startReview(model, editor.preset, step.model, ctx);
+  return [{ ...model, editor: { ...editor, model: step.model } }, []];
+}
+
+function reviewKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsModel> {
+  const review = model.review;
+  if (!review) return [{ ...model, view: "list" }, []];
+  if (review.phase === "saving") return [model, []];
+  if (review.phase === "done") {
+    if (key.name === "esc" || key.name === "enter")
+      return [{ ...model, view: "list", review: null, editor: null }, []];
+    return [model, []];
+  }
+  const set = (changes: Partial<ReviewModel>): Step<PresetsModel> => [
+    { ...model, review: { ...review, error: "", ...changes } },
+    [],
+  ];
+  if (key.name === "esc") return [{ ...model, view: "editor", review: null }, []];
+  const rows = reviewRows(review);
+  const moved = moveCursor(review.cursor, key, rows.length, pageRows(ctx));
+  if (moved !== null) return set({ cursor: moved });
+  if (key.name === "space") {
+    const row = rows[review.cursor];
+    if (!row) return [model, []];
+    const ticked = new Set(review.ticked);
+    if (ticked.has(row.id)) ticked.delete(row.id);
+    else ticked.add(row.id);
+    return set({ ticked });
+  }
+  if (typed(key) === "a") {
+    const writes = targetEdits(review);
+    if (writes.length === 0) return set({ error: "Tick at least one preset to save to" });
+    if ([...review.contents.values()].some((file) => file.state === "loading"))
+      return set({ error: "Still reading the other presets" });
+    if (review.range.state === "checking")
+      return set({ error: "Still reading SpoolEase's nozzle range" });
+    // SpoolEase's range follows the edited preset's: only when its range is saved.
+    const own = writes.find((write) => write.path === review.preset.path)?.edits;
+    const ownRange =
+      own?.has("nozzle_temperature_range_low") || own?.has("nozzle_temperature_range_high");
+    const change = review.range.state === "change" && ownRange ? review.range.change : null;
+    return [
+      { ...model, review: { ...review, phase: "saving", error: "" } },
+      [saveCmd(review.preset.path, writes, change, connectionOf(ctx.values))],
+    ];
+  }
+  return [model, []];
+}
+
+function onKey(model: PresetsModel, key: KeyPress, ctx: Ctx): Step<PresetsModel> {
+  if (model.view === "editor") return editorKey(model, key, ctx);
+  if (model.view === "review") return reviewKey(model, key, ctx);
+  return listKey(model, key, ctx);
+}
+
+function onRead(model: PresetsModel, msg: PresetFileMsg): Step<PresetsModel> {
+  const file: FileState =
+    "preset" in msg
+      ? { state: "ready", preset: msg.preset }
+      : { state: "failed", error: msg.error };
+  const files = new Map(model.files).set(msg.path, file);
+  const review = model.review;
+  // A target the review is reading: its before → after shows once it's here.
+  if (review && review.contents.get(msg.path)?.state === "loading")
+    return [
+      {
+        ...model,
+        files,
+        review: { ...review, contents: new Map(review.contents).set(msg.path, file) },
+      },
+      [],
+    ];
+  const opening = model.opening;
+  // Only the read made to open it knows the printer's nozzle type: a detail read of the same file may come back first.
+  if (opening?.path !== msg.path || msg.printer !== opening.printer)
+    return [{ ...model, files }, []];
+  if (!("preset" in msg)) return [{ ...model, files, opening: undefined }, []];
+  const draft = model.drafts.get(opening.path);
+  const editor = initEditor({
+    name: opening.name,
+    printer: opening.printer,
+    path: opening.path,
+    original: msg.preset,
+    ...(draft ? { edits: draft } : {}),
+    ...(msg.nozzleType ? { nozzleType: msg.nozzleType } : {}),
+    mode: "preset",
+  });
+  return [
+    {
+      ...model,
+      files,
+      opening: undefined,
+      view: "editor",
+      editor: { preset: opening, model: editor },
+      review: null,
+    },
+    [],
+  ];
+}
+
+function onSaved(model: PresetsModel, msg: SavedMsg): Step<PresetsModel> {
+  const review = model.review;
+  if (!review || review.preset.path !== msg.path) return [model, []];
+  const saved = msg.results.filter((r) => r.ok).length;
+  const failed = msg.results.length - saved;
+  const name = review.preset.name;
+  const lines = [
+    `${plural(saved, "BambuStudio preset")} of ${name} saved${failed ? `, ${failed} failed` : ""}: restart BambuStudio to load ${saved === 1 ? "it" : "them"}`,
+    ...msg.results
+      .filter((r) => !r.ok)
+      .map((r) => {
+        const target = review.targets.find((t) => t.path === r.path);
+        return `${target ? presetTitle(target) : r.path}: ${r.detail}`;
+      }),
+    ...(msg.spoolease ? [msg.spoolease.line] : []),
+  ];
+  const ok = failed === 0 && msg.spoolease?.ok !== false;
+  const exitCode: 1 | 2 | undefined = ok ? undefined : msg.setupError ? 2 : 1;
+  const files = new Map(model.files);
+  for (const result of msg.results) files.delete(result.path);
+  // The edits stay a draft on each preset they didn't save to; the edited preset's goes once it saved.
+  const drafts = new Map(model.drafts);
+  const writes = targetEdits(review);
+  for (const result of msg.results) {
+    if (result.ok) {
+      if (result.path === msg.path) drafts.delete(result.path);
+      continue;
+    }
+    const edits = writes.find((write) => write.path === result.path)?.edits ?? review.edits;
+    drafts.set(result.path, new Map([...(drafts.get(result.path) ?? []), ...edits]));
+  }
+  const appMsgs: AppMsg[] = [
+    { type: "app/runFinished", summary: { ok, lines, ...(exitCode ? { exitCode } : {}) } },
+    { type: "app/load", resource: "presets", force: true },
+    ...(msg.spoolease?.ok
+      ? ([
+          { type: "app/load", resource: "console", force: true },
+          { type: "app/load", resource: "check", force: true },
+        ] as AppMsg[])
+      : []),
+    // No toast: the review's own page shows how it went until esc.
+  ];
+  return [
+    {
+      ...model,
+      files,
+      drafts,
+      review: { ...review, phase: "done", results: msg.results, spoolease: msg.spoolease },
+    },
+    [send(...appMsgs)],
+  ];
+}
+
+/** Back on the list with path listed: the editor left (its draft kept), a filter that hides path cleared. */
+function leaveTo(model: PresetsModel, path: string, presets: UserPreset[]): PresetsModel {
+  const editor = model.review?.phase === "done" ? null : model.editor;
+  return {
+    ...model,
+    view: "list",
+    editor: null,
+    review: null,
+    focus: undefined,
+    drafts: editor ? withDraft(model.drafts, editor.preset.path, editor.model.edits) : model.drafts,
+    filter: presetRows(presets, model.filter.text.value).some((p) => p.path === path)
+      ? model.filter
+      : { text: EMPTY_TEXT, focused: false },
+  };
+}
+
+/** Opens a preset by path from anywhere (the command palette): leaves the editor, keeping its draft. */
+function onOpen(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel> {
+  const switchTab: Cmd<AppMsg> = send({ type: "app/switchTab", tab: "presets" });
+  if (model.review?.phase === "saving") return [model, [switchTab]];
+  const presets = presetsIn(ctx.resources.presets);
+  const preset = presets.find((p) => p.path === path);
+  if (!preset) return [model, [switchTab]];
+  const [opened, cmds] = open(leaveTo(model, path, presets), preset);
+  return [opened, [switchTab, ...cmds]];
+}
+
+/** A deep link (app/switchTab focus): the list, on that preset; kept for later while presets load. */
+function onFocus(model: PresetsModel, path: string, ctx: Ctx): Step<PresetsModel> {
+  if (model.review?.phase === "saving") return [model, []];
+  const presets = presetsIn(ctx.resources.presets);
+  if (!presets.some((p) => p.path === path)) return [{ ...model, focus: path }, []];
+  return normalize({ ...leaveTo(model, path, presets), path, opening: undefined }, presets);
+}
+
+export function update(model: PresetsModel, msg: AppMsg | TabMsg, ctx: Ctx): Step<PresetsModel> {
+  const own = msg as OwnMsg;
+  switch (msg.type) {
+    case "key":
+      return onKey(model, (msg as { key: KeyPress }).key, ctx);
+    case "paste":
+      return onKey(
+        model,
+        { input: (msg as { text: string }).text, ctrl: false, shift: false, meta: false },
+        ctx,
+      );
+    case "app/loaded": {
+      const loaded = msg as Extract<AppMsg, { type: "app/loaded" }>;
+      if (loaded.resource !== "presets") return [model, []];
+      const listed = presetsIn(loaded.result as Resource<PresetsData>);
+      const focus = model.focus;
+      if (focus && listed.some((p) => p.path === focus))
+        return normalize(
+          { ...leaveTo(model, focus, listed), path: focus, opening: undefined, files: new Map() },
+          listed,
+        );
+      return normalize({ ...model, files: new Map() }, listed);
+    }
+    case "app/switchTab": {
+      const focus = (msg as Extract<AppMsg, { type: "app/switchTab" }>).focus;
+      return focus ? onFocus(model, focus, ctx) : [model, []];
+    }
+    case "presets/read":
+      return onRead(model, own as PresetFileMsg);
+    case "presets/range": {
+      const range = own as RangeMsg;
+      const review = model.review;
+      if (!review || review.preset.path !== range.path || review.range.state !== "checking")
+        return [model, []];
+      return [{ ...model, review: { ...review, range: range.range } }, []];
+    }
+    case "presets/saved":
+      return onSaved(model, own as SavedMsg);
+    case "presets/open":
+      return onOpen(model, (own as { path: string }).path, ctx);
+    case "presets/filter": {
+      const switchTab = send<AppMsg>({ type: "app/switchTab", tab: "presets" });
+      if (model.view !== "list") return [model, [switchTab]];
+      return [{ ...model, filter: { ...model.filter, focused: true } }, [switchTab]];
+    }
+    default:
+      return [model, []];
+  }
+}
+
+/** What's being written, for the shell's quit guard. */
+export function busy(model: PresetsModel): string | null {
+  const review = model.review;
+  if (review?.phase !== "saving") return null;
+  return `Saving ${plural(targetEdits(review).length, "preset")} of ${review.preset.name}`;
+}
+
+/** Edits quitting would drop: every draft, the open editor's edits in place of its own draft. */
+export function unsaved(model: PresetsModel): number {
+  const drafts = new Map(model.drafts);
+  const editor = model.review?.phase === "done" ? null : model.editor;
+  if (editor) drafts.set(editor.preset.path, editor.model.edits);
+  let count = 0;
+  for (const edits of drafts.values()) count += edits.size;
+  return count;
+}
+
+export function capturesText(model: PresetsModel): boolean {
+  if (model.view === "editor") return model.editor ? editorCapturesText(model.editor.model) : false;
+  if (model.view === "review") return false;
+  return model.filter.focused;
+}
+
+export function hints(model: PresetsModel, ctx: Ctx): Hint[] {
+  if (model.view === "editor" && model.editor) return editorHints(model.editor.model);
+  if (model.view === "review" && model.review) {
+    if (model.review.phase === "saving") return [];
+    if (model.review.phase === "done")
+      return [{ keys: "esc", label: "back to presets", primary: true }];
+    return [
+      { keys: "↑↓", label: "move" },
+      { keys: "space", label: "tick", primary: true },
+      { keys: "a", label: "save", primary: true },
+      { keys: "esc", label: "back", primary: true },
+    ];
+  }
+  if (model.filter.focused)
+    return [
+      { keys: "type", label: "filter", primary: true },
+      { keys: "↑↓", label: "move", primary: true },
+      { keys: "enter", label: "done", primary: true },
+      { keys: "esc", label: "clear", primary: true },
+    ];
+  const presets = presetsIn(ctx.resources.presets);
+  const groups = presetGroups(presets, model.filter.text.value);
+  const group = groups.find((g) => g.presets.some((p) => p.path === model.path));
+  const highlighted = group?.presets.find((p) => p.path === model.path);
+  if (!highlighted)
+    return presets.length === 0 && ctx.resources.presets.state === "ready"
+      ? [
+          { keys: "enter", label: "add one in Add", primary: true },
+          { keys: "r", label: "reload", primary: true },
+        ]
+      : [{ keys: "r", label: "reload", primary: true }];
+  return [
+    { keys: "↑↓", label: "move" },
+    ...(group && group.presets.length > 1 ? [{ keys: "←→", label: "printer", primary: true }] : []),
+    { keys: "enter", label: "edit", primary: true },
+    { keys: "/", label: "filter", primary: true },
+    ...(highlighted.filamentId ? [] : [{ keys: "f", label: "fix in Check", primary: true }]),
+    ...(model.filter.text.value ? [{ keys: "esc", label: "clear filter", primary: true }] : []),
+    { keys: "a-z", label: "jump" },
+  ];
+}
+
+export function commands(_model: PresetsModel, ctx: Ctx): PaletteCommand[] {
+  const detail = "Presets";
+  return [
+    {
+      title: "Filter presets",
+      detail,
+      keys: "/",
+      msg: toTab("presets", { type: "presets/filter" }),
+    },
+    ...presetRows(presetsIn(ctx.resources.presets), "").map((preset) => ({
+      title: `Edit ${presetTitle(preset)}`,
+      detail,
+      msg: toTab("presets", { type: "presets/open", path: preset.path }),
+    })),
+  ];
+}

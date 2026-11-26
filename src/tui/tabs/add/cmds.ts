@@ -1,0 +1,357 @@
+// ABOUTME: The Add tab's side work: import a file or URL, read SpoolEase's spool weights, preview the plan, run the sync.
+// ABOUTME: Each command reports back with the tab's own messages; errors become messages, never throws.
+
+import { access } from "node:fs/promises";
+
+import { nozzleTypeFor, readBambuStudioConf, SystemProfiles } from "../../../bambuProfiles.js";
+import { buildPreset, presetPath } from "../../../bambuStudio.js";
+import { errorMessage } from "../../../errors.js";
+import type { FilamentProfile, SyncResult } from "../../../models.js";
+import { bambuConfigDir } from "../../../paths.js";
+import { type ConsoleState, type ProfilePlan, previewPlan } from "../../../planPreview.js";
+import type { Edits, Preset } from "../../../presetEdit.js";
+import { loadProfiles } from "../../../sources.js";
+import { SpoolEaseClient } from "../../../spoolease.js";
+import {
+  readSpoolWeights,
+  type SpoolWeightEntry,
+  type WeightChoice,
+} from "../../../spoolWeights.js";
+import { checkKey, KeyCheckError, runSync, SetupError, type SyncEvent } from "../../../sync.js";
+import { loadTuiSettings, rememberWeight, saveTuiSettings } from "../../../tuiSettings.js";
+import type { Cmd } from "../../core/program.js";
+import { type AppMsg, toTab } from "../../core/types.js";
+import type { FormValues } from "../../core/values.js";
+import { consoleOf, createsSpools, type PlanBasis, printersOf } from "./targets.js";
+import type { TdfpMsg } from "./tdfpCmds.js";
+
+/** The Add tab's own messages, as its commands send them (wrapped for the shell by toTab). */
+export type AddMsg =
+  | { type: "add/imported"; source: string; profiles: FilamentProfile[] }
+  | { type: "add/importFailed"; source: string; error: string }
+  | {
+      type: "add/weightsRead";
+      signature: string;
+      entries: SpoolWeightEntry[];
+      warnings: string[];
+      /** Filament IDs the console has spools of: the run makes none for them. */
+      spooled: string[];
+      /** The weights chosen in earlier sessions, by brand key (tui.json). */
+      remembered: Record<string, WeightChoice>;
+    }
+  | { type: "add/weightsFailed"; signature: string; error: string; keyRejected: boolean }
+  | { type: "add/planRead"; seq: number; plans: ProfilePlan[] | null; warnings: string[] }
+  /** Find's detail: the console as a plan reads it (null when it couldn't be read), for these settings. */
+  | { type: "add/peekConsole"; basis: PlanBasis; state: ConsoleState | null }
+  /** Find's detail: what a run would do to one filament (null when that couldn't be worked out). */
+  | { type: "add/peeked"; basis: PlanBasis; filamentId: string; plan: ProfilePlan | null }
+  | { type: "add/runEvent"; event: SyncEvent }
+  | { type: "add/runDone"; results: SyncResult[] }
+  | { type: "add/runFailed"; error: string; exitCode: 1 | 2 }
+  /** The preset the run would write for a row, built for the editor (e on Review). */
+  | {
+      type: "add/plannedPreset";
+      seq: number;
+      filamentId: string;
+      name: string;
+      printer: string;
+      path: string;
+      original: Preset;
+      /** BambuStudio's nozzle type for the printer (BambuStudio.conf), so the editor opens on its variant. */
+      nozzleType: string;
+    }
+  | { type: "add/plannedPresetFailed"; seq: number; error: string }
+  /** Edits made to a row's preset before the run writes it (from the preset editor). */
+  | { type: "add/planEdits"; filamentId: string; edits: Edits }
+  /** From the command palette. */
+  | { type: "add/openSearch" }
+  | { type: "add/review" }
+  | { type: "add/clear" }
+  /** Importing your 3DFilamentProfiles spools (tdfpCmds.ts). */
+  | TdfpMsg;
+
+export const ADD_MSG_TYPES: ReadonlySet<string> = new Set<AddMsg["type"]>([
+  "add/imported",
+  "add/importFailed",
+  "add/weightsRead",
+  "add/weightsFailed",
+  "add/planRead",
+  "add/peekConsole",
+  "add/peeked",
+  "add/runEvent",
+  "add/runDone",
+  "add/runFailed",
+  "add/plannedPreset",
+  "add/plannedPresetFailed",
+  "add/planEdits",
+  "add/openSearch",
+  "add/review",
+  "add/clear",
+  "add/tdfpListed",
+  "add/tdfpListFailed",
+  "add/tdfpPrepared",
+  "add/tdfpPrepareFailed",
+  "add/tdfpRunEvent",
+  "add/tdfpApplied",
+  "add/tdfpApplyFailed",
+  "add/openTdfp",
+]);
+
+export function addMsg(msg: AddMsg): AppMsg {
+  return toTab("add", msg as unknown as Parameters<typeof toTab>[1]);
+}
+
+/** Profiles from the settings' file or URL. */
+export function importCmd(source: string): Cmd<AppMsg> {
+  return async (dispatch) => {
+    try {
+      dispatch(addMsg({ type: "add/imported", source, profiles: await loadProfiles(source) }));
+    } catch (err) {
+      dispatch(addMsg({ type: "add/importFailed", source, error: errorMessage(err) }));
+    }
+  };
+}
+
+/**
+ * SpoolEase's spool catalog and the user's own list, after checking the key (a wrong key would read as
+ * empty lists), and which filaments have spools already. An unreadable spool list counts as none, so
+ * every brand is still asked.
+ */
+export function weightsCmd(signature: string, values: FormValues): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const connection = consoleOf(values);
+    if (!connection) {
+      dispatch(
+        addMsg({
+          type: "add/weightsFailed",
+          signature,
+          error: "SpoolEase isn't set up",
+          keyRejected: false,
+        }),
+      );
+      return;
+    }
+    try {
+      const client = new SpoolEaseClient(connection);
+      await checkKey(client);
+      const [{ entries, warnings }, spooled, remembered] = await Promise.all([
+        readSpoolWeights(client),
+        client.listSpoolFilamentIds().catch(() => new Set<string>()),
+        loadTuiSettings().then((settings) => settings.weights ?? {}),
+      ]);
+      dispatch(
+        addMsg({
+          type: "add/weightsRead",
+          signature,
+          entries,
+          warnings,
+          spooled: [...spooled],
+          remembered,
+        }),
+      );
+    } catch (err) {
+      dispatch(
+        addMsg({
+          type: "add/weightsFailed",
+          signature,
+          error: errorMessage(err),
+          keyRejected: err instanceof KeyCheckError,
+        }),
+      );
+    }
+  };
+}
+
+/** Remembers a brand's empty spool weight for later sessions; a failed save only warns. */
+export function rememberWeightCmd(key: string, brand: string, choice: WeightChoice): Cmd<AppMsg> {
+  return async (dispatch) => {
+    try {
+      await rememberWeight(key, choice);
+    } catch (err) {
+      dispatch({
+        type: "app/toast",
+        text: `Couldn't remember the empty spool weight for ${brand || "this brand"}: ${errorMessage(err)}`,
+        tone: "warning",
+      });
+    }
+  };
+}
+
+/** What a run would do to each profile: presets on disk, and the console's CSV and spools when it's set up. Reads only. */
+export function planCmd(
+  seq: number,
+  profiles: FilamentProfile[],
+  values: FormValues,
+  edits: ReadonlyMap<string, Edits>,
+): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const warnings: string[] = [];
+    let spoolease: ConsoleState | null = null;
+    try {
+      spoolease = await readConsoleState(values);
+    } catch (err) {
+      warnings.push(
+        `Couldn't read SpoolEase to show what the run changes there: ${errorMessage(err)}`,
+      );
+    }
+    let plans: ProfilePlan[] | null = null;
+    try {
+      plans = await planFor(profiles, values, spoolease, edits);
+    } catch (err) {
+      warnings.push(`Couldn't look for existing presets: ${errorMessage(err)}`);
+    }
+    dispatch(addMsg({ type: "add/planRead", seq, plans, warnings }));
+  };
+}
+
+/** The console's custom filaments and spooled codes, as a run reads them first; null without a console. */
+async function readConsoleState(values: FormValues): Promise<ConsoleState | null> {
+  const connection = consoleOf(values);
+  if (!connection) return null;
+  const client = new SpoolEaseClient(connection);
+  await checkKey(client);
+  const [csv, spooledIds] = await Promise.all([
+    client.getCustomFilamentsCsv(),
+    createsSpools(values) ? client.listSpoolFilamentIds() : Promise.resolve(new Set<string>()),
+  ]);
+  return { csv, spooledIds };
+}
+
+function planFor(
+  profiles: FilamentProfile[],
+  values: FormValues,
+  spoolease: ConsoleState | null,
+  edits: ReadonlyMap<string, Edits>,
+): Promise<ProfilePlan[]> {
+  return previewPlan(
+    profiles,
+    { presetFolder: values.presetFolder.trim(), printers: printersOf(values) },
+    spoolease,
+    createsSpools(values),
+    { overwrite: values.overwritePresets, edits },
+  );
+}
+
+/** The console as Find's detail compares with it, read once per settings; null when it can't be read. */
+export function peekConsoleCmd(basis: PlanBasis, values: FormValues): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const state = await readConsoleState(values).catch(() => null);
+    dispatch(addMsg({ type: "add/peekConsole", basis, state }));
+  };
+}
+
+/** What a run would do to one filament, the way Review's plan works it out. Reads only. */
+export function peekCmd(
+  basis: PlanBasis,
+  profile: FilamentProfile,
+  values: FormValues,
+  spoolease: ConsoleState | null,
+  edits: ReadonlyMap<string, Edits>,
+): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const plan = await planFor([profile], values, spoolease, edits).then(
+      ([first]) => first ?? null,
+      () => null,
+    );
+    dispatch(addMsg({ type: "add/peeked", basis, filamentId: profile.filamentId, plan }));
+  };
+}
+
+/** Remembers the printers, then syncs, streaming every event; a setup error asks for exit code 2. */
+export function runCmd(
+  profiles: FilamentProfile[],
+  values: FormValues,
+  edits: ReadonlyMap<string, Edits>,
+): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const event = (e: SyncEvent) => dispatch(addMsg({ type: "add/runEvent", event: e }));
+    try {
+      await saveTuiSettings({ printers: printersOf(values) });
+    } catch (err) {
+      event({ type: "warning", message: `Couldn't remember these printers: ${errorMessage(err)}` });
+    }
+    try {
+      const { results } = await runSync(
+        {
+          profiles,
+          presetFolder: values.presetFolder.trim(),
+          printers: printersOf(values),
+          overwritePresets: values.overwritePresets,
+          dryRun: false,
+          spoolease: consoleOf(values),
+          createSpools: createsSpools(values),
+          presetEdits: edits,
+        },
+        event,
+      );
+      dispatch(addMsg({ type: "add/runDone", results }));
+    } catch (err) {
+      dispatch(
+        addMsg({
+          type: "add/runFailed",
+          error: errorMessage(err),
+          exitCode: err instanceof KeyCheckError || err instanceof SetupError ? 2 : 1,
+        }),
+      );
+    }
+  };
+}
+
+/**
+ * The preset the run would write for the profile, for the editor: for the first printer whose preset
+ * the run writes (all of them when overwriting; else those without a file yet), built as runSync builds it.
+ */
+export function plannedPresetCmd(
+  seq: number,
+  profile: FilamentProfile,
+  values: FormValues,
+): Cmd<AppMsg> {
+  return async (dispatch) => {
+    const fail = (error: string) =>
+      dispatch(addMsg({ type: "add/plannedPresetFailed", seq, error }));
+    const folder = values.presetFolder.trim();
+    const printers = printersOf(values);
+    if (printers.length === 0) {
+      fail("Choose at least one printer in Settings › BambuStudio");
+      return;
+    }
+    try {
+      const found = await Promise.all(
+        printers.map((printer) =>
+          access(presetPath(profile, folder, printer)).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      );
+      const printer = printers.find((_, i) => values.overwritePresets || !found[i]);
+      if (printer === undefined) {
+        fail(
+          `${profile.name}'s presets are already there and the run keeps them: edit them in the Presets tab`,
+        );
+        return;
+      }
+      const system = await SystemProfiles.load(bambuConfigDir());
+      const { nozzleTypes } = await readBambuStudioConf(bambuConfigDir());
+      const template = system.template(profile.material, printer);
+      if (!template) {
+        fail(`BambuStudio has no Generic ${profile.material} preset for ${printer}`);
+        return;
+      }
+      dispatch(
+        addMsg({
+          type: "add/plannedPreset",
+          seq,
+          filamentId: profile.filamentId,
+          name: profile.name,
+          printer,
+          path: presetPath(profile, folder, printer),
+          original: buildPreset(profile, printer, template, system.version),
+          nozzleType: nozzleTypeFor(nozzleTypes, printer),
+        }),
+      );
+    } catch (err) {
+      fail(errorMessage(err));
+    }
+  };
+}

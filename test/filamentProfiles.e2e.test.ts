@@ -16,6 +16,7 @@ import {
   startFilamentProfilesServer,
   TEST_API_KEY,
 } from "./filamentProfilesServer.js";
+import { assertNoLoginKeyring } from "./keyringGuard.js";
 
 const BIN = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
 
@@ -40,6 +41,7 @@ describe("bambu-hando 3dfp (binary)", () => {
       FILAMENTPROFILES_API_KEY: TEST_API_KEY,
       FILAMENTPROFILES_API_URL: server.url,
     };
+    assertNoLoginKeyring(args, env);
     return new Promise((resolve) => {
       execFile(process.execPath, [BIN, ...args], { env }, (err, stdout, stderr) =>
         resolve({ code: err ? Number(err.code) : 0, stdout, stderr }),
