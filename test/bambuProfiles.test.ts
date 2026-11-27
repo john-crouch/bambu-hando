@@ -50,6 +50,12 @@ describe("SystemProfiles", () => {
     expect(profiles.template(material, X1C_04)?.name).toBe(template);
   });
 
+  it("names each printer preset's model and nozzle from its machine preset", () => {
+    expect(profiles.printerModel(X1C_04)).toEqual({ model: "Bambu Lab X1 Carbon", nozzleMm: 0.4 });
+    expect(profiles.printerModel(X1C_06)).toEqual({ model: "Bambu Lab X1 Carbon", nozzleMm: 0.6 });
+    expect(profiles.printerModel("Bambu Lab A1 0.4 nozzle")).toBeNull();
+  });
+
   it("has no template for unknown materials or printers", () => {
     expect(profiles.template("PVB", X1C_04)).toBeNull();
     expect(profiles.template("PETG", "Bambu Lab A1 0.4 nozzle")).toBeNull();

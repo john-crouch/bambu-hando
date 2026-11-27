@@ -263,6 +263,28 @@ function filament(raw: Json): TdfpFilament {
   };
 }
 
+/** A filament's full record from the API's field names (also how filament-db's export keeps one). */
+export function filamentDetail(raw: Json): TdfpFilamentDetail {
+  return {
+    ...filament(raw),
+    tempMin: optNum(raw.temp_min),
+    tempMax: optNum(raw.temp_max),
+    bedTempMin: optNum(raw.bed_temp_min),
+    bedTempMax: optNum(raw.bed_temp_max),
+    density: optNum(raw.density),
+    diameter: optNum(raw.diameter),
+    nominalWeight: optNum(raw.nominal_weight),
+    spoolWeight: optNum(raw.spool_weight),
+    chamberTemp: optNum(raw.chamber_temp),
+    dryTempMax: optNum(raw.dry_temp_max),
+    dryTime: optNum(raw.dry_time),
+    flowRatio: optNum(raw.flow_ratio),
+    kValue: optNum(raw.k_value),
+    maxVolumetricSpeed: optNum(raw.max_volumetric_speed),
+    softeningTemp: optNum(raw.softening_temp),
+  };
+}
+
 function invalid(message: string): FilamentProfilesError {
   return new FilamentProfilesError(`not sent to 3DFilamentProfiles: ${message}`);
 }
@@ -573,24 +595,8 @@ export class FilamentProfilesClient {
 
   /** The id in the result is the surviving filament's when filaments were merged: keep that one. */
   async getFilament(id: number): Promise<TdfpFilamentDetail> {
-    const raw = await this.request("GET", `/filaments/${encodeURIComponent(String(id))}`);
-    return {
-      ...filament(raw),
-      tempMin: optNum(raw.temp_min),
-      tempMax: optNum(raw.temp_max),
-      bedTempMin: optNum(raw.bed_temp_min),
-      bedTempMax: optNum(raw.bed_temp_max),
-      density: optNum(raw.density),
-      diameter: optNum(raw.diameter),
-      nominalWeight: optNum(raw.nominal_weight),
-      spoolWeight: optNum(raw.spool_weight),
-      chamberTemp: optNum(raw.chamber_temp),
-      dryTempMax: optNum(raw.dry_temp_max),
-      dryTime: optNum(raw.dry_time),
-      flowRatio: optNum(raw.flow_ratio),
-      kValue: optNum(raw.k_value),
-      maxVolumetricSpeed: optNum(raw.max_volumetric_speed),
-      softeningTemp: optNum(raw.softening_temp),
-    };
+    return filamentDetail(
+      await this.request("GET", `/filaments/${encodeURIComponent(String(id))}`),
+    );
   }
 }

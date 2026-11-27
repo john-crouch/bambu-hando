@@ -26,6 +26,12 @@ interface BundleIndex {
 
 const VENDOR = "BBL";
 
+/** What a printer preset is: the machine (`printer_model`) and its nozzle size in mm (the first extruder's). */
+export interface PrinterModel {
+  model: string;
+  nozzleMm: number;
+}
+
 async function readJson(path: string): Promise<PresetConfig> {
   return JSON.parse(await readFile(path, "utf-8"));
 }
@@ -50,6 +56,7 @@ export class SystemProfiles {
     readonly version: string,
     private readonly filaments: Map<string, PresetConfig>,
     private readonly printerNames: string[],
+    private readonly models: Map<string, PrinterModel>,
   ) {}
 
   /**
@@ -91,17 +98,27 @@ export class SystemProfiles {
     );
 
     const printerNames: string[] = [];
+    const models = new Map<string, PrinterModel>();
     for (const entry of index.machine_list ?? []) {
       const machine = await readJson(join(systemDir, VENDOR, entry.sub_path)).catch(() => null);
-      if (machine?.instantiation === "true") printerNames.push(entry.name);
+      if (machine?.instantiation !== "true") continue;
+      printerNames.push(entry.name);
+      const nozzleMm = Number.parseFloat(first(machine.nozzle_diameter));
+      if (typeof machine.printer_model === "string" && Number.isFinite(nozzleMm))
+        models.set(entry.name, { model: machine.printer_model, nozzleMm });
     }
 
-    return new SystemProfiles(normalizeVersion(index.version), filaments, printerNames);
+    return new SystemProfiles(normalizeVersion(index.version), filaments, printerNames, models);
   }
 
   /** Printer preset names BambuStudio can instantiate, e.g. "Bambu Lab X1 Carbon 0.4 nozzle". */
   printers(): string[] {
     return [...this.printerNames];
+  }
+
+  /** The machine and nozzle size a printer preset is for; null when its machine preset doesn't say. */
+  printerModel(printer: string): PrinterModel | null {
+    return this.models.get(printer) ?? null;
   }
 
   /** A loaded preset with its inherits chain merged in (child values win). */
