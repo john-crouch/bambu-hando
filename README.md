@@ -166,6 +166,7 @@ bambu-hando --source ./profiles.json --skip-spoolease
 Each filament becomes one BambuStudio custom filament per printer, built the way BambuStudio's own "Create filament" dialog builds them:
 
 - The tool clones the matching Generic system preset (`Generic PETG` for PETG; `PLA+` falls back to `Generic PLA`), sets the name, vendor, `filament_id`, color, density, diameter and nozzle range, then writes every print setting the filament's source has over Generic's: print temperature, bed temperature (smooth and textured PEI and the engineering plate; the cool and supertack plates keep Generic's, where 0 means the plate can't take the filament), flow ratio and max volumetric speed. The order is your own calibration on a 3DFP spool, then 3DFP's record, then SpoolmanDB (the entry's value, else the middle of its range, else its material's) or your JSON file; Generic fills in only what none of them has, such as fan and gcode settings. Bambu's tuned print temperature is kept only when the source has none, and then only inside the filament's range.
+- With [filament-db](#manufacturer-presets-from-filament-db)'s export, a manufacturer's own preset for your printer and nozzle goes over Generic's, and community values only fill in what it leaves out.
 - Pressure advance is turned on in the preset only with your own calibrated K (a community K is stored but left off). BambuStudio doesn't send a preset's K to Bambu printers anyway; they use their own flow-dynamics calibration.
 - The preset inherits nothing and carries its own `filament_id`, which is what links it to SpoolEase. Filaments without a Generic template for the printer (PVB, GREENTEC, …) fail with a message instead of getting a guessed preset.
 - Printers are BambuStudio printer presets such as `Bambu Lab X1 Carbon 0.4 nozzle`; repeat `--printer-preset` for several (the TUI takes a comma-separated list and remembers it for the next run, in `~/.config/bambu-hando/tui.json`). Without it, the printer selected in BambuStudio is used. Unknown names exit 2 with the list of known printers.
@@ -180,6 +181,20 @@ Linux:
 
 macOS:
 - the same under ~/Library/Application Support/BambuStudio
+
+### Manufacturer presets from filament-db
+
+filament-db, a separate tool, collects manufacturers' own slicer presets (Polymaker's, so far) and tags every value with how far to trust it. Its export, `filament-db export --format json --out`, writes `~/.local/share/filament-db/export/catalog.json` (or `$XDG_DATA_HOME/filament-db/…`; `FILAMENT_DB_EXPORT` points bambu-hando at another file). bambu-hando reads it when it's there; without it everything works as before. An export of another `schema_version` is ignored with a warning.
+
+A filament's product line is found only by id: a SpoolmanDB profile's entry id, a 3DFP spool's filament id, never its name. A JSON file's profiles have neither, so they're never matched. Each printer file is built in this order, later winning:
+
+1. BambuStudio's Generic preset, as without the export;
+2. the manufacturer's preset for that printer and nozzle (or one that covers it: the X1, X1 Carbon and P1S take each other's), all of it, except values filament-db marks suspect (such as a 0.2 nozzle preset that kept the 0.4's max volumetric speed), which leave Generic's;
+3. without such a preset (a 0.6 nozzle, say), the line's manufacturer material settings: nozzle range, density, softening point, drying;
+4. the source's community values (SpoolmanDB, 3DFP's record) only for keys no manufacturer value covers. A value a manufacturer's preset kept from Generic stays Generic's (a community bed temperature doesn't replace it), clamped into the manufacturer's nozzle range;
+5. your own calibration on a 3DFP spool, always.
+
+When the line has a manufacturer nozzle range, SpoolEase's custom filament row gets it too. The 3DFP records filament-db holds also save API calls: bambu-hando takes one under 30 days old instead of fetching it (`3dfp filament`, the import and its preview).
 
 ## Spool labels
 

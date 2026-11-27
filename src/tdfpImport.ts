@@ -11,7 +11,12 @@ import {
   type TdfpSpool,
 } from "./filamentProfiles.js";
 import type { FilamentProfile } from "./models.js";
-import { layered, type PresetSettings, settingsFromRecord } from "./presetSettings.js";
+import {
+  checkedSettings,
+  layered,
+  type PresetSettings,
+  settingsFromRecord,
+} from "./presetSettings.js";
 import { derivedFilamentId } from "./sources.js";
 import { SpoolEaseClient, type SpoolEaseConnection, type SpoolRecord } from "./spoolease.js";
 import { externalIdFor, externalIdIsOurs, type SpoolLink } from "./spoolLinks.js";
@@ -55,12 +60,15 @@ export function importProfile(
   const low = record.tempMin ?? record.tempMax;
   const high = record.tempMax ?? record.tempMin;
   const settings = layered(calibration, settingsFromRecord(record));
+  const own = checkedSettings(calibration);
   const [recordMin, recordMax] =
     low !== null && high !== null ? [Math.round(low), Math.round(high)] : DEFAULT_TEMPS;
   // The spool's own calibrated temperature widens the range rather than being clamped into it.
-  const own = calibration.printTemp;
-  const nozzleTempMin = own === undefined ? recordMin : Math.min(recordMin, Math.round(own));
-  const nozzleTempMax = own === undefined ? recordMax : Math.max(recordMax, Math.round(own));
+  const ownTemp = calibration.printTemp;
+  const nozzleTempMin =
+    ownTemp === undefined ? recordMin : Math.min(recordMin, Math.round(ownTemp));
+  const nozzleTempMax =
+    ownTemp === undefined ? recordMax : Math.max(recordMax, Math.round(ownTemp));
   return {
     name,
     brand: spool.brand,
@@ -78,6 +86,8 @@ export function importProfile(
     // The list's empty weight is the spool's own when it has one, else the filament's.
     coreWeight: Math.round(spool.emptySpoolWeight ?? record.spoolWeight ?? 0),
     ...(Object.keys(settings).length ? { settings } : {}),
+    ...(Object.keys(own).length ? { calibration: own } : {}),
+    sourceIds: { tdfp: spool.filamentId },
   };
 }
 

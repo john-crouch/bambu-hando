@@ -4,6 +4,7 @@
 import { SystemProfiles } from "./bambuProfiles.js";
 import { type PresetOutcome, presetName, writeMany } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
+import { loadFilamentDb, withManufacturerRange } from "./filamentDb.js";
 import type { FilamentProfile, Status, SyncResult } from "./models.js";
 import { bambuConfigDir } from "./paths.js";
 import { applyEdits, type Edits, readPreset, skippedDetail, syncedRange } from "./presetEdit.js";
@@ -103,11 +104,22 @@ export async function runSync(
   options: SyncOptions,
   onEvent: (event: SyncEvent) => void = () => {},
 ): Promise<SyncOutcome> {
-  const { profiles, dryRun } = options;
+  const { dryRun } = options;
   const system = await loadSystemProfiles(options.printers);
+  const exported = await loadFilamentDb();
+  if (exported.warning) onEvent({ type: "warning", message: exported.warning });
+  // A line's manufacturer range replaces the source's, in the presets and in SpoolEase's CSV row.
+  const profiles = options.profiles.map((profile) =>
+    withManufacturerRange(profile, exported.db?.lineFor(profile.sourceIds) ?? null),
+  );
 
   onEvent({ type: "stage", stage: "presets" });
-  const target = { presetFolder: options.presetFolder, printers: options.printers, system };
+  const target = {
+    presetFolder: options.presetFolder,
+    printers: options.printers,
+    system,
+    filamentDb: exported.db,
+  };
   const edits = options.presetEdits ?? new Map<string, Edits>();
   const adjust = (
     profile: FilamentProfile,

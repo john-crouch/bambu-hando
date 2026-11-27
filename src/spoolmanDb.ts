@@ -155,6 +155,7 @@ export function catalogProfiles(
       labelWeight: Math.round(num(entry.weight) ?? 0),
       coreWeight: Math.round(num(entry.spool_weight) ?? 0),
       ...(Object.keys(settings).length ? { settings } : {}),
+      ...(str(entry.id) ? { sourceIds: { spoolmanDb: str(entry.id) } } : {}),
     });
   }
   return [...byName.values()];

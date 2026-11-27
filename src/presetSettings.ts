@@ -124,6 +124,26 @@ const BED_KEYS = [
   "eng_plate_temp_initial_layer",
 ] as const;
 
+/** The preset keys each setting writes (applySettings), so a setting can be left out where something else has them. */
+const SETTING_KEYS: Record<keyof PresetSettings, readonly string[]> = {
+  printTemp: ["nozzle_temperature", "nozzle_temperature_initial_layer"],
+  bedTemp: BED_KEYS,
+  flowRatio: ["filament_flow_ratio"],
+  maxVolumetricSpeed: ["filament_max_volumetric_speed"],
+  pressureAdvance: ["pressure_advance", "enable_pressure_advance"],
+};
+
+/** The settings without those that would write any of the given preset keys. */
+export function withoutKeys(settings: PresetSettings, keys: ReadonlySet<string>): PresetSettings {
+  const result: PresetSettings = { ...settings };
+  for (const [name, written] of Object.entries(SETTING_KEYS) as [
+    keyof PresetSettings,
+    readonly string[],
+  ][])
+    if (written.some((key) => keys.has(key))) delete result[name];
+  return result;
+}
+
 // Per-extruder-variant arrays: replace every real entry, keep "nil" (= use the printer's value).
 function everyVariant(value: unknown, replacement: string): unknown {
   if (!Array.isArray(value) || value.length === 0) return [replacement];

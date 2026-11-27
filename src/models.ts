@@ -1,6 +1,7 @@
 // ABOUTME: Shared data models for normalized filament profiles and sync results.
 // ABOUTME: Keeps parsing and integration logic decoupled from transport details.
 
+import type { SourceIds } from "./filamentDb.js";
 import type { PresetSettings } from "./presetSettings.js";
 
 /** Normalized filament profile used by both BambuStudio and SpoolEase flows. */
@@ -27,6 +28,10 @@ export interface FilamentProfile {
   coreWeight: number;
   /** Print settings from the source for its presets; what it leaves out keeps the Generic template's values. */
   settings?: PresetSettings;
+  /** The user's own calibration among those settings (a 3DFP spool's): it goes over a manufacturer's values too. */
+  calibration?: PresetSettings;
+  /** The source's ids for the filament, by which filament-db's export finds its product line. */
+  sourceIds?: SourceIds;
 }
 
 // written: change applied; planned: dry-run only; skipped: integration disabled; failed: attempted and rejected.

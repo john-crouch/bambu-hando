@@ -58,6 +58,7 @@ describe("catalogProfiles", () => {
       labelWeight: 1000,
       coreWeight: 140,
       settings: { printTemp: 235, bedTemp: 75 },
+      sourceIds: { spoolmanDb: "polymaker_petg_polylitepetgblack_1000_175_c" },
     });
   });
 

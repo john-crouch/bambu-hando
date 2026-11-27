@@ -109,7 +109,14 @@ describe("importProfile", () => {
         maxVolumetricSpeed: 11.5,
         pressureAdvance: { k: 0.02, enabled: false },
       },
+      sourceIds: { tdfp: 10512 },
     });
+  });
+
+  it("keeps the spool's own calibration apart too, so it can go over a manufacturer's values", () => {
+    const calibration = { printTemp: 250, pressureAdvance: { k: 0.031, enabled: true } };
+    expect(importProfile(tdSpool(), record(), calibration).calibration).toEqual(calibration);
+    expect(importProfile(tdSpool(), record(), {})).not.toHaveProperty("calibration");
   });
 
   it("puts the spool's own calibration first", () => {

@@ -5,8 +5,10 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { posix } from "node:path";
 
+import type { PrinterModel } from "./bambuProfiles.js";
 import { errorMessage } from "./errors.js";
 import { filamentDetail, type TdfpFilamentDetail } from "./filamentProfiles.js";
+import type { FilamentProfile } from "./models.js";
 
 /** The export's version bambu-hando reads; any other is treated as no export. */
 export const EXPORT_SCHEMA_VERSION = 2;
@@ -118,6 +120,59 @@ export function presetFor(
     sized.find((p) => p.fillsInFor.includes(printer.model)) ??
     null
   );
+}
+
+/**
+ * Tiers that are a manufacturer's word (or Max's, entered by hand): not `manufacturer_inherited` (Generic's value
+ * inside a manufacturer preset, no evidence) nor `community`.
+ */
+const MANUFACTURER_TIERS = new Set(["manufacturer_preset", "manufacturer_tds", "manual"]);
+
+export function isManufacturerValue(value: ExportValue | undefined): value is ExportValue {
+  return value !== undefined && MANUFACTURER_TIERS.has(value.tier) && value.suspect === undefined;
+}
+
+/** What filament-db's export has for one printer file of a filament: its line, and the preset for that printer if any. */
+export interface Manufacturer {
+  match: LineMatch;
+  preset: ManufacturerPreset | null;
+}
+
+/** The filament's line (by its source's ids) and its preset for the printer; null without a line. */
+export function manufacturerFor(
+  db: FilamentDb | null,
+  ids: SourceIds | undefined,
+  printer: PrinterModel | null,
+): Manufacturer | null {
+  const match = db?.lineFor(ids) ?? null;
+  if (!match) return null;
+  return { match, preset: printer ? presetFor(match.line, printer) : null };
+}
+
+/** The manufacturer's printing temperature range for a line; null when its range is only community data. */
+export function manufacturerRange(match: LineMatch | null): { low: number; high: number } | null {
+  const low = match?.properties.nozzle_min_c;
+  const high = match?.properties.nozzle_max_c;
+  if (!isManufacturerValue(low) || !isManufacturerValue(high)) return null;
+  return typeof low.value === "number" && typeof high.value === "number"
+    ? { low: low.value, high: high.value }
+    : null;
+}
+
+/**
+ * The profile with its line's manufacturer range in place of its source's, widened for the user's own calibrated
+ * temperature as an import widens it; the profile as it is when the line has no manufacturer range.
+ */
+export function withManufacturerRange(
+  profile: FilamentProfile,
+  match: LineMatch | null,
+): FilamentProfile {
+  const range = manufacturerRange(match);
+  if (!range) return profile;
+  const own = profile.calibration?.printTemp;
+  const low = own === undefined ? range.low : Math.min(range.low, Math.round(own));
+  const high = own === undefined ? range.high : Math.max(range.high, Math.round(own));
+  return { ...profile, nozzleTempMin: low, nozzleTempMax: high };
 }
 
 interface Filed {

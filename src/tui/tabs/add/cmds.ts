@@ -6,6 +6,7 @@ import { access } from "node:fs/promises";
 import { nozzleTypeFor, readBambuStudioConf, SystemProfiles } from "../../../bambuProfiles.js";
 import { buildPreset, presetPath } from "../../../bambuStudio.js";
 import { errorMessage } from "../../../errors.js";
+import { loadFilamentDb, manufacturerFor } from "../../../filamentDb.js";
 import type { FilamentProfile, SyncResult } from "../../../models.js";
 import { bambuConfigDir } from "../../../paths.js";
 import { type ConsoleState, type ProfilePlan, previewPlan } from "../../../planPreview.js";
@@ -346,7 +347,17 @@ export function plannedPresetCmd(
           name: profile.name,
           printer,
           path: presetPath(profile, folder, printer),
-          original: buildPreset(profile, printer, template, system.version),
+          original: buildPreset(
+            profile,
+            printer,
+            template,
+            system.version,
+            manufacturerFor(
+              (await loadFilamentDb()).db,
+              profile.sourceIds,
+              system.printerModel(printer),
+            ),
+          ),
           nozzleType: nozzleTypeFor(nozzleTypes, printer),
         }),
       );

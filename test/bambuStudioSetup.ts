@@ -8,6 +8,10 @@ import { fileURLToPath } from "node:url";
 export const SYSTEM_FIXTURE = fileURLToPath(
   new URL("./fixtures/bambustudio/system", import.meta.url),
 );
+/** A second trimmed real bundle (BambuStudio 02.09.00.81): Generic ASA on the X1, X1 Carbon 0.2/0.4/0.6 and H2D. */
+export const SYSTEM_ASA_FIXTURE = fileURLToPath(
+  new URL("./fixtures/bambustudio/system-asa", import.meta.url),
+);
 export const X1C_04 = "Bambu Lab X1 Carbon 0.4 nozzle";
 export const X1C_06 = "Bambu Lab X1 Carbon 0.6 nozzle";
 
@@ -27,10 +31,11 @@ export function baseFilamentDir(home: string, presetFolder = "default"): string 
 export async function installBambuStudio(
   home: string,
   conf: { presetFolder?: string; machine?: string } | null = {},
+  system: string = SYSTEM_FIXTURE,
 ): Promise<void> {
   const dir = bambuConfigDir(home);
   await mkdir(dir, { recursive: true });
-  await cp(SYSTEM_FIXTURE, join(dir, "system"), { recursive: true });
+  await cp(system, join(dir, "system"), { recursive: true });
   if (conf === null) return;
   const config = {
     app: { preset_folder: conf.presetFolder ?? "default" },

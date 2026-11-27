@@ -4,6 +4,7 @@
 import { access } from "node:fs/promises";
 
 import { presetPath } from "./bambuStudio.js";
+import { loadFilamentDb, withManufacturerRange } from "./filamentDb.js";
 import type { FilamentProfile } from "./models.js";
 import { type Edits, readPreset, syncedRange } from "./presetEdit.js";
 import { buildCustomFilamentsCsv } from "./spoolease.js";
@@ -73,8 +74,11 @@ export async function previewPlan(
   createSpools: boolean,
   { overwrite = false, edits }: PlanOptions = {},
 ): Promise<ProfilePlan[]> {
+  const { db } = await loadFilamentDb();
   return Promise.all(
-    profiles.map(async (profile): Promise<ProfilePlan> => {
+    profiles.map(async (given): Promise<ProfilePlan> => {
+      // As runSync gives it SpoolEase: with its line's manufacturer range.
+      const profile = withManufacturerRange(given, db?.lineFor(given.sourceIds) ?? null);
       const paths = target.printers.map((printer) =>
         presetPath(profile, target.presetFolder, printer),
       );

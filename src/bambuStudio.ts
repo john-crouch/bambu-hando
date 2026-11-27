@@ -8,9 +8,16 @@ import { writeAtomic } from "./atomicWrite.js";
 import type { PresetConfig, SystemProfiles, Template } from "./bambuProfiles.js";
 import { rgbaToHashRgb } from "./colors.js";
 import { errorMessage } from "./errors.js";
+import {
+  type FilamentDb,
+  isManufacturerValue,
+  type Manufacturer,
+  manufacturerFor,
+  withManufacturerRange,
+} from "./filamentDb.js";
 import type { FilamentProfile } from "./models.js";
 import { bambuBaseFilamentDir } from "./paths.js";
-import { applySettings } from "./presetSettings.js";
+import { applySettings, layered, withoutKeys } from "./presetSettings.js";
 
 // Keys that describe the system preset itself rather than filament settings.
 const SYSTEM_ONLY_KEYS = [
@@ -40,28 +47,122 @@ function everyVariant(value: unknown, replacement: (current: string) => string):
 }
 
 /**
+ * Keys a manufacturer's values never set: bambu-hando's own identity for the preset, and the spool's (its vendor,
+ * color and diameter come from the filament's source).
+ */
+const IDENTITY_KEYS = new Set([
+  ...SYSTEM_ONLY_KEYS,
+  "compatible_printers",
+  "compatible_printers_condition",
+  "filament_settings_id",
+  "version",
+  "filament_vendor",
+  "filament_colour",
+  "default_filament_colour",
+  "filament_diameter",
+  "filament_notes",
+]);
+
+/** Slicer keys a line's manufacturer properties give when its material settings don't (units as the export's). */
+const PROPERTY_KEYS: [property: string, key: string][] = [
+  ["density_g_cm3", "filament_density"],
+  ["nozzle_min_c", "nozzle_temperature_range_low"],
+  ["nozzle_max_c", "nozzle_temperature_range_high"],
+  ["softening_c", "temperature_vitrification"],
+];
+
+interface MakerValues {
+  /** What goes over the template. */
+  values: PresetConfig;
+  /** Keys the manufacturer covers, so community values leave them alone (suspect ones included). */
+  covered: Set<string>;
+}
+
+/**
+ * A manufacturer preset for the printer: all of it, but suspect values (the template's stay). Without one, the
+ * line's manufacturer-tier material settings (and properties where those don't give a key).
+ */
+function makerValues(manufacturer: Manufacturer | null): MakerValues {
+  const result: MakerValues = { values: {}, covered: new Set() };
+  if (!manufacturer) return result;
+  const { preset, match } = manufacturer;
+  if (preset) {
+    for (const [key, value] of Object.entries(preset.settings)) {
+      if (IDENTITY_KEYS.has(key)) continue;
+      result.covered.add(key);
+      if (value.suspect === undefined) result.values[key] = value.value;
+    }
+    return result;
+  }
+  for (const [key, value] of Object.entries(match.line.materialSettings))
+    if (!IDENTITY_KEYS.has(key) && isManufacturerValue(value)) {
+      result.covered.add(key);
+      result.values[key] = value.value;
+    }
+  for (const [property, key] of PROPERTY_KEYS) {
+    const value = match.properties[property];
+    if (result.covered.has(key) || !isManufacturerValue(value) || typeof value.value !== "number")
+      continue;
+    result.covered.add(key);
+    result.values[key] = [String(value.value)];
+  }
+  return result;
+}
+
+function firstNumber(value: unknown): number | null {
+  const parsed = Number.parseFloat(String(Array.isArray(value) ? value[0] : value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function makerNote(manufacturer: Manufacturer | null): string {
+  if (!manufacturer) return "";
+  const { preset, match } = manufacturer;
+  return preset
+    ? ` with ${match.line.brand}'s preset for the ${preset.printer}, ${preset.nozzleMm} mm nozzle (filament-db: ${preset.source})`
+    : ` with ${match.line.brand}'s material settings (filament-db)`;
+}
+
+/**
  * A custom filament preset for one printer: the template's full settings with this filament's identity,
  * color, density, temperature range and whatever print settings its source has. Like BambuStudio's own custom filaments it inherits nothing
  * and carries its own filament_id, which is what links it to SpoolEase.
+ *
+ * With filament-db's manufacturer data for its line, lowest first: the template; the manufacturer's preset for the
+ * printer (else the line's material settings); the source's community values only where no manufacturer value is;
+ * the user's own calibration on top.
  */
 export function buildPreset(
   profile: FilamentProfile,
   printer: string,
   template: Template,
   version: string,
+  manufacturer: Manufacturer | null = null,
 ): PresetConfig {
   const name = presetName(profile, printer);
   const preset: PresetConfig = { ...template.config };
   for (const key of SYSTEM_ONLY_KEYS) delete preset[key];
+  const maker = makerValues(manufacturer);
+  Object.assign(preset, maker.values);
+  const own = manufacturer ? withManufacturerRange(profile, manufacturer.match) : profile;
+
+  // A manufacturer preset's range is the file's, widened only for the user's own calibrated temperature.
+  const calibrated = profile.calibration?.printTemp;
+  const covers = (key: string) => maker.covered.has(key) && firstNumber(preset[key]) !== null;
+  let low = covers("nozzle_temperature_range_low")
+    ? (firstNumber(preset.nozzle_temperature_range_low) as number)
+    : own.nozzleTempMin;
+  let high = covers("nozzle_temperature_range_high")
+    ? (firstNumber(preset.nozzle_temperature_range_high) as number)
+    : own.nozzleTempMax;
+  if (calibrated !== undefined) {
+    low = Math.min(low, Math.round(calibrated));
+    high = Math.max(high, Math.round(calibrated));
+  }
 
   // Keep Bambu's tuned print temperature unless the manufacturer's range excludes it.
   const nozzle = (current: string) => {
     const tuned = Number.parseInt(current, 10);
-    return String(
-      Number.isFinite(tuned)
-        ? clamp(tuned, profile.nozzleTempMin, profile.nozzleTempMax)
-        : profile.nozzleTempMax,
-    );
+    return String(Number.isFinite(tuned) ? clamp(tuned, low, high) : high);
   };
 
   const built: PresetConfig = {
@@ -76,21 +177,24 @@ export function buildPreset(
     compatible_printers: [printer],
     compatible_printers_condition: "",
     default_filament_colour: [rgbaToHashRgb(profile.colorRgba)],
-    filament_density: [String(profile.density)],
+    filament_density: maker.covered.has("filament_density")
+      ? preset.filament_density
+      : [String(profile.density)],
     filament_diameter: [String(profile.diameter)],
-    nozzle_temperature_range_low: [String(profile.nozzleTempMin)],
-    nozzle_temperature_range_high: [String(profile.nozzleTempMax)],
+    nozzle_temperature_range_low: [String(low)],
+    nozzle_temperature_range_high: [String(high)],
     nozzle_temperature: everyVariant(preset.nozzle_temperature, nozzle),
     nozzle_temperature_initial_layer: everyVariant(preset.nozzle_temperature_initial_layer, nozzle),
-    filament_notes: `Generated by bambu-hando from BambuStudio's ${template.name} preset.`,
+    filament_notes: `Generated by bambu-hando from BambuStudio's ${template.name} preset${makerNote(manufacturer)}.`,
   };
   // The source's own print settings win over the template's; the template fills in only what it leaves out.
+  // With a manufacturer, they fill in only what the manufacturer leaves out, and the user's calibration goes on top.
   // ...inside the filament's own range, which the preset and SpoolEase's CSV row both state.
-  const settings = profile.settings ?? {};
+  const settings = manufacturer
+    ? layered(profile.calibration ?? {}, withoutKeys(profile.settings ?? {}, maker.covered))
+    : (profile.settings ?? {});
   const printTemp =
-    settings.printTemp === undefined
-      ? undefined
-      : clamp(settings.printTemp, profile.nozzleTempMin, profile.nozzleTempMax);
+    settings.printTemp === undefined ? undefined : clamp(settings.printTemp, low, high);
   return applySettings(built, printTemp === undefined ? settings : { ...settings, printTemp });
 }
 
@@ -122,6 +226,8 @@ export interface PresetTarget {
   presetFolder: string;
   printers: string[];
   system: SystemProfiles;
+  /** filament-db's export: manufacturer presets for the profiles' lines; null or left out for none. */
+  filamentDb?: FilamentDb | null;
 }
 
 export interface PresetOutcome {
@@ -168,7 +274,12 @@ export async function writeMany(
         const template = target.system.template(profile.material, printer);
         if (!template)
           throw new Error(`no Generic ${profile.material} preset in BambuStudio for ${printer}`);
-        return buildPreset(profile, printer, template, target.system.version);
+        const maker = manufacturerFor(
+          target.filamentDb ?? null,
+          profile.sourceIds,
+          target.system.printerModel(printer),
+        );
+        return buildPreset(profile, printer, template, target.system.version, maker);
       });
       for (const [i, preset] of presets.entries()) {
         const path = paths[i] ?? "";
