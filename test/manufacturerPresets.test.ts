@@ -312,6 +312,46 @@ describe("manufacturer presets in a sync", () => {
     expect(row?.split(",").slice(2, 4)).toEqual(["230", "260"]);
   });
 
+  it("gives SpoolEase the range the first preset is written with, the same on every run", async () => {
+    // Polylite ASA: no manufacturer range for the line; the X1 Carbon preset keeps Generic's 240-280.
+    const profile: FilamentProfile = {
+      name: "Polymaker PolyLite™ ASA Black",
+      brand: "Polymaker",
+      material: "ASA",
+      colorName: "PolyLite™ ASA Black",
+      colorRgba: "000000FF",
+      nozzleTempMin: 230,
+      nozzleTempMax: 260,
+      density: 1.07,
+      diameter: 1.75,
+      slicerFilamentCode: "",
+      filamentId: "P0000001",
+      labelWeight: 1000,
+      coreWeight: 140,
+      sourceIds: { spoolmanDb: "polymaker_asa_polyliteblack_1000_175_c" },
+    };
+    const target = { presetFolder: "default", printers: [X1C_04, X1C_06] };
+    const [plan] = await previewPlan([profile], target, null, false);
+    expect(plan?.nozzleRange).toEqual({ low: 240, high: 280 });
+    const rows: (string | undefined)[] = [];
+    for (let run = 0; run < 2; run += 1) {
+      await runSync({
+        ...target,
+        profiles: [profile],
+        dryRun: false,
+        spoolease: connection(),
+        createSpools: false,
+      });
+      rows.push(server.customFilaments?.split("\n").find((line) => line.startsWith("P0000001")));
+    }
+    const written = JSON.parse(await readFile(presetPath(profile, "default", X1C_04), "utf-8"));
+    expect(written.nozzle_temperature_range_low).toEqual(["240"]);
+    expect(rows.map((row) => row?.split(",").slice(2, 4))).toEqual([
+      ["240", "280"],
+      ["240", "280"],
+    ]);
+  });
+
   it("previews the manufacturer's range", async () => {
     const [plan] = await previewPlan(
       [asaProfile()],

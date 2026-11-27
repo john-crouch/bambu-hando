@@ -1,7 +1,7 @@
 // ABOUTME: Tests for filling the local catalog from the 3DFilamentProfiles API without overspending the monthly quota.
 // ABOUTME: Covers on-demand full records (refresh only when asked, filament-db's copy first) and online searches.
 
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -163,6 +163,19 @@ describe("catalog sync", () => {
         now = daysAfter(1);
         expect(await filamentRecord(api, 16899)).toMatchObject({ fetched: true });
         expect(calls()).toBe(1);
+      });
+
+      it("says why an export it can't use was skipped", async () => {
+        const doc = JSON.parse(await readFile(FILAMENT_DB_FIXTURE, "utf-8"));
+        const path = join(await mkdtemp(join(tmpdir(), "bh-fdb-v3-")), "catalog.json");
+        await writeFile(path, JSON.stringify({ ...doc, schema_version: 3 }), "utf-8");
+        vi.stubEnv("FILAMENT_DB_EXPORT", path);
+        now = daysAfter(1);
+        const found = await filamentRecord(api, 32336);
+        expect(found).toMatchObject({ fetched: true, fromExport: false });
+        expect(found.warning).toBe(
+          `filament-db's export ${path} has schema_version 3, not 2: bambu-hando ignores it`,
+        );
       });
 
       it("keeps the catalog's own record when it's newer than the export's", async () => {

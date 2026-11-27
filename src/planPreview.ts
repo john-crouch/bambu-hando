@@ -3,9 +3,11 @@
 
 import { access } from "node:fs/promises";
 
-import { presetPath } from "./bambuStudio.js";
-import { loadFilamentDb, withManufacturerRange } from "./filamentDb.js";
+import { SystemProfiles } from "./bambuProfiles.js";
+import { plannedRange, presetPath } from "./bambuStudio.js";
+import { loadFilamentDb } from "./filamentDb.js";
 import type { FilamentProfile } from "./models.js";
+import { bambuConfigDir } from "./paths.js";
 import { type Edits, readPreset, syncedRange } from "./presetEdit.js";
 import { buildCustomFilamentsCsv } from "./spoolease.js";
 
@@ -75,10 +77,15 @@ export async function previewPlan(
   { overwrite = false, edits }: PlanOptions = {},
 ): Promise<ProfilePlan[]> {
   const { db } = await loadFilamentDb();
+  // Only a filament filament-db knows needs the printers' models, to find its preset's range.
+  const system =
+    db && profiles.some((profile) => db.lineFor(profile.sourceIds))
+      ? await SystemProfiles.load(bambuConfigDir()).catch(() => null)
+      : null;
   return Promise.all(
     profiles.map(async (given): Promise<ProfilePlan> => {
-      // As runSync gives it SpoolEase: with its line's manufacturer range.
-      const profile = withManufacturerRange(given, db?.lineFor(given.sourceIds) ?? null);
+      // As runSync gives it SpoolEase: with the range its first preset is written with.
+      const profile = plannedRange(given, db, system, target.printers[0]);
       const paths = target.printers.map((printer) =>
         presetPath(profile, target.presetFolder, printer),
       );

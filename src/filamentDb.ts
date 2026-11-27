@@ -1,7 +1,7 @@
 // ABOUTME: Reads filament-db's JSON export (docs/export.md in filament-db): manufacturer presets and material settings
 // ABOUTME: per product line, found by 3DFP or SpoolmanDB id, and 3DFP records. No file means no export, silently.
 
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { posix } from "node:path";
 
@@ -64,6 +64,8 @@ export interface SourceIds {
   tdfp?: number;
   /** SpoolmanDB entry id. */
   spoolmanDb?: string;
+  /** The ids name another color of the filament's line (Other color…): its line's values, not that color's own. */
+  lineOnly?: boolean;
 }
 
 type Json = Record<string, unknown>;
@@ -250,10 +252,11 @@ export class FilamentDb {
     return new FilamentDb(lines, colorProperties, tdfp, records, aliases, spoolmanDb);
   }
 
-  private match(filed: Filed | undefined): LineMatch | null {
+  private match(filed: Filed | undefined, lineOnly = false): LineMatch | null {
     const line = filed && this.lines.get(filed.lineId);
     if (!line) return null;
-    const color = filed.colorId === null ? undefined : this.colorProperties.get(filed.colorId);
+    const color =
+      filed.colorId === null || lineOnly ? undefined : this.colorProperties.get(filed.colorId);
     return { line, properties: { ...line.properties, ...color } };
   }
 
@@ -272,11 +275,14 @@ export class FilamentDb {
 
   /** A profile's line by its 3DFP id first, then its SpoolmanDB id. */
   lineFor(ids: SourceIds | undefined): LineMatch | null {
+    const lineOnly = ids?.lineOnly === true;
     if (ids?.tdfp !== undefined) {
-      const found = this.lineForTdfp(ids.tdfp);
+      const found = this.match(this.tdfp.get(this.tdfpId(ids.tdfp)), lineOnly);
       if (found) return found;
     }
-    return ids?.spoolmanDb === undefined ? null : this.lineForSpoolmanDb(ids.spoolmanDb);
+    return ids?.spoolmanDb === undefined
+      ? null
+      : this.match(this.spoolmanDb.get(ids.spoolmanDb), lineOnly);
   }
 
   /** The 3DFP record filament-db's cache holds for a filament; null when it knows it only from a search. */
@@ -307,7 +313,8 @@ export interface FilamentDbLoad {
   warning: string | null;
 }
 
-const loads = new Map<string, Promise<FilamentDbLoad>>();
+/** Each path's last load, with the file's modification time and size it was read at. */
+const loads = new Map<string, { stamp: string; loaded: Promise<FilamentDbLoad> }>();
 
 async function load(path: string): Promise<FilamentDbLoad> {
   let raw: string;
@@ -335,12 +342,25 @@ async function load(path: string): Promise<FilamentDbLoad> {
   }
 }
 
-/** The export at path, parsed once per run (the file is about 40 MB). */
-export function loadFilamentDb(path: string = filamentDbPath()): Promise<FilamentDbLoad> {
-  let loaded = loads.get(path);
-  if (!loaded) {
-    loaded = load(path);
-    loads.set(path, loaded);
+/**
+ * The export at path, parsed once while the file stays as it is (it's about 40 MB): read again once filament-db
+ * rewrites it, so a long TUI session sees a new export, and a read that failed is tried again.
+ */
+export async function loadFilamentDb(path: string = filamentDbPath()): Promise<FilamentDbLoad> {
+  let stamp: string;
+  try {
+    const info = await stat(path);
+    stamp = `${info.mtimeMs}:${info.size}`;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { db: null, warning: null };
+    return {
+      db: null,
+      warning: `couldn't read filament-db's export ${path}: ${errorMessage(err)}`,
+    };
   }
+  const cached = loads.get(path);
+  if (cached?.stamp === stamp) return cached.loaded;
+  const loaded = load(path);
+  loads.set(path, { stamp, loaded });
   return loaded;
 }

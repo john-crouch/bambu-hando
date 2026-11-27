@@ -194,7 +194,7 @@ A filament's product line is found only by id: a SpoolmanDB profile's entry id, 
 4. the source's community values (SpoolmanDB, 3DFP's record) only for keys no manufacturer value covers. A value a manufacturer's preset kept from Generic stays Generic's (a community bed temperature doesn't replace it), clamped into the manufacturer's nozzle range;
 5. your own calibration on a 3DFP spool, always.
 
-When the line has a manufacturer nozzle range, SpoolEase's custom filament row gets it too. The 3DFP records filament-db holds also save API calls: bambu-hando takes one under 30 days old instead of fetching it (`3dfp filament`, the import and its preview).
+SpoolEase's custom filament row gets the nozzle range the first printer's preset is written with, so it matches the preset (the manufacturer's range, when the line has one). The 3DFP records filament-db holds also save API calls: bambu-hando takes one under 30 days old instead of fetching it (`3dfp filament`, the import and its preview).
 
 ## Spool labels
 

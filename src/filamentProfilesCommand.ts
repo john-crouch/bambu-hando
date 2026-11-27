@@ -223,7 +223,7 @@ async function filamentAction(
   try {
     const result =
       local ?? (await filamentRecord(api as CatalogApi, Number(idText), { refreshStale }));
-    if (result.warning) io.stderr(`${result.warning}\n`);
+    if (result.warning && result.warning !== exported.warning) io.stderr(`${result.warning}\n`);
     const record = result.entry.record;
     if (!record) throw new Error(`filament ${idText} has no full record`);
     if (json) {
@@ -306,7 +306,7 @@ async function searchAction(
   }
 }
 
-/** `3dfp fill` stays only to say where the fill went: the README used to have people run it from a timer. */
+/** `3dfp fill` only says where the fill is: filament-db runs it, and timers that still call this get the message. */
 const FILL_MOVED = "the month-end fill moved to filament-db: run `filament-db 3dfp fill` instead";
 
 async function catalogAction(io: Io): Promise<number> {
@@ -355,11 +355,25 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
   return 0;
 }
 
+/**
+ * Whether the action is `fill`, wherever the fill's old flags (--now, --reserve <n>) put it. Checked before parsing,
+ * since those flags are unknown now and a timer may still pass them.
+ */
+function isFill(argv: string[]): boolean {
+  const rest = argv.filter(
+    (arg, i) =>
+      arg !== "--now" &&
+      !arg.startsWith("--reserve=") &&
+      arg !== "--reserve" &&
+      argv[i - 1] !== "--reserve",
+  );
+  return rest[0] === "fill";
+}
+
 export async function filamentProfilesCommand(argv: string[], io: Io): Promise<number> {
   if (argv[0] === "sync") return spoolSyncCommand(argv.slice(1), io);
   if (argv[0] === "import") return tdfpImportCommand(argv.slice(1), io);
-  // Before parsing, so the old flags (--now, --reserve) a timer may still pass get the same answer.
-  if (argv[0] === "fill") {
+  if (isFill(argv)) {
     io.stderr(`bambu-hando: error: ${FILL_MOVED}\n`);
     return 2;
   }

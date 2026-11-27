@@ -2,9 +2,9 @@
 // ABOUTME: Writes presets, then pushes to SpoolEase, emitting per-profile progress events.
 
 import { SystemProfiles } from "./bambuProfiles.js";
-import { type PresetOutcome, presetName, writeMany } from "./bambuStudio.js";
+import { type PresetOutcome, plannedRange, presetName, writeMany } from "./bambuStudio.js";
 import { errorMessage } from "./errors.js";
-import { loadFilamentDb, withManufacturerRange } from "./filamentDb.js";
+import { loadFilamentDb } from "./filamentDb.js";
 import type { FilamentProfile, Status, SyncResult } from "./models.js";
 import { bambuConfigDir } from "./paths.js";
 import { applyEdits, type Edits, readPreset, skippedDetail, syncedRange } from "./presetEdit.js";
@@ -104,14 +104,10 @@ export async function runSync(
   options: SyncOptions,
   onEvent: (event: SyncEvent) => void = () => {},
 ): Promise<SyncOutcome> {
-  const { dryRun } = options;
+  const { profiles, dryRun } = options;
   const system = await loadSystemProfiles(options.printers);
   const exported = await loadFilamentDb();
   if (exported.warning) onEvent({ type: "warning", message: exported.warning });
-  // A line's manufacturer range replaces the source's, in the presets and in SpoolEase's CSV row.
-  const profiles = options.profiles.map((profile) =>
-    withManufacturerRange(profile, exported.db?.lineFor(profile.sourceIds) ?? null),
-  );
 
   onEvent({ type: "stage", stage: "presets" });
   const target = {
@@ -144,12 +140,13 @@ export async function runSync(
       onEvent({ type: "preset", index, status: presetStatus(outcome, dryRun), ...outcome }),
   );
 
-  // SpoolEase's range follows the presets as the run leaves them: a kept one's tuning, or the edits.
+  // SpoolEase's range follows the presets as the run leaves them: a kept one's tuning, or the first written one's
+  // (a manufacturer's range, when filament-db has one) with the edits.
   const synced = await Promise.all(
     profiles.map(async (profile, index) => {
       const kept = await Promise.all((presets[index]?.kept ?? []).map(readPreset));
       const range = syncedRange(
-        profile,
+        plannedRange(profile, exported.db, system, options.printers[0]),
         kept.filter((p) => p !== null),
         edits.get(profile.filamentId),
       );

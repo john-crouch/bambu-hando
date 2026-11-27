@@ -136,7 +136,7 @@ export async function prepareFromApi(
       record: async (id) => {
         const found = await filamentRecord({ client: api.client, catalog, ledger: api.ledger }, id);
         if (found.fetched) calls += 1;
-        if (found.warning) warnings.push(found.warning);
+        if (found.warning && !warnings.includes(found.warning)) warnings.push(found.warning);
         if (!found.entry.record)
           throw new FilamentProfilesError(`3DFilamentProfiles has no record for filament #${id}`);
         return found.entry.record;

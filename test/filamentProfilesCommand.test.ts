@@ -361,6 +361,9 @@ describe("bambu-hando 3dfp", () => {
       for (const argv of [
         ["3dfp", "fill"],
         ["3dfp", "fill", "--now", "--reserve", "970"],
+        ["3dfp", "--now", "fill"],
+        ["3dfp", "--reserve", "50", "fill"],
+        ["3dfp", "--reserve=50", "fill", "--now"],
       ]) {
         expect(await run(argv)).toEqual({
           code: 2,

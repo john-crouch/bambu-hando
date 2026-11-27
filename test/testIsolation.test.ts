@@ -15,4 +15,8 @@ describe("test isolation", () => {
       expect(dir).toContain("bh-run-");
     }
   });
+
+  it("never reads the export filament-db's FILAMENT_DB_EXPORT names in the shell that started the run", () => {
+    expect(process.env.FILAMENT_DB_EXPORT).toBeUndefined();
+  });
 });

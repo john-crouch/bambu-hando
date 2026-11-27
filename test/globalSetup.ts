@@ -13,6 +13,8 @@ export default async function setup(): Promise<() => Promise<void>> {
   process.env.HOME = join(runDir, "home");
   for (const name of ["XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"])
     delete process.env[name];
+  // Nor read the real filament-db export a shell may point at; tests that use one name the fixture.
+  delete process.env.FILAMENT_DB_EXPORT;
   // No test may reach the login keyring (it holds real keys); keyring tests start a private one.
   process.env.DBUS_SESSION_BUS_ADDRESS = `unix:path=${join(runDir, "no-login-keyring")}`;
   return async () => {

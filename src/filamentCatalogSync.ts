@@ -106,7 +106,21 @@ export async function filamentRecord(
   options: { refreshStale?: boolean } = {},
 ): Promise<RecordResult> {
   const now = clock(api);
-  const local = localRecord(api.catalog, id, now, options, (await loadFilamentDb()).db);
+  const exported = await loadFilamentDb();
+  const result = await recordFrom(api, id, now, options, exported.db);
+  // Why an export that's there was skipped, unless the result has a warning of its own.
+  return exported.warning && !result.warning ? { ...result, warning: exported.warning } : result;
+}
+
+/** filamentRecord's lookup: the export or the catalog when either will do, else the API (the catalog's copy if it fails). */
+async function recordFrom(
+  api: CatalogApi,
+  id: number,
+  now: Date,
+  options: { refreshStale?: boolean },
+  db: FilamentDb | null,
+): Promise<RecordResult> {
+  const local = localRecord(api.catalog, id, now, options, db);
   if (local) return local;
   const cached = api.catalog.get(id);
   try {

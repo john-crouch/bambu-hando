@@ -61,11 +61,17 @@ describe("loadFilamentDb", () => {
     expect(warning).toMatch(/^couldn't read filament-db's export .*: /);
   });
 
-  it("parses a file once per run", async () => {
+  it("parses an unchanged file once per run", async () => {
     const path = await written(await fixtureDoc());
     const first = await loadFilamentDb(path);
-    await writeFile(path, "{ not json", "utf-8");
     expect(await loadFilamentDb(path)).toBe(first);
+  });
+
+  it("reads the file again once filament-db has rewritten it, a failed read included", async () => {
+    const path = await written("{ not json");
+    expect((await loadFilamentDb(path)).db).toBeNull();
+    await writeFile(path, JSON.stringify(await fixtureDoc()), "utf-8");
+    expect((await loadFilamentDb(path)).db?.lineForTdfp(16899)?.line.id).toBe(1383);
   });
 
   it("ignores fields it doesn't know", async () => {
@@ -113,6 +119,16 @@ describe("FilamentDb lookups", () => {
     );
     expect(db.lineFor({ spoolmanDb: "3do_petg_black_1000_175_n" })?.line.id).toBe(68);
     expect(db.lineFor(undefined)).toBeNull();
+  });
+
+  it("merges a color's own properties over its line's, unless only the line is asked for", () => {
+    expect(db.lineFor({ tdfp: 16899 })?.properties.transmission_distance).toMatchObject({
+      value: 0.4,
+    });
+    const lineOnly = db.lineFor({ tdfp: 16899, lineOnly: true });
+    expect(lineOnly?.line.id).toBe(1383);
+    expect(lineOnly?.properties.transmission_distance).toBeUndefined();
+    expect(lineOnly?.properties.nozzle_min_c).toMatchObject({ value: 230 });
   });
 
   it("follows tdfp_aliases for a merged 3DFP id", async () => {

@@ -45,6 +45,14 @@ describe("colorVariant", () => {
     });
   });
 
+  it("keeps the base's line in filament-db, but not its listed color's own values", () => {
+    const base = profile({ sourceIds: { spoolmanDb: "acme_pla_red_1000_175_n" } });
+    expect(colorVariant(base, "Moss", "4A5D23FF").sourceIds).toEqual({
+      spoolmanDb: "acme_pla_red_1000_175_n",
+      lineOnly: true,
+    });
+  });
+
   it("builds the name from brand and material when the base's name doesn't end in its color", () => {
     const base = profile({ name: "Acme Special", colorName: "Red" });
     expect(colorVariant(base, "Moss", "4A5D23FF").name).toBe("Acme PLA Moss");

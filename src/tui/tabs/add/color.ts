@@ -57,7 +57,8 @@ export function openColorDialog(
 /**
  * `base` with another color: same brand, material, temperatures, density and weights; a name ending in
  * the new color (as SpoolmanDB names end in theirs) and the ID derived from it. A slicer filament code
- * isn't carried over, since it identifies the listed color.
+ * isn't carried over, since it identifies the listed color; its source ids still find its line in filament-db, but
+ * only the line's values, not the listed color's own.
  */
 export function colorVariant(
   base: FilamentProfile,
@@ -76,6 +77,7 @@ export function colorVariant(
     colorRgba,
     slicerFilamentCode: "",
     filamentId: derivedFilamentId(name),
+    ...(base.sourceIds ? { sourceIds: { ...base.sourceIds, lineOnly: true } } : {}),
   };
 }
 

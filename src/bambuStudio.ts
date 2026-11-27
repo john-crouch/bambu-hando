@@ -114,6 +114,47 @@ function firstNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function rangeOf(
+  profile: FilamentProfile,
+  manufacturer: Manufacturer | null,
+  maker: MakerValues,
+): { low: number; high: number } {
+  const own = manufacturer ? withManufacturerRange(profile, manufacturer.match) : profile;
+  // The manufacturer's values give the range when they have one (a preset's own, Generic's included), else the line's
+  // manufacturer range, else the source's; widened only for the user's own calibrated temperature.
+  let low = firstNumber(maker.values.nozzle_temperature_range_low) ?? own.nozzleTempMin;
+  let high = firstNumber(maker.values.nozzle_temperature_range_high) ?? own.nozzleTempMax;
+  const calibrated = profile.calibration?.printTemp;
+  if (calibrated !== undefined) {
+    low = Math.min(low, Math.round(calibrated));
+    high = Math.max(high, Math.round(calibrated));
+  }
+  return { low, high };
+}
+
+/**
+ * The nozzle range buildPreset writes into the profile's preset for a printer (before plan edits), which SpoolEase's
+ * custom filament row follows.
+ */
+export function presetRange(
+  profile: FilamentProfile,
+  manufacturer: Manufacturer | null,
+): { low: number; high: number } {
+  return rangeOf(profile, manufacturer, makerValues(manufacturer));
+}
+
+/** The profile with the nozzle range its preset for the printer is written with (the first printer's, for SpoolEase). */
+export function plannedRange(
+  profile: FilamentProfile,
+  db: FilamentDb | null,
+  system: SystemProfiles | null,
+  printer: string | undefined,
+): FilamentProfile {
+  const model = system && printer !== undefined ? system.printerModel(printer) : null;
+  const range = presetRange(profile, manufacturerFor(db, profile.sourceIds, model));
+  return { ...profile, nozzleTempMin: range.low, nozzleTempMax: range.high };
+}
+
 function makerNote(manufacturer: Manufacturer | null): string {
   if (!manufacturer) return "";
   const { preset, match } = manufacturer;
@@ -143,21 +184,7 @@ export function buildPreset(
   for (const key of SYSTEM_ONLY_KEYS) delete preset[key];
   const maker = makerValues(manufacturer);
   Object.assign(preset, maker.values);
-  const own = manufacturer ? withManufacturerRange(profile, manufacturer.match) : profile;
-
-  // A manufacturer preset's range is the file's, widened only for the user's own calibrated temperature.
-  const calibrated = profile.calibration?.printTemp;
-  const covers = (key: string) => maker.covered.has(key) && firstNumber(preset[key]) !== null;
-  let low = covers("nozzle_temperature_range_low")
-    ? (firstNumber(preset.nozzle_temperature_range_low) as number)
-    : own.nozzleTempMin;
-  let high = covers("nozzle_temperature_range_high")
-    ? (firstNumber(preset.nozzle_temperature_range_high) as number)
-    : own.nozzleTempMax;
-  if (calibrated !== undefined) {
-    low = Math.min(low, Math.round(calibrated));
-    high = Math.max(high, Math.round(calibrated));
-  }
+  const { low, high } = rangeOf(profile, manufacturer, maker);
 
   // Keep Bambu's tuned print temperature unless the manufacturer's range excludes it.
   const nozzle = (current: string) => {
@@ -189,7 +216,7 @@ export function buildPreset(
   };
   // The source's own print settings win over the template's; the template fills in only what it leaves out.
   // With a manufacturer, they fill in only what the manufacturer leaves out, and the user's calibration goes on top.
-  // ...inside the filament's own range, which the preset and SpoolEase's CSV row both state.
+  // ...inside the range the preset states, which SpoolEase's CSV row follows (the first printer's preset).
   const settings = manufacturer
     ? layered(profile.calibration ?? {}, withoutKeys(profile.settings ?? {}, maker.covered))
     : (profile.settings ?? {});
