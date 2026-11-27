@@ -89,7 +89,7 @@ export const USED_UP_RECHECK_MS = 60 * 60 * 1000;
  * Why `calls` more calls can't be made, or null when they can; only the server's own numbers block. A used-up quota
  * (0, from a 429 or the headers) stops blocking after USED_UP_RECHECK_MS, since nothing else can bring fresh numbers:
  * a burst limit or a mid-month plan upgrade would otherwise lock every command out until the 1st. If it's still used
- * up, the server answers 429 again. Numbers above 0 never expire, so a fill's reserve holds.
+ * up, the server answers 429 again. Numbers above 0 never expire, so a reserve holds.
  */
 export function quotaBlocks(
   state: QuotaState,

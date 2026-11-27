@@ -8,12 +8,9 @@ import { errorMessage } from "./errors.js";
 import { catalogPath, FilamentCatalog } from "./filamentCatalog.js";
 import {
   type CatalogApi,
-  FILL_FROM_DAY,
-  FILL_RESERVE,
   filamentName,
   filamentRecord,
   localRecord,
-  monthEndFill,
   type RecordResult,
   searchOnline,
 } from "./filamentCatalogSync.js";
@@ -56,7 +53,7 @@ counts them and keeps what it read in a local catalog.
                    (bambu-hando 3dfp import --help)
   filament <id>    A filament's full record: one call the first time, then from the catalog
   search <words>   Filaments in the catalog (no call); --online searches 3DFilamentProfiles (one call)
-  fill             From the ${FILL_FROM_DAY}th (UTC), spend the month's leftover calls filling the catalog
+  fill             Moved to filament-db: run \`filament-db 3dfp fill\` instead
   catalog          What the catalog holds (no call)
 
 Options:
@@ -65,8 +62,6 @@ Options:
   --online           search: ask 3DFilamentProfiles (one call) and keep the results
   --brand <key>      search: only this brand key (e.g. sunlu)
   --material <key>   search: only this material key (e.g. petg)
-  --now              fill: start before the ${FILL_FROM_DAY}th
-  --reserve <n>      fill: calls to leave unspent (default ${FILL_RESERVE})
   --json             spools, filament: print snake_case JSON
   -h, --help         Show this help
 `;
@@ -77,14 +72,9 @@ const OPTIONS = {
   online: { type: "boolean", default: false },
   brand: { type: "string" },
   material: { type: "string" },
-  now: { type: "boolean", default: false },
-  reserve: { type: "string" },
   json: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false },
 } as const;
-
-/** Between calls of a fill, so hundreds of calls don't arrive at once. */
-const FILL_PAUSE_MS = 300;
 
 class TdfpUsageError extends Error {}
 
@@ -316,59 +306,8 @@ async function searchAction(
   }
 }
 
-function parseReserve(value: string | undefined): number {
-  if (value === undefined) return FILL_RESERVE;
-  if (!/^\d+$/.test(value)) throw new TdfpUsageError("--reserve must be a whole number of calls");
-  return Number(value);
-}
-
-async function fillAction(now: boolean, reserveText: string | undefined, io: Io): Promise<number> {
-  const reserve = parseReserve(reserveText);
-  const today = new Date();
-  if (!now && today.getUTCDate() < FILL_FROM_DAY) {
-    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), FILL_FROM_DAY))
-      .toISOString()
-      .slice(0, 10);
-    io.stdout(`Nothing to do: the month-end fill starts on ${start} (UTC); --now fills now.\n`);
-    return 0;
-  }
-  const { client, ledger, account } = await connect();
-  const api: CatalogApi = { client, ledger, catalog: FilamentCatalog.open() };
-  try {
-    // The spools' filaments come first; any saved spool list will do, however old.
-    let calls = 0;
-    let owned: number[] = [];
-    try {
-      const cached = await mySpools(client, {
-        account,
-        maxAgeMs: Number.POSITIVE_INFINITY,
-        beforeFetch: () => ledger.ensure(1, reserve),
-      });
-      if (!cached.fromCache) calls += 1;
-      owned = [...new Set(cached.spools.map((spool) => spool.filamentId))];
-    } catch (err) {
-      if (!(err instanceof QuotaError)) throw err;
-    }
-    const pause = () => new Promise<void>((resolve) => setTimeout(resolve, FILL_PAUSE_MS));
-    const report = await monthEndFill(api, {
-      force: true,
-      reserve,
-      ownedFilamentIds: owned,
-      pause,
-      onSearch: (search) =>
-        io.stderr(
-          `${search.key}: ${plural(search.saved, "filament")}, ${plural(search.calls, "call")}\n`,
-        ),
-    });
-    const stats = api.catalog.stats();
-    io.stdout(
-      `Filled the catalog: ${plural(calls + report.calls, "API call")}, ${plural(report.records, "full record")}; ${plural(stats.filaments, "filament")} from ${plural(stats.brands, "brand")}. Stopped: ${report.reason}\n`,
-    );
-    return 0;
-  } finally {
-    api.catalog.close();
-  }
-}
+/** `3dfp fill` stays only to say where the fill went: the README used to have people run it from a timer. */
+const FILL_MOVED = "the month-end fill moved to filament-db: run `filament-db 3dfp fill` instead";
 
 async function catalogAction(io: Io): Promise<number> {
   const catalog = FilamentCatalog.open();
@@ -419,6 +358,11 @@ async function spoolsAction(refresh: boolean, json: boolean, io: Io): Promise<nu
 export async function filamentProfilesCommand(argv: string[], io: Io): Promise<number> {
   if (argv[0] === "sync") return spoolSyncCommand(argv.slice(1), io);
   if (argv[0] === "import") return tdfpImportCommand(argv.slice(1), io);
+  // Before parsing, so the old flags (--now, --reserve) a timer may still pass get the same answer.
+  if (argv[0] === "fill") {
+    io.stderr(`bambu-hando: error: ${FILL_MOVED}\n`);
+    return 2;
+  }
   try {
     // Before parsing: parseArgs quotes an unknown option, and a key typed there would be printed back.
     if (argv.some(holdsSecret)) throw new TdfpUsageError(KEY_ARGUMENT_ERROR);
@@ -447,7 +391,6 @@ export async function filamentProfilesCommand(argv: string[], io: Io): Promise<n
     }
     if (extra.length > 0) throw new TdfpUsageError(`unexpected argument after ${action}`);
     if (action === "spools") return await spoolsAction(values.refresh, values.json, io);
-    if (action === "fill") return await fillAction(values.now, values.reserve, io);
     if (action === "catalog") return await catalogAction(io);
     if (action === "usage") {
       const { ledger } = await connect();

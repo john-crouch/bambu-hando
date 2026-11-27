@@ -357,33 +357,19 @@ describe("bambu-hando 3dfp", () => {
       expect((await run(["3dfp", "search"])).code).toBe(2);
     });
 
-    it("waits for the month-end fill unless --now, and keeps the reserve", async () => {
-      const early = await run(["3dfp", "fill"]);
-      expect(early).toMatchObject({
-        code: 0,
-        stdout: "Nothing to do: the month-end fill starts on 2026-11-28 (UTC); --now fills now.\n",
-      });
+    it("says the month-end fill moved to filament-db, with or without the old flags", async () => {
+      for (const argv of [
+        ["3dfp", "fill"],
+        ["3dfp", "fill", "--now", "--reserve", "970"],
+      ]) {
+        expect(await run(argv)).toEqual({
+          code: 2,
+          stdout: "",
+          stderr:
+            "bambu-hando: error: the month-end fill moved to filament-db: run `filament-db 3dfp fill` instead\n",
+        });
+      }
       expect(server.requests).toHaveLength(0);
-
-      const filled = await run(["3dfp", "fill", "--now", "--reserve", "970"]);
-      expect(filled.code).toBe(0);
-      expect(filled.stdout).toMatch(
-        /^Filled the catalog: \d+ API calls, 1 full record; 3 filaments from 2 brands\. Stopped: .*kept in reserve\n$/,
-      );
-      expect(server.requests[0]?.path).toBe("/api/v1/my/spools");
-      expect(server.requests[1]?.path).toBe("/api/v1/filaments/101");
-      expect(server.quota.remaining).toBe(970);
-    });
-
-    it("doesn't spend the reserve on the spool list either", async () => {
-      await run(["3dfp", "filament", "101"]);
-      const left = server.quota.remaining;
-      const before = server.requests.length;
-      const filled = await run(["3dfp", "fill", "--now", "--reserve", String(left)]);
-      expect(filled.code).toBe(0);
-      expect(filled.stdout).toMatch(/^Filled the catalog: 0 API calls, /);
-      expect(server.requests.slice(before).map((r) => r.path)).toEqual([]);
-      expect(server.quota.remaining).toBe(left);
     });
 
     it("reports what the catalog holds without a call", async () => {
