@@ -24,6 +24,7 @@ import {
   saveImportLinks,
 } from "../src/tdfpImportSession.js";
 import { installBambuStudio } from "./bambuStudioSetup.js";
+import { FILAMENT_DB_FIXTURE } from "./filamentDbFixture.js";
 import {
   type FilamentProfilesServer,
   serverFilament,
@@ -138,6 +139,39 @@ describe("tdfpImportSession", () => {
         { code: "acme1", id: null, refused: false },
       ]);
       expect(preview.rows[1]?.refusal).toMatch(/Bambu Lab/);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  it("previews a filament the catalog lacks from filament-db's export, without a call", async () => {
+    vi.stubEnv("FILAMENT_DB_EXPORT", FILAMENT_DB_FIXTURE);
+    tdfp.spools.push(
+      serverSpool({
+        short_code: "wine1",
+        filament_id: 32336,
+        brand: "Creality",
+        material: "PETG",
+        material_type: "Basic",
+        color: "Transparent Wine Red",
+        rgb: "#5C0A0A",
+      }),
+    );
+    const basis = await readImportBasis(api, target);
+    const catalog = FilamentCatalog.open(join(home, "catalog.sqlite"));
+    try {
+      const before = apiCalls();
+      // The fixture's record was fetched 2026-11-27.
+      const preview = await previewImport(basis, catalog, new Date("2026-11-28T12:00:00Z"));
+      expect(apiCalls()).toBe(before);
+      const wine = preview.rows.find((row) => row.spool.shortCode === "wine1");
+      expect(wine?.item?.profile).toMatchObject({
+        name: "Creality PETG Basic Transparent Wine Red",
+        nozzleTempMin: 230,
+        nozzleTempMax: 250,
+        density: 1.27,
+        settings: { printTemp: 240, bedTemp: 80, flowRatio: 0.95, maxVolumetricSpeed: 8 },
+      });
     } finally {
       catalog.close();
     }

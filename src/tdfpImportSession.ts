@@ -4,6 +4,7 @@
 import { QuotaError } from "./apiQuota.js";
 import { FilamentCatalog } from "./filamentCatalog.js";
 import { filamentRecord, localRecord } from "./filamentCatalogSync.js";
+import { loadFilamentDb } from "./filamentDb.js";
 import { FilamentProfilesError, type TdfpSpool } from "./filamentProfiles.js";
 import { forgetSpools, mySpools } from "./filamentProfilesCache.js";
 import type { FilamentProfilesConnection } from "./filamentProfilesConnect.js";
@@ -72,12 +73,16 @@ export interface ImportPreview {
 
 class NotInCatalog extends Error {}
 
-/** Each unlinked spool as prepareImport would see it, reading only the local catalog: never an API call. */
+/**
+ * Each unlinked spool as prepareImport would see it, reading only the local catalog and filament-db's export: never an
+ * API call.
+ */
 export async function previewImport(
   basis: ImportBasis,
   catalog: FilamentCatalog,
   now: Date,
 ): Promise<ImportPreview> {
+  const { db } = await loadFilamentDb();
   const linked = new Set(basis.links.map((link) => link.tdfp));
   const rows: ImportPreviewRow[] = [];
   for (const spool of basis.tdfp) {
@@ -89,7 +94,7 @@ export async function previewImport(
         links: basis.links,
         spoolease: basis.spoolease,
         record: async (id) => {
-          const record = localRecord(catalog, id, now)?.entry.record;
+          const record = localRecord(catalog, id, now, {}, db)?.entry.record;
           if (!record) throw new NotInCatalog();
           return record;
         },

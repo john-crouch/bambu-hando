@@ -17,6 +17,7 @@ import {
   type RecordResult,
   searchOnline,
 } from "./filamentCatalogSync.js";
+import { loadFilamentDb } from "./filamentDb.js";
 import {
   FilamentProfilesError,
   type TdfpFilament,
@@ -203,6 +204,7 @@ function recordLines(filament: TdfpFilamentDetail): string[] {
 function recordFooter(result: RecordResult, quota: QuotaState | null): string {
   if (result.fetched) return `Fetched just now (1 API call${quota ? quotaLeft(quota) : ""}).`;
   const fetched = result.entry.recordAt?.toISOString().slice(0, 10) ?? "?";
+  if (result.fromExport) return `From filament-db's export, fetched ${fetched} (no API call).`;
   if (!result.stale) return `From the catalog, fetched ${fetched} (no API call).`;
   return `From the catalog, fetched ${fetched} (${result.ageDays} days old; --refresh-stale fetches it again: 1 API call).`;
 }
@@ -217,11 +219,13 @@ async function filamentAction(
     throw new TdfpUsageError(
       "filament needs the filament's number, as in its 3DFilamentProfiles link",
     );
-  // No key or keyring needed when the catalog's copy will do.
+  // No key or keyring needed when the catalog's or filament-db's copy will do.
+  const exported = await loadFilamentDb();
+  if (exported.warning) io.stderr(`${exported.warning}\n`);
   const catalog = FilamentCatalog.open();
   let local: RecordResult | null;
   try {
-    local = localRecord(catalog, Number(idText), new Date(), { refreshStale });
+    local = localRecord(catalog, Number(idText), new Date(), { refreshStale }, exported.db);
   } finally {
     catalog.close();
   }
@@ -236,6 +240,7 @@ async function filamentAction(
       const report = {
         filament: snakeKeys(record),
         fetched: result.fetched,
+        from_export: result.fromExport,
         stale: result.stale,
         age_days: result.ageDays,
         record_at: result.entry.recordAt?.toISOString() ?? null,

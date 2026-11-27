@@ -5,7 +5,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QuotaLedger } from "../src/apiQuota.js";
 import { FilamentCatalog } from "../src/filamentCatalog.js";
@@ -18,6 +18,7 @@ import {
   searchOnline,
 } from "../src/filamentCatalogSync.js";
 import { FilamentProfilesClient } from "../src/filamentProfiles.js";
+import { FILAMENT_DB_FIXTURE } from "./filamentDbFixture.js";
 import {
   type FilamentProfilesServer,
   type ServerFilament,
@@ -123,6 +124,64 @@ describe("catalog sync", () => {
 
     it("throws when there's no record to fall back on", async () => {
       await expect(filamentRecord(api, 999)).rejects.toThrow(/No filament matches/);
+    });
+
+    describe("with filament-db's export", () => {
+      // The fixture's record of filament 32336 was fetched 2026-11-27T18:03:20.800Z.
+      const FETCHED = new Date("2026-11-27T18:03:20.800Z");
+      const daysAfter = (n: number) => new Date(FETCHED.getTime() + n * 86_400_000);
+
+      beforeEach(() => {
+        vi.stubEnv("FILAMENT_DB_EXPORT", FILAMENT_DB_FIXTURE);
+        server.filaments = [
+          serverFilament({ id: 32336, flow_ratio: 0.91 }),
+          serverFilament({ id: 16899 }),
+        ];
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it("takes a fresh record from the export without a call", async () => {
+        now = daysAfter(3);
+        const found = await filamentRecord(api, 32336);
+        expect(found).toMatchObject({
+          fetched: false,
+          fromExport: true,
+          stale: false,
+          ageDays: 3,
+          warning: null,
+        });
+        expect(found.entry.record).toMatchObject({ id: 32336, tempMin: 230, flowRatio: 0.95 });
+        expect(found.entry.recordAt).toEqual(FETCHED);
+        expect(calls()).toBe(0);
+      });
+
+      it("calls the API when the export's record is 30 days old", async () => {
+        now = daysAfter(30);
+        const found = await filamentRecord(api, 32336);
+        expect(found).toMatchObject({ fetched: true, fromExport: false });
+        expect(found.entry.record?.flowRatio).toBe(0.91);
+        expect(calls()).toBe(1);
+      });
+
+      it("calls the API for a filament the export knows only from a search", async () => {
+        now = daysAfter(1);
+        expect(await filamentRecord(api, 16899)).toMatchObject({ fetched: true });
+        expect(calls()).toBe(1);
+      });
+
+      it("keeps the catalog's own record when it's newer than the export's", async () => {
+        now = daysAfter(1);
+        await filamentRecord(api, 32336, { refreshStale: true });
+        expect(calls()).toBe(0);
+        api.catalog.saveRecord(32336, await api.client.getFilament(32336), daysAfter(2));
+        now = daysAfter(3);
+        const found = await filamentRecord(api, 32336);
+        expect(found).toMatchObject({ fetched: false, fromExport: false, ageDays: 1 });
+        expect(found.entry.record?.flowRatio).toBe(0.91);
+      });
     });
 
     it("follows a merge to the surviving filament, locally afterwards", async () => {

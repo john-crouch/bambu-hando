@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { main } from "../src/cli.js";
+import { FILAMENT_DB_FIXTURE } from "./filamentDbFixture.js";
 import {
   type FilamentProfilesServer,
   serverFilament,
@@ -266,6 +267,22 @@ describe("bambu-hando 3dfp", () => {
       const refreshed = await run(["3dfp", "filament", "101", "--refresh-stale"]);
       expect(refreshed.stdout).toContain("Flow ratio 0.9 ");
       expect(server.requests).toHaveLength(2);
+    });
+
+    it("shows a record from filament-db's export without a key or a call", async () => {
+      vi.stubEnv("FILAMENT_DB_EXPORT", FILAMENT_DB_FIXTURE);
+      vi.stubEnv("FILAMENTPROFILES_API_KEY", undefined);
+      vi.stubEnv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/bus");
+      vi.setSystemTime(new Date("2026-11-28T10:00:00Z"));
+      const shown = await run(["3dfp", "filament", "32336"]);
+      expect(shown).toMatchObject({ code: 0, stderr: "" });
+      expect(shown.stdout).toContain(
+        "Creality PETG Basic Transparent Wine Red (3DFilamentProfiles #32336)",
+      );
+      expect(shown.stdout).toContain(
+        "From filament-db's export, fetched 2026-11-27 (no API call).",
+      );
+      expect(server.requests).toHaveLength(0);
     });
 
     it("prints a record as snake_case JSON", async () => {
